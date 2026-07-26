@@ -635,6 +635,7 @@ class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
     referencedObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
     aheadObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
+    aheadReferencedObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
     selectedTrackSectionChanged = QtCore.pyqtSignal(object)
     selectedTSOOrderChanged = QtCore.pyqtSignal(object)
@@ -669,7 +670,8 @@ class TSOVisibilityTab(QWidget):
         )
         self.show_ahead_object_lists_checkbox.setToolTip(
             "Highlight in orange the TSOs the game will draw from the next eight "
-            "ObjectLists on both the left and right, beyond the selected subsection."
+            "ObjectLists on both the left and right, beyond the selected subsection. "
+            "TSOs included through a nested ObjectList are highlighted in yellow."
         )
 
         self.load_button.setToolTip(
@@ -1817,6 +1819,7 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOsChanged.emit(tuple())
             self.referencedObjectListTSOsChanged.emit(tuple())
             self.aheadObjectListTSOsChanged.emit(tuple())
+            self.aheadReferencedObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
@@ -1895,6 +1898,7 @@ class TSOVisibilityTab(QWidget):
             self.selectedTSOsChanged.emit(tuple())
             self.referencedObjectListTSOsChanged.emit(tuple())
             self.aheadObjectListTSOsChanged.emit(tuple())
+            self.aheadReferencedObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
@@ -1906,6 +1910,9 @@ class TSOVisibilityTab(QWidget):
             self._referenced_object_list_tso_ids(active_lists[row])
         )
         self.aheadObjectListTSOsChanged.emit(self._ahead_object_list_tso_ids(row))
+        self.aheadReferencedObjectListTSOsChanged.emit(
+            self._ahead_referenced_object_list_tso_ids(row)
+        )
         selected_item = self.tso_list.currentItem()
         selected_tso_id = (
             selected_item.data(QtCore.Qt.UserRole)
@@ -1995,6 +2002,46 @@ class TSOVisibilityTab(QWidget):
                     item for item in entry.tso_ids if isinstance(item, int)
                 ) + list(self._referenced_object_list_tso_ids(entry))
                 for tso_id in values:
+                    if tso_id not in seen:
+                        seen.add(tso_id)
+                        result.append(tso_id)
+        return tuple(result)
+
+    def _ahead_referenced_object_list_tso_ids(
+        self, selected_row: int
+    ) -> tuple[int, ...]:
+        """Return ahead TSOs made visible through nested ObjectList pointers."""
+        if (
+            not self.show_ahead_object_lists_checkbox.isChecked()
+            or self._is_detail_mode()
+            or selected_row < 0
+            or selected_row >= len(self.object_lists)
+        ):
+            return tuple()
+
+        selected = self.object_lists[selected_row]
+        selected_key = (selected.section, selected.sub_index)
+        result: list[int] = []
+        seen: set[int] = set()
+        for side in ("L", "R"):
+            entries = sorted(
+                (entry for entry in self.object_lists if entry.side.upper() == side),
+                key=lambda entry: (entry.section, entry.sub_index),
+            )
+            following = (
+                [
+                    entry
+                    for entry in entries
+                    if (entry.section, entry.sub_index) > selected_key
+                ]
+                + [
+                    entry
+                    for entry in entries
+                    if (entry.section, entry.sub_index) < selected_key
+                ]
+            )[:8]
+            for entry in following:
+                for tso_id in self._referenced_object_list_tso_ids(entry):
                     if tso_id not in seen:
                         seen.add(tso_id)
                         result.append(tso_id)
