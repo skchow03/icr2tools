@@ -277,6 +277,10 @@ class _RuntimeCoreMixin(
         return tuple(self._trackside_move_enabled_indices)
 
     @property
+    def trackside_referenced_indices(self) -> tuple[int, ...]:
+        return tuple(self._trackside_referenced_indices)
+
+    @property
     def trackside_order_labels(self) -> tuple[tuple[int, int], ...]:
         return tuple(self._trackside_order_labels)
 
@@ -303,7 +307,6 @@ class _RuntimeCoreMixin(
     @property
     def track_opacity(self) -> float:
         return self._track_opacity
-
 
     @property
     def integrity_boundary_violation_points(self) -> tuple[Point, ...]:
@@ -345,7 +348,9 @@ class _RuntimeCoreMixin(
         if transform is None:
             return None
         scale, offsets = transform
-        return ViewTransform(scale=scale, offset=(offsets[0], widget_height - offsets[1]))
+        return ViewTransform(
+            scale=scale, offset=(offsets[0], widget_height - offsets[1])
+        )
 
     @property
     def split_section_mode(self) -> bool:
@@ -409,9 +414,7 @@ class _RuntimeCoreMixin(
             return "Complete the loop to show track length"
 
         miles = total_length / (500.0 * 12 * 5280)
-        return (
-            f"Track length: {total_length:.0f} DLONG (500ths) — {miles:.3f} miles"
-        )
+        return f"Track length: {total_length:.0f} DLONG (500ths) — {miles:.3f} miles"
 
     def set_trk_comparison(self, trk: TRKFile | None) -> None:
         self._trk_overlay.set_trk_comparison(trk)
@@ -462,21 +465,29 @@ class _RuntimeCoreMixin(
         self._trackside_objects = tuple(objects)
         selected_index = getattr(self, "_selected_trackside_object_index", None)
         if selected_index is not None and (
-            selected_index < 0
-            or selected_index >= len(self._trackside_objects)
+            selected_index < 0 or selected_index >= len(self._trackside_objects)
         ):
             self._selected_trackside_object_index = None
         selected_indices = getattr(self, "_selected_trackside_object_indices", ())
         self._selected_trackside_object_indices = tuple(
-            index for index in selected_indices if 0 <= index < len(self._trackside_objects)
+            index
+            for index in selected_indices
+            if 0 <= index < len(self._trackside_objects)
         )
         focused_index = getattr(self, "_focused_trackside_object_index", None)
-        if focused_index is not None and (focused_index < 0 or focused_index >= len(self._trackside_objects)):
+        if focused_index is not None and (
+            focused_index < 0 or focused_index >= len(self._trackside_objects)
+        ):
             self._focused_trackside_object_index = None
         move_enabled_indices = getattr(self, "_trackside_move_enabled_indices", ())
         self._trackside_move_enabled_indices = tuple(
             index
             for index in move_enabled_indices
+            if 0 <= index < len(self._trackside_objects)
+        )
+        self._trackside_referenced_indices = tuple(
+            index
+            for index in getattr(self, "_trackside_referenced_indices", ())
             if 0 <= index < len(self._trackside_objects)
         )
         self._trackside_order_labels = tuple(
@@ -496,7 +507,6 @@ class _RuntimeCoreMixin(
             else:
                 self._selected_trackside_object_index = value
         self._context.request_repaint()
-
 
     def set_selected_trackside_object_indices(self, indices: tuple[int, ...]) -> None:
         normalized = []
@@ -521,7 +531,9 @@ class _RuntimeCoreMixin(
                 self._focused_trackside_object_index = value
         self._context.request_repaint()
 
-    def set_trackside_order_labels(self, labels: dict[int, int] | tuple[tuple[int, int], ...]) -> None:
+    def set_trackside_order_labels(
+        self, labels: dict[int, int] | tuple[tuple[int, int], ...]
+    ) -> None:
         entries = labels.items() if isinstance(labels, dict) else labels
         normalized: list[tuple[int, int]] = []
         seen: set[int] = set()
@@ -549,6 +561,16 @@ class _RuntimeCoreMixin(
         self._trackside_move_enabled_indices = tuple(normalized)
         self._context.request_repaint()
 
+    def set_trackside_referenced_indices(self, indices: tuple[int, ...]) -> None:
+        self._trackside_referenced_indices = tuple(
+            dict.fromkeys(
+                int(index)
+                for index in indices
+                if 0 <= int(index) < len(self._trackside_objects)
+            )
+        )
+        self._context.request_repaint()
+
     def set_show_trackside_objects(self, visible: bool) -> None:
         self._show_trackside_objects = bool(visible)
         self._context.request_repaint()
@@ -572,7 +594,12 @@ class _RuntimeCoreMixin(
             self._trackside_box_select_drag_current_screen = None
         self._context.request_repaint()
 
-    def set_selected_mrk_wall(self, boundary_index: int | None, section_index: int | None, wall_index: int | None) -> None:
+    def set_selected_mrk_wall(
+        self,
+        boundary_index: int | None,
+        section_index: int | None,
+        wall_index: int | None,
+    ) -> None:
         if None in {boundary_index, section_index, wall_index}:
             self._selected_mrk_wall = (0, 0, 0)
         else:
@@ -591,7 +618,13 @@ class _RuntimeCoreMixin(
         end_section_index: int | None,
         end_wall_index: int | None,
     ) -> None:
-        if None in {boundary_index, start_section_index, start_wall_index, end_section_index, end_wall_index}:
+        if None in {
+            boundary_index,
+            start_section_index,
+            start_wall_index,
+            end_section_index,
+            end_wall_index,
+        }:
             self._selected_mrk_wall_range = None
         else:
             self._selected_mrk_wall_range = (
@@ -603,18 +636,26 @@ class _RuntimeCoreMixin(
             )
         self._context.request_repaint()
 
-    def set_highlighted_mrk_walls(self, entries: list[tuple[int, int, int, int, str]] | tuple[tuple[int, int, int, int, str], ...]) -> None:
+    def set_highlighted_mrk_walls(
+        self,
+        entries: (
+            list[tuple[int, int, int, int, str]]
+            | tuple[tuple[int, int, int, int, str], ...]
+        ),
+    ) -> None:
         normalized: list[tuple[int, int, int, int, str]] = []
         for boundary_index, section_index, start_wall, wall_count, color in entries:
             parsed = QtGui.QColor(color)
             resolved = parsed.name().upper() if parsed.isValid() else "#FFFF00"
-            normalized.append((
-                max(0, int(boundary_index)),
-                max(0, int(section_index)),
-                max(0, int(start_wall)),
-                max(0, int(wall_count)),
-                resolved,
-            ))
+            normalized.append(
+                (
+                    max(0, int(boundary_index)),
+                    max(0, int(section_index)),
+                    max(0, int(start_wall)),
+                    max(0, int(wall_count)),
+                    resolved,
+                )
+            )
         self._highlighted_mrk_walls = tuple(normalized)
         self._context.request_repaint()
 
@@ -634,9 +675,12 @@ class _RuntimeCoreMixin(
         self._show_xsect_dlat_line = visible
         self._context.request_repaint()
 
-
-    def set_integrity_boundary_violation_points(self, points: list[Point] | tuple[Point, ...]) -> None:
-        self._integrity_boundary_violation_points = tuple((float(point[0]), float(point[1])) for point in points)
+    def set_integrity_boundary_violation_points(
+        self, points: list[Point] | tuple[Point, ...]
+    ) -> None:
+        self._integrity_boundary_violation_points = tuple(
+            (float(point[0]), float(point[1])) for point in points
+        )
         self._context.request_repaint()
 
     def clear_integrity_boundary_violation_points(self) -> None:

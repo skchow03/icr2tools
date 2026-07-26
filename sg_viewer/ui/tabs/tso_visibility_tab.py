@@ -46,28 +46,27 @@ from sg_viewer.io.track3d_parser import (
 from sg_viewer.io.track3d_catalog import parse_track3d_catalog
 from sg_viewer.services.sg_integrity_checks import choose_integrity_memo_author
 
-
 UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES: tuple[str, ...] = (
-"Reminder: scenery without an assignment may begin freelancing as modern art.",
-"The ObjectList clerk reports that several decorative items arrived with snacks but no paperwork.",
-"Please do not let unassigned TSOs form a small decorative settlement near Turn 3.",
-"If a billboard asks where it should stand, answer with data rather than enthusiasm.",
-"Loose trackside objects have been known to migrate toward cameras during lunch breaks.",
-"A hay bale without a DetailList is just a square sheep with ambition.",
-"The grandstand insists it was invited; the manifest remains emotionally unavailable.",
-"Assign every scenic doodad before the paddock organizes a tour to admire it.",
-"Uncredentialed palm trees are charming until they start rearranging the sight lines.",
-"The cone department denies responsibility for any object not wearing a cone hat.",
-"A lonely marshal post is still a marshal post, but now it has opinions about placement.",
-"If the scenery looks smug, it may already know it is not in an ObjectList.",
-"Trackside props prefer clear instructions, mild weather, and not being forgotten in binary.",
-"Any object found wandering after midnight should be provided an ObjectList to call home.",
-"The timing stand has requested fewer surprise neighbors and more predictable geometry.",
-"Please seat all TSOs before the invisible usher starts charging admission.",
-"Decorative assets left unattended may become load-bearing rumors.",
-"An unassigned sign can still point somewhere, but the track crew would prefer it did not improvise.",
-"The landscape crew recommends a place for everything and everything not clipping through a wall.",
-"If a tree falls outside every list, the renderer may still hear the paperwork.",
+    "Reminder: scenery without an assignment may begin freelancing as modern art.",
+    "The ObjectList clerk reports that several decorative items arrived with snacks but no paperwork.",
+    "Please do not let unassigned TSOs form a small decorative settlement near Turn 3.",
+    "If a billboard asks where it should stand, answer with data rather than enthusiasm.",
+    "Loose trackside objects have been known to migrate toward cameras during lunch breaks.",
+    "A hay bale without a DetailList is just a square sheep with ambition.",
+    "The grandstand insists it was invited; the manifest remains emotionally unavailable.",
+    "Assign every scenic doodad before the paddock organizes a tour to admire it.",
+    "Uncredentialed palm trees are charming until they start rearranging the sight lines.",
+    "The cone department denies responsibility for any object not wearing a cone hat.",
+    "A lonely marshal post is still a marshal post, but now it has opinions about placement.",
+    "If the scenery looks smug, it may already know it is not in an ObjectList.",
+    "Trackside props prefer clear instructions, mild weather, and not being forgotten in binary.",
+    "Any object found wandering after midnight should be provided an ObjectList to call home.",
+    "The timing stand has requested fewer surprise neighbors and more predictable geometry.",
+    "Please seat all TSOs before the invisible usher starts charging admission.",
+    "Decorative assets left unattended may become load-bearing rumors.",
+    "An unassigned sign can still point somewhere, but the track crew would prefer it did not improvise.",
+    "The landscape crew recommends a place for everything and everything not clipping through a wall.",
+    "If a tree falls outside every list, the renderer may still hear the paperwork.",
 )
 from sg_viewer.services.tso_visibility_ranges import build_subsection_dlong_metadata
 
@@ -633,6 +632,7 @@ class TSOVisibilityReconcileDialog(QDialog):
 
 class TSOVisibilityTab(QWidget):
     selectedTSOsChanged = QtCore.pyqtSignal(tuple)
+    referencedObjectListTSOsChanged = QtCore.pyqtSignal(tuple)
     selectedTSOPillChanged = QtCore.pyqtSignal(object)
     selectedTrackSectionChanged = QtCore.pyqtSignal(object)
     selectedTSOOrderChanged = QtCore.pyqtSignal(object)
@@ -880,6 +880,7 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
+        self.referencedObjectListTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
         self.objectListsChanged.emit()
@@ -895,6 +896,7 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
+        self.referencedObjectListTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
@@ -1184,6 +1186,7 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
         self.tso_list.clear()
         self.selectedTSOsChanged.emit(tuple())
+        self.referencedObjectListTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
@@ -1212,6 +1215,7 @@ class TSOVisibilityTab(QWidget):
         self.tso_filter_list.clearContents()
         self.tso_filter_list.setRowCount(0)
         self.selectedTSOsChanged.emit(tuple())
+        self.referencedObjectListTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
@@ -1222,6 +1226,7 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
         self.selectedTSOsChanged.emit(tuple())
+        self.referencedObjectListTSOsChanged.emit(tuple())
         self.selectedTSOPillChanged.emit(None)
         self.selectedTrackSectionChanged.emit(None)
         self.selectedTSOOrderChanged.emit({})
@@ -1797,6 +1802,7 @@ class TSOVisibilityTab(QWidget):
         if self.section_list.count() == 0:
             self.tso_list.clear()
             self.selectedTSOsChanged.emit(tuple())
+            self.referencedObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
@@ -1873,12 +1879,16 @@ class TSOVisibilityTab(QWidget):
         self.add_object_list_button.setEnabled(not self._is_detail_mode())
         if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
+            self.referencedObjectListTSOsChanged.emit(tuple())
             self.selectedTSOPillChanged.emit(None)
             self.selectedTrackSectionChanged.emit(None)
             self.selectedTSOOrderChanged.emit({})
             return
         self.selectedTSOsChanged.emit(
             tuple(item for item in active_lists[row].tso_ids if isinstance(item, int))
+        )
+        self.referencedObjectListTSOsChanged.emit(
+            self._referenced_object_list_tso_ids(active_lists[row])
         )
         selected_item = self.tso_list.currentItem()
         selected_tso_id = (
@@ -1897,6 +1907,42 @@ class TSOVisibilityTab(QWidget):
             "TSO visibility: _emit_selected_tsos %.3f ms",
             (perf_counter() - start) * 1000.0,
         )
+
+    def _referenced_object_list_tso_ids(
+        self, entry: Track3DObjectList | Track3DDetailList
+    ) -> tuple[int, ...]:
+        """Return TSOs reached through ObjectList pointers in *entry*.
+
+        References are followed recursively because track.3D permits an
+        ObjectList to point at another list which itself contains pointers.
+        Cycles and missing labels are safely ignored.
+        """
+        if isinstance(entry, Track3DDetailList):
+            return tuple()
+        by_label = {self._object_list_pointer(item): item for item in self.object_lists}
+        result: list[int] = []
+        seen_ids: set[int] = set()
+        visited_labels: set[str] = set()
+
+        def visit(label: str) -> None:
+            if label in visited_labels:
+                return
+            visited_labels.add(label)
+            referenced = by_label.get(label)
+            if referenced is None:
+                return
+            for item in referenced.tso_ids:
+                if isinstance(item, int):
+                    if item not in seen_ids:
+                        seen_ids.add(item)
+                        result.append(item)
+                elif isinstance(item, str) and item.startswith("ObjectList_"):
+                    visit(item)
+
+        for item in entry.tso_ids:
+            if isinstance(item, str) and item.startswith("ObjectList_"):
+                visit(item)
+        return tuple(result)
 
     def _on_tso_pill_selected(self, item: QListWidgetItem | None) -> None:
         row = self._find_object_list_index_for_current_selection()
@@ -2016,9 +2062,7 @@ class TSOVisibilityTab(QWidget):
         self.selectedTSOPillChanged.emit(None)
         self.selectedTSOsChanged.emit(
             tuple(
-                item
-                for item in self.object_lists[row].tso_ids
-                if isinstance(item, int)
+                item for item in self.object_lists[row].tso_ids if isinstance(item, int)
             )
         )
         self._emit_track_section_and_order(row)
@@ -2041,7 +2085,9 @@ class TSOVisibilityTab(QWidget):
             self._emit_object_lists_changed()
         self.tso_list.update_item_widths()
         self.selectedTSOPillChanged.emit(None)
-        self.selectedTSOsChanged.emit(tuple(item for item in active_lists[row].tso_ids if isinstance(item, int)))
+        self.selectedTSOsChanged.emit(
+            tuple(item for item in active_lists[row].tso_ids if isinstance(item, int))
+        )
         self._emit_track_section_and_order(row)
         self.populate_table()
 
@@ -2100,7 +2146,9 @@ class TSOVisibilityTab(QWidget):
             for entry in detail_lists
         )
 
-    def _on_save_detail_lists_to_track3d_requested(self, *, create_backup: bool = True) -> None:
+    def _on_save_detail_lists_to_track3d_requested(
+        self, *, create_backup: bool = True
+    ) -> None:
         if not self.detail_lists:
             QMessageBox.information(self, "Save DetailLists", "No DetailLists to save.")
             return

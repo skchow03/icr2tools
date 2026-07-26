@@ -414,9 +414,7 @@ def test_unassigned_tso_memo_has_twenty_random_flavor_messages() -> None:
 
     assert len(UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES) == 20
     assert "Department note:" in memo
-    assert any(
-        message in memo for message in UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES
-    )
+    assert any(message in memo for message in UNASSIGNED_TSO_MEMO_FLAVOR_MESSAGES)
 
 
 def test_add_object_list_dialog_inserts_reorderable_pointer(monkeypatch) -> None:
@@ -461,3 +459,21 @@ def test_add_object_list_dialog_can_insert_after_selected_tso(monkeypatch) -> No
     tab.add_object_list_button.click()
 
     assert tab.object_lists[0].tso_ids == [38, "ObjectList_L12_0", 39]
+
+
+def test_referenced_object_list_tsos_are_emitted_for_pink_viewport_highlight() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList("L", 3, 0, [38, "ObjectList_L12_0"]),
+            Track3DObjectList("L", 12, 0, [99, "ObjectList_R8_0"]),
+            Track3DObjectList("R", 8, 0, [100, 99]),
+        ]
+    )
+    referenced: list[tuple[int, ...]] = []
+    tab.referencedObjectListTSOsChanged.connect(referenced.append)
+
+    tab.section_list.setCurrentRow(0)
+
+    assert referenced[-1] == (99, 100)
