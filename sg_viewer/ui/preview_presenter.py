@@ -62,9 +62,11 @@ class PreviewPresenter:
 
         sg_preview_state = preview_painter.SgPreviewState(
             model=self._runtime.sg_preview_model,
-            transform=self._runtime.sg_preview_transform(self._context.widget_height())
-            if transform is not None
-            else None,
+            transform=(
+                self._runtime.sg_preview_transform(self._context.widget_height())
+                if transform is not None
+                else None
+            ),
             view_state=self._runtime.sg_preview_view_state,
             enabled=self._runtime.show_sg_fsects,
             show_mrk_notches=self._runtime.show_mrk_notches,
@@ -79,12 +81,17 @@ class PreviewPresenter:
             selected_section_index=selection.selected_section_index,
             tsd_lines=self._runtime.tsd_lines,
             tsd_palette=self._runtime.tsd_palette,
-            trackside_objects=self._runtime.trackside_objects if self._runtime.show_trackside_objects else (),
+            trackside_objects=(
+                self._runtime.trackside_objects
+                if self._runtime.show_trackside_objects
+                else ()
+            ),
             selected_trackside_object_index=self._runtime.selected_trackside_object_index,
             selected_trackside_object_indices=self._runtime.selected_trackside_object_indices,
             focused_trackside_object_index=self._runtime.focused_trackside_object_index,
             trackside_move_enabled_indices=self._runtime.trackside_move_enabled_indices,
             trackside_referenced_indices=self._runtime.trackside_referenced_indices,
+            trackside_ahead_indices=self._runtime.trackside_ahead_indices,
             trackside_order_labels=self._runtime.trackside_order_labels,
             section_geometry_version=self._runtime.section_geometry_version,
             tsd_lines_version=self._runtime.tsd_lines_version,
@@ -110,7 +117,9 @@ class PreviewPresenter:
                 track_opacity=self._runtime.track_opacity,
                 sampled_centerline=section_manager.sampled_centerline,
                 selected_section_points=(
-                    selection.selected_section_points if show_centerline_and_nodes else []
+                    selection.selected_section_points
+                    if show_centerline_and_nodes
+                    else []
                 ),
                 section_endpoints=section_manager.section_endpoints,
                 selected_section_index=selection.selected_section_index,
@@ -144,12 +153,13 @@ class PreviewPresenter:
                     if self._runtime.show_land_objects
                     else ()
                 ),
-                xsect_dlat=self._runtime.selected_xsect_dlat
-                if self._runtime.show_sg_fsects
-                else None,
+                xsect_dlat=(
+                    self._runtime.selected_xsect_dlat
+                    if self._runtime.show_sg_fsects
+                    else None
+                ),
                 show_xsect_dlat_line=(
-                    self._runtime.show_xsect_dlat_line
-                    and self._runtime.show_sg_fsects
+                    self._runtime.show_xsect_dlat_line and self._runtime.show_sg_fsects
                 ),
                 centerline_unselected_color=self._colors.centerline_unselected,
                 centerline_selected_color=self._colors.centerline_selected,
