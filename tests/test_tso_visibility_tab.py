@@ -433,9 +433,31 @@ def test_add_object_list_dialog_inserts_reorderable_pointer(monkeypatch) -> None
     monkeypatch.setattr(ObjectListPickerDialog, "exec_", lambda self: self.Accepted)
     tab.add_object_list_button.click()
 
-    assert tab.object_lists[0].tso_ids == [38, "ObjectList_L12_0"]
-    assert tab.tso_list.item(1).text() == "ObjectList_L12_0"
-    moved = tab.tso_list.takeItem(1)
-    tab.tso_list.insertItem(0, moved)
-    tab._on_tso_order_changed()
     assert tab.object_lists[0].tso_ids == ["ObjectList_L12_0", 38]
+    assert tab.tso_list.item(0).text() == "ObjectList_L12_0"
+    moved = tab.tso_list.takeItem(0)
+    tab.tso_list.insertItem(1, moved)
+    tab._on_tso_order_changed()
+    assert tab.object_lists[0].tso_ids == [38, "ObjectList_L12_0"]
+
+
+def test_add_object_list_dialog_can_insert_after_selected_tso(monkeypatch) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [
+            Track3DObjectList("L", 3, 0, [38, 39]),
+            Track3DObjectList("L", 12, 0, [99]),
+        ]
+    )
+    tab.section_list.setCurrentRow(0)
+    tab.tso_list.setCurrentRow(0)
+
+    def accept_after_selection(dialog) -> int:
+        dialog.add_after_selection_radio.setChecked(True)
+        return dialog.Accepted
+
+    monkeypatch.setattr(ObjectListPickerDialog, "exec_", accept_after_selection)
+    tab.add_object_list_button.click()
+
+    assert tab.object_lists[0].tso_ids == [38, "ObjectList_L12_0", 39]

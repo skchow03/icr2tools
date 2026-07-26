@@ -22,6 +22,7 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPushButton,
+    QRadioButton,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -189,6 +190,14 @@ class ObjectListPickerDialog(QDialog):
             self.object_list_widget.setCurrentRow(0)
         self.object_list_widget.itemDoubleClicked.connect(lambda _item: self.accept())
         layout.addWidget(self.object_list_widget)
+        layout.addWidget(QLabel("Add to visible TSOs list:"))
+        self.add_to_top_radio = QRadioButton("Top")
+        self.add_after_selection_radio = QRadioButton(
+            "After selected TSO (or at the bottom if none is selected)"
+        )
+        self.add_to_top_radio.setChecked(True)
+        layout.addWidget(self.add_to_top_radio)
+        layout.addWidget(self.add_after_selection_radio)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -198,6 +207,9 @@ class ObjectListPickerDialog(QDialog):
     def selected_label(self) -> str | None:
         item = self.object_list_widget.currentItem()
         return item.text() if item is not None else None
+
+    def add_to_top(self) -> bool:
+        return self.add_to_top_radio.isChecked()
 
 
 class TrackSectionListWidget(QTableWidget):
@@ -1989,12 +2001,14 @@ class TSOVisibilityTab(QWidget):
         if not label:
             return
 
-        insert_index = len(self.object_lists[row].tso_ids)
-        selected_pill = self.tso_list.currentItem()
-        if selected_pill is not None:
-            selected_row = self.tso_list.row(selected_pill)
-            if selected_row >= 0:
-                insert_index = selected_row + 1
+        insert_index = 0
+        if not dialog.add_to_top():
+            insert_index = len(self.object_lists[row].tso_ids)
+            selected_pill = self.tso_list.currentItem()
+            if selected_pill is not None:
+                selected_row = self.tso_list.row(selected_pill)
+                if selected_row >= 0:
+                    insert_index = selected_row + 1
         self.object_lists[row].tso_ids.insert(insert_index, label)
         self._emit_object_lists_changed()
         self._refresh_current_tso_list()
