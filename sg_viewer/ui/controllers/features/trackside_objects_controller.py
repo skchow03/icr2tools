@@ -150,6 +150,9 @@ class TracksideObjectsController:
         w.tso_visibility_sidebar.selectedTSOsChanged.connect(
             h._on_tso_visibility_row_selected
         )
+        w.tso_visibility_sidebar.referencedObjectListTSOsChanged.connect(
+            h._on_tso_visibility_referenced_list_selected
+        )
         w.tso_visibility_sidebar.selectedTSOPillChanged.connect(
             h._on_tso_visibility_pill_selected
         )
@@ -313,6 +316,13 @@ class TracksideObjectsController:
             tuple(selected_indices)
         )
         self._apply_trackside_drag_scope()
+
+    def _on_tso_visibility_referenced_list_selected(
+        self, tso_ids: tuple[int, ...]
+    ) -> None:
+        if not self._is_tso_visibility_tab_active():
+            return
+        self._window.preview.set_trackside_referenced_indices(tuple(tso_ids))
 
     def _on_tso_visibility_pill_selected(self, tso_id: int | None) -> None:
         self._window.preview.set_focused_trackside_object_index(tso_id)
@@ -1625,9 +1635,7 @@ class TracksideObjectsController:
                 value_spin.setEnabled(True)
             else:
                 value_spin.setEnabled(False)
-            adjust_sprite_elevation_checkbox.setEnabled(
-                set_boundary_radio.isChecked()
-            )
+            adjust_sprite_elevation_checkbox.setEnabled(set_boundary_radio.isChecked())
 
         raise_lower_radio.toggled.connect(_sync_value_input)
         set_absolute_radio.toggled.connect(_sync_value_input)
@@ -1675,10 +1683,7 @@ class TracksideObjectsController:
                         skipped_boundary_matches += 1
                         continue
                     z_value = int(boundary_elevation)
-                    if (
-                        adjust_sprite_elevation_checkbox.isChecked()
-                        and obj.is_sprite
-                    ):
+                    if adjust_sprite_elevation_checkbox.isChecked() and obj.is_sprite:
                         z_value += max(0, int(obj.sprite_width)) // 2
                 if obj.z == z_value:
                     continue

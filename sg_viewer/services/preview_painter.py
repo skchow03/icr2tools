@@ -166,6 +166,7 @@ class SgPreviewState:
     selected_trackside_object_indices: tuple[int, ...] = ()
     focused_trackside_object_index: int | None = None
     trackside_move_enabled_indices: tuple[int, ...] = ()
+    trackside_referenced_indices: tuple[int, ...] = ()
     trackside_order_labels: tuple[tuple[int, int], ...] = ()
     section_geometry_version: int = 0
     tsd_lines_version: int = 0
@@ -279,6 +280,7 @@ def paint_preview(
                 selected_indices=sg_preview_state.selected_trackside_object_indices,
                 focused_index=sg_preview_state.focused_trackside_object_index,
                 move_enabled_indices=sg_preview_state.trackside_move_enabled_indices,
+                referenced_indices=sg_preview_state.trackside_referenced_indices,
                 order_labels=sg_preview_state.trackside_order_labels,
                 default_color=sg_preview_state.tso_box_default_color,
                 selected_color=sg_preview_state.tso_box_selected_color,
@@ -1148,6 +1150,7 @@ def _draw_trackside_objects(
     selected_indices: tuple[int, ...],
     focused_index: int | None,
     move_enabled_indices: tuple[int, ...],
+    referenced_indices: tuple[int, ...],
     order_labels: tuple[tuple[int, int], ...],
     default_color: QtGui.QColor,
     selected_color: QtGui.QColor,
@@ -1155,6 +1158,7 @@ def _draw_trackside_objects(
     pivot_color: QtGui.QColor,
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
+    referenced_index_set = set(int(i) for i in referenced_indices)
     selected_index_set = set(int(i) for i in selected_indices)
     if selected_index is not None:
         selected_index_set.add(int(selected_index))
@@ -1164,6 +1168,7 @@ def _draw_trackside_objects(
         half_length = max(0.0, float(getattr(obj, "bbox_length", 0.0)) * 0.5)
         half_width = max(0.0, float(getattr(obj, "bbox_width", 0.0)) * 0.5)
         is_highlighted = index in highlighted_indices
+        is_referenced = index in referenced_index_set
         is_selected = index in selected_index_set
         is_focused = focused_index is not None and index == int(focused_index)
         color = (
@@ -1173,15 +1178,21 @@ def _draw_trackside_objects(
                 QtGui.QColor(selected_color)
                 if is_selected
                 else (
-                    QtGui.QColor(highlighted_color)
-                    if is_highlighted
-                    else QtGui.QColor(default_color)
+                    QtGui.QColor("#FF69B4")
+                    if is_referenced
+                    else (
+                        QtGui.QColor(highlighted_color)
+                        if is_highlighted
+                        else QtGui.QColor(default_color)
+                    )
                 )
             )
         )
         painter.save()
         painter.setPen(
-            QtGui.QPen(color, 2.0 if (is_highlighted or is_selected) else 1.25)
+            QtGui.QPen(
+                color, 2.0 if (is_highlighted or is_referenced or is_selected) else 1.25
+            )
         )
         painter.setBrush(QtCore.Qt.NoBrush)
 
