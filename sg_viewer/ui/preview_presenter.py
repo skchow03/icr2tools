@@ -169,6 +169,7 @@ class PreviewPresenter:
                 radii_selected_color=self._colors.radii_selected,
                 xsect_dlat_line_color=self._colors.xsect_dlat_line,
                 integrity_boundary_violation_points=self._runtime.integrity_boundary_violation_points,
+                hi_detail_section_ranges=self._runtime.hi_detail_section_ranges,
                 show_centerline_and_nodes=show_centerline_and_nodes,
             ),
             preview_painter.CreationOverlayState(

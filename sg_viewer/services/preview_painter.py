@@ -111,6 +111,7 @@ class BasePreviewState:
     radii_selected_color: QtGui.QColor
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
+    hi_detail_section_ranges: tuple[tuple[int, int, float, float], ...] = ()
     show_centerline_and_nodes: bool = True
     land_object_vertex_points: tuple[Point, ...] = ()
 
@@ -339,6 +340,14 @@ def paint_preview(
             transform,
             widget_height,
         )
+        if base_state.hi_detail_section_ranges:
+            _draw_hi_detail_section_dividers(
+                painter,
+                base_state.hi_detail_section_ranges,
+                list(base_state.sections),
+                transform,
+                widget_height,
+            )
         if sg_preview_state and sg_preview_state.show_tsd_lines:
             _draw_tsd_lines(
                 painter,
@@ -427,6 +436,49 @@ def _draw_center_crosshair(
         center.x(),
         center.y() + crosshair_half_size_px,
     )
+    painter.restore()
+
+
+def _draw_hi_detail_section_dividers(
+    painter: QtGui.QPainter,
+    ranges: tuple[tuple[int, int, float, float], ...],
+    sections: list[SectionPreview],
+    transform: Transform,
+    widget_height: int,
+) -> None:
+    """Draw catalog HI subsection boundaries across the track centerline."""
+    track_length = sum(max(0.0, float(section.length)) for section in sections)
+    if track_length <= 0.0:
+        return
+    lookup = build_dlong_section_lookup(sections, track_length)
+    half_width = 60000.0
+    painter.save()
+    painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
+    pen = QtGui.QPen(QtGui.QColor("#00E5FF"), 2.0)
+    pen.setCosmetic(True)
+    painter.setPen(pen)
+    painter.setBrush(QtCore.Qt.NoBrush)
+    drawn: set[tuple[int, int, float]] = set()
+    for section, subsection, start, end in ranges:
+        for boundary, is_start in ((start, True), (end, False)):
+            key = (section, subsection, boundary)
+            if key in drawn:
+                continue
+            drawn.add(key)
+            left = _point_on_track_at_dlong(
+                sections, boundary, -half_width, track_length, lookup
+            )
+            right = _point_on_track_at_dlong(
+                sections, boundary, half_width, track_length, lookup
+            )
+            if left is None or right is None:
+                continue
+            mapped_left = sg_rendering.map_point(*left, transform, widget_height)
+            mapped_right = sg_rendering.map_point(*right, transform, widget_height)
+            painter.drawLine(mapped_left, mapped_right)
+            if is_start:
+                label = f"{section}.{subsection} HI"
+                painter.drawText(mapped_right + QtCore.QPointF(4.0, -3.0), label)
     painter.restore()
 
 
