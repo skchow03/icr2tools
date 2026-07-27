@@ -112,6 +112,7 @@ class BasePreviewState:
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
     hi_detail_section_ranges: tuple[tuple[int, int, float, float], ...] = ()
+    track_dlat_bounds: tuple[float, float] | None = None
     show_centerline_and_nodes: bool = True
     land_object_vertex_points: tuple[Point, ...] = ()
 
@@ -347,6 +348,7 @@ def paint_preview(
                 list(base_state.sections),
                 transform,
                 widget_height,
+                base_state.track_dlat_bounds,
             )
         if sg_preview_state and sg_preview_state.show_tsd_lines:
             _draw_tsd_lines(
@@ -445,13 +447,14 @@ def _draw_hi_detail_section_dividers(
     sections: list[SectionPreview],
     transform: Transform,
     widget_height: int,
+    track_dlat_bounds: tuple[float, float] | None = None,
 ) -> None:
     """Draw catalog HI subsection boundaries across the track centerline."""
     track_length = sum(max(0.0, float(section.length)) for section in sections)
     if track_length <= 0.0:
         return
     lookup = build_dlong_section_lookup(sections, track_length)
-    half_width = 60000.0
+    left_dlat, right_dlat = track_dlat_bounds or (-60000.0, 60000.0)
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     pen = QtGui.QPen(QtGui.QColor("#00E5FF"), 2.0)
@@ -466,10 +469,10 @@ def _draw_hi_detail_section_dividers(
                 continue
             drawn.add(key)
             left = _point_on_track_at_dlong(
-                sections, boundary, -half_width, track_length, lookup
+                sections, boundary, left_dlat, track_length, lookup
             )
             right = _point_on_track_at_dlong(
-                sections, boundary, half_width, track_length, lookup
+                sections, boundary, right_dlat, track_length, lookup
             )
             if left is None or right is None:
                 continue
