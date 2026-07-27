@@ -420,8 +420,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_objects_table.setSelectionMode(
             QtWidgets.QAbstractItemView.SingleSelection
         )
-        self._land_points_table = QtWidgets.QTableWidget(0, 5)
-        self._land_points_table.setHorizontalHeaderLabels(["#", "X", "Y", "Z", ""])
+        self._land_points_table = QtWidgets.QTableWidget(0, 6)
+        self._land_points_table.setHorizontalHeaderLabels(
+            ["#", "X (ft)", "Y (ft)", "Z (ft)", "", ""]
+        )
         self._land_points_table.horizontalHeader().setSectionResizeMode(
             QtWidgets.QHeaderView.ResizeToContents
         )
@@ -4516,6 +4518,59 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _draw_land_objects_tab_active(self) -> bool:
         return self.active_sidebar_tab_name() == "Draw land objects"
 
+    def _update_land_points_table_headers(self) -> None:
+        unit_label = measurement_unit_label(self._current_measurement_unit())
+        self._land_points_table.setHorizontalHeaderLabels(
+            ["#", f"X ({unit_label})", f"Y ({unit_label})", f"Z ({unit_label})", "", ""]
+        )
+
+    def _format_land_point_value(self, value_500ths: float) -> str:
+        unit = self._current_measurement_unit()
+        value = units_from_500ths(float(value_500ths), unit)
+        if unit == "500ths":
+            return f"{value:.1f}".rstrip("0").rstrip(".")
+        decimals = max(4, measurement_unit_decimals(unit))
+        return f"{value:.{decimals}f}".rstrip("0").rstrip(".")
+
+    def _land_point_value_500ths(self, text: str, *, unit: str | None = None) -> float:
+        return float(
+            units_to_500ths(float(text), unit or self._current_measurement_unit())
+        )
+
+    def _auto_set_land_point_height(self, row: int) -> None:
+        if row < 0 or row >= self._land_points_table.rowCount():
+            return
+        x_item = self._land_points_table.item(row, 1)
+        y_item = self._land_points_table.item(row, 2)
+        if x_item is None or y_item is None:
+            return
+        try:
+            track_point = (
+                self._land_point_value_500ths(x_item.text()),
+                self._land_point_value_500ths(y_item.text()),
+            )
+        except ValueError:
+            self.show_status_message(
+                "Enter valid X and Y values before setting height."
+            )
+            return
+        boundary_sample = self._nearest_boundary_sample(track_point)
+        if boundary_sample is None or boundary_sample[2] is None:
+            self.show_status_message(
+                "Could not find a track boundary elevation for this point."
+            )
+            return
+        self._land_points_table.setItem(
+            row,
+            3,
+            QtWidgets.QTableWidgetItem(
+                self._format_land_point_value(boundary_sample[2])
+            ),
+        )
+        self.show_status_message(
+            f"Set point {row} height from the closest track boundary."
+        )
+
     def _append_land_point_from_track(self, track_point: tuple[float, float]) -> None:
         boundary_sample = self._nearest_boundary_sample(track_point)
         z_value = boundary_sample[2] if boundary_sample is not None else None
@@ -4523,23 +4578,32 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.insertRow(row)
         self._land_points_table.setItem(row, 0, QtWidgets.QTableWidgetItem(str(row)))
         self._land_points_table.setItem(
-            row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}")
+            row,
+            1,
+            QtWidgets.QTableWidgetItem(self._format_land_point_value(track_point[0])),
         )
         self._land_points_table.setItem(
-            row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}")
+            row,
+            2,
+            QtWidgets.QTableWidgetItem(self._format_land_point_value(track_point[1])),
         )
         self._land_points_table.setItem(
             row,
             3,
             QtWidgets.QTableWidgetItem(
-                "" if z_value is None else f"{float(z_value):.1f}"
+                "" if z_value is None else self._format_land_point_value(z_value)
             ),
         )
+        auto_height_button = QtWidgets.QPushButton("Auto set height")
+        auto_height_button.clicked.connect(
+            lambda _checked=False, r=row: self._auto_set_land_point_height(r)
+        )
+        self._land_points_table.setCellWidget(row, 4, auto_height_button)
         delete_button = QtWidgets.QPushButton("Delete")
         delete_button.clicked.connect(
             lambda _checked=False, r=row: self._delete_land_point_row(r)
         )
-        self._land_points_table.setCellWidget(row, 4, delete_button)
+        self._land_points_table.setCellWidget(row, 5, delete_button)
         self._sync_land_points_overlay()
         self._persist_selected_land_object()
 
@@ -4556,7 +4620,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_points_table.setItem(
                 row, 0, QtWidgets.QTableWidgetItem(str(row))
             )
-            widget = self._land_points_table.cellWidget(row, 4)
+            auto_widget = self._land_points_table.cellWidget(row, 4)
+            if isinstance(auto_widget, QtWidgets.QPushButton):
+                try:
+                    auto_widget.clicked.disconnect()
+                except TypeError:
+                    pass
+                auto_widget.clicked.connect(
+                    lambda _checked=False, r=row: self._auto_set_land_point_height(r)
+                )
+            widget = self._land_points_table.cellWidget(row, 5)
             if isinstance(widget, QtWidgets.QPushButton):
                 try:
                     widget.clicked.disconnect()
@@ -4574,7 +4647,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if x_item is None or y_item is None:
                 continue
             try:
-                selected_points.append((float(x_item.text()), float(y_item.text())))
+                selected_points.append(
+                    (
+                        self._land_point_value_500ths(x_item.text()),
+                        self._land_point_value_500ths(y_item.text()),
+                    )
+                )
             except ValueError:
                 continue
         self._preview.set_land_object_vertex_points_overlay(
@@ -4594,7 +4672,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if x_item is None or y_item is None:
                 continue
             try:
-                selected_points.append((float(x_item.text()), float(y_item.text())))
+                selected_points.append(
+                    (
+                        self._land_point_value_500ths(x_item.text()),
+                        self._land_point_value_500ths(y_item.text()),
+                    )
+                )
             except ValueError:
                 continue
         self._preview.set_land_object_vertex_points_overlay(tuple(selected_points))
@@ -4974,13 +5057,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             x_item = self._land_points_table.item(row, 1)
             y_item = self._land_points_table.item(row, 2)
             z_item = self._land_points_table.item(row, 3)
-            points.append(
-                (
-                    "" if x_item is None else x_item.text(),
-                    "" if y_item is None else y_item.text(),
-                    "" if z_item is None else z_item.text(),
-                )
-            )
+            raw_values: list[str] = []
+            for item in (x_item, y_item, z_item):
+                text = "" if item is None else item.text().strip()
+                if not text:
+                    raw_values.append("")
+                    continue
+                try:
+                    raw_values.append(f"{self._land_point_value_500ths(text):g}")
+                except ValueError:
+                    raw_values.append(text)
+            points.append(tuple(raw_values))
         polygons: list[tuple[str, str, str, str]] = []
         for row in range(self._land_polygons_table.rowCount()):
             points_item = self._land_polygons_table.item(row, 0)
@@ -5115,19 +5202,38 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 point_row, 0, QtWidgets.QTableWidgetItem(str(point_row))
             )
             self._land_points_table.setItem(
-                point_row, 1, QtWidgets.QTableWidgetItem(str(x_text))
+                point_row,
+                1,
+                QtWidgets.QTableWidgetItem(
+                    self._format_land_point_value(float(x_text))
+                ),
             )
             self._land_points_table.setItem(
-                point_row, 2, QtWidgets.QTableWidgetItem(str(y_text))
+                point_row,
+                2,
+                QtWidgets.QTableWidgetItem(
+                    self._format_land_point_value(float(y_text))
+                ),
             )
             self._land_points_table.setItem(
-                point_row, 3, QtWidgets.QTableWidgetItem(str(z_text))
+                point_row,
+                3,
+                QtWidgets.QTableWidgetItem(
+                    ""
+                    if str(z_text).strip() == ""
+                    else self._format_land_point_value(float(z_text))
+                ),
             )
+            auto_height_button = QtWidgets.QPushButton("Auto set height")
+            auto_height_button.clicked.connect(
+                lambda _checked=False, r=point_row: self._auto_set_land_point_height(r)
+            )
+            self._land_points_table.setCellWidget(point_row, 4, auto_height_button)
             delete_button = QtWidgets.QPushButton("Delete")
             delete_button.clicked.connect(
                 lambda _checked=False, r=point_row: self._delete_land_point_row(r)
             )
-            self._land_points_table.setCellWidget(point_row, 4, delete_button)
+            self._land_points_table.setCellWidget(point_row, 5, delete_button)
         self._land_polygons_table.setRowCount(0)
         for polygon_row, polygon_data in enumerate(polygons):
             point_list_text = polygon_data[0] if len(polygon_data) > 0 else ""
@@ -5559,8 +5665,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             if x_item is None or y_item is None:
                 continue
             try:
-                px = float(x_item.text())
-                py = float(y_item.text())
+                px = self._land_point_value_500ths(x_item.text())
+                py = self._land_point_value_500ths(y_item.text())
             except ValueError:
                 continue
             distance_sq = (px - track_point[0]) ** 2 + (py - track_point[1]) ** 2
@@ -5574,10 +5680,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             return
         self._land_points_table.blockSignals(True)
         self._land_points_table.setItem(
-            row, 1, QtWidgets.QTableWidgetItem(f"{float(track_point[0]):.1f}")
+            row,
+            1,
+            QtWidgets.QTableWidgetItem(self._format_land_point_value(track_point[0])),
         )
         self._land_points_table.setItem(
-            row, 2, QtWidgets.QTableWidgetItem(f"{float(track_point[1]):.1f}")
+            row,
+            2,
+            QtWidgets.QTableWidgetItem(self._format_land_point_value(track_point[1])),
         )
         self._land_points_table.blockSignals(False)
         self._sync_land_points_overlay()
@@ -5919,6 +6029,23 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _on_measurement_units_changed(self) -> None:
         previous_unit = self._measurement_unit_data
         self._measurement_unit_data = str(self._measurement_units_combo.currentData())
+        signals_blocked = self._land_points_table.blockSignals(True)
+        try:
+            for row in range(self._land_points_table.rowCount()):
+                for column in (1, 2, 3):
+                    item = self._land_points_table.item(row, column)
+                    if item is None or not item.text().strip():
+                        continue
+                    try:
+                        value_500ths = self._land_point_value_500ths(
+                            item.text(), unit=previous_unit
+                        )
+                    except ValueError:
+                        continue
+                    item.setText(self._format_land_point_value(value_500ths))
+        finally:
+            self._land_points_table.blockSignals(signals_blocked)
+        self._update_land_points_table_headers()
         self._sync_altitude_range_spin_units(previous_unit)
         self._sync_pitwall_height_spin_units(previous_unit)
         self.update_xsect_table_headers()

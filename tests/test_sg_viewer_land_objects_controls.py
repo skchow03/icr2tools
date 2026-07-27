@@ -299,3 +299,66 @@ def test_paint_preview_draws_land_objects_before_tsos(qapp, monkeypatch):
 
     assert calls.index("land_polygons") < calls.index("tsos")
     assert calls.index("land_points") < calls.index("tsos")
+
+
+def test_land_points_table_uses_selected_measurement_unit_and_preserves_500ths(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("6000", "12000", "3000")],
+                    "polygons": [],
+                }
+            ]
+        )
+        displayed = [
+            window._land_points_table.item(0, column).text()
+            for column in (1, 2, 3)
+        ]
+        assert displayed == ["1", "2", "0.5"]
+        assert window._land_points_table.horizontalHeaderItem(1).text() == "X (ft)"
+
+        meter_index = window.measurement_units_combo.findData("meter")
+        window.measurement_units_combo.setCurrentIndex(meter_index)
+        assert window._land_points_table.horizontalHeaderItem(1).text() == "X (m)"
+        assert float(window._land_points_table.item(0, 1).text()) == pytest.approx(
+            0.3048
+        )
+        assert window.serialize_land_objects()[0]["points"] == [
+            ("6000", "12000", "3000")
+        ]
+    finally:
+        window.close()
+
+
+def test_land_point_auto_set_height_uses_closest_boundary(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("6000", "12000", "0")],
+                    "polygons": [],
+                }
+            ]
+        )
+        calls = []
+
+        def nearest(track_point):
+            calls.append(track_point)
+            return (1, 0.0, 9000.0)
+
+        monkeypatch.setattr(window, "_nearest_boundary_sample", nearest)
+        button = window._land_points_table.cellWidget(0, 4)
+        assert isinstance(button, QtWidgets.QPushButton)
+        assert button.text() == "Auto set height"
+        button.click()
+
+        assert calls == [(6000.0, 12000.0)]
+        assert window._land_points_table.item(0, 3).text() == "1.5"
+        assert window.serialize_land_objects()[0]["points"][0][2] == "9000"
+    finally:
+        window.close()
