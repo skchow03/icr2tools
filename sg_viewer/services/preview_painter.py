@@ -15,6 +15,7 @@ from sg_viewer.model.dlong_mapping import (
     dlong_to_section_position,
 )
 from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.model.preview_state import SgPreviewModel, SgPreviewViewState
 from sg_viewer.preview.render_state import split_nodes_by_status
 from sg_viewer.preview.transform import ViewTransform
@@ -112,7 +113,7 @@ class BasePreviewState:
     xsect_dlat_line_color: QtGui.QColor
     integrity_boundary_violation_points: tuple[Point, ...]
     hi_detail_section_ranges: tuple[tuple[int, int, float, float], ...] = ()
-    track_dlat_bounds: tuple[float, float] | None = None
+    fsections_by_section: tuple[tuple[PreviewFSection, ...], ...] = ()
     show_centerline_and_nodes: bool = True
     land_object_vertex_points: tuple[Point, ...] = ()
 
@@ -348,7 +349,7 @@ def paint_preview(
                 list(base_state.sections),
                 transform,
                 widget_height,
-                base_state.track_dlat_bounds,
+                base_state.fsections_by_section,
             )
         if sg_preview_state and sg_preview_state.show_tsd_lines:
             _draw_tsd_lines(
@@ -447,14 +448,13 @@ def _draw_hi_detail_section_dividers(
     sections: list[SectionPreview],
     transform: Transform,
     widget_height: int,
-    track_dlat_bounds: tuple[float, float] | None = None,
+    fsections_by_section: tuple[tuple[PreviewFSection, ...], ...] = (),
 ) -> None:
     """Draw catalog HI subsection boundaries across the track centerline."""
     track_length = sum(max(0.0, float(section.length)) for section in sections)
     if track_length <= 0.0:
         return
     lookup = build_dlong_section_lookup(sections, track_length)
-    left_dlat, right_dlat = track_dlat_bounds or (-60000.0, 60000.0)
     painter.save()
     painter.setRenderHint(QtGui.QPainter.Antialiasing, True)
     pen = QtGui.QPen(QtGui.QColor("#00E5FF"), 2.0)
@@ -468,6 +468,22 @@ def _draw_hi_detail_section_dividers(
             if key in drawn:
                 continue
             drawn.add(key)
+            position = dlong_to_section_position(
+                sections, boundary, track_length, lookup
+            )
+            if position is None or position.section_index >= len(fsections_by_section):
+                continue
+            fsections = fsections_by_section[position.section_index]
+            if not fsections:
+                continue
+            progress = position.fraction
+            boundary_offsets = [
+                float(fsection.start_dlat)
+                + (float(fsection.end_dlat) - float(fsection.start_dlat)) * progress
+                for fsection in fsections
+            ]
+            left_dlat = min(boundary_offsets)
+            right_dlat = max(boundary_offsets)
             left = _point_on_track_at_dlong(
                 sections, boundary, left_dlat, track_length, lookup
             )

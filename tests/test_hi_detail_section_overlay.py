@@ -1,4 +1,8 @@
+from types import SimpleNamespace
+
 from sg_viewer.model.sg_model import SectionPreview
+from sg_viewer.model.preview_fsection import PreviewFSection
+from sg_viewer.preview.runtime import PreviewRuntime
 from sg_viewer.services import preview_painter
 
 
@@ -25,7 +29,7 @@ class _Painter:
         pass
 
 
-def test_hi_detail_dividers_span_outermost_track_cross_sections(monkeypatch):
+def test_hi_detail_dividers_interpolate_outermost_fsection_boundaries(monkeypatch):
     section = SectionPreview(
         section_id=0,
         source_section_id=0,
@@ -59,13 +63,39 @@ def test_hi_detail_dividers_span_outermost_track_cross_sections(monkeypatch):
         lambda x, y, _transform, _height: preview_painter.QtCore.QPointF(x, y),
     )
 
+    fsections = (
+        (
+            PreviewFSection(-100.0, -300.0, 0, 0),
+            PreviewFSection(25.0, 50.0, 1, 0),
+            PreviewFSection(400.0, 200.0, 2, 0),
+        ),
+    )
+
     preview_painter._draw_hi_detail_section_dividers(
         _Painter(),
-        ((1, 2, 100.0, 200.0),),
+        ((1, 2, 250.0, 750.0),),
         [section],
         (1.0, (0.0, 0.0)),
         500,
-        (-275000.0, 410000.0),
+        fsections,
     )
 
-    assert requested_dlats == [-275000.0, 410000.0, -275000.0, 410000.0]
+    assert requested_dlats == [-150.0, 350.0, -250.0, 250.0]
+
+
+def test_runtime_exposes_fsections_instead_of_extreme_xsect_dlats():
+    runtime = PreviewRuntime.__new__(PreviewRuntime)
+    runtime._document = SimpleNamespace(
+        sg_data=SimpleNamespace(xsect_dlats=[-999999.0, 888888.0])
+    )
+    runtime._fsects_by_section = [
+        [PreviewFSection(-100.0, -300.0, 0, 0), PreviewFSection(400.0, 200.0, 0, 0)]
+    ]
+
+    assert runtime.preview_fsections_by_section == (
+        (
+            PreviewFSection(-100.0, -300.0, 0, 0),
+            PreviewFSection(400.0, 200.0, 0, 0),
+        ),
+    )
+    assert not hasattr(runtime, "track_dlat_bounds")

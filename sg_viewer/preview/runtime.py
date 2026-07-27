@@ -691,15 +691,9 @@ class PreviewRuntime(PreviewRuntimeOps):
         return self._hi_detail_section_ranges
 
     @property
-    def track_dlat_bounds(self) -> tuple[float, float] | None:
-        """Return the outermost SG cross-sections that define the track width."""
-        sg_data = self._document.sg_data
-        if sg_data is None:
-            return None
-        dlats = [float(value) for value in sg_data.xsect_dlats]
-        if not dlats:
-            return None
-        return min(dlats), max(dlats)
+    def preview_fsections_by_section(self) -> tuple[tuple[PreviewFSection, ...], ...]:
+        """Return the per-section boundary geometry used by the preview."""
+        return tuple(tuple(fsections) for fsections in self._fsects_by_section)
 
     def set_hi_detail_section_ranges(
         self, ranges: tuple[tuple[int, int, float, float], ...]
