@@ -501,6 +501,8 @@ class Track3DToolsController:
         if persist and self._current_path is not None:
             self._sg_settings_store.set_track3d_file(self._current_path, resolved)
         self._sync_tso_visibility_section_dlongs()
+        if self._window.hi_detail_sections_overlay_checkbox.isChecked():
+            self._host._on_hi_detail_sections_overlay_toggled(True)
 
     def _ensure_selected_track3d_file(self) -> Path | None:
         candidate = self._track3d_path_for_current_project()

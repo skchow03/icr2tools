@@ -77,6 +77,7 @@ from sg_viewer.io.track3d_parser import (
     parse_track3d_detail_list_dlong_ranges,
     parse_track3d_section_dlongs,
 )
+from sg_viewer.io.track3d_catalog import parse_track3d_catalog
 from sg_viewer.ui.controllers import (
     BackgroundController,
     BackgroundUiCoordinator,
@@ -1138,6 +1139,43 @@ class SGViewerController:
         tab_name = self._window.active_sidebar_tab_name() if current_index >= 0 else ""
         self._window.preview.set_show_trackside_objects(
             bool(checked) or tab_name in {"Objects", "TSO Visibility"}
+        )
+
+    def _on_hi_detail_sections_overlay_toggled(self, checked: bool) -> None:
+        if not checked:
+            self._window.preview.set_hi_detail_section_ranges(())
+            return
+        path = self._track3d_tools_controller._track3d_path_for_current_project()
+        if path is None:
+            self._window.hi_detail_sections_overlay_checkbox.setChecked(False)
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "HI detail sections",
+                "Select a track .3D file first.",
+            )
+            return
+        try:
+            catalog = parse_track3d_catalog(path)
+        except OSError as exc:
+            self._window.hi_detail_sections_overlay_checkbox.setChecked(False)
+            QtWidgets.QMessageBox.warning(
+                self._window, "HI detail sections", f"Could not read 3D file:\n{exc}"
+            )
+            return
+        ranges = tuple(
+            sorted(
+                {
+                    (face.section, face.subsection, face.dlong_start, face.dlong_end)
+                    for face in catalog.faces
+                    if face.lod == "HI"
+                    and face.dlong_start is not None
+                    and face.dlong_end is not None
+                }
+            )
+        )
+        self._window.preview.set_hi_detail_section_ranges(ranges)
+        self._window.show_status_message(
+            f"Showing {len(ranges)} HI detail section ranges from {path.name}."
         )
 
     def _on_centerline_nodes_toggled(self, _checked: bool) -> None:

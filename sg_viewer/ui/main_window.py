@@ -730,6 +730,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._trackside_objects_overlay_checkbox.setToolTip(
             "Show trackside object instances."
         )
+        self._hi_detail_sections_overlay_checkbox = QtWidgets.QCheckBox(
+            "Show all HI detail sections"
+        )
+        self._hi_detail_sections_overlay_checkbox.setChecked(False)
+        self._hi_detail_sections_overlay_checkbox.setToolTip(
+            "Show the start and end DLONG dividers for every HI subsection in the selected .3D file."
+        )
         self._background_brightness_spin = QtWidgets.QSpinBox()
         self._background_brightness_spin.setRange(-100, 100)
         self._background_brightness_spin.setValue(0)
@@ -1913,6 +1920,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._trackside_objects_overlay_checkbox
 
     @property
+    def hi_detail_sections_overlay_checkbox(self) -> QtWidgets.QCheckBox:
+        return self._hi_detail_sections_overlay_checkbox
+
+    @property
     def background_brightness_spin(self) -> QtWidgets.QSpinBox:
         return self._background_brightness_spin
 
@@ -2364,6 +2375,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addWidget(self._sg_fsects_checkbox)
         layout.addWidget(self._land_objects_overlay_checkbox)
         layout.addWidget(self._trackside_objects_overlay_checkbox)
+        layout.addWidget(self._hi_detail_sections_overlay_checkbox)
         layout.addWidget(self._background_image_checkbox)
         layout.addSpacing(8)
         layout.addStretch(1)

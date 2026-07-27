@@ -184,6 +184,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
         self._land_object_vertex_points_overlay: tuple[Point, ...] = ()
         self._show_land_objects = True
+        self._hi_detail_section_ranges: tuple[tuple[int, int, float, float], ...] = ()
 
 
         self._straight_creation = self._creation_controller.straight_interaction
@@ -683,6 +684,22 @@ class PreviewRuntime(PreviewRuntimeOps):
 
     def set_show_land_objects(self, visible: bool) -> None:
         self._show_land_objects = bool(visible)
+        self._context.request_repaint()
+
+    @property
+    def hi_detail_section_ranges(self) -> tuple[tuple[int, int, float, float], ...]:
+        return self._hi_detail_section_ranges
+
+    def set_hi_detail_section_ranges(
+        self, ranges: tuple[tuple[int, int, float, float], ...]
+    ) -> None:
+        normalized = tuple(
+            (int(section), int(subsection), float(start), float(end))
+            for section, subsection, start, end in ranges
+        )
+        if normalized == self._hi_detail_section_ranges:
+            return
+        self._hi_detail_section_ranges = normalized
         self._context.request_repaint()
 
     @property

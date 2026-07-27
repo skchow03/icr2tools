@@ -100,6 +100,9 @@ class SectionsController:
         window.centerline_nodes_checkbox.toggled.connect(host._on_centerline_nodes_toggled)
         window.land_objects_overlay_checkbox.toggled.connect(preview.set_show_land_objects)
         window.trackside_objects_overlay_checkbox.toggled.connect(host._on_trackside_objects_overlay_toggled)
+        window.hi_detail_sections_overlay_checkbox.toggled.connect(
+            host._on_hi_detail_sections_overlay_toggled
+        )
         window.right_sidebar_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)
         for feature_tabs in set(getattr(window, "_sidebar_feature_tabs", {}).values()):
             feature_tabs.currentChanged.connect(host._on_right_sidebar_tab_changed)
