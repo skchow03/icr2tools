@@ -4195,7 +4195,7 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         window.close()
 
 
-def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_width(
+def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_height(
     qapp, monkeypatch
 ):
     window = SGViewerWindow()
@@ -4215,6 +4215,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_width(
                 rotation_point="center",
                 is_sprite=True,
                 sprite_width=40,
+                sprite_height=70,
             ),
             TracksideObject(
                 filename="object",
@@ -4245,8 +4246,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_width(
         checkbox = next(
             checkbox
             for checkbox in dialog.findChildren(QtWidgets.QCheckBox)
-            if checkbox.text()
-            == "Adjust elevation of sprites based on sprite width"
+            if checkbox.text() == "Adjust elevation of sprites based on sprite height"
         )
         assert not checkbox.isEnabled()
         boundary_radio = next(
@@ -4264,7 +4264,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_width(
         assert apply_button is not None
         apply_button.click()
 
-        assert window.controller._trackside_objects[0].z == 143
+        assert window.controller._trackside_objects[0].z == 158
         assert window.controller._trackside_objects[1].z == 123
     finally:
         window.close()

@@ -34,7 +34,9 @@ def test_yaw_slider_emits_preview_update_and_close_resets_preview(qapp):
         )
         preview_updates: list[tuple[int, TracksideObject]] = []
         preview_ended = []
-        dialog.objectPreviewUpdated.connect(lambda row, updated: preview_updates.append((row, updated)))
+        dialog.objectPreviewUpdated.connect(
+            lambda row, updated: preview_updates.append((row, updated))
+        )
         dialog.previewEnded.connect(lambda: preview_ended.append(True))
 
         dialog.edit_object(4, obj)
@@ -71,7 +73,9 @@ def test_bbox_values_follow_current_measurement_unit(qapp):
             rotation_point="center",
         )
         updates: list[tuple[int, TracksideObject]] = []
-        dialog.objectUpdated.connect(lambda row, updated: updates.append((row, updated)))
+        dialog.objectUpdated.connect(
+            lambda row, updated: updates.append((row, updated))
+        )
 
         dialog.set_measurement_unit("feet")
         dialog.edit_object(0, obj)
@@ -93,7 +97,9 @@ def test_bbox_values_follow_current_measurement_unit(qapp):
         dialog.close()
 
 
-def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_apply_button(qapp):
+def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_apply_button(
+    qapp,
+):
     dialog = TracksideObjectAttributesDialog()
     try:
         assert (
@@ -106,6 +112,43 @@ def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_
         )
     finally:
         dialog.close()
+
+
+def test_related_pmp_sets_proportional_sprite_height(qapp, monkeypatch, tmp_path):
+    pmp_path = tmp_path / "banner.pmp"
+    pmp_path.write_bytes(bytes((40, 25)) + bytes(10))
+    dialog = TracksideObjectAttributesDialog()
+    try:
+        dialog.edit_object(
+            0,
+            TracksideObject(
+                filename="banner",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                is_sprite=True,
+                sprite_width=800,
+            ),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog,
+            "getOpenFileName",
+            lambda *_args, **_kwargs: (str(pmp_path), ""),
+        )
+
+        dialog._load_related_pmp()
+
+        assert dialog._pmp_bbox_label.text() == "PMP BBox: 40 px wide × 25 px high"
+        assert dialog._sprite_height_spin.value() == pytest.approx(500)
+        dialog._sprite_width_spin.setValue(1600)
+        assert dialog._sprite_height_spin.value() == pytest.approx(1000)
+        assert dialog._build_object_from_form().sprite_height == 1000
+    finally:
+        dialog.close()
+
 
 def test_track3d_bbox_import_converts_from_selected_source_unit(qapp):
     from sg_viewer.io.track3d_parser import Track3DBoundingBox

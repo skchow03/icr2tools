@@ -9,6 +9,14 @@ from PIL import Image, ImageFile, UnidentifiedImageError
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
 
+def read_pmp_bounding_box(path: str | Path) -> tuple[int, int]:
+    """Return the pixel width and height stored in a PMP bounding-box header."""
+    data = Path(path).read_bytes()
+    if len(data) < 12:
+        raise ValueError("File is too small to be a valid PMP.")
+    return data[0], data[1]
+
+
 def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:
     """Load an image as RGBA from disk with strict-to-tolerant decoding fallbacks."""
     data = src.read_bytes()
