@@ -32,6 +32,7 @@ class TracksideObject:
     rotation_point: str = ROTATION_POINT_CENTER
     is_sprite: bool = False
     sprite_width: int = 0
+    sprite_height: int = 0
 
     def to_objects_txt_line(self, index: int) -> str:
         return (
@@ -62,6 +63,7 @@ def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
         "rotation_point": normalize_rotation_point(obj.rotation_point),
         "is_sprite": bool(obj.is_sprite),
         "sprite_width": max(0, int(obj.sprite_width)),
+        "sprite_height": max(0, int(obj.sprite_height)),
     }
 
 
@@ -87,6 +89,7 @@ def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject
         sprite_width=max(
             0, int(payload.get("sprite_width", payload.get("bbox_width", 0)))
         ),
+        sprite_height=max(0, int(payload.get("sprite_height", 0))),
     )
 
 
