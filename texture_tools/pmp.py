@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from io import BytesIO
+import math
 from pathlib import Path
+from typing import TypedDict
 
 from PIL import Image, ImageFile, UnidentifiedImageError
 
@@ -9,12 +11,82 @@ from PIL import Image, ImageFile, UnidentifiedImageError
 DEFAULT_UNKNOWN_FIELD = bytes((0x1E, 0x00, 0x00, 0x00))
 
 
+class PMPBoundingBox(TypedDict):
+    bbox_width: int
+    bbox_height: int
+    bbox_left: int
+    bbox_top: int
+    bbox_right: int
+    bbox_bottom: int
+
+
+def signed_int8(value: int) -> int:
+    """Interpret *value* as an unsigned byte containing a signed int8."""
+    value = int(value)
+    if not 0 <= value <= 255:
+        raise ValueError("Signed int8 source must be in range 0..255.")
+    return value - 256 if value >= 128 else value
+
+
+def parse_pmp_header(data: bytes) -> PMPBoundingBox:
+    """Parse the 12-byte PMP header and return its half-open bounding box.
+
+    Some PMP variants encode a 256-pixel dimension as zero.  A non-empty run
+    payload distinguishes that representation from an empty sprite.
+    """
+    if len(data) < 12:
+        raise ValueError("Data is too small to contain a valid PMP header.")
+
+    run_length = int.from_bytes(data[4:8], "little")
+    has_run_data = run_length > 0 and len(data) > 12
+    width = 256 if data[0] == 0 and has_run_data else int(data[0])
+    height = 256 if data[1] == 0 and has_run_data else int(data[1])
+    left = -signed_int8(data[2])
+    top = -signed_int8(data[3])
+    return {
+        "bbox_width": width,
+        "bbox_height": height,
+        "bbox_left": left,
+        "bbox_top": top,
+        "bbox_right": left + width,
+        "bbox_bottom": top + height,
+    }
+
+
+def calculate_pmp_feet_per_pixel(
+    bbox_width: int, bbox_height: int, size_feet: float
+) -> float:
+    """Apply the empirical half-diagonal PMP scale hypothesis."""
+    if bbox_width <= 0 or bbox_height <= 0:
+        raise ValueError("PMP bounding-box dimensions must be positive.")
+    return (2.0 * float(size_feet)) / math.hypot(bbox_width, bbox_height)
+
+
+def calculate_pmp_ground_adjustment(
+    bbox_width: int,
+    bbox_height: int,
+    bbox_top: int,
+    size_feet: float,
+    anchor_y: float = 128.0,
+) -> float:
+    """Return the feet needed to put a PMP sprite's bottom on the ground."""
+    feet_per_pixel = calculate_pmp_feet_per_pixel(
+        bbox_width, bbox_height, size_feet
+    )
+    bbox_bottom = bbox_top + bbox_height
+    return (bbox_bottom - float(anchor_y)) * feet_per_pixel
+
+
 def read_pmp_bounding_box(path: str | Path) -> tuple[int, int]:
     """Return the pixel width and height stored in a PMP bounding-box header."""
     data = Path(path).read_bytes()
-    if len(data) < 12:
-        raise ValueError("File is too small to be a valid PMP.")
-    return data[0], data[1]
+    header = parse_pmp_header(data)
+    return header["bbox_width"], header["bbox_height"]
+
+
+def read_pmp_header(path: str | Path) -> PMPBoundingBox:
+    """Read and parse a PMP bounding-box header from disk."""
+    return parse_pmp_header(Path(path).read_bytes())
 
 
 def _load_rgba_image_with_tolerant_fallback(src: Path) -> Image.Image:

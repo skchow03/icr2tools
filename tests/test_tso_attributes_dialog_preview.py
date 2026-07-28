@@ -151,6 +151,8 @@ def test_related_pmp_records_bbox_height_without_showing_sprite_height(
         obj = dialog._build_object_from_form()
         assert obj is not None
         assert obj.pmp_bbox_height == 25
+        assert obj.pmp_bbox_width == 40
+        assert obj.pmp_bbox_top == 0
     finally:
         dialog.close()
 

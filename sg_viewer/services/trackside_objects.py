@@ -34,6 +34,8 @@ class TracksideObject:
     sprite_width: int = 0
     sprite_height: int = 0
     pmp_bbox_height: int = 0
+    pmp_bbox_width: int = 0
+    pmp_bbox_top: int = 0
 
     def to_objects_txt_line(self, index: int) -> str:
         return (
@@ -66,6 +68,8 @@ def trackside_object_to_payload(obj: TracksideObject) -> dict[str, object]:
         "sprite_width": max(0, int(obj.sprite_width)),
         "sprite_height": max(0, int(obj.sprite_height)),
         "pmp_bbox_height": max(0, int(obj.pmp_bbox_height)),
+        "pmp_bbox_width": max(0, int(obj.pmp_bbox_width)),
+        "pmp_bbox_top": int(obj.pmp_bbox_top),
     }
 
 
@@ -93,6 +97,8 @@ def trackside_object_from_payload(payload: dict[str, object]) -> TracksideObject
         ),
         sprite_height=max(0, int(payload.get("sprite_height", 0))),
         pmp_bbox_height=max(0, int(payload.get("pmp_bbox_height", 0))),
+        pmp_bbox_width=max(0, int(payload.get("pmp_bbox_width", 0))),
+        pmp_bbox_top=int(payload.get("pmp_bbox_top", 0)),
     )
 
 

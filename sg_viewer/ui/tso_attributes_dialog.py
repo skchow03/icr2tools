@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt5 import QtCore, QtWidgets
-from texture_tools.pmp import read_pmp_bounding_box
+from texture_tools.pmp import read_pmp_header
 
 from sg_viewer.io.track3d_parser import calculate_track3d_xy_bounding_box
 from sg_viewer.services.trackside_objects import (
@@ -52,6 +52,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._is_sprite_checkbox = QtWidgets.QCheckBox("Sprite object")
         self._sprite_width_spin = QtWidgets.QDoubleSpinBox()
         self._pmp_bbox_height = 0
+        self._pmp_bbox_width = 0
+        self._pmp_bbox_top = 0
         self._original_sprite_height = 0
         self._rotation_point_combo = QtWidgets.QComboBox()
 
@@ -226,6 +228,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         )
         self._original_sprite_height = max(0, int(obj.sprite_height))
         self._pmp_bbox_height = max(0, int(obj.pmp_bbox_height))
+        self._pmp_bbox_width = max(0, int(obj.pmp_bbox_width))
+        self._pmp_bbox_top = int(obj.pmp_bbox_top)
         self._pmp_bbox_label.setText(
             f"PMP BBox height: {self._pmp_bbox_height} px"
             if self._pmp_bbox_height
@@ -287,15 +291,19 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         if not path:
             return
         try:
-            bbox_width, bbox_height = read_pmp_bounding_box(path)
-            if bbox_width <= 0:
-                raise ValueError("PMP bounding-box width must be greater than zero.")
+            header = read_pmp_header(path)
+            bbox_width = header["bbox_width"]
+            bbox_height = header["bbox_height"]
+            if bbox_width <= 0 or bbox_height <= 0:
+                raise ValueError("PMP bounding-box dimensions must be positive.")
         except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self, "Load Related PMP", f"Could not read PMP bounding box:\n{exc}"
             )
             return
         self._pmp_bbox_height = int(bbox_height)
+        self._pmp_bbox_width = int(bbox_width)
+        self._pmp_bbox_top = int(header["bbox_top"])
         self._pmp_bbox_label.setText(
             f"PMP BBox: {bbox_width} px wide × {bbox_height} px high"
         )
@@ -428,6 +436,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             ),
             sprite_height=self._original_sprite_height,
             pmp_bbox_height=self._pmp_bbox_height,
+            pmp_bbox_width=self._pmp_bbox_width,
+            pmp_bbox_top=self._pmp_bbox_top,
         )
 
     def _update_shape_controls(self) -> None:

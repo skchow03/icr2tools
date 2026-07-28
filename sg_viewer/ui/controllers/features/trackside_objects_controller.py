@@ -7,6 +7,7 @@ from pathlib import Path
 from time import perf_counter
 
 from PyQt5 import QtCore, QtWidgets
+from texture_tools.pmp import calculate_pmp_ground_adjustment
 
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
 from sg_viewer.io.track3d_parser import Track3DDetailList, Track3DObjectList
@@ -721,7 +722,7 @@ class TracksideObjectsController:
 
     def _tso_shape_attributes_for_filename(
         self, filename: str, *, exclude_row: int | None = None
-    ) -> tuple[int, int, str, bool, int, int, int] | None:
+    ) -> tuple[int, int, str, bool, int, int, int, int, int] | None:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
             return None
@@ -737,13 +738,15 @@ class TracksideObjectsController:
                     max(0, int(existing.sprite_width)),
                     max(0, int(existing.sprite_height)),
                     max(0, int(existing.pmp_bbox_height)),
+                    max(0, int(existing.pmp_bbox_width)),
+                    int(existing.pmp_bbox_top),
                 )
         return None
 
     def _with_tso_shape_attributes(
         self,
         obj: TracksideObject,
-        attributes: tuple[int, int, str, bool, int, int, int],
+        attributes: tuple[int, int, str, bool, int, int, int, int, int],
     ) -> TracksideObject:
         (
             bbox_length,
@@ -753,6 +756,8 @@ class TracksideObjectsController:
             sprite_width,
             sprite_height,
             pmp_bbox_height,
+            pmp_bbox_width,
+            pmp_bbox_top,
         ) = attributes
         return TracksideObject(
             filename=obj.filename,
@@ -770,10 +775,14 @@ class TracksideObjectsController:
             sprite_width=sprite_width,
             sprite_height=sprite_height,
             pmp_bbox_height=pmp_bbox_height,
+            pmp_bbox_width=pmp_bbox_width,
+            pmp_bbox_top=pmp_bbox_top,
         )
 
     def _sync_tso_shape_attributes_for_filename(
-        self, filename: str, attributes: tuple[int, int, str, bool, int, int, int]
+        self,
+        filename: str,
+        attributes: tuple[int, int, str, bool, int, int, int, int, int],
     ) -> bool:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
@@ -918,6 +927,8 @@ class TracksideObjectsController:
                 sprite_width=obj.sprite_width,
                 sprite_height=obj.sprite_height,
                 pmp_bbox_height=obj.pmp_bbox_height,
+                pmp_bbox_width=obj.pmp_bbox_width,
+                pmp_bbox_top=obj.pmp_bbox_top,
             )
             moved = True
         if not moved:
@@ -1642,7 +1653,7 @@ class TracksideObjectsController:
             "Set each TSO elevation to the closest track boundary elevation"
         )
         adjust_sprite_elevation_checkbox = QtWidgets.QCheckBox(
-            "Adjust elevation of sprites based on sprite half height and PMP bounding box"
+            "Adjust sprite elevation using PMP reference plane and bounding box"
         )
         options_layout.addWidget(raise_lower_radio)
         options_layout.addWidget(set_absolute_radio)
@@ -1720,11 +1731,14 @@ class TracksideObjectsController:
                         continue
                     z_value = int(boundary_elevation)
                     if adjust_sprite_elevation_checkbox.isChecked() and obj.is_sprite:
-                        z_value += round(
-                            max(0, int(obj.sprite_width))
-                            * max(0, int(obj.pmp_bbox_height))
-                            / 256
-                        )
+                        if obj.pmp_bbox_width > 0 and obj.pmp_bbox_height > 0:
+                            adjustment_feet = calculate_pmp_ground_adjustment(
+                                obj.pmp_bbox_width,
+                                obj.pmp_bbox_height,
+                                obj.pmp_bbox_top,
+                                obj.sprite_width / 6000.0,
+                            )
+                            z_value += round(adjustment_feet * 6000.0)
                 if obj.z == z_value:
                     continue
                 self._trackside_objects[index] = TracksideObject(
@@ -1743,6 +1757,8 @@ class TracksideObjectsController:
                     sprite_width=obj.sprite_width,
                     sprite_height=obj.sprite_height,
                     pmp_bbox_height=obj.pmp_bbox_height,
+                    pmp_bbox_width=obj.pmp_bbox_width,
+                    pmp_bbox_top=obj.pmp_bbox_top,
                 )
                 changed = True
 
@@ -1881,6 +1897,8 @@ class TracksideObjectsController:
                 sprite_width=existing.sprite_width,
                 sprite_height=existing.sprite_height,
                 pmp_bbox_height=existing.pmp_bbox_height,
+                pmp_bbox_width=existing.pmp_bbox_width,
+                pmp_bbox_top=existing.pmp_bbox_top,
             )
             inherited_attributes = self._tso_shape_attributes_for_filename(
                 filename, exclude_row=row

@@ -4198,7 +4198,7 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         window.close()
 
 
-def test_modify_tso_elevations_boundary_mode_scales_sprite_half_height_by_pmp_bbox(
+def test_modify_tso_elevations_boundary_mode_uses_pmp_reference_plane(
     qapp, monkeypatch
 ):
     window = SGViewerWindow()
@@ -4219,6 +4219,8 @@ def test_modify_tso_elevations_boundary_mode_scales_sprite_half_height_by_pmp_bb
                 is_sprite=True,
                 sprite_width=40,
                 pmp_bbox_height=128,
+                pmp_bbox_width=128,
+                pmp_bbox_top=64,
             ),
             TracksideObject(
                 filename="object",
@@ -4249,7 +4251,7 @@ def test_modify_tso_elevations_boundary_mode_scales_sprite_half_height_by_pmp_bb
         checkbox = next(
             checkbox
             for checkbox in dialog.findChildren(QtWidgets.QCheckBox)
-            if "sprite half height and PMP bounding box" in checkbox.text()
+            if "PMP reference plane and bounding box" in checkbox.text()
         )
         assert not checkbox.isEnabled()
         boundary_radio = next(
@@ -4267,7 +4269,7 @@ def test_modify_tso_elevations_boundary_mode_scales_sprite_half_height_by_pmp_bb
         assert apply_button is not None
         apply_button.click()
 
-        assert window.controller._trackside_objects[0].z == 143
+        assert window.controller._trackside_objects[0].z == 151
         assert window.controller._trackside_objects[1].z == 123
     finally:
         window.close()
