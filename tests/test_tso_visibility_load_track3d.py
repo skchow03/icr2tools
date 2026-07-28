@@ -258,3 +258,65 @@ def test_load_detail_lists_button_warns_before_overwriting_existing_detail_lists
         ),
     ]
     assert tab.detail_lists[0].tso_ids == [7]
+
+
+def test_refresh_from_track3d_rebuilds_lists_and_dlong_metadata(
+    tmp_path: Path,
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [Track3DObjectList(side="L", section=0, sub_index=0, tso_ids=[99])]
+    )
+    tab.set_detail_lists(
+        [Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[98])]
+    )
+
+    path = tmp_path / "track.3D"
+    path.write_text(
+        '__TSO1: DYNAMIC 1, 2, 3, 4, EXTERN "tree";\n'
+        '__TSO2: DYNAMIC 1, 2, 3, 4, EXTERN "sign";\n'
+        "ObjectList_L0_0: LIST { __TSO1 };\n"
+        "ObjectList_R0_0: LIST { __TSO2 };\n"
+        "DetailList_0-0H: LIST { __TSO2 };\n"
+        "# Outputing section from dlong = 100 to dlong = 180\n"
+        "sec0_s0_HI: FACE DetailList_0-0H;\n"
+        "sec0_l0: LIST { DATA { 100, 140, 180 } };\n"
+        "sec0_l1: LIST { DATA { 180, 220, 260 } };\n",
+        encoding="utf-8",
+    )
+    tab.set_track3d_path_provider(lambda: path)
+
+    tab.refresh_from_track3d_button.click()
+
+    assert [
+        (row.side, row.section, row.sub_index, row.tso_ids) for row in tab.object_lists
+    ] == [
+        ("L", 0, 0, [1]),
+        ("R", 0, 0, [2]),
+    ]
+    assert [row.tso_ids for row in tab.detail_lists] == [[2]]
+    assert tab._subsection_dlong_ranges[(0, 0)] == (100, 180)
+    assert tab._subsection_dlong_ranges[(0, 1)] == (180, 260)
+    assert tab._detail_list_dlong_ranges[(0, 0, "H")] == (100, 180)
+
+
+def test_refresh_from_track3d_replaces_existing_detail_lists_with_empty_set(
+    tmp_path: Path,
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_detail_lists(
+        [Track3DDetailList(section=0, sub_index=0, lod_suffix="H", tso_ids=[7])]
+    )
+    path = tmp_path / "track.3D"
+    path.write_text(
+        "ObjectList_L0_0: LIST { __TSO1 };\n" "sec0_l0: LIST { DATA { 0, 10, 20 } };\n",
+        encoding="utf-8",
+    )
+    tab.set_track3d_path_provider(lambda: path)
+
+    tab.refresh_from_track3d()
+
+    assert tab.detail_lists == []
+    assert tab._detail_list_dlong_ranges == {}
