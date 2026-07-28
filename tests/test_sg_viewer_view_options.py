@@ -1871,7 +1871,9 @@ def test_first_sg_save_creates_matching_mrk_file(qapp, tmp_path, monkeypatch):
         window.close()
 
 
-def test_first_sg_save_does_not_create_mrk_when_folder_already_has_one(qapp, tmp_path, monkeypatch):
+def test_first_sg_save_does_not_create_mrk_when_folder_already_has_one(
+    qapp, tmp_path, monkeypatch
+):
     window = SGViewerWindow()
     try:
         sg_path = tmp_path / "monza.sg"
@@ -1885,6 +1887,7 @@ def test_first_sg_save_does_not_create_mrk_when_folder_already_has_one(qapp, tmp
         assert not (tmp_path / "monza.mrk").exists()
     finally:
         window.close()
+
 
 def test_mrk_save_and_load_json_round_trip(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
@@ -4195,7 +4198,7 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         window.close()
 
 
-def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_height(
+def test_modify_tso_elevations_boundary_mode_scales_sprite_half_height_by_pmp_bbox(
     qapp, monkeypatch
 ):
     window = SGViewerWindow()
@@ -4215,7 +4218,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_height(
                 rotation_point="center",
                 is_sprite=True,
                 sprite_width=40,
-                sprite_height=70,
+                pmp_bbox_height=128,
             ),
             TracksideObject(
                 filename="object",
@@ -4246,7 +4249,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_height(
         checkbox = next(
             checkbox
             for checkbox in dialog.findChildren(QtWidgets.QCheckBox)
-            if checkbox.text() == "Adjust elevation of sprites based on sprite height"
+            if "sprite half height and PMP bounding box" in checkbox.text()
         )
         assert not checkbox.isEnabled()
         boundary_radio = next(
@@ -4264,7 +4267,7 @@ def test_modify_tso_elevations_boundary_mode_adjusts_sprites_by_half_height(
         assert apply_button is not None
         apply_button.click()
 
-        assert window.controller._trackside_objects[0].z == 158
+        assert window.controller._trackside_objects[0].z == 143
         assert window.controller._trackside_objects[1].z == 123
     finally:
         window.close()

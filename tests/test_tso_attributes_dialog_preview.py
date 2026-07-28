@@ -114,7 +114,9 @@ def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_
         dialog.close()
 
 
-def test_related_pmp_sets_proportional_sprite_height(qapp, monkeypatch, tmp_path):
+def test_related_pmp_records_bbox_height_without_showing_sprite_height(
+    qapp, monkeypatch, tmp_path
+):
     pmp_path = tmp_path / "banner.pmp"
     pmp_path.write_bytes(bytes((40, 25)) + bytes(10))
     dialog = TracksideObjectAttributesDialog()
@@ -142,10 +144,13 @@ def test_related_pmp_sets_proportional_sprite_height(qapp, monkeypatch, tmp_path
         dialog._load_related_pmp()
 
         assert dialog._pmp_bbox_label.text() == "PMP BBox: 40 px wide × 25 px high"
-        assert dialog._sprite_height_spin.value() == pytest.approx(500)
-        dialog._sprite_width_spin.setValue(1600)
-        assert dialog._sprite_height_spin.value() == pytest.approx(1000)
-        assert dialog._build_object_from_form().sprite_height == 1000
+        assert not any(
+            label.text().startswith("Sprite Height")
+            for label in dialog.findChildren(QtWidgets.QLabel)
+        )
+        obj = dialog._build_object_from_form()
+        assert obj is not None
+        assert obj.pmp_bbox_height == 25
     finally:
         dialog.close()
 

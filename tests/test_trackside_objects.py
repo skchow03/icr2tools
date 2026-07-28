@@ -79,12 +79,15 @@ def test_trackside_sprite_shape_roundtrips_through_payload() -> None:
         tilt=6,
         is_sprite=True,
         sprite_width=42,
+        pmp_bbox_height=128,
     )
 
     payload = trackside_object_to_payload(obj)
     assert payload["is_sprite"] is True
     assert payload["sprite_width"] == 42
+    assert payload["pmp_bbox_height"] == 128
 
     restored = trackside_object_from_payload(payload)
     assert restored.is_sprite is True
     assert restored.sprite_width == 42
+    assert restored.pmp_bbox_height == 128

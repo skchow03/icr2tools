@@ -51,9 +51,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._bbox_width_spin = QtWidgets.QDoubleSpinBox()
         self._is_sprite_checkbox = QtWidgets.QCheckBox("Sprite object")
         self._sprite_width_spin = QtWidgets.QDoubleSpinBox()
-        self._sprite_height_spin = QtWidgets.QDoubleSpinBox()
-        self._sprite_height_spin.setReadOnly(True)
-        self._sprite_aspect_ratio: float | None = None
+        self._pmp_bbox_height = 0
+        self._original_sprite_height = 0
         self._rotation_point_combo = QtWidgets.QComboBox()
 
         for spin in (
@@ -78,7 +77,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             self._bbox_length_spin,
             self._bbox_width_spin,
             self._sprite_width_spin,
-            self._sprite_height_spin,
         ):
             spin.setRange(0, 1_000_000_000)
 
@@ -132,7 +130,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow(self._bbox_width_label, self._bbox_width_spin)
         self._bbox_from_3d_button.clicked.connect(self._load_bbox_from_track3d)
         self._sprite_width_label = QtWidgets.QLabel()
-        self._sprite_height_label = QtWidgets.QLabel()
         form.addRow("Shape", self._is_sprite_checkbox)
         sprite_width_layout = QtWidgets.QHBoxLayout()
         sprite_width_layout.setContentsMargins(0, 0, 0, 0)
@@ -142,12 +139,10 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         sprite_width_widget = QtWidgets.QWidget()
         sprite_width_widget.setLayout(sprite_width_layout)
         form.addRow(self._sprite_width_label, sprite_width_widget)
-        form.addRow(self._sprite_height_label, self._sprite_height_spin)
         self._pmp_bbox_label = QtWidgets.QLabel("PMP BBox: not loaded")
         form.addRow("", self._pmp_bbox_label)
         form.addRow("Rotation point", self._rotation_point_combo)
         self._is_sprite_checkbox.toggled.connect(self._update_shape_controls)
-        self._sprite_width_spin.valueChanged.connect(self._update_sprite_height)
         self._pmp_button.clicked.connect(self._load_related_pmp)
         self._match_track_orientation_button.clicked.connect(
             self._request_track_orientation_match
@@ -182,9 +177,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         sprite_width_500ths = units_to_500ths(
             float(self._sprite_width_spin.value()), previous_unit
         )
-        sprite_height_500ths = units_to_500ths(
-            float(self._sprite_height_spin.value()), previous_unit
-        )
 
         self._measurement_unit = unit
         unit_label = measurement_unit_label(unit)
@@ -193,12 +185,10 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._bbox_length_label.setText(f"BBox Length ({unit_label})")
         self._bbox_width_label.setText(f"BBox Width ({unit_label})")
         self._sprite_width_label.setText(f"Sprite Width ({unit_label})")
-        self._sprite_height_label.setText(f"Sprite Height ({unit_label})")
         for spin in (
             self._bbox_length_spin,
             self._bbox_width_spin,
             self._sprite_width_spin,
-            self._sprite_height_spin,
         ):
             spin.setDecimals(decimals)
             spin.setSingleStep(step)
@@ -211,9 +201,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         )
         self._sprite_width_spin.setValue(
             units_from_500ths(float(sprite_width_500ths), unit)
-        )
-        self._sprite_height_spin.setValue(
-            units_from_500ths(float(sprite_height_500ths), unit)
         )
         self._update_shape_controls()
 
@@ -237,15 +224,13 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._sprite_width_spin.setValue(
             units_from_500ths(float(obj.sprite_width), self._measurement_unit)
         )
-        self._sprite_height_spin.setValue(
-            units_from_500ths(float(obj.sprite_height), self._measurement_unit)
+        self._original_sprite_height = max(0, int(obj.sprite_height))
+        self._pmp_bbox_height = max(0, int(obj.pmp_bbox_height))
+        self._pmp_bbox_label.setText(
+            f"PMP BBox height: {self._pmp_bbox_height} px"
+            if self._pmp_bbox_height
+            else "PMP BBox: not loaded"
         )
-        self._sprite_aspect_ratio = (
-            float(obj.sprite_height) / float(obj.sprite_width)
-            if obj.sprite_width > 0 and obj.sprite_height > 0
-            else None
-        )
-        self._pmp_bbox_label.setText("PMP BBox: not loaded")
         rotation_point = normalize_rotation_point(obj.rotation_point)
         index = self._rotation_point_combo.findData(rotation_point)
         self._rotation_point_combo.setCurrentIndex(index if index >= 0 else 0)
@@ -310,17 +295,9 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
                 self, "Load Related PMP", f"Could not read PMP bounding box:\n{exc}"
             )
             return
-        self._sprite_aspect_ratio = bbox_height / bbox_width
+        self._pmp_bbox_height = int(bbox_height)
         self._pmp_bbox_label.setText(
             f"PMP BBox: {bbox_width} px wide × {bbox_height} px high"
-        )
-        self._update_sprite_height()
-
-    def _update_sprite_height(self) -> None:
-        if self._sprite_aspect_ratio is None:
-            return
-        self._sprite_height_spin.setValue(
-            float(self._sprite_width_spin.value()) * self._sprite_aspect_ratio
         )
 
     def _confirm_track3d_bbox_units(self, bbox) -> tuple[float, float] | None:
@@ -449,12 +426,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
                     float(self._sprite_width_spin.value()), self._measurement_unit
                 ),
             ),
-            sprite_height=max(
-                0,
-                units_to_500ths(
-                    float(self._sprite_height_spin.value()), self._measurement_unit
-                ),
-            ),
+            sprite_height=self._original_sprite_height,
+            pmp_bbox_height=self._pmp_bbox_height,
         )
 
     def _update_shape_controls(self) -> None:
@@ -470,8 +443,6 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             widget.setEnabled(not is_sprite)
         self._sprite_width_label.setEnabled(is_sprite)
         self._sprite_width_spin.setEnabled(is_sprite)
-        self._sprite_height_label.setEnabled(is_sprite)
-        self._sprite_height_spin.setEnabled(is_sprite)
         self._pmp_button.setEnabled(is_sprite)
         self._pmp_bbox_label.setEnabled(is_sprite)
 

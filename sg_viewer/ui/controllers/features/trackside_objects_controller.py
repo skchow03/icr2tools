@@ -721,7 +721,7 @@ class TracksideObjectsController:
 
     def _tso_shape_attributes_for_filename(
         self, filename: str, *, exclude_row: int | None = None
-    ) -> tuple[int, int, str, bool, int, int] | None:
+    ) -> tuple[int, int, str, bool, int, int, int] | None:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
             return None
@@ -736,11 +736,14 @@ class TracksideObjectsController:
                     bool(existing.is_sprite),
                     max(0, int(existing.sprite_width)),
                     max(0, int(existing.sprite_height)),
+                    max(0, int(existing.pmp_bbox_height)),
                 )
         return None
 
     def _with_tso_shape_attributes(
-        self, obj: TracksideObject, attributes: tuple[int, int, str, bool, int, int]
+        self,
+        obj: TracksideObject,
+        attributes: tuple[int, int, str, bool, int, int, int],
     ) -> TracksideObject:
         (
             bbox_length,
@@ -749,6 +752,7 @@ class TracksideObjectsController:
             is_sprite,
             sprite_width,
             sprite_height,
+            pmp_bbox_height,
         ) = attributes
         return TracksideObject(
             filename=obj.filename,
@@ -765,10 +769,11 @@ class TracksideObjectsController:
             is_sprite=bool(is_sprite),
             sprite_width=sprite_width,
             sprite_height=sprite_height,
+            pmp_bbox_height=pmp_bbox_height,
         )
 
     def _sync_tso_shape_attributes_for_filename(
-        self, filename: str, attributes: tuple[int, int, str, bool, int, int]
+        self, filename: str, attributes: tuple[int, int, str, bool, int, int, int]
     ) -> bool:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
@@ -837,6 +842,7 @@ class TracksideObjectsController:
             bool(obj.is_sprite),
             max(0, int(obj.sprite_width)),
             max(0, int(obj.sprite_height)),
+            max(0, int(obj.pmp_bbox_height)),
         )
         self._trackside_objects[row] = self._with_tso_shape_attributes(obj, attributes)
         self._sync_tso_shape_attributes_for_filename(target_filename, attributes)
@@ -911,6 +917,7 @@ class TracksideObjectsController:
                 is_sprite=obj.is_sprite,
                 sprite_width=obj.sprite_width,
                 sprite_height=obj.sprite_height,
+                pmp_bbox_height=obj.pmp_bbox_height,
             )
             moved = True
         if not moved:
@@ -1635,7 +1642,7 @@ class TracksideObjectsController:
             "Set each TSO elevation to the closest track boundary elevation"
         )
         adjust_sprite_elevation_checkbox = QtWidgets.QCheckBox(
-            "Adjust elevation of sprites based on sprite height"
+            "Adjust elevation of sprites based on sprite half height and PMP bounding box"
         )
         options_layout.addWidget(raise_lower_radio)
         options_layout.addWidget(set_absolute_radio)
@@ -1713,7 +1720,11 @@ class TracksideObjectsController:
                         continue
                     z_value = int(boundary_elevation)
                     if adjust_sprite_elevation_checkbox.isChecked() and obj.is_sprite:
-                        z_value += max(0, int(obj.sprite_height)) // 2
+                        z_value += round(
+                            max(0, int(obj.sprite_width))
+                            * max(0, int(obj.pmp_bbox_height))
+                            / 256
+                        )
                 if obj.z == z_value:
                     continue
                 self._trackside_objects[index] = TracksideObject(
@@ -1731,6 +1742,7 @@ class TracksideObjectsController:
                     is_sprite=obj.is_sprite,
                     sprite_width=obj.sprite_width,
                     sprite_height=obj.sprite_height,
+                    pmp_bbox_height=obj.pmp_bbox_height,
                 )
                 changed = True
 
@@ -1868,6 +1880,7 @@ class TracksideObjectsController:
                 is_sprite=existing.is_sprite,
                 sprite_width=existing.sprite_width,
                 sprite_height=existing.sprite_height,
+                pmp_bbox_height=existing.pmp_bbox_height,
             )
             inherited_attributes = self._tso_shape_attributes_for_filename(
                 filename, exclude_row=row
