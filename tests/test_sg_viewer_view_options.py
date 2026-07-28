@@ -4198,7 +4198,7 @@ def test_modify_tso_elevations_boundary_mode_sets_per_object(qapp, monkeypatch):
         window.close()
 
 
-def test_modify_tso_elevations_boundary_mode_uses_sprite_width_and_pmp_bbox_height(
+def test_modify_tso_elevations_boundary_mode_uses_75_percent_of_sprite_width(
     qapp, monkeypatch
 ):
     window = SGViewerWindow()
@@ -4251,9 +4251,7 @@ def test_modify_tso_elevations_boundary_mode_uses_sprite_width_and_pmp_bbox_heig
             for checkbox in dialog.findChildren(QtWidgets.QCheckBox)
             if "sprite width" in checkbox.text()
         )
-        assert checkbox.text() == (
-            "Adjust sprites by: sprite width × (PMP BBox height / 256) × 0.5"
-        )
+        assert checkbox.text() == "Adjust sprites by: sprite width × 0.75"
         assert "sprite width entered in TSO Attributes" in checkbox.toolTip()
         assert not checkbox.isEnabled()
         boundary_radio = next(
@@ -4271,7 +4269,7 @@ def test_modify_tso_elevations_boundary_mode_uses_sprite_width_and_pmp_bbox_heig
         assert apply_button is not None
         apply_button.click()
 
-        assert window.controller._trackside_objects[0].z == 133
+        assert window.controller._trackside_objects[0].z == 153
         assert window.controller._trackside_objects[1].z == 123
     finally:
         window.close()
