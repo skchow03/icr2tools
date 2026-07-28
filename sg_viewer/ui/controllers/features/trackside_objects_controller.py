@@ -1642,7 +1642,11 @@ class TracksideObjectsController:
             "Set each TSO elevation to the closest track boundary elevation"
         )
         adjust_sprite_elevation_checkbox = QtWidgets.QCheckBox(
-            "Adjust elevation of sprites based on sprite half height and PMP bounding box"
+            "Adjust sprites by: sprite width × (PMP BBox height / 256)"
+        )
+        adjust_sprite_elevation_checkbox.setToolTip(
+            "Uses the sprite width entered in TSO Attributes and the height from "
+            "the related PMP bounding box."
         )
         options_layout.addWidget(raise_lower_radio)
         options_layout.addWidget(set_absolute_radio)
