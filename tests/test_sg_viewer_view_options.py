@@ -3803,6 +3803,82 @@ def test_delete_tso_does_not_auto_save_project(qapp, tmp_path):
         window.close()
 
 
+def test_clone_selected_tso_copies_first_selection_to_end(qapp):
+    window = SGViewerWindow()
+    try:
+        first = TracksideObject(
+            filename="tree",
+            x=10,
+            y=20,
+            z=30,
+            yaw=40,
+            pitch=50,
+            tilt=60,
+            description="original description",
+            bbox_length=70,
+            bbox_width=80,
+            rotation_point="top_left",
+            is_sprite=True,
+            sprite_width=90,
+            sprite_height=100,
+            pmp_bbox_height=110,
+        )
+        window.controller._trackside_objects = [
+            first,
+            TracksideObject(filename="sign", x=1, y=2),
+            TracksideObject(filename="cone", x=3, y=4),
+        ]
+        window.controller._refresh_tso_table()
+        selection_model = window.tso_table.selectionModel()
+        for row in (2, 0):
+            selection_model.select(
+                window.tso_table.model().index(row, 0),
+                QtCore.QItemSelectionModel.Select
+                | QtCore.QItemSelectionModel.Rows,
+            )
+
+        window.tso_clone_selected_button.click()
+
+        assert len(window.controller._trackside_objects) == 4
+        clone = window.controller._trackside_objects[-1]
+        assert clone == TracksideObject(
+            filename=first.filename,
+            x=first.x,
+            y=first.y,
+            z=first.z,
+            yaw=first.yaw,
+            pitch=first.pitch,
+            tilt=first.tilt,
+            description="Cloned from __TSO0",
+            bbox_length=first.bbox_length,
+            bbox_width=first.bbox_width,
+            rotation_point=first.rotation_point,
+            is_sprite=first.is_sprite,
+            sprite_width=first.sprite_width,
+            sprite_height=first.sprite_height,
+            pmp_bbox_height=first.pmp_bbox_height,
+        )
+        assert window.controller._selected_trackside_object_indices == [3]
+        assert window.controller._trackside_objects_is_dirty is True
+    finally:
+        window.close()
+
+
+def test_clone_selected_tso_with_no_selection_does_nothing(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree", x=10, y=20)
+        ]
+        window.controller._refresh_tso_table()
+
+        window.tso_clone_selected_button.click()
+
+        assert len(window.controller._trackside_objects) == 1
+    finally:
+        window.close()
+
+
 def test_delete_tso_remaps_object_and_detail_list_tso_ids(qapp):
     window = SGViewerWindow()
     try:

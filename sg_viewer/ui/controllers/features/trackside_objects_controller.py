@@ -140,6 +140,9 @@ class TracksideObjectsController:
         w.tso_move_down_button.clicked.connect(h._on_tso_move_down_requested)
         w.tso_import_from_3d_button.clicked.connect(h._on_tso_import_from_3d_requested)
         w.tso_delete_all_button.clicked.connect(h._on_tso_delete_all_requested)
+        w.tso_clone_selected_button.clicked.connect(
+            h._on_tso_clone_selected_requested
+        )
         w.tso_modify_elevations_button.clicked.connect(
             h._on_tso_modify_elevations_requested
         )
@@ -1443,6 +1446,55 @@ class TracksideObjectsController:
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _on_tso_clone_selected_requested(self) -> None:
+        table = self._window.tso_table
+        selected_rows = (
+            table.selectionModel().selectedRows()
+            if table.selectionModel() is not None
+            else []
+        )
+        source_rows = sorted(
+            {
+                model_index.row()
+                for model_index in selected_rows
+                if 0 <= model_index.row() < len(self._trackside_objects)
+            }
+        )
+        if not source_rows:
+            return
+
+        source_row = source_rows[0]
+        source = self._trackside_objects[source_row]
+        clone = TracksideObject(
+            filename=source.filename,
+            x=source.x,
+            y=source.y,
+            z=source.z,
+            yaw=source.yaw,
+            pitch=source.pitch,
+            tilt=source.tilt,
+            description=f"Cloned from __TSO{source_row}",
+            bbox_length=source.bbox_length,
+            bbox_width=source.bbox_width,
+            rotation_point=source.rotation_point,
+            is_sprite=source.is_sprite,
+            sprite_width=source.sprite_width,
+            sprite_height=source.sprite_height,
+            pmp_bbox_height=source.pmp_bbox_height,
+        )
+        self._trackside_objects.append(clone)
+        clone_row = len(self._trackside_objects) - 1
+        self._selected_trackside_object_indices = [clone_row]
+        self._objects_tab_selected_trackside_object_indices = [clone_row]
+        self._refresh_tso_table()
+        self._mark_tso_visibility_sidebar_dirty()
+        self._schedule_tso_visibility_sidebar_refresh()
+        self._set_trackside_objects_dirty(True)
+        self._schedule_trackside_objects_persist()
+        self._window.show_status_message(
+            f"Cloned __TSO{source_row} as __TSO{clone_row}."
+        )
 
     def _move_tso(self, *, direction: int) -> None:
         table = self._window.tso_table
