@@ -1112,8 +1112,13 @@ class SGViewerController:
         is_tsd_tab = tab_name == "TSD"
         is_objects_tab = tab_name == "Objects"
         is_tso_visibility_tab = tab_name == "TSO Visibility"
-        if self._tso_box_select_mode_active and not is_objects_tab:
-            self._set_tso_box_select_mode_active(False)
+        if not is_objects_tab:
+            if self._tso_add_mode_active:
+                self._set_tso_add_mode_active(False)
+            if self._tso_stamp_mode_active:
+                self._set_tso_stamp_mode_active(False)
+            if self._tso_box_select_mode_active:
+                self._set_tso_box_select_mode_active(False)
         self._window.preview.set_show_mrk_notches(is_mrk_tab)
         if is_tsd_tab or is_objects_tab or is_tso_visibility_tab:
             self._window.preview.set_show_tsd_lines(True)

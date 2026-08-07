@@ -3944,6 +3944,46 @@ def test_objects_tab_map_click_selects_tso_inside_bbox(qapp):
         window.close()
 
 
+def test_objects_tab_map_click_scrolls_selected_tso_into_table_view(qapp):
+    window = SGViewerWindow()
+    try:
+        objects_tab_index = window.right_sidebar_tabs.indexOf(window.tso_sidebar)
+        window.right_sidebar_tabs.setCurrentIndex(objects_tab_index)
+        window.controller._trackside_objects = [
+            TracksideObject(
+                filename=f"cone-{index}",
+                x=index * 100,
+                y=200,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                description="",
+                bbox_length=40,
+                bbox_width=20,
+                rotation_point="center",
+            )
+            for index in range(30)
+        ]
+        window.controller._refresh_tso_table()
+        window.tso_table.resize(500, 120)
+        window.tso_table.show()
+        qapp.processEvents()
+
+        selected_index = len(window.controller._trackside_objects) - 1
+        consumed = window.controller._on_preview_tso_map_clicked(
+            selected_index * 100, 200
+        )
+        qapp.processEvents()
+
+        assert consumed is True
+        assert window.tso_table.visualItemRect(
+            window.tso_table.item(selected_index, 0)
+        ).intersects(window.tso_table.viewport().rect())
+    finally:
+        window.close()
+
+
 def test_objects_tab_map_click_consumes_without_tso_hit(qapp):
     window = SGViewerWindow()
     try:
@@ -4420,6 +4460,37 @@ def test_tso_box_select_deactivates_when_leaving_objects_tab(qapp):
         assert window.controller._tso_box_select_mode_active is False
         assert window.preview._trackside_box_select_enabled is False
         assert window.tso_box_select_button.isChecked() is False
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("mode", ["add", "stamp"])
+def test_tso_placement_modes_deactivate_when_leaving_objects_tab(
+    qapp, mode, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        objects_tab_index = window.right_sidebar_tabs.indexOf(window._tso_sidebar)
+        walls_tab_index = window.right_sidebar_tabs.indexOf(window._mrk_sidebar)
+        window.right_sidebar_tabs.setCurrentIndex(objects_tab_index)
+
+        if mode == "add":
+            window.tso_add_button.setChecked(True)
+            window.controller._on_tso_add_requested()
+        else:
+            monkeypatch.setattr(
+                QtWidgets.QInputDialog,
+                "getText",
+                lambda *args, **kwargs: ("cone", True),
+            )
+            window.controller._on_tso_stamp_requested()
+
+        window.right_sidebar_tabs.setCurrentIndex(walls_tab_index)
+
+        assert window.controller._tso_add_mode_active is False
+        assert window.controller._tso_stamp_mode_active is False
+        assert window.tso_add_button.isChecked() is False
+        assert window.tso_stamp_button.isChecked() is False
     finally:
         window.close()
 
