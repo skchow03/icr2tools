@@ -1221,6 +1221,10 @@ class TracksideObjectsController:
                         QtCore.QItemSelectionModel.Select
                         | QtCore.QItemSelectionModel.Rows,
                     )
+                    table.scrollTo(
+                        row_index,
+                        QtWidgets.QAbstractItemView.PositionAtCenter,
+                    )
                 del signal_blocker
 
             self._apply_trackside_drag_scope()
