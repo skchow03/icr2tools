@@ -30,6 +30,7 @@ from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
     TsdPitStallsObject,
+    TsdSingleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
 )
@@ -871,6 +872,8 @@ class TsdController:
             for row, obj in enumerate(self._tsd_objects):
                 if isinstance(obj, TsdTransverseLineObject):
                     object_type_label = "Transverse Line"
+                elif isinstance(obj, TsdSingleSolidLineObject):
+                    object_type_label = "Single Solid Line"
                 elif isinstance(obj, TsdDoubleSolidLineObject):
                     object_type_label = "Double Solid Line"
                 elif isinstance(obj, TsdDashedLinesObject):
@@ -939,7 +942,7 @@ class TsdController:
 
     @staticmethod
     def _tsd_object_dlong_range(
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
     ) -> tuple[int, int]:
         lines = obj.generated_lines()
         if not lines:
@@ -950,7 +953,7 @@ class TsdController:
 
     def _tsd_object_center_point(
         self,
-        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+        obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
     ) -> Point | None:
         lines = obj.generated_lines()
         if not lines:
@@ -1135,5 +1138,4 @@ class TsdController:
         self._window.show_status_message(
             f"Exported {len(self._tsd_objects)} TSD objects into {tsd_path.name}"
         )
-
 

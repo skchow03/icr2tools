@@ -33,6 +33,7 @@ from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
     TsdPitStallsObject,
+    TsdSingleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,

@@ -10,6 +10,7 @@ from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
     TsdPitStallsObject,
+    TsdSingleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
 )
@@ -17,6 +18,7 @@ from sg_viewer.services.tsd_objects import (
 TsdObjectPayload: TypeAlias = (
     TsdZebraCrossingObject
     | TsdTransverseLineObject
+    | TsdSingleSolidLineObject
     | TsdDoubleSolidLineObject
     | TsdDashedLinesObject
     | TsdPitStallsObject
@@ -87,8 +89,8 @@ class TsdObjectDialog:
     def get_payload(
         self,
         *,
-        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None = None,
-    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None:
+        existing: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None = None,
+    ) -> TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject | None:
         existing = self._existing
         dialog = QtWidgets.QDialog(self._parent)
         dialog.setModal(False)
@@ -98,6 +100,7 @@ class TsdObjectDialog:
         type_combo = QtWidgets.QComboBox(dialog)
         type_combo.addItem("Zebra crossing", userData="zebra_crossing")
         type_combo.addItem("Transverse Line", userData="transverse_line")
+        type_combo.addItem("Single Solid Line", userData="single_solid_line")
         type_combo.addItem("Double Solid Line", userData="double_solid_line")
         type_combo.addItem("Dashed Lines", userData="dashed_lines")
         type_combo.addItem("Pit Stalls", userData="pit_stalls")
@@ -111,17 +114,21 @@ class TsdObjectDialog:
             default_name = f"Transverse Line {default_index}"
             type_combo.setCurrentIndex(1)
             type_combo.setEnabled(False)
+        elif isinstance(existing, TsdSingleSolidLineObject):
+            default_name = f"Single Solid Line {default_index}"
+            type_combo.setCurrentIndex(2)
+            type_combo.setEnabled(False)
         elif isinstance(existing, TsdDoubleSolidLineObject):
             default_name = f"Double Solid Line {default_index}"
-            type_combo.setCurrentIndex(2)
+            type_combo.setCurrentIndex(3)
             type_combo.setEnabled(False)
         elif isinstance(existing, TsdDashedLinesObject):
             default_name = f"Dashed Lines {default_index}"
-            type_combo.setCurrentIndex(3)
+            type_combo.setCurrentIndex(4)
             type_combo.setEnabled(False)
         elif isinstance(existing, TsdPitStallsObject):
             default_name = f"Pit Stalls {default_index}"
-            type_combo.setCurrentIndex(4)
+            type_combo.setCurrentIndex(5)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
         start_dlong_spin = _create_distance_spin(dialog)
@@ -193,6 +200,23 @@ class TsdObjectDialog:
             if isinstance(existing, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
             else 5000
         )
+        single_line_thickness_spin = _create_distance_spin(dialog)
+        single_line_thickness_spin.setRange(1, 2_000_000_000)
+        single_line_thickness_spin.setValue(
+            existing.line_thickness_500ths if isinstance(existing, TsdSingleSolidLineObject) else 3000
+        )
+        single_start_dlong_spin = _create_distance_spin(dialog)
+        single_start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        single_start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdSingleSolidLineObject) else 0)
+        single_end_dlong_spin = _create_distance_spin(dialog)
+        single_end_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
+        single_end_dlong_spin.setValue(existing.end_dlong if isinstance(existing, TsdSingleSolidLineObject) else 20000)
+        single_start_dlat_spin = _create_distance_spin(dialog)
+        single_start_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        single_start_dlat_spin.setValue(existing.start_dlat if isinstance(existing, TsdSingleSolidLineObject) else 0)
+        single_end_dlat_spin = _create_distance_spin(dialog)
+        single_end_dlat_spin.setRange(-2_000_000_000, 2_000_000_000)
+        single_end_dlat_spin.setValue(existing.end_dlat if isinstance(existing, TsdSingleSolidLineObject) else 0)
         dashed_line_thickness_spin = _create_distance_spin(dialog)
         dashed_line_thickness_spin.setRange(1, 2_000_000_000)
         dashed_line_thickness_spin.setValue(
@@ -296,6 +320,11 @@ class TsdObjectDialog:
         layout.addRow(f"Right DLAT Bound ({unit_label})", right_dlat_bound_spin)
         layout.addRow(f"Left DLAT Bound ({unit_label})", left_dlat_bound_spin)
         layout.addRow(f"Line Width ({unit_label})", line_width_spin)
+        layout.addRow(f"Line Thickness ({unit_label})", single_line_thickness_spin)
+        layout.addRow(f"Start DLONG ({unit_label})", single_start_dlong_spin)
+        layout.addRow(f"End DLONG ({unit_label})", single_end_dlong_spin)
+        layout.addRow(f"Start DLAT ({unit_label})", single_start_dlat_spin)
+        layout.addRow(f"End DLAT ({unit_label})", single_end_dlat_spin)
         layout.addRow(f"Dashed Line Thickness ({unit_label})", dashed_line_thickness_spin)
         layout.addRow(f"Dashed Start DLONG ({unit_label})", dashed_start_dlong_spin)
         layout.addRow(f"Dashed End DLONG ({unit_label})", dashed_end_dlong_spin)
@@ -340,6 +369,13 @@ class TsdObjectDialog:
             dlat_spin,
             line_width_spin,
         )
+        single_solid_only_fields = (
+            single_line_thickness_spin,
+            single_start_dlong_spin,
+            single_end_dlong_spin,
+            single_start_dlat_spin,
+            single_end_dlat_spin,
+        )
         dashed_lines_only_fields = (
             dashed_line_thickness_spin,
             dashed_start_dlong_spin,
@@ -372,6 +408,7 @@ class TsdObjectDialog:
             object_type = str(type_combo.currentData())
             is_transverse = object_type == "transverse_line"
             is_double_solid = object_type == "double_solid_line"
+            is_single_solid = object_type == "single_solid_line"
             is_dashed_lines = object_type == "dashed_lines"
             is_pit_stalls = object_type == "pit_stalls"
             for field in zebra_only_fields:
@@ -380,6 +417,8 @@ class TsdObjectDialog:
                 _set_row_visible(field, is_transverse)
             for field in double_solid_only_fields:
                 _set_row_visible(field, is_double_solid)
+            for field in single_solid_only_fields:
+                _set_row_visible(field, is_single_solid)
             for field in dashed_lines_only_fields:
                 _set_row_visible(field, is_dashed_lines)
             for field in pit_stalls_only_fields:
@@ -391,12 +430,16 @@ class TsdObjectDialog:
                 object_type == "zebra_crossing" and transverse_line_enabled.isChecked()
             )
 
-        type_combo.currentIndexChanged.connect(_sync_tsd_object_field_visibility)
+        def _on_type_changed() -> None:
+            color_spin.setValue(158 if type_combo.currentData() == "double_solid_line" else 36)
+            _sync_tsd_object_field_visibility()
+
+        type_combo.currentIndexChanged.connect(_on_type_changed)
         transverse_line_enabled.toggled.connect(_sync_tsd_object_field_visibility)
         _sync_tsd_object_field_visibility()
 
         def _build_tsd_object_from_form() -> (
-            TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject
+            TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject
         ):
             object_type = str(type_combo.currentData())
             if object_type == "pit_stalls":
@@ -424,6 +467,18 @@ class TsdObjectDialog:
                     end_adjusted_dlong=_distance_value_500ths(end_adjusted_dlong_spin),
                     dlat=_distance_value_500ths(dlat_spin),
                     line_width_500ths=_distance_value_500ths(line_width_spin),
+                    color_index=color_spin.value(),
+                    command="Detail",
+                )
+            if object_type == "single_solid_line":
+                name = name_edit.text().strip() or f"Single Solid Line {default_index}"
+                return TsdSingleSolidLineObject(
+                    name=name,
+                    line_thickness_500ths=_distance_value_500ths(single_line_thickness_spin),
+                    start_dlong=_distance_value_500ths(single_start_dlong_spin),
+                    end_dlong=_distance_value_500ths(single_end_dlong_spin),
+                    start_dlat=_distance_value_500ths(single_start_dlat_spin),
+                    end_dlat=_distance_value_500ths(single_end_dlat_spin),
                     color_index=color_spin.value(),
                     command="Detail",
                 )
@@ -480,12 +535,14 @@ class TsdObjectDialog:
             )
 
         def _set_tsd_object_form_values(
-            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+            obj: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
         ) -> None:
             with QtCore.QSignalBlocker(type_combo):
                 type_value = (
                     "pit_stalls"
                     if isinstance(obj, TsdPitStallsObject)
+                    else "single_solid_line"
+                    if isinstance(obj, TsdSingleSolidLineObject)
                     else
                     "double_solid_line"
                     if isinstance(obj, TsdDoubleSolidLineObject)
@@ -560,6 +617,18 @@ class TsdObjectDialog:
                     if isinstance(obj, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
                     else 5000
                 )
+            with QtCore.QSignalBlocker(single_line_thickness_spin):
+                single_line_thickness_spin.setValue(
+                    obj.line_thickness_500ths if isinstance(obj, TsdSingleSolidLineObject) else 3000
+                )
+            with QtCore.QSignalBlocker(single_start_dlong_spin):
+                single_start_dlong_spin.setValue(obj.start_dlong if isinstance(obj, TsdSingleSolidLineObject) else 0)
+            with QtCore.QSignalBlocker(single_end_dlong_spin):
+                single_end_dlong_spin.setValue(obj.end_dlong if isinstance(obj, TsdSingleSolidLineObject) else 20000)
+            with QtCore.QSignalBlocker(single_start_dlat_spin):
+                single_start_dlat_spin.setValue(obj.start_dlat if isinstance(obj, TsdSingleSolidLineObject) else 0)
+            with QtCore.QSignalBlocker(single_end_dlat_spin):
+                single_end_dlat_spin.setValue(obj.end_dlat if isinstance(obj, TsdSingleSolidLineObject) else 0)
             with QtCore.QSignalBlocker(dashed_line_thickness_spin):
                 dashed_line_thickness_spin.setValue(
                     obj.line_thickness_500ths if isinstance(obj, TsdDashedLinesObject) else 3000
@@ -625,8 +694,8 @@ class TsdObjectDialog:
             _sync_tsd_object_field_visibility()
 
         def _candidate_tsd_objects(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
-        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject]:
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+        ) -> list[TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject]:
             edit_row = self._controller._editing_tsd_object_index
             if edit_row is not None and 0 <= edit_row < len(self._controller._tsd_objects):
                 objects = list(self._controller._tsd_objects)
@@ -635,7 +704,7 @@ class TsdObjectDialog:
             return [*self._controller._tsd_objects, preview_object]
 
         def _warn_if_excessive_tsd_lines(
-            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
+            preview_object: TsdZebraCrossingObject | TsdTransverseLineObject | TsdSingleSolidLineObject | TsdDoubleSolidLineObject | TsdDashedLinesObject | TsdPitStallsObject,
         ) -> bool:
             line_count = sum(len(obj.generated_lines()) for obj in _candidate_tsd_objects(preview_object))
             if line_count <= 1000:
@@ -695,6 +764,11 @@ class TsdObjectDialog:
             right_dlat_bound_spin,
             left_dlat_bound_spin,
             line_width_spin,
+            single_line_thickness_spin,
+            single_start_dlong_spin,
+            single_end_dlong_spin,
+            single_start_dlat_spin,
+            single_end_dlat_spin,
             dashed_line_thickness_spin,
             dashed_start_dlong_spin,
             dashed_end_dlong_spin,
@@ -741,4 +815,3 @@ class TsdObjectDialog:
         if dialog.result() != QtWidgets.QDialog.Accepted:
             return None
         return _build_tsd_object_from_form()
-
