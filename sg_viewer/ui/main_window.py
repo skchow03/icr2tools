@@ -365,7 +365,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Remove Selected TSD Object"
         )
         self._tsd_export_objects_button = QtWidgets.QPushButton(
-            "Export object .TSD files"
+            "Export all to .TSD"
         )
         self._tsd_skid_marks_button = QtWidgets.QPushButton("Skid Marks...")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
@@ -1349,11 +1349,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_object_buttons.addWidget(self._tsd_add_object_button, 0, 0)
         tsd_object_buttons.addWidget(self._tsd_duplicate_object_button, 0, 1)
         tsd_object_buttons.addWidget(self._tsd_remove_selected_object_button, 0, 2)
+        tsd_object_buttons.addWidget(self._tsd_sort_objects_by_dlong_button, 0, 3)
         tsd_object_buttons.addWidget(self._tsd_move_object_up_button, 1, 0)
         tsd_object_buttons.addWidget(self._tsd_move_object_down_button, 1, 1)
         tsd_object_buttons.addWidget(self._tsd_export_objects_button, 1, 2)
         tsd_object_buttons.addWidget(self._tsd_skid_marks_button, 1, 3)
-        tsd_object_buttons.addWidget(self._tsd_sort_objects_by_dlong_button, 2, 0)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
         tsd_objects_group.setLayout(tsd_objects_layout)
@@ -1396,7 +1396,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Sort all TSD objects by their starting DLONG."
         )
         self._tsd_export_objects_button.setToolTip(
-            "Export all TSD objects as .TSD files."
+            "Combine all TSD objects and export them as one .TSD file."
         )
         self._tsd_skid_marks_button.setToolTip("Open the skid-mark randomizer dialog.")
         self._tsd_sidebar.setLayout(tsd_layout)

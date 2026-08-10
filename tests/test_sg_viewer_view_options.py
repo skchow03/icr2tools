@@ -3355,7 +3355,7 @@ def test_tsd_objects_controls_exist(qapp):
         assert window.tsd_move_object_up_button.text() == "Move Up"
         assert window.tsd_move_object_down_button.text() == "Move Down"
         assert window.tsd_sort_objects_by_dlong_button.text() == "Sort by DLONG"
-        assert window.tsd_export_objects_button.text() == "Export object .TSD files"
+        assert window.tsd_export_objects_button.text() == "Export all to .TSD"
         assert window.tsd_objects_table.columnCount() == 5
         assert window.tsd_move_line_up_button.text() == "Move Up"
         assert window.tsd_move_line_down_button.text() == "Move Down"
