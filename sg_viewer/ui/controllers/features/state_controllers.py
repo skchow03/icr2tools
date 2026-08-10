@@ -20,6 +20,7 @@ if TYPE_CHECKING:
         TsdDashedLinesObject,
         TsdDoubleSolidLineObject,
         TsdPitStallsObject,
+        TsdSingleSolidLineObject,
         TsdTransverseLineObject,
         TsdZebraCrossingObject,
     )
@@ -29,6 +30,7 @@ if TYPE_CHECKING:
     TsdObject: TypeAlias = (
         TsdZebraCrossingObject
         | TsdTransverseLineObject
+        | TsdSingleSolidLineObject
         | TsdDoubleSolidLineObject
         | TsdDashedLinesObject
         | TsdPitStallsObject

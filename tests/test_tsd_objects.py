@@ -1,6 +1,7 @@
 from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
+    TsdSingleSolidLineObject,
     TsdTransverseLineObject,
     TsdZebraCrossingObject,
     tsd_object_from_payload,
@@ -200,6 +201,61 @@ def test_transverse_line_payload_back_compat_center_and_width() -> None:
     assert isinstance(obj, TsdTransverseLineObject)
     assert obj.right_dlat_bound == -10000
     assert obj.left_dlat_bound == 8000
+
+
+def test_single_solid_line_generates_one_line_between_coordinates() -> None:
+    obj = TsdSingleSolidLineObject(
+        name="White line",
+        line_thickness_500ths=1200,
+        start_dlong=1000,
+        end_dlong=9000,
+        start_dlat=-500,
+        end_dlat=750,
+    )
+
+    lines = obj.generated_lines()
+
+    assert len(lines) == 1
+    assert lines[0].width_500ths == 1200
+    assert (lines[0].start_dlong, lines[0].start_dlat) == (1000, -500)
+    assert (lines[0].end_dlong, lines[0].end_dlat) == (9000, 750)
+    assert lines[0].color_index == 36
+
+
+def test_single_solid_line_payload_round_trip() -> None:
+    payload = {
+        "type": "single_solid_line",
+        "name": "Solid",
+        "line_thickness_500ths": 800,
+        "start_dlong": 100,
+        "end_dlong": 9900,
+        "start_dlat": -250,
+        "end_dlat": 1250,
+        "color_index": 7,
+        "command": "Detail",
+    }
+
+    obj = tsd_object_from_payload(payload)
+    serialized = tsd_object_to_payload(obj)
+
+    assert isinstance(obj, TsdSingleSolidLineObject)
+    assert serialized == payload
+
+
+def test_solid_line_payload_color_defaults() -> None:
+    single = tsd_object_from_payload({"type": "single_solid_line"})
+    double = tsd_object_from_payload(
+        {
+            "type": "double_solid_line",
+            "start_adjusted_dlong": 0,
+            "end_adjusted_dlong": 100,
+            "dlat": 0,
+            "line_width_500ths": 10,
+        }
+    )
+
+    assert single.color_index == 36
+    assert double.color_index == 158
 
 
 def test_double_solid_line_generates_two_lines_with_line_width_gap() -> None:
