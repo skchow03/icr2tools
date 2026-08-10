@@ -193,12 +193,15 @@ class TsdObjectDialog:
         left_dlat_bound_spin.setValue(
             existing.left_dlat_bound if isinstance(existing, TsdTransverseLineObject) else 20000
         )
-        line_width_spin = _create_distance_spin(dialog)
-        line_width_spin.setRange(1, 2_000_000_000)
-        line_width_spin.setValue(
-            existing.line_width_500ths
-            if isinstance(existing, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
-            else 5000
+        transverse_width_spin = _create_distance_spin(dialog)
+        transverse_width_spin.setRange(1, 2_000_000_000)
+        transverse_width_spin.setValue(
+            existing.line_width_500ths if isinstance(existing, TsdTransverseLineObject) else 5000
+        )
+        double_line_width_spin = _create_distance_spin(dialog)
+        double_line_width_spin.setRange(1, 2_000_000_000)
+        double_line_width_spin.setValue(
+            existing.line_width_500ths if isinstance(existing, TsdDoubleSolidLineObject) else 5000
         )
         single_line_thickness_spin = _create_distance_spin(dialog)
         single_line_thickness_spin.setRange(1, 2_000_000_000)
@@ -319,7 +322,8 @@ class TsdObjectDialog:
         layout.addRow(f"DLAT ({unit_label})", dlat_spin)
         layout.addRow(f"Right DLAT Bound ({unit_label})", right_dlat_bound_spin)
         layout.addRow(f"Left DLAT Bound ({unit_label})", left_dlat_bound_spin)
-        layout.addRow(f"Line Width ({unit_label})", line_width_spin)
+        layout.addRow(f"Transverse Line Width ({unit_label})", transverse_width_spin)
+        layout.addRow(f"Line Width ({unit_label})", double_line_width_spin)
         layout.addRow(f"Line Thickness ({unit_label})", single_line_thickness_spin)
         layout.addRow(f"Start DLONG ({unit_label})", single_start_dlong_spin)
         layout.addRow(f"End DLONG ({unit_label})", single_end_dlong_spin)
@@ -361,13 +365,13 @@ class TsdObjectDialog:
             adjusted_dlong_spin,
             right_dlat_bound_spin,
             left_dlat_bound_spin,
-            line_width_spin,
+            transverse_width_spin,
         )
         double_solid_only_fields = (
             start_adjusted_dlong_spin,
             end_adjusted_dlong_spin,
             dlat_spin,
-            line_width_spin,
+            double_line_width_spin,
         )
         single_solid_only_fields = (
             single_line_thickness_spin,
@@ -466,7 +470,7 @@ class TsdObjectDialog:
                     start_adjusted_dlong=_distance_value_500ths(start_adjusted_dlong_spin),
                     end_adjusted_dlong=_distance_value_500ths(end_adjusted_dlong_spin),
                     dlat=_distance_value_500ths(dlat_spin),
-                    line_width_500ths=_distance_value_500ths(line_width_spin),
+                    line_width_500ths=_distance_value_500ths(double_line_width_spin),
                     color_index=color_spin.value(),
                     command="Detail",
                 )
@@ -507,7 +511,7 @@ class TsdObjectDialog:
                     name=name,
                     section_index=section_index,
                     adjusted_dlong=_distance_value_500ths(adjusted_dlong_spin),
-                    line_width_500ths=_distance_value_500ths(line_width_spin),
+                    line_width_500ths=_distance_value_500ths(transverse_width_spin),
                     right_dlat_bound=_distance_value_500ths(right_dlat_bound_spin),
                     left_dlat_bound=_distance_value_500ths(left_dlat_bound_spin),
                     color_index=color_spin.value(),
@@ -611,11 +615,13 @@ class TsdObjectDialog:
                 left_dlat_bound_spin.setValue(
                     obj.left_dlat_bound if isinstance(obj, TsdTransverseLineObject) else 20000
                 )
-            with QtCore.QSignalBlocker(line_width_spin):
-                line_width_spin.setValue(
-                    obj.line_width_500ths
-                    if isinstance(obj, (TsdTransverseLineObject, TsdDoubleSolidLineObject))
-                    else 5000
+            with QtCore.QSignalBlocker(transverse_width_spin):
+                transverse_width_spin.setValue(
+                    obj.line_width_500ths if isinstance(obj, TsdTransverseLineObject) else 5000
+                )
+            with QtCore.QSignalBlocker(double_line_width_spin):
+                double_line_width_spin.setValue(
+                    obj.line_width_500ths if isinstance(obj, TsdDoubleSolidLineObject) else 5000
                 )
             with QtCore.QSignalBlocker(single_line_thickness_spin):
                 single_line_thickness_spin.setValue(
@@ -763,7 +769,8 @@ class TsdObjectDialog:
             dlat_spin,
             right_dlat_bound_spin,
             left_dlat_bound_spin,
-            line_width_spin,
+            transverse_width_spin,
+            double_line_width_spin,
             single_line_thickness_spin,
             single_start_dlong_spin,
             single_end_dlong_spin,
