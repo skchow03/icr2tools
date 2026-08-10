@@ -3446,7 +3446,7 @@ def test_export_tsd_objects_writes_single_combined_file(qapp, tmp_path, monkeypa
         window.close()
 
 
-def test_remove_selected_tsd_object_removes_selected_rows(qapp):
+def test_remove_selected_tsd_object_removes_selected_rows(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
         window.controller._open_tsd_object_dialog = (
@@ -3467,10 +3467,54 @@ def test_remove_selected_tsd_object_removes_selected_rows(qapp):
         assert window.tsd_objects_table.rowCount() == 2
 
         window.tsd_objects_table.selectRow(1)
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.Yes,
+        )
         window.controller._on_tsd_remove_selected_object_requested()
 
         assert window.tsd_objects_table.rowCount() == 1
         assert len(window.controller._tsd_objects) == 1
+    finally:
+        window.close()
+
+
+def test_remove_selected_tsd_object_keeps_object_when_warning_declined(
+    qapp, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        window.controller._open_tsd_object_dialog = (
+            lambda existing=None: TsdZebraCrossingObject(
+                name="Zebra Crossing 1",
+                start_dlong=0,
+                right_dlat=20000,
+                left_dlat=-20000,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
+        )
+        window.controller._on_tsd_add_object_requested()
+        window.tsd_objects_table.selectRow(0)
+        questions = []
+
+        def decline_removal(*args, **kwargs):
+            questions.append(args)
+            return QtWidgets.QMessageBox.No
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", decline_removal)
+
+        window.controller._on_tsd_remove_selected_object_requested()
+
+        assert window.tsd_objects_table.rowCount() == 1
+        assert len(window.controller._tsd_objects) == 1
+        assert questions[0][1] == "Remove TSD Object?"
+        assert "cannot be undone" in questions[0][2]
+        assert questions[0][4] == QtWidgets.QMessageBox.No
     finally:
         window.close()
 

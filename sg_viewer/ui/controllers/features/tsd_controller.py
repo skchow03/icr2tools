@@ -990,6 +990,17 @@ class TsdController:
                 "Select one or more TSD objects to remove.",
             )
             return
+        object_count = len(selected_rows)
+        object_label = "object" if object_count == 1 else "objects"
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            "Remove TSD Object?",
+            f"Remove the selected TSD {object_label}? This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
         for row in selected_rows:
             if 0 <= row < len(self._tsd_objects):
                 del self._tsd_objects[row]
