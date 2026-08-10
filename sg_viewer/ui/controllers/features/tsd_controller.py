@@ -1059,6 +1059,24 @@ class TsdController:
     def _on_tsd_move_object_down_requested(self) -> None:
         self._move_tsd_object(direction=1)
 
+    def _on_tsd_sort_objects_by_dlong_requested(self) -> None:
+        response = QtWidgets.QMessageBox.question(
+            self._window,
+            "Sort TSD Objects by DLONG?",
+            "Reorder all TSD objects by their starting DLONG? "
+            "This action cannot be undone.",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+            QtWidgets.QMessageBox.No,
+        )
+        if response != QtWidgets.QMessageBox.Yes:
+            return
+        self._tsd_objects.sort(key=lambda obj: self._tsd_object_dlong_range(obj)[0])
+        self._refresh_tsd_objects_table()
+        self._enable_tsd_preview_overlay()
+        self._refresh_tsd_preview_lines()
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
+
     def _open_tsd_object_attributes_dialog(self, row: int) -> None:
         if row < 0 or row >= len(self._tsd_objects):
             return

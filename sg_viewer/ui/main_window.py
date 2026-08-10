@@ -358,6 +358,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
+        self._tsd_sort_objects_by_dlong_button = QtWidgets.QPushButton(
+            "Sort by DLONG"
+        )
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton(
             "Remove Selected TSD Object"
         )
@@ -1350,6 +1353,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_object_buttons.addWidget(self._tsd_move_object_down_button, 1, 1)
         tsd_object_buttons.addWidget(self._tsd_export_objects_button, 1, 2)
         tsd_object_buttons.addWidget(self._tsd_skid_marks_button, 1, 3)
+        tsd_object_buttons.addWidget(self._tsd_sort_objects_by_dlong_button, 2, 0)
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
         tsd_objects_group.setLayout(tsd_objects_layout)
@@ -1387,6 +1391,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_move_object_down_button.setToolTip(
             "Move the selected TSD object down one row."
+        )
+        self._tsd_sort_objects_by_dlong_button.setToolTip(
+            "Sort all TSD objects by their starting DLONG."
         )
         self._tsd_export_objects_button.setToolTip(
             "Export all TSD objects as .TSD files."
@@ -2770,6 +2777,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tsd_move_object_down_button(self) -> QtWidgets.QPushButton:
         return self._tsd_move_object_down_button
+
+    @property
+    def tsd_sort_objects_by_dlong_button(self) -> QtWidgets.QPushButton:
+        return self._tsd_sort_objects_by_dlong_button
 
     @property
     def tsd_export_objects_button(self) -> QtWidgets.QPushButton:

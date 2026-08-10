@@ -3354,10 +3354,85 @@ def test_tsd_objects_controls_exist(qapp):
         )
         assert window.tsd_move_object_up_button.text() == "Move Up"
         assert window.tsd_move_object_down_button.text() == "Move Down"
+        assert window.tsd_sort_objects_by_dlong_button.text() == "Sort by DLONG"
         assert window.tsd_export_objects_button.text() == "Export object .TSD files"
         assert window.tsd_objects_table.columnCount() == 5
         assert window.tsd_move_line_up_button.text() == "Move Up"
         assert window.tsd_move_line_down_button.text() == "Move Down"
+    finally:
+        window.close()
+
+
+def test_sort_tsd_objects_by_starting_dlong_warns_and_reorders(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._tsd_objects = [
+            TsdZebraCrossingObject(
+                name=name,
+                start_dlong=start_dlong,
+                right_dlat=20000,
+                left_dlat=-20000,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
+            for name, start_dlong in (("Late", 3000), ("Early", 1000), ("Middle", 2000))
+        ]
+        questions = []
+
+        def accept_sort(*args, **kwargs):
+            questions.append(args)
+            return QtWidgets.QMessageBox.Yes
+
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", accept_sort)
+
+        window.controller._on_tsd_sort_objects_by_dlong_requested()
+
+        assert [obj.name for obj in window.controller._tsd_objects] == [
+            "Early",
+            "Middle",
+            "Late",
+        ]
+        assert questions[0][1] == "Sort TSD Objects by DLONG?"
+        assert "cannot be undone" in questions[0][2]
+        assert questions[0][4] == QtWidgets.QMessageBox.No
+    finally:
+        window.close()
+
+
+def test_sort_tsd_objects_by_starting_dlong_keeps_order_when_declined(
+    qapp, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        window.controller._tsd_objects = [
+            TsdZebraCrossingObject(
+                name=name,
+                start_dlong=start_dlong,
+                right_dlat=20000,
+                left_dlat=-20000,
+                stripe_width_500ths=4000,
+                stripe_length_500ths=28000,
+                stripe_spacing_500ths=3000,
+                color_index=36,
+                command="Detail",
+            )
+            for name, start_dlong in (("Late", 3000), ("Early", 1000))
+        ]
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.No,
+        )
+
+        window.controller._on_tsd_sort_objects_by_dlong_requested()
+
+        assert [obj.name for obj in window.controller._tsd_objects] == [
+            "Late",
+            "Early",
+        ]
     finally:
         window.close()
 
