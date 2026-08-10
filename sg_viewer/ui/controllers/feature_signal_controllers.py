@@ -30,6 +30,9 @@ class TsdSignalController:
         w.tsd_move_object_down_button.clicked.connect(
             c._on_tsd_move_object_down_requested
         )
+        w.tsd_sort_objects_by_dlong_button.clicked.connect(
+            c._on_tsd_sort_objects_by_dlong_requested
+        )
         w.tsd_export_objects_button.clicked.connect(c._on_tsd_export_objects_requested)
         w.tsd_skid_marks_button.clicked.connect(c._on_tsd_skid_marks_requested)
         w.tsd_objects_table.itemSelectionChanged.connect(
