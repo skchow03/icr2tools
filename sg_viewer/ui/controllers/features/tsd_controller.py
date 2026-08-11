@@ -717,14 +717,43 @@ class TsdController:
                 "Straighten %",
                 "Percent of the entire section held at the ending dlat range after moving away from the apex.",
             ),
+            (
+                "Smooth",
+                "Ease the lateral transition into and out of the apex so skid position and direction change gradually.",
+            ),
         )
+        smooth_column = len(section_columns) - 1
+
+        def _set_smooth_checkbox(
+            table: QtWidgets.QTableWidget,
+            row_index: int,
+            checked: bool = False,
+        ) -> None:
+            item = QtWidgets.QTableWidgetItem()
+            item.setFlags(
+                QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsUserCheckable
+            )
+            item.setCheckState(QtCore.Qt.Checked if checked else QtCore.Qt.Unchecked)
+            table.setItem(row_index, smooth_column, item)
 
         def _rows_csv_to_table(table: QtWidgets.QTableWidget, rows_csv: str) -> None:
             lines = [line.strip() for line in rows_csv.splitlines() if line.strip()]
             table.setRowCount(max(1, len(lines)))
+            for row_index in range(table.rowCount()):
+                _set_smooth_checkbox(table, row_index)
             for row_index, line in enumerate(lines):
                 values = [value.strip() for value in line.split(",")]
                 for column_index in range(len(section_columns)):
+                    if column_index == smooth_column:
+                        checked = (
+                            column_index < len(values)
+                            and values[column_index].lower()
+                            in {"1", "true", "yes", "on", "checked"}
+                        )
+                        _set_smooth_checkbox(table, row_index, checked)
+                        continue
                     value = values[column_index] if column_index < len(values) else ""
                     if column_index >= 14 and not value:
                         value = "20"
@@ -737,9 +766,17 @@ class TsdController:
                 has_value = False
                 for column_index in range(table.columnCount()):
                     item = table.item(row_index, column_index)
-                    value = item.text().strip() if item is not None else ""
+                    if column_index == smooth_column:
+                        value = (
+                            "1"
+                            if item is not None
+                            and item.checkState() == QtCore.Qt.Checked
+                            else "0"
+                        )
+                    else:
+                        value = item.text().strip() if item is not None else ""
                     values.append(value)
-                    if value:
+                    if value and column_index != smooth_column:
                         has_value = True
                 if has_value:
                     rows.append(",".join(values))
@@ -796,7 +833,9 @@ class TsdController:
         layout.addWidget(buttons)
 
         def _add_row() -> None:
-            sections_table.insertRow(sections_table.rowCount())
+            row_index = sections_table.rowCount()
+            sections_table.insertRow(row_index)
+            _set_smooth_checkbox(sections_table, row_index)
 
         def _remove_selected_rows() -> None:
             selected_rows = sorted({index.row() for index in sections_table.selectedIndexes()}, reverse=True)
@@ -804,6 +843,7 @@ class TsdController:
                 sections_table.removeRow(row_index)
             if sections_table.rowCount() == 0:
                 sections_table.setRowCount(1)
+                _set_smooth_checkbox(sections_table, 0)
 
         add_row_button.clicked.connect(_add_row)
         remove_row_button.clicked.connect(_remove_selected_rows)

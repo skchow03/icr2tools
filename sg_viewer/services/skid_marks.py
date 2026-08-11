@@ -28,6 +28,7 @@ class SkidMarkSectionParameters:
     end_dlat_b: int
     turn_in_percent: int = DEFAULT_TURN_IN_PERCENT
     straighten_percent: int = DEFAULT_STRAIGHTEN_PERCENT
+    smooth_transitions: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,10 +44,10 @@ def parse_skid_sections_csv(csv_text: str) -> tuple[SkidMarkSectionParameters, .
         if not stripped or stripped.startswith("#"):
             continue
         columns = [part.strip() for part in stripped.split(",")]
-        if len(columns) not in (14, 16):
+        if len(columns) not in (14, 16, 17):
             raise ValueError(
-                "Each row must contain 16 comma-separated values "
-                "(or 14 for a legacy row using 20% defaults)."
+                "Each row must contain 17 comma-separated values "
+                "(or 14/16 for a legacy row)."
             )
         section = SkidMarkSectionParameters(
             section_name=columns[0],
@@ -65,18 +66,30 @@ def parse_skid_sections_csv(csv_text: str) -> tuple[SkidMarkSectionParameters, .
             end_dlat_b=int(columns[13]),
             turn_in_percent=(
                 int(columns[14])
-                if len(columns) == 16 and columns[14]
+                if len(columns) >= 16 and columns[14]
                 else DEFAULT_TURN_IN_PERCENT
             ),
             straighten_percent=(
                 int(columns[15])
-                if len(columns) == 16 and columns[15]
+                if len(columns) >= 16 and columns[15]
                 else DEFAULT_STRAIGHTEN_PERCENT
+            ),
+            smooth_transitions=(
+                _parse_checkbox_value(columns[16]) if len(columns) == 17 else False
             ),
         )
         _validate_transition_percentages(section)
         rows.append(section)
     return tuple(rows)
+
+
+def _parse_checkbox_value(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on", "checked"}:
+        return True
+    if normalized in {"", "0", "false", "no", "off", "unchecked"}:
+        return False
+    raise ValueError(f"Smooth must be a checkbox value, not {value!r}.")
 
 
 def _validate_transition_percentages(section: SkidMarkSectionParameters) -> None:
@@ -211,6 +224,7 @@ def _interpolate_dlat_range(
         position = (
             (dlong - turn_in_dlong) / transition_length if transition_length else 1.0
         )
+        position = _transition_position(position, smooth=section.smooth_transitions)
         low = start_min + (apex_min - start_min) * position
         high = start_max + (apex_max - start_max) * position
         return int(low), int(high)
@@ -222,6 +236,15 @@ def _interpolate_dlat_range(
     position = (
         (dlong - section.apex_dlong) / transition_length if transition_length else 1.0
     )
+    position = _transition_position(position, smooth=section.smooth_transitions)
     low = apex_min + (end_min - apex_min) * position
     high = apex_max + (end_max - apex_max) * position
     return int(low), int(high)
+
+
+def _transition_position(position: float, *, smooth: bool) -> float:
+    """Return linear progress or an S-curve with a gradual change in direction."""
+    if not smooth:
+        return position
+    position = min(1.0, max(0.0, position))
+    return position * position * (3.0 - 2.0 * position)
