@@ -1,7 +1,10 @@
 import random
 
+import pytest
+
 from sg_viewer.services.skid_marks import (
     SkidMarkGenerationParameters,
+    _interpolate_dlat_range,
     generate_skid_mark_lines,
     parse_colors_csv,
     parse_skid_sections_csv,
@@ -19,7 +22,41 @@ def test_generate_skid_mark_lines_from_csv_rows() -> None:
     assert all(line.command == "Detail" for line in lines)
     assert all(line.width_500ths == 2200 for line in lines)
     assert all(line.color_index in (45, 28) for line in lines)
+    assert sections[0].turn_in_percent == 20
+    assert sections[0].straighten_percent == 20
 
 
 def test_parse_colors_csv_uses_defaults_for_blank() -> None:
     assert parse_colors_csv("   ") == (45, 28, 44, 29)
+
+
+def test_skid_transition_percentages_hold_start_and_end_ranges() -> None:
+    section = parse_skid_sections_csv(
+        "Turn1,0,500,1000,10,20,100,1,0,100,200,300,400,500,20,20"
+    )[0]
+    kwargs = dict(
+        entry_length=500,
+        exit_length=500,
+        start_min=0,
+        start_max=100,
+        apex_min=200,
+        apex_max=300,
+        end_min=400,
+        end_max=500,
+    )
+
+    assert _interpolate_dlat_range(section, dlong=200, **kwargs) == (0, 100)
+    assert _interpolate_dlat_range(section, dlong=350, **kwargs) == (100, 200)
+    assert _interpolate_dlat_range(section, dlong=650, **kwargs) == (300, 400)
+    assert _interpolate_dlat_range(section, dlong=800, **kwargs) == (400, 500)
+
+
+@pytest.mark.parametrize("percentages", ["60,40", "101,0", "60,20"])
+def test_skid_transition_percentages_reject_incompatible_values(
+    percentages: str,
+) -> None:
+    # The last case crosses a 50%-positioned apex even though the two values total under 99.
+    with pytest.raises(ValueError):
+        parse_skid_sections_csv(
+            f"Turn1,0,500,1000,10,20,100,1,0,100,200,300,400,500,{percentages}"
+        )

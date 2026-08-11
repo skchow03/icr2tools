@@ -709,6 +709,14 @@ class TsdController:
             ("Apex dLat Out", "Outside/upper dlat boundary at apex."),
             ("End dLat In", "Inside/lower dlat boundary at section end."),
             ("End dLat Out", "Outside/upper dlat boundary at section end."),
+            (
+                "Turn-in %",
+                "Percent of the entire section held at the starting dlat range before moving toward the apex.",
+            ),
+            (
+                "Straighten %",
+                "Percent of the entire section held at the ending dlat range after moving away from the apex.",
+            ),
         )
 
         def _rows_csv_to_table(table: QtWidgets.QTableWidget, rows_csv: str) -> None:
@@ -718,6 +726,8 @@ class TsdController:
                 values = [value.strip() for value in line.split(",")]
                 for column_index in range(len(section_columns)):
                     value = values[column_index] if column_index < len(values) else ""
+                    if column_index >= 14 and not value:
+                        value = "20"
                     table.setItem(row_index, column_index, QtWidgets.QTableWidgetItem(value))
 
         def _table_to_rows_csv(table: QtWidgets.QTableWidget) -> str:
@@ -1138,4 +1148,3 @@ class TsdController:
         self._window.show_status_message(
             f"Exported {len(self._tsd_objects)} TSD objects into {tsd_path.name}"
         )
-
