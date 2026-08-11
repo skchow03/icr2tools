@@ -965,7 +965,7 @@ def test_generate_skid_marks_enables_preview_overlay(qapp):
     window = SGViewerWindow()
     try:
         window.controller._skid_marks_rows_text = (
-            "Test,0,500,1000,100,200,50,1,-1000,1000,-1000,1000,-1000,1000"
+            "Test,0,500,1000,100,200,50,1,-1000,1000,-1000,1000,-1000,1000,20,20"
         )
         window.controller._skid_marks_colors = (36,)
         window.preview.set_tsd_lines(())
