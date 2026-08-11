@@ -987,6 +987,33 @@ def test_generate_skid_marks_enables_preview_overlay(qapp):
         window.close()
 
 
+def test_skid_mark_rows_expose_and_persist_smoothing_checkbox(qapp):
+    window = SGViewerWindow()
+    try:
+        window.controller._skid_marks_rows_text = (
+            "Test,0,500,1000,100,200,50,1,-1000,1000,-1000,1000,-1000,1000,20,20,1"
+        )
+
+        window.controller._on_tsd_skid_marks_requested()
+        dialog = window.controller._skid_marks_dialog
+        table = dialog.findChild(QtWidgets.QTableWidget)
+        assert table is not None
+        assert table.horizontalHeaderItem(16).text() == "Smooth"
+        assert table.item(0, 16).checkState() == QtCore.Qt.Checked
+
+        randomize_button = next(
+            button
+            for button in dialog.findChildren(QtWidgets.QPushButton)
+            if button.text() == "Randomize skid marks"
+        )
+        randomize_button.click()
+
+        assert window.controller._skid_marks_rows_text.endswith(",1")
+    finally:
+        window.controller._skid_marks_dialog.close()
+        window.close()
+
+
 def test_load_tsd_file_populates_table_and_preview(qapp, tmp_path, monkeypatch):
     window = SGViewerWindow()
     try:

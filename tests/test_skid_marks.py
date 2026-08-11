@@ -51,6 +51,46 @@ def test_skid_transition_percentages_hold_start_and_end_ranges() -> None:
     assert _interpolate_dlat_range(section, dlong=800, **kwargs) == (400, 500)
 
 
+def test_smooth_skid_transitions_use_gradual_s_curve() -> None:
+    section = parse_skid_sections_csv(
+        "Turn1,0,500,1000,10,20,100,1,0,100,200,300,400,500,20,20,1"
+    )[0]
+    kwargs = dict(
+        entry_length=500,
+        exit_length=500,
+        start_min=0,
+        start_max=100,
+        apex_min=200,
+        apex_max=300,
+        end_min=400,
+        end_max=500,
+    )
+
+    assert section.smooth_transitions is True
+    # A smoothstep curve moves less than linear interpolation near each end.
+    assert _interpolate_dlat_range(section, dlong=275, **kwargs) == (31, 131)
+    assert _interpolate_dlat_range(section, dlong=425, **kwargs) == (168, 268)
+    assert _interpolate_dlat_range(section, dlong=575, **kwargs) == (231, 331)
+    assert _interpolate_dlat_range(section, dlong=725, **kwargs) == (368, 468)
+
+
+def test_smooth_row_preserves_custom_transition_percentages() -> None:
+    section = parse_skid_sections_csv(
+        "Turn1,0,500,1000,10,20,100,1,0,100,200,300,400,500,25,15,1"
+    )[0]
+
+    assert section.turn_in_percent == 25
+    assert section.straighten_percent == 15
+
+
+@pytest.mark.parametrize("value", ["wat", "sometimes"])
+def test_smooth_skid_transition_rejects_invalid_checkbox_values(value: str) -> None:
+    with pytest.raises(ValueError, match="Smooth must be a checkbox value"):
+        parse_skid_sections_csv(
+            f"Turn1,0,500,1000,10,20,100,1,0,100,200,300,400,500,20,20,{value}"
+        )
+
+
 @pytest.mark.parametrize("percentages", ["60,40", "101,0", "60,20"])
 def test_skid_transition_percentages_reject_incompatible_values(
     percentages: str,
