@@ -36,6 +36,7 @@ from sg_viewer.ui.presentation.units_presenter import (
     measurement_unit_step,
 )
 from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
+from sg_viewer.ui.dialogs.tso_stamp_dialog import TsoStampDialog
 from sg_viewer.ui.altitude_units import units_from_500ths, units_to_500ths
 from track_viewer.geometry import project_point_to_centerline
 
@@ -57,6 +58,7 @@ class TracksideObjectsController:
             "_tso_box_select_mode_active",
             "_tso_stamp_filename",
             "_tso_stamp_filenames",
+            "_tso_stamp_lists",
             "_auto_update_tso_relative_z",
             "_tso_persist_timer",
             "_tso_visibility_sidebar_dirty",
@@ -78,6 +80,7 @@ class TracksideObjectsController:
             "_tso_box_select_mode_active",
             "_tso_stamp_filename",
             "_tso_stamp_filenames",
+            "_tso_stamp_lists",
             "_auto_update_tso_relative_z",
             "_tso_persist_timer",
             "_tso_visibility_sidebar_dirty",
@@ -99,6 +102,7 @@ class TracksideObjectsController:
                 "_tso_box_select_mode_active": "box_select_mode_active",
                 "_tso_stamp_filename": "stamp_filename",
                 "_tso_stamp_filenames": "stamp_filenames",
+                "_tso_stamp_lists": "stamp_lists",
                 "_auto_update_tso_relative_z": "auto_update_relative_z",
                 "_tso_persist_timer": "persist_timer",
                 "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
@@ -118,6 +122,7 @@ class TracksideObjectsController:
                 "_tso_box_select_mode_active": "box_select_mode_active",
                 "_tso_stamp_filename": "stamp_filename",
                 "_tso_stamp_filenames": "stamp_filenames",
+                "_tso_stamp_lists": "stamp_lists",
                 "_auto_update_tso_relative_z": "auto_update_relative_z",
                 "_tso_persist_timer": "persist_timer",
                 "_tso_visibility_sidebar_dirty": "visibility_sidebar_dirty",
@@ -140,9 +145,7 @@ class TracksideObjectsController:
         w.tso_move_down_button.clicked.connect(h._on_tso_move_down_requested)
         w.tso_import_from_3d_button.clicked.connect(h._on_tso_import_from_3d_requested)
         w.tso_delete_all_button.clicked.connect(h._on_tso_delete_all_requested)
-        w.tso_clone_selected_button.clicked.connect(
-            h._on_tso_clone_selected_requested
-        )
+        w.tso_clone_selected_button.clicked.connect(h._on_tso_clone_selected_requested)
         w.tso_modify_elevations_button.clicked.connect(
             h._on_tso_modify_elevations_requested
         )
@@ -1156,12 +1159,13 @@ class TracksideObjectsController:
             self._set_tso_stamp_mode_active(False)
             self._window.show_status_message("Stamp mode deactivated.")
             return
-        text, ok = QtWidgets.QInputDialog.getText(
+        text, ok, remaining_lists = TsoStampDialog.get_stamp_list(
             self._window,
-            "Stamp TSOs",
-            "Filenames (comma separated):",
-            text=self._tso_stamp_filename or "object",
+            self._tso_stamp_lists,
+            self._tso_stamp_filename or "object",
         )
+        self._tso_stamp_lists = self._normalize_stamp_lists(remaining_lists)
+        self._document_controller.persist_project_metadata()
         if not ok:
             self._window.tso_stamp_button.blockSignals(True)
             self._window.tso_stamp_button.setChecked(False)
@@ -1180,11 +1184,45 @@ class TracksideObjectsController:
             self._window.tso_stamp_button.setChecked(False)
             self._window.tso_stamp_button.blockSignals(False)
             return
+        if filenames not in self._tso_stamp_lists:
+            self._tso_stamp_lists.append(filenames)
+            self._document_controller.persist_project_metadata()
+
+        represented = {obj.filename.casefold() for obj in self._trackside_objects}
+        missing = tuple(
+            name for name in filenames if name.casefold() not in represented
+        )
+        if missing:
+            answer = QtWidgets.QMessageBox.question(
+                self._window,
+                "Stamp filenames not in TSO list",
+                "These filenames are not represented in the TSO list:\n\n"
+                + "\n".join(f"• {name}" for name in missing)
+                + "\n\nStart stamping anyway?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if answer != QtWidgets.QMessageBox.Yes:
+                self._window.tso_stamp_button.setChecked(False)
+                return
         self._set_tso_stamp_mode_active(True, filenames=filenames)
         self._window.show_status_message(
             "Stamp mode active: click the map to place a randomly selected TSO. "
             "Click Stamp again to stop."
         )
+
+    @staticmethod
+    def _normalize_stamp_lists(values: list[str]) -> list[tuple[str, ...]]:
+        result: list[tuple[str, ...]] = []
+        for value in values:
+            filenames = tuple(
+                normalized
+                for part in value.split(",")
+                if (normalized := normalize_trackside_filename(part.strip()))
+            )
+            if filenames and filenames not in result:
+                result.append(filenames)
+        return result
 
     def _on_tso_box_select_requested(self) -> None:
         self._set_tso_box_select_mode_active(
