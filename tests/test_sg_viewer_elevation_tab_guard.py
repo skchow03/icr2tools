@@ -346,3 +346,29 @@ def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
         ] == ["Features", "Walls", "Surface Detail"]
     finally:
         window.close()
+
+
+def test_files_sidebar_groups_tools_by_task(qapp):
+    window = SGViewerWindow()
+    try:
+        tabs = window._three_d_file_tabs
+        assert [tabs.tabText(index) for index in range(tabs.count())] == [
+            "Configure",
+            "Export",
+            "Advanced",
+        ]
+
+        group_titles = [
+            {
+                group.title()
+                for group in tabs.widget(index).findChildren(QtWidgets.QGroupBox)
+            }
+            for index in range(tabs.count())
+        ]
+        assert group_titles == [
+            {"Export Locations", "Project Files", "Color Mapping"},
+            {"Standard Workflow"},
+            {"Other Tools"},
+        ]
+    finally:
+        window.close()
