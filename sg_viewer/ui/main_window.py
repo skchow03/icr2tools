@@ -1531,15 +1531,19 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._three_d_file_sidebar = QtWidgets.QWidget()
         three_d_layout = QtWidgets.QVBoxLayout()
+        three_d_layout.setContentsMargins(0, 0, 0, 0)
+        self._three_d_file_tabs = QtWidgets.QTabWidget()
+
+        configure_tab = QtWidgets.QWidget()
+        configure_layout = QtWidgets.QVBoxLayout()
         three_d_intro = QtWidgets.QLabel(
-            "Use this tab to choose the project .3D file, then run tools that inspect/fix "
-            "see-through elevations and replace color definitions.\n"
+            "Choose the project .3D file and configure the files used by export tools.\n"
             "The selected paths are saved with the project."
         )
         three_d_intro.setWordWrap(True)
-        three_d_layout.addWidget(three_d_intro)
+        configure_layout.addWidget(three_d_intro)
 
-        track_group = QtWidgets.QGroupBox("1) Export locations")
+        track_group = QtWidgets.QGroupBox("Export Locations")
         track_group_layout = QtWidgets.QVBoxLayout()
         track_group_layout.addWidget(self._three_d_file_selected_path_label)
         track_group_buttons = QtWidgets.QHBoxLayout()
@@ -1547,9 +1551,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         track_group_buttons.addWidget(self._three_d_file_select_button)
         track_group_layout.addLayout(track_group_buttons)
         track_group.setLayout(track_group_layout)
-        three_d_layout.addWidget(track_group)
+        configure_layout.addWidget(track_group)
 
-        project_files_group = QtWidgets.QGroupBox("2) Project files")
+        project_files_group = QtWidgets.QGroupBox("Project Files")
         project_files_layout = QtWidgets.QVBoxLayout()
         project_files_note = QtWidgets.QLabel(
             "Copy reusable template files and subfolders into the project folder. "
@@ -1565,9 +1569,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         project_files_layout.addLayout(trackname_replace_layout)
         project_files_layout.addWidget(self._files_copy_template_button)
         project_files_group.setLayout(project_files_layout)
-        three_d_layout.addWidget(project_files_group)
+        configure_layout.addWidget(project_files_group)
 
-        workflow_group = QtWidgets.QGroupBox("3) Standard workflow")
+        color_mapping_group = QtWidgets.QGroupBox("Color Mapping")
+        color_mapping_layout = QtWidgets.QVBoxLayout()
+        color_mapping_layout.addWidget(self._three_d_file_colors_path_label)
+        color_mapping_layout.addWidget(self._three_d_file_select_colors_button)
+        color_mapping_group.setLayout(color_mapping_layout)
+        configure_layout.addWidget(color_mapping_group)
+        configure_layout.addStretch(1)
+        configure_tab.setLayout(configure_layout)
+
+        export_tab = QtWidgets.QWidget()
+        export_layout = QtWidgets.QVBoxLayout()
+        workflow_group = QtWidgets.QGroupBox("Standard Workflow")
         workflow_layout = QtWidgets.QVBoxLayout()
         workflow_note = QtWidgets.QLabel(
             "Select the updates to run, or apply the complete standard .3D workflow."
@@ -1623,9 +1638,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         workflow_buttons.addWidget(self._three_d_apply_all_workflow_button)
         workflow_layout.addLayout(workflow_buttons)
         workflow_group.setLayout(workflow_layout)
-        three_d_layout.addWidget(workflow_group)
+        export_layout.addWidget(workflow_group)
+        export_layout.addStretch(1)
+        export_tab.setLayout(export_layout)
 
-        other_group = QtWidgets.QGroupBox("4) Other tools")
+        advanced_tab = QtWidgets.QWidget()
+        advanced_layout = QtWidgets.QVBoxLayout()
+        other_group = QtWidgets.QGroupBox("Other Tools")
         other_layout = QtWidgets.QVBoxLayout()
         other_layout.addWidget(self._three_d_file_catalog_inspector_button)
         other_layout.addWidget(self._three_d_show_section_entries_button)
@@ -1635,11 +1654,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         other_layout.addWidget(self._three_d_file_inspect_button)
         other_layout.addWidget(self._three_d_file_fix_copy_button)
         other_layout.addWidget(self._three_d_apply_face_materials_button)
-        other_layout.addWidget(self._three_d_file_colors_path_label)
-        other_layout.addWidget(self._three_d_file_select_colors_button)
         other_group.setLayout(other_layout)
-        three_d_layout.addWidget(other_group)
-        three_d_layout.addStretch(1)
+        advanced_layout.addWidget(other_group)
+        advanced_layout.addStretch(1)
+        advanced_tab.setLayout(advanced_layout)
+
+        self._three_d_file_tabs.addTab(configure_tab, "Configure")
+        self._three_d_file_tabs.addTab(export_tab, "Export")
+        self._three_d_file_tabs.addTab(advanced_tab, "Advanced")
+        three_d_layout.addWidget(self._three_d_file_tabs)
         self._three_d_file_sidebar.setLayout(three_d_layout)
 
         preview_column = QtWidgets.QWidget()
