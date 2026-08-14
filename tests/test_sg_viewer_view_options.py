@@ -260,7 +260,7 @@ def test_mouse_status_updates_for_sidebar_tabs(qapp):
             "Objects": "select TSO or place TSO",
             "TSO Visibility": "select/highlight visible TSO",
             "Draw land objects": "add land point",
-            ".3D file": "select section/object",
+            "Configure": "select section/object",
         }
 
         for tab_name, expected_text in expectations.items():

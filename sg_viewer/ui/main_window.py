@@ -1337,7 +1337,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_lines_group.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
         )
-        tsd_layout.addWidget(tsd_lines_group, 1)
         tsd_objects_group = QtWidgets.QGroupBox("TSD Objects")
         tsd_objects_layout = QtWidgets.QVBoxLayout()
         tsd_objects_layout.addWidget(
@@ -1357,7 +1356,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tsd_objects_layout.addLayout(tsd_object_buttons)
         tsd_objects_layout.addWidget(self._tsd_objects_table)
         tsd_objects_group.setLayout(tsd_objects_layout)
-        tsd_layout.addWidget(tsd_objects_group)
+        tsd_objects_group.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Expanding
+        )
+
+        self._tsd_sections_splitter = QtWidgets.QSplitter(QtCore.Qt.Vertical)
+        self._tsd_sections_splitter.setObjectName("tsdSectionsSplitter")
+        self._tsd_sections_splitter.setChildrenCollapsible(False)
+        self._tsd_sections_splitter.addWidget(tsd_lines_group)
+        self._tsd_sections_splitter.addWidget(tsd_objects_group)
+        self._tsd_sections_splitter.setStretchFactor(0, 1)
+        self._tsd_sections_splitter.setStretchFactor(1, 1)
+        tsd_layout.addWidget(self._tsd_sections_splitter, 1)
 
         self._tsd_add_line_button.setToolTip("Add a new TSD line row.")
         self._tsd_delete_line_button.setToolTip("Delete the selected TSD line row.")
@@ -1529,9 +1539,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygon_fill_checkbox.toggled.connect(
             lambda _checked: self._sync_land_polygons_overlay()
         )
-        self._three_d_file_sidebar = QtWidgets.QWidget()
-        three_d_layout = QtWidgets.QVBoxLayout()
-        three_d_layout.setContentsMargins(0, 0, 0, 0)
         self._three_d_file_tabs = QtWidgets.QTabWidget()
 
         configure_tab = QtWidgets.QWidget()
@@ -1662,8 +1669,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_file_tabs.addTab(configure_tab, "Configure")
         self._three_d_file_tabs.addTab(export_tab, "Export")
         self._three_d_file_tabs.addTab(advanced_tab, "Advanced")
-        three_d_layout.addWidget(self._three_d_file_tabs)
-        self._three_d_file_sidebar.setLayout(three_d_layout)
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
@@ -2375,7 +2380,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     (self._land_objects_sidebar, "Draw land objects"),
                 ),
             ),
-            ("Files", ((self._three_d_file_sidebar, ".3D file"),)),
         ):
             tab_widget = add_workflow_tab(workflow_label)
             for panel_widget, feature_label in panels:
@@ -2393,6 +2397,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 elif feature_label == "Track Surface Markings":
                     self._sidebar_feature_tabs["TSD"] = tab_widget
                     self._sidebar_feature_tab_widgets["TSD"] = panel_widget
+
+        # Files already has task-oriented tabs; add it directly rather than
+        # wrapping it in a redundant single ".3D file" tab.
+        self._three_d_file_tabs.currentChanged.connect(
+            lambda _index: self._on_sidebar_feature_tab_changed()
+        )
+        self._right_sidebar_tabs.addTab(self._three_d_file_tabs, "Files")
+        self._sidebar_feature_tab_widgets[".3D file"] = self._three_d_file_tabs
 
     def _build_viewport_toolbar(self) -> QtWidgets.QFrame:
         """Build the compact viewport display/options toolbar above the preview."""
@@ -2539,6 +2551,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     "Mouse wheel: zoom at cursor"
                 ),
                 ".3D file": (
+                    "Left click: select section/object in viewport • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Configure": (
+                    "Left click: select section/object in viewport • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Export": (
+                    "Left click: select section/object in viewport • "
+                    "Left drag: pan view • "
+                    "Mouse wheel: zoom at cursor"
+                ),
+                "Advanced": (
                     "Left click: select section/object in viewport • "
                     "Left drag: pan view • "
                     "Mouse wheel: zoom at cursor"

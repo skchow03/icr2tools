@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 try:
-    from PyQt5 import QtWidgets
+    from PyQt5 import QtCore, QtWidgets
     from sg_viewer.ui.app import SGViewerWindow
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
@@ -352,6 +352,12 @@ def test_files_sidebar_groups_tools_by_task(qapp):
     window = SGViewerWindow()
     try:
         tabs = window._three_d_file_tabs
+        files_index = next(
+            index
+            for index in range(window.right_sidebar_tabs.count())
+            if window.right_sidebar_tabs.tabText(index) == "Files"
+        )
+        assert window.right_sidebar_tabs.widget(files_index) is tabs
         assert [tabs.tabText(index) for index in range(tabs.count())] == [
             "Configure",
             "Export",
@@ -370,5 +376,20 @@ def test_files_sidebar_groups_tools_by_task(qapp):
             {"Standard Workflow"},
             {"Other Tools"},
         ]
+    finally:
+        window.close()
+
+
+def test_surface_detail_sections_are_vertically_resizable(qapp):
+    window = SGViewerWindow()
+    try:
+        splitter = window._tsd_sections_splitter
+        assert splitter.orientation() == QtCore.Qt.Vertical
+        assert splitter.count() == 2
+        assert [splitter.widget(index).title() for index in range(2)] == [
+            "TSD Lines",
+            "TSD Objects",
+        ]
+        assert not splitter.childrenCollapsible()
     finally:
         window.close()
