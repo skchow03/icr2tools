@@ -3979,8 +3979,7 @@ def test_clone_selected_tso_copies_first_selection_to_end(qapp):
         for row in (2, 0):
             selection_model.select(
                 window.tso_table.model().index(row, 0),
-                QtCore.QItemSelectionModel.Select
-                | QtCore.QItemSelectionModel.Rows,
+                QtCore.QItemSelectionModel.Select | QtCore.QItemSelectionModel.Rows,
             )
 
         window.tso_clone_selected_button.click()
@@ -4078,9 +4077,13 @@ def test_tso_stamp_mode_places_multiple_objects_with_same_filename(qapp, monkeyp
     window = SGViewerWindow()
     try:
         monkeypatch.setattr(
-            QtWidgets.QInputDialog,
-            "getText",
-            lambda *args, **kwargs: ("cone.3do", True),
+            "sg_viewer.ui.controllers.features.trackside_objects_controller.TsoStampDialog.get_stamp_list",
+            lambda *args, **kwargs: ("cone.3do", True, []),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.Yes,
         )
 
         window.controller._on_tso_stamp_requested()
@@ -4107,13 +4110,15 @@ def test_tso_stamp_mode_randomly_selects_from_comma_separated_filenames(
 ):
     window = SGViewerWindow()
     try:
-        prompt = {}
-
-        def get_text(*args, **kwargs):
-            prompt["label"] = args[2]
-            return ("tree.3do, pine, oak.3do", True)
-
-        monkeypatch.setattr(QtWidgets.QInputDialog, "getText", get_text)
+        monkeypatch.setattr(
+            "sg_viewer.ui.controllers.features.trackside_objects_controller.TsoStampDialog.get_stamp_list",
+            lambda *args, **kwargs: ("tree.3do, pine, oak.3do", True, []),
+        )
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "question",
+            lambda *args, **kwargs: QtWidgets.QMessageBox.Yes,
+        )
         selections = iter(("oak", "tree", "pine"))
         monkeypatch.setattr(
             "sg_viewer.ui.controllers.features.trackside_objects_controller.random.choice",
@@ -4124,7 +4129,6 @@ def test_tso_stamp_mode_randomly_selects_from_comma_separated_filenames(
         for x in (10, 20, 30):
             assert window.controller._on_preview_tso_map_clicked(x, 40) is True
 
-        assert prompt["label"] == "Filenames (comma separated):"
         assert window.controller._tso_stamp_filenames == ("tree", "pine", "oak")
         assert [obj.filename for obj in window.controller._trackside_objects] == [
             "oak",

@@ -260,6 +260,25 @@ class DocumentController:
         self._host._load_tsd_state_for_current_track(
             update_tsd_progress if progress is not None else None
         )
+        self._restore_stamp_lists_for_current_track()
+
+    def _restore_stamp_lists_for_current_track(self) -> None:
+        controller = self._host._trackside_objects_controller
+        controller._tso_stamp_lists = []
+        if self._host._current_path is None:
+            return
+        payload = self._load_project_payload(
+            self._host._settings_path_for(self._host._current_path)
+        )
+        raw_lists = payload.get("tso_stamp_lists", [])
+        if not isinstance(raw_lists, list):
+            return
+        encoded = [
+            ", ".join(value)
+            for value in raw_lists
+            if isinstance(value, list) and all(isinstance(item, str) for item in value)
+        ]
+        controller._tso_stamp_lists = controller._normalize_stamp_lists(encoded)
 
     def import_trk_file_dialog(self) -> None:
         if not self._host.confirm_discard_unsaved_for_action("Load Another Track"):
@@ -532,6 +551,7 @@ class DocumentController:
 
         self._host._clear_background_state()
         self._host._clear_loaded_tsd_files()
+        self._host._trackside_objects_controller._tso_stamp_lists = []
         self._host._current_path = None
         self._host._set_project_working_directory(None, persist=False)
         self._host._window.preview.start_new_track()
@@ -635,7 +655,9 @@ class DocumentController:
         self._host._current_path = path
         if self._host._project_working_directory is None:
             self._host._set_project_working_directory(path.parent, persist=False)
-        status_message = f"Saved {path} and project {self._host._settings_path_for(path)}"
+        status_message = (
+            f"Saved {path} and project {self._host._settings_path_for(path)}"
+        )
         if created_mrk_path is not None:
             status_message += f"; created {created_mrk_path}"
         self._host._window.show_status_message(status_message)
@@ -771,6 +793,10 @@ class DocumentController:
         payload["three_d_workflow_options"] = (
             self._host._window.three_d_workflow_options()
         )
+        payload["tso_stamp_lists"] = [
+            list(filenames)
+            for filenames in self._host._trackside_objects_controller._tso_stamp_lists
+        ]
         encoded_working_directory = self._encode_project_working_directory(
             settings_path, self._host._project_working_directory
         )
