@@ -28,6 +28,8 @@ import argparse
 
 from PyQt5 import QtCore, QtGui, QtWidgets, QtNetwork
 
+from sg_viewer.services.image_loader import load_qimage
+
 # -------------------------------------------------
 # Constants
 # -------------------------------------------------
@@ -272,7 +274,10 @@ class Calibrator(QtWidgets.QMainWindow):
 
     def open_image(self):
         fn, _ = QtWidgets.QFileDialog.getOpenFileName(
-            self, "Open Image", "", "Images (*.png *.jpg *.bmp *.tif)"
+            self,
+            "Open Image",
+            "",
+            "Images (*.png *.jpg *.jpeg *.bmp *.tif *.pcx *.PCX)",
         )
         if not fn:
             return
@@ -280,7 +285,7 @@ class Calibrator(QtWidgets.QMainWindow):
         self._load_image(fn)
 
     def _load_image(self, fn: str) -> bool:
-        pm = QtGui.QPixmap(fn)
+        pm = QtGui.QPixmap.fromImage(load_qimage(fn))
         if pm.isNull():
             QtWidgets.QMessageBox.warning(self, "Open Image", "Failed to load image")
             return False

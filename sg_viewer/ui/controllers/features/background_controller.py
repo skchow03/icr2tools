@@ -49,7 +49,7 @@ class BackgroundController:
             self._host._window,
             "Open Background Image",
             "",
-            "Image files (*.png *.jpg *.jpeg *.bmp *.pcx);;All files (*)",
+            "Image files (*.png *.jpg *.jpeg *.bmp *.pcx *.PCX);;All files (*)",
             options=options,
         )
         if not file_path:
