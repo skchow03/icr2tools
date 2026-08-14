@@ -6,6 +6,7 @@ from typing import Tuple
 from PyQt5 import QtGui
 
 from sg_viewer.geometry import preview_transform
+from sg_viewer.services.image_loader import load_qimage
 
 Point = Tuple[float, float]
 
@@ -22,7 +23,7 @@ class PreviewBackground:
     # State management
     # ------------------------------------------------------------------
     def load_image(self, path: Path) -> None:
-        image = QtGui.QImage(str(path))
+        image = load_qimage(path)
         if image.isNull():
             raise ValueError(f"Unable to load image from {path}")
 
