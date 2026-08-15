@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import math
 import random
+import re
 from pathlib import Path
 from time import perf_counter
 
@@ -146,6 +147,9 @@ class TracksideObjectsController:
         w.tso_import_from_3d_button.clicked.connect(h._on_tso_import_from_3d_requested)
         w.tso_delete_all_button.clicked.connect(h._on_tso_delete_all_requested)
         w.tso_clone_selected_button.clicked.connect(h._on_tso_clone_selected_requested)
+        w.tso_select_filename_regex_button.clicked.connect(
+            h._on_tso_select_filename_regex_requested
+        )
         w.tso_modify_elevations_button.clicked.connect(
             h._on_tso_modify_elevations_requested
         )
@@ -1484,6 +1488,31 @@ class TracksideObjectsController:
         self._refresh_tso_table()
         self._set_trackside_objects_dirty(True)
         self._persist_tsd_state_for_current_track()
+
+    def _on_tso_select_filename_regex_requested(self) -> None:
+        pattern_text, accepted = QtWidgets.QInputDialog.getText(
+            self._window,
+            "Select TSOs by Filename",
+            "Filename regular expression:",
+        )
+        if not accepted:
+            return
+        try:
+            pattern = re.compile(pattern_text)
+        except re.error as error:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Invalid Regular Expression",
+                f"The filename regular expression is invalid:\n{error}",
+            )
+            return
+
+        self._selected_trackside_object_indices = [
+            index
+            for index, obj in enumerate(self._trackside_objects)
+            if pattern.search(normalize_trackside_filename(obj.filename)) is not None
+        ]
+        self._refresh_tso_table()
 
     def _on_tso_clone_selected_requested(self) -> None:
         table = self._window.tso_table

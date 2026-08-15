@@ -4024,6 +4024,63 @@ def test_clone_selected_tso_with_no_selection_does_nothing(qapp):
         window.close()
 
 
+def test_select_tsos_by_filename_regex_selects_all_matches(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree01.3do"),
+            TracksideObject(filename="grandstand.3do"),
+            TracksideObject(filename="tree02.3do"),
+            TracksideObject(filename="treehouse.3do"),
+        ]
+        window.controller._refresh_tso_table()
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog,
+            "getText",
+            lambda *args, **kwargs: (r"^tree\d+$", True),
+        )
+
+        window.tso_select_filename_regex_button.click()
+
+        assert window.controller._selected_trackside_object_indices == [0, 2]
+        assert [
+            index.row()
+            for index in window.tso_table.selectionModel().selectedRows()
+        ] == [0, 2]
+    finally:
+        window.close()
+
+
+def test_select_tsos_by_invalid_filename_regex_preserves_selection(
+    qapp, monkeypatch
+):
+    window = SGViewerWindow()
+    try:
+        window.controller._trackside_objects = [
+            TracksideObject(filename="tree.3do"),
+            TracksideObject(filename="sign.3do"),
+        ]
+        window.controller._selected_trackside_object_indices = [1]
+        window.controller._refresh_tso_table()
+        monkeypatch.setattr(
+            QtWidgets.QInputDialog, "getText", lambda *args, **kwargs: ("[", True)
+        )
+        warnings = []
+        monkeypatch.setattr(
+            QtWidgets.QMessageBox,
+            "warning",
+            lambda *args: warnings.append(args),
+        )
+
+        window.tso_select_filename_regex_button.click()
+
+        assert window.controller._selected_trackside_object_indices == [1]
+        assert len(warnings) == 1
+        assert warnings[0][1] == "Invalid Regular Expression"
+    finally:
+        window.close()
+
+
 def test_delete_tso_remaps_object_and_detail_list_tso_ids(qapp):
     window = SGViewerWindow()
     try:

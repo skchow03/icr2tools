@@ -399,6 +399,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tso_delete_all_button = QtWidgets.QPushButton("Delete All TSOs")
         self._tso_clone_selected_button = QtWidgets.QPushButton("Clone Selected TSO")
+        self._tso_select_filename_regex_button = QtWidgets.QPushButton(
+            "Select by Filename Regex..."
+        )
         self._tso_modify_elevations_button = QtWidgets.QPushButton(
             "Modify elevations..."
         )
@@ -1432,6 +1435,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         tso_advanced_layout = QtWidgets.QHBoxLayout()
         tso_advanced_layout.addWidget(self._tso_delete_all_button)
         tso_advanced_layout.addWidget(self._tso_clone_selected_button)
+        tso_advanced_layout.addWidget(self._tso_select_filename_regex_button)
         tso_advanced_layout.addWidget(self._tso_modify_elevations_button)
         tso_advanced_layout.addStretch(1)
         tso_advanced_group.setLayout(tso_advanced_layout)
@@ -1454,6 +1458,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tso_clone_selected_button.setToolTip(
             "Clone the first selected TSO and add the clone to the end of the list."
+        )
+        self._tso_select_filename_regex_button.setToolTip(
+            "Select every TSO whose filename contains a regular-expression match."
         )
         self._tso_visibility_sidebar = TSOVisibilityTab()
         self._land_objects_sidebar = QtWidgets.QWidget()
@@ -2899,6 +2906,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def tso_clone_selected_button(self) -> QtWidgets.QPushButton:
         return self._tso_clone_selected_button
+
+    @property
+    def tso_select_filename_regex_button(self) -> QtWidgets.QPushButton:
+        return self._tso_select_filename_regex_button
 
     @property
     def tso_table(self) -> QtWidgets.QTableWidget:
