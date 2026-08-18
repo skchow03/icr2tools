@@ -512,6 +512,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_apply_face_materials_button = QtWidgets.QPushButton(
             "Replace materials in selected FACE spans"
         )
+        self._three_d_scale_texture_resolution_button = QtWidgets.QPushButton(
+            "Scale track texture resolution"
+        )
         self._three_d_file_inspect_button = QtWidgets.QPushButton(
             "Inspect see-through candidates"
         )
@@ -1668,6 +1671,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         other_layout.addWidget(self._three_d_file_inspect_button)
         other_layout.addWidget(self._three_d_file_fix_copy_button)
         other_layout.addWidget(self._three_d_apply_face_materials_button)
+        other_layout.addWidget(self._three_d_scale_texture_resolution_button)
         other_group.setLayout(other_layout)
         advanced_layout.addWidget(other_group)
         advanced_layout.addStretch(1)
@@ -2966,6 +2970,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def three_d_apply_face_materials_button(self) -> QtWidgets.QPushButton:
         return self._three_d_apply_face_materials_button
+
+    @property
+    def three_d_scale_texture_resolution_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_scale_texture_resolution_button
 
     @property
     def three_d_file_inspect_button(self) -> QtWidgets.QPushButton:

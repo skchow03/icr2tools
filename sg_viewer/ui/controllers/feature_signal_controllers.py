@@ -144,6 +144,9 @@ class Track3DController:
         w.three_d_apply_face_materials_button.clicked.connect(
             c._on_three_d_apply_selected_face_materials
         )
+        w.three_d_scale_texture_resolution_button.clicked.connect(
+            c._on_three_d_scale_texture_resolution_requested
+        )
         w.three_d_file_inspect_button.clicked.connect(c._on_three_d_inspect_requested)
         w.three_d_file_fix_copy_button.clicked.connect(c._on_three_d_fix_copy_requested)
         w.three_d_file_fix_in_place_button.clicked.connect(

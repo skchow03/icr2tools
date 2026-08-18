@@ -28,6 +28,7 @@ from sg_viewer.io.track3d_edit_plan import (
     build_selected_object_list_edit_plan,
     build_selected_tso_definition_edit_plan,
 )
+from sg_viewer.io.track3d_texture_scaler import scale_track3d_texture_file
 
 
 @contextmanager
@@ -538,6 +539,58 @@ class Track3DToolsController:
             return
         self._set_selected_track3d_path(selected_path, persist=True)
         self._window.show_status_message(f"Selected .3D file: {selected_path.name}")
+
+    def _on_three_d_scale_texture_resolution_requested(self) -> None:
+        input_path = self._ensure_selected_track3d_file()
+        if input_path is None:
+            return
+
+        mip_name, accepted = QtWidgets.QInputDialog.getText(
+            self._window,
+            "Scale Track Texture Resolution",
+            "MIP file name:",
+        )
+        mip_name = mip_name.strip()
+        if not accepted:
+            return
+        if not mip_name:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Scale Track Texture Resolution",
+                "Enter a MIP file name.",
+            )
+            return
+
+        factor, accepted = QtWidgets.QInputDialog.getDouble(
+            self._window,
+            "Scale Track Texture Resolution",
+            "Texture coordinate scale factor:",
+            2.0,
+            0.000001,
+            1_000_000.0,
+            6,
+        )
+        if not accepted:
+            return
+
+        try:
+            result = scale_track3d_texture_file(input_path, mip_name, factor)
+        except (OSError, UnicodeError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Scale Track Texture Resolution",
+                f"Could not scale texture coordinates:\n{exc}",
+            )
+            return
+
+        QtWidgets.QMessageBox.information(
+            self._window,
+            "Scale Track Texture Resolution",
+            f"Materials altered: {result.materials_altered}",
+        )
+        self._window.show_status_message(
+            f"Scaled texture coordinates in {result.materials_altered} material(s)."
+        )
 
     def _on_three_d_catalog_inspector_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
