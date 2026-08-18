@@ -147,6 +147,18 @@ class Track3DController:
         w.three_d_scale_texture_resolution_button.clicked.connect(
             c._on_three_d_scale_texture_resolution_requested
         )
+        w._three_d_texture_scaling_add_button.clicked.connect(
+            c._on_add_texture_scaling_requested
+        )
+        w._three_d_texture_scaling_remove_button.clicked.connect(
+            c._on_remove_texture_scaling_requested
+        )
+        w._three_d_texture_scaling_table.itemChanged.connect(
+            lambda _item: h._document_controller.persist_project_metadata()
+        )
+        w.textureScalingConfigChanged.connect(
+            h._document_controller.persist_project_metadata
+        )
         w.three_d_file_inspect_button.clicked.connect(c._on_three_d_inspect_requested)
         w.three_d_file_fix_copy_button.clicked.connect(c._on_three_d_fix_copy_requested)
         w.three_d_file_fix_in_place_button.clicked.connect(
@@ -179,6 +191,7 @@ class Track3DController:
             w._three_d_workflow_detail_lists_checkbox,
             w._three_d_workflow_see_through_checkbox,
             w._three_d_workflow_colors_checkbox,
+            w._three_d_workflow_texture_scaling_checkbox,
         ):
             checkbox.toggled.connect(
                 lambda _checked: h._document_controller.persist_project_metadata()

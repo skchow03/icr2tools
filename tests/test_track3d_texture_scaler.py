@@ -55,6 +55,15 @@ def test_can_scale_one_coordinate_axis_only(
     assert expected in result.text
 
 
+def test_supports_independent_u_and_v_factors() -> None:
+    result = scale_track3d_texture_coordinates(
+        TRACK3D, "grass", u_factor=3, v_factor=0.5
+    )
+
+    assert "t= <1038,10>" in result.text
+    assert "t= <-9, 2>" in result.text
+
+
 def test_rejects_when_no_coordinate_axis_is_selected() -> None:
     with pytest.raises(ValueError, match="At least one"):
         scale_track3d_texture_coordinates(

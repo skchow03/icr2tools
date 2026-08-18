@@ -179,6 +179,7 @@ class MarqueeStatusLabel(QtWidgets.QLabel):
 class SGViewerWindow(QtWidgets.QMainWindow):
     """Single-window utility that previews SG centrelines."""
 
+    textureScalingConfigChanged = QtCore.pyqtSignal()
     fsectDiagramDlatChangeRequested = QtCore.pyqtSignal(
         int, int, str, float, bool, bool
     )
@@ -539,6 +540,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_texture_scaling_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_backup_checkbox = QtWidgets.QCheckBox(
             "Create one backup of <track>.3D before applying updates"
         )
@@ -548,9 +550,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._three_d_workflow_detail_lists_checkbox,
             self._three_d_workflow_see_through_checkbox,
             self._three_d_workflow_colors_checkbox,
+            self._three_d_workflow_texture_scaling_checkbox,
             self._three_d_workflow_backup_checkbox,
         ):
             checkbox.setChecked(True)
+        self._three_d_workflow_texture_scaling_checkbox.setChecked(False)
         self._three_d_apply_selected_workflow_button = QtWidgets.QPushButton(
             "Apply Selected to .3D"
         )
@@ -1594,6 +1598,36 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         color_mapping_layout.addWidget(self._three_d_file_select_colors_button)
         color_mapping_group.setLayout(color_mapping_layout)
         configure_layout.addWidget(color_mapping_group)
+
+        texture_scaling_group = QtWidgets.QGroupBox("Texture Resolution Scaling")
+        texture_scaling_layout = QtWidgets.QVBoxLayout()
+        texture_scaling_note = QtWidgets.QLabel(
+            "List each texture to update and its U and V coordinate scaling factors."
+        )
+        texture_scaling_note.setWordWrap(True)
+        texture_scaling_layout.addWidget(texture_scaling_note)
+        self._three_d_texture_scaling_table = QtWidgets.QTableWidget(0, 3)
+        self._three_d_texture_scaling_table.setHorizontalHeaderLabels(
+            ("Texture (MIP)", "U scale", "V scale")
+        )
+        self._three_d_texture_scaling_table.horizontalHeader().setStretchLastSection(
+            True
+        )
+        self._three_d_texture_scaling_table.setSelectionBehavior(
+            QtWidgets.QAbstractItemView.SelectRows
+        )
+        texture_scaling_layout.addWidget(self._three_d_texture_scaling_table)
+        texture_buttons = QtWidgets.QHBoxLayout()
+        self._three_d_texture_scaling_add_button = QtWidgets.QPushButton("Add texture")
+        self._three_d_texture_scaling_remove_button = QtWidgets.QPushButton(
+            "Remove selected"
+        )
+        texture_buttons.addWidget(self._three_d_texture_scaling_add_button)
+        texture_buttons.addWidget(self._three_d_texture_scaling_remove_button)
+        texture_buttons.addStretch(1)
+        texture_scaling_layout.addLayout(texture_buttons)
+        texture_scaling_group.setLayout(texture_scaling_layout)
+        configure_layout.addWidget(texture_scaling_group)
         configure_layout.addStretch(1)
         configure_tab.setLayout(configure_layout)
 
@@ -1628,6 +1662,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._three_d_workflow_colors_checkbox,
                 self._three_d_file_apply_colors_button,
             ),
+            (
+                self._three_d_workflow_texture_scaling_checkbox,
+                self._three_d_scale_texture_resolution_button,
+            ),
         )
         workflow_labels = (
             "Save TSOs to .3D file",
@@ -1635,6 +1673,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Save DetailLists",
             "Fix see-through (in place)",
             "Apply color replacements",
+            "Scale track texture resolution",
         )
         for row, ((checkbox, button), label) in enumerate(
             zip(workflow_rows, workflow_labels)
@@ -1671,7 +1710,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         other_layout.addWidget(self._three_d_file_inspect_button)
         other_layout.addWidget(self._three_d_file_fix_copy_button)
         other_layout.addWidget(self._three_d_apply_face_materials_button)
-        other_layout.addWidget(self._three_d_scale_texture_resolution_button)
         other_group.setLayout(other_layout)
         advanced_layout.addWidget(other_group)
         advanced_layout.addStretch(1)
@@ -3022,6 +3060,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
             "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
             "colors": self._three_d_workflow_colors_checkbox.isChecked(),
+            "texture_scaling": (
+                self._three_d_workflow_texture_scaling_checkbox.isChecked()
+            ),
             "backup": self._three_d_workflow_backup_checkbox.isChecked(),
         }
 
@@ -3034,6 +3075,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox,
             "see_through": self._three_d_workflow_see_through_checkbox,
             "colors": self._three_d_workflow_colors_checkbox,
+            "texture_scaling": self._three_d_workflow_texture_scaling_checkbox,
             "backup": self._three_d_workflow_backup_checkbox,
         }
         for key, checkbox in checkboxes.items():
@@ -3054,7 +3096,63 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             steps.append("see_through")
         if self._three_d_workflow_colors_checkbox.isChecked():
             steps.append("colors")
+        if self._three_d_workflow_texture_scaling_checkbox.isChecked():
+            steps.append("texture_scaling")
         return tuple(steps)
+
+    def three_d_texture_scaling_config(self) -> list[dict[str, object]]:
+        config: list[dict[str, object]] = []
+        table = self._three_d_texture_scaling_table
+        for row in range(table.rowCount()):
+            name_item = table.item(row, 0)
+            name = name_item.text().strip() if name_item is not None else ""
+            if not name:
+                continue
+            config.append(
+                {
+                    "texture": name,
+                    "u_scale": float(table.cellWidget(row, 1).value()),
+                    "v_scale": float(table.cellWidget(row, 2).value()),
+                }
+            )
+        return config
+
+    def add_three_d_texture_scaling_row(
+        self, texture: str = "", u_scale: float = 2.0, v_scale: float = 2.0
+    ) -> None:
+        table = self._three_d_texture_scaling_table
+        row = table.rowCount()
+        table.insertRow(row)
+        table.setItem(row, 0, QtWidgets.QTableWidgetItem(texture))
+        for column, value in ((1, u_scale), (2, v_scale)):
+            spin = QtWidgets.QDoubleSpinBox()
+            spin.setRange(0.000001, 1_000_000.0)
+            spin.setDecimals(6)
+            spin.setValue(value)
+            spin.valueChanged.connect(
+                lambda _value: self.textureScalingConfigChanged.emit()
+            )
+            table.setCellWidget(row, column, spin)
+
+    def set_three_d_texture_scaling_config(self, config: object) -> None:
+        table = self._three_d_texture_scaling_table
+        with QtCore.QSignalBlocker(self), QtCore.QSignalBlocker(table):
+            table.setRowCount(0)
+            if not isinstance(config, list):
+                return
+            for entry in config:
+                if not isinstance(entry, dict) or not isinstance(
+                    entry.get("texture"), str
+                ):
+                    continue
+                try:
+                    self.add_three_d_texture_scaling_row(
+                        entry["texture"],
+                        float(entry.get("u_scale", 2.0)),
+                        float(entry.get("v_scale", 2.0)),
+                    )
+                except (TypeError, ValueError):
+                    continue
 
     def three_d_workflow_create_backup(self) -> bool:
         return self._three_d_workflow_backup_checkbox.isChecked()

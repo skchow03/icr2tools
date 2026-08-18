@@ -38,6 +38,8 @@ def scale_track3d_texture_coordinates(
     *,
     scale_u: bool = True,
     scale_v: bool = True,
+    u_factor: float | None = None,
+    v_factor: float | None = None,
 ) -> TextureScaleResult:
     """Scale all integer ``t=<u,v>`` values in materials using *mip_name*.
 
@@ -48,8 +50,12 @@ def scale_track3d_texture_coordinates(
     target = _normalized_mip_name(mip_name)
     if not target:
         raise ValueError("A MIP name is required.")
-    if not math.isfinite(factor) or factor <= 0:
-        raise ValueError("The scale factor must be a positive number.")
+    u_factor = factor if u_factor is None else u_factor
+    v_factor = factor if v_factor is None else v_factor
+    if not math.isfinite(u_factor) or u_factor <= 0:
+        raise ValueError("The U scale factor must be a positive number.")
+    if not math.isfinite(v_factor) or v_factor <= 0:
+        raise ValueError("The V scale factor must be a positive number.")
     if not scale_u and not scale_v:
         raise ValueError("At least one texture coordinate axis must be selected.")
 
@@ -72,9 +78,9 @@ def scale_track3d_texture_coordinates(
                 u = int(match.group("u"))
                 v = int(match.group("v"))
                 if scale_u:
-                    u = math.floor(u * factor)
+                    u = math.floor(u * u_factor)
                 if scale_v:
-                    v = math.floor(v * factor)
+                    v = math.floor(v * v_factor)
                 return (
                     f'{match.group("prefix")}{u}{match.group("middle")}'
                     f'{v}{match.group("suffix")}'
@@ -95,12 +101,20 @@ def scale_track3d_texture_file(
     *,
     scale_u: bool = True,
     scale_v: bool = True,
+    u_factor: float | None = None,
+    v_factor: float | None = None,
 ) -> TextureScaleResult:
     """Scale coordinates in *path* in place while preserving its text encoding."""
     raw = path.read_bytes()
     text = raw.decode("latin-1")
     result = scale_track3d_texture_coordinates(
-        text, mip_name, factor, scale_u=scale_u, scale_v=scale_v
+        text,
+        mip_name,
+        factor,
+        scale_u=scale_u,
+        scale_v=scale_v,
+        u_factor=u_factor,
+        v_factor=v_factor,
     )
     if result.text != text:
         path.write_bytes(result.text.encode("latin-1"))

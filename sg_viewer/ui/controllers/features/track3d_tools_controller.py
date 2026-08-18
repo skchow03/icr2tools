@@ -20,7 +20,6 @@ from sg_viewer.replacecolors import (
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
 from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
-from sg_viewer.ui.track3d_texture_scale_dialog import Track3DTextureScaleDialog
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
 from sg_viewer.io.track3d_edit_plan import (
     Track3DEditPlan,
@@ -546,18 +545,25 @@ class Track3DToolsController:
         if input_path is None:
             return
 
-        dialog = Track3DTextureScaleDialog(self._window)
-        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+        config = self._window.three_d_texture_scaling_config()
+        if not config:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Scale Track Texture Resolution",
+                "Add at least one texture under Files / Configure first.",
+            )
             return
 
         try:
-            result = scale_track3d_texture_file(
-                input_path,
-                dialog.mip_name,
-                dialog.factor,
-                scale_u=dialog.scale_u,
-                scale_v=dialog.scale_v,
-            )
+            altered = 0
+            for entry in config:
+                result = scale_track3d_texture_file(
+                    input_path,
+                    str(entry["texture"]),
+                    u_factor=float(entry["u_scale"]),
+                    v_factor=float(entry["v_scale"]),
+                )
+                altered += result.materials_altered
         except (OSError, UnicodeError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
@@ -569,11 +575,28 @@ class Track3DToolsController:
         QtWidgets.QMessageBox.information(
             self._window,
             "Scale Track Texture Resolution",
-            f"Materials altered: {result.materials_altered}",
+            f"Materials altered: {altered}",
         )
         self._window.show_status_message(
-            f"Scaled texture coordinates in {result.materials_altered} material(s)."
+            f"Scaled texture coordinates in {altered} material(s)."
         )
+
+    def _on_add_texture_scaling_requested(self) -> None:
+        self._window.add_three_d_texture_scaling_row()
+        self._window._three_d_texture_scaling_table.editItem(
+            self._window._three_d_texture_scaling_table.item(
+                self._window._three_d_texture_scaling_table.rowCount() - 1, 0
+            )
+        )
+        self._host._document_controller.persist_project_metadata()
+
+    def _on_remove_texture_scaling_requested(self) -> None:
+        table = self._window._three_d_texture_scaling_table
+        rows = sorted({index.row() for index in table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            table.removeRow(row)
+        if rows:
+            self._host._document_controller.persist_project_metadata()
 
     def _on_three_d_catalog_inspector_requested(self) -> None:
         input_path = self._ensure_selected_track3d_file()
@@ -971,6 +994,7 @@ class Track3DToolsController:
                 confirm=False
             ),
             "colors": self._on_three_d_apply_color_replacements_requested,
+            "texture_scaling": self._on_three_d_scale_texture_resolution_requested,
         }
         step_labels = {
             "tso": "Saving TSOs",
@@ -978,6 +1002,7 @@ class Track3DToolsController:
             "detail_lists": "Saving DetailLists",
             "see_through": "Fixing see-through polygons",
             "colors": "Applying color replacements",
+            "texture_scaling": "Scaling texture resolution",
         }
         progress = Track3DWorkflowProgress(self._window, len(steps))
         progress.update(0, "Preparing standard .3D workflow…")
@@ -1017,7 +1042,7 @@ class Track3DToolsController:
 
     def _on_three_d_apply_all_workflow_requested(self) -> None:
         self._run_three_d_workflow_steps(
-            ("tso", "object_lists", "detail_lists", "see_through", "colors")
+            ("tso", "object_lists", "detail_lists", "see_through", "colors", "texture_scaling")
         )
 
     def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None:
