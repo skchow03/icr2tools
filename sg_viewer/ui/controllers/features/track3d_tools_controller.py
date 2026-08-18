@@ -20,6 +20,7 @@ from sg_viewer.replacecolors import (
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 from sg_viewer.ui.track3d_colors_dialog import Track3DColorDefinitionsDialog
 from sg_viewer.ui.track3d_catalog_dialog import Track3DCatalogInspectorDialog
+from sg_viewer.ui.track3d_texture_scale_dialog import Track3DTextureScaleDialog
 from sg_viewer.io.track3d_catalog import Track3DCatalog, parse_track3d_catalog
 from sg_viewer.io.track3d_edit_plan import (
     Track3DEditPlan,
@@ -545,36 +546,18 @@ class Track3DToolsController:
         if input_path is None:
             return
 
-        mip_name, accepted = QtWidgets.QInputDialog.getText(
-            self._window,
-            "Scale Track Texture Resolution",
-            "MIP file name:",
-        )
-        mip_name = mip_name.strip()
-        if not accepted:
-            return
-        if not mip_name:
-            QtWidgets.QMessageBox.warning(
-                self._window,
-                "Scale Track Texture Resolution",
-                "Enter a MIP file name.",
-            )
-            return
-
-        factor, accepted = QtWidgets.QInputDialog.getDouble(
-            self._window,
-            "Scale Track Texture Resolution",
-            "Texture coordinate scale factor:",
-            2.0,
-            0.000001,
-            1_000_000.0,
-            6,
-        )
-        if not accepted:
+        dialog = Track3DTextureScaleDialog(self._window)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
 
         try:
-            result = scale_track3d_texture_file(input_path, mip_name, factor)
+            result = scale_track3d_texture_file(
+                input_path,
+                dialog.mip_name,
+                dialog.factor,
+                scale_u=dialog.scale_u,
+                scale_v=dialog.scale_v,
+            )
         except (OSError, UnicodeError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
