@@ -372,7 +372,12 @@ def test_files_sidebar_groups_tools_by_task(qapp):
             for index in range(tabs.count())
         ]
         assert group_titles == [
-            {"Export Locations", "Project Files", "Color Mapping"},
+            {
+                "Export Locations",
+                "Project Files",
+                "Color Mapping",
+                "Texture Resolution Scaling",
+            },
             {"Standard Workflow"},
             {"Other Tools"},
         ]

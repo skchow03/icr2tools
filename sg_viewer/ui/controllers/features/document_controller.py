@@ -464,6 +464,9 @@ class DocumentController:
             self._host._window.set_three_d_workflow_options(
                 payload.get("three_d_workflow_options")
             )
+            self._host._window.set_three_d_texture_scaling_config(
+                payload.get("three_d_texture_scaling")
+            )
 
             embedded_sg = payload.get("sg_data")
             if raw_sg_file is None:
@@ -792,6 +795,9 @@ class DocumentController:
         payload["sg_file"] = sg_path.name
         payload["three_d_workflow_options"] = (
             self._host._window.three_d_workflow_options()
+        )
+        payload["three_d_texture_scaling"] = (
+            self._host._window.three_d_texture_scaling_config()
         )
         payload["tso_stamp_lists"] = [
             list(filenames)
