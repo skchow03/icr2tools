@@ -32,7 +32,12 @@ def _normalized_mip_name(name: str) -> str:
 
 
 def scale_track3d_texture_coordinates(
-    text: str, mip_name: str, factor: float = 2.0
+    text: str,
+    mip_name: str,
+    factor: float = 2.0,
+    *,
+    scale_u: bool = True,
+    scale_v: bool = True,
 ) -> TextureScaleResult:
     """Scale all integer ``t=<u,v>`` values in materials using *mip_name*.
 
@@ -45,6 +50,8 @@ def scale_track3d_texture_coordinates(
         raise ValueError("A MIP name is required.")
     if not math.isfinite(factor) or factor <= 0:
         raise ValueError("The scale factor must be a positive number.")
+    if not scale_u and not scale_v:
+        raise ValueError("At least one texture coordinate axis must be selected.")
 
     starts = [match.start() for match in _MATERIAL_START_RE.finditer(text)]
     if not starts:
@@ -62,8 +69,12 @@ def scale_track3d_texture_coordinates(
             def scale_coordinate(match: re.Match[str]) -> str:
                 nonlocal coordinate_count
                 coordinate_count += 1
-                u = math.floor(int(match.group("u")) * factor)
-                v = math.floor(int(match.group("v")) * factor)
+                u = int(match.group("u"))
+                v = int(match.group("v"))
+                if scale_u:
+                    u = math.floor(u * factor)
+                if scale_v:
+                    v = math.floor(v * factor)
                 return (
                     f'{match.group("prefix")}{u}{match.group("middle")}'
                     f'{v}{match.group("suffix")}'
@@ -78,12 +89,19 @@ def scale_track3d_texture_coordinates(
 
 
 def scale_track3d_texture_file(
-    path: Path, mip_name: str, factor: float = 2.0
+    path: Path,
+    mip_name: str,
+    factor: float = 2.0,
+    *,
+    scale_u: bool = True,
+    scale_v: bool = True,
 ) -> TextureScaleResult:
     """Scale coordinates in *path* in place while preserving its text encoding."""
     raw = path.read_bytes()
     text = raw.decode("latin-1")
-    result = scale_track3d_texture_coordinates(text, mip_name, factor)
+    result = scale_track3d_texture_coordinates(
+        text, mip_name, factor, scale_u=scale_u, scale_v=scale_v
+    )
     if result.text != text:
         path.write_bytes(result.text.encode("latin-1"))
     return result

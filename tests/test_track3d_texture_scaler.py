@@ -41,6 +41,27 @@ def test_fractional_factor_rounds_down_including_negative_values() -> None:
     assert "t= <-2, 2>" in result.text
 
 
+@pytest.mark.parametrize(
+    ("scale_u", "scale_v", "expected"),
+    [(True, False, "t= <692,20>"), (False, True, "t= <346,40>")],
+)
+def test_can_scale_one_coordinate_axis_only(
+    scale_u: bool, scale_v: bool, expected: str
+) -> None:
+    result = scale_track3d_texture_coordinates(
+        TRACK3D, "grass", 2, scale_u=scale_u, scale_v=scale_v
+    )
+
+    assert expected in result.text
+
+
+def test_rejects_when_no_coordinate_axis_is_selected() -> None:
+    with pytest.raises(ValueError, match="At least one"):
+        scale_track3d_texture_coordinates(
+            TRACK3D, "grass", 2, scale_u=False, scale_v=False
+        )
+
+
 def test_no_matching_material_leaves_text_unchanged() -> None:
     result = scale_track3d_texture_coordinates(TRACK3D, "sand", 2)
 
