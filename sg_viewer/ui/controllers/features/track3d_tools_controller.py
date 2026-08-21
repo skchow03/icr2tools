@@ -994,7 +994,6 @@ class Track3DToolsController:
                 confirm=False
             ),
             "colors": self._on_three_d_apply_color_replacements_requested,
-            "texture_scaling": self._on_three_d_scale_texture_resolution_requested,
         }
         step_labels = {
             "tso": "Saving TSOs",
@@ -1002,7 +1001,6 @@ class Track3DToolsController:
             "detail_lists": "Saving DetailLists",
             "see_through": "Fixing see-through polygons",
             "colors": "Applying color replacements",
-            "texture_scaling": "Scaling texture resolution",
         }
         progress = Track3DWorkflowProgress(self._window, len(steps))
         progress.update(0, "Preparing standard .3D workflow…")
@@ -1042,7 +1040,7 @@ class Track3DToolsController:
 
     def _on_three_d_apply_all_workflow_requested(self) -> None:
         self._run_three_d_workflow_steps(
-            ("tso", "object_lists", "detail_lists", "see_through", "colors", "texture_scaling")
+            ("tso", "object_lists", "detail_lists", "see_through", "colors")
         )
 
     def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None:

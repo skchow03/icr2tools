@@ -378,9 +378,31 @@ def test_files_sidebar_groups_tools_by_task(qapp):
                 "Color Mapping",
                 "Texture Resolution Scaling",
             },
-            {"Standard Workflow"},
+            {"Standard Workflow", "Advanced"},
             {"Other Tools"},
         ]
+
+        export_tab = tabs.widget(1)
+        standard_workflow = next(
+            group
+            for group in export_tab.findChildren(QtWidgets.QGroupBox)
+            if group.title() == "Standard Workflow"
+        )
+        advanced_export = next(
+            group
+            for group in export_tab.findChildren(QtWidgets.QGroupBox)
+            if group.title() == "Advanced"
+        )
+        assert (
+            window.three_d_scale_texture_resolution_button
+            in advanced_export.findChildren(QtWidgets.QPushButton)
+        )
+        assert (
+            window.three_d_scale_texture_resolution_button
+            not in standard_workflow.findChildren(QtWidgets.QPushButton)
+        )
+        assert "texture_scaling" not in window.three_d_workflow_options()
+        assert "texture_scaling" not in window.selected_three_d_workflow_steps()
     finally:
         window.close()
 

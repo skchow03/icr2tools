@@ -540,7 +540,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
-        self._three_d_workflow_texture_scaling_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_backup_checkbox = QtWidgets.QCheckBox(
             "Create one backup of <track>.3D before applying updates"
         )
@@ -550,11 +549,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._three_d_workflow_detail_lists_checkbox,
             self._three_d_workflow_see_through_checkbox,
             self._three_d_workflow_colors_checkbox,
-            self._three_d_workflow_texture_scaling_checkbox,
             self._three_d_workflow_backup_checkbox,
         ):
             checkbox.setChecked(True)
-        self._three_d_workflow_texture_scaling_checkbox.setChecked(False)
         self._three_d_apply_selected_workflow_button = QtWidgets.QPushButton(
             "Apply Selected to .3D"
         )
@@ -1662,10 +1659,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._three_d_workflow_colors_checkbox,
                 self._three_d_file_apply_colors_button,
             ),
-            (
-                self._three_d_workflow_texture_scaling_checkbox,
-                self._three_d_scale_texture_resolution_button,
-            ),
         )
         workflow_labels = (
             "Save TSOs to .3D file",
@@ -1673,7 +1666,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Save DetailLists",
             "Fix see-through (in place)",
             "Apply color replacements",
-            "Scale track texture resolution",
         )
         for row, ((checkbox, button), label) in enumerate(
             zip(workflow_rows, workflow_labels)
@@ -1695,6 +1687,20 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         workflow_layout.addLayout(workflow_buttons)
         workflow_group.setLayout(workflow_layout)
         export_layout.addWidget(workflow_group)
+
+        advanced_export_group = QtWidgets.QGroupBox("Advanced")
+        advanced_export_layout = QtWidgets.QVBoxLayout()
+        texture_scaling_warning = QtWidgets.QLabel(
+            "Run texture resolution scaling only when needed. Each click updates "
+            "the selected .3D file immediately and is not part of the standard workflow."
+        )
+        texture_scaling_warning.setWordWrap(True)
+        advanced_export_layout.addWidget(texture_scaling_warning)
+        advanced_export_layout.addWidget(
+            self._three_d_scale_texture_resolution_button
+        )
+        advanced_export_group.setLayout(advanced_export_layout)
+        export_layout.addWidget(advanced_export_group)
         export_layout.addStretch(1)
         export_tab.setLayout(export_layout)
 
@@ -3060,9 +3066,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
             "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
             "colors": self._three_d_workflow_colors_checkbox.isChecked(),
-            "texture_scaling": (
-                self._three_d_workflow_texture_scaling_checkbox.isChecked()
-            ),
             "backup": self._three_d_workflow_backup_checkbox.isChecked(),
         }
 
@@ -3075,7 +3078,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "detail_lists": self._three_d_workflow_detail_lists_checkbox,
             "see_through": self._three_d_workflow_see_through_checkbox,
             "colors": self._three_d_workflow_colors_checkbox,
-            "texture_scaling": self._three_d_workflow_texture_scaling_checkbox,
             "backup": self._three_d_workflow_backup_checkbox,
         }
         for key, checkbox in checkboxes.items():
@@ -3096,8 +3098,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             steps.append("see_through")
         if self._three_d_workflow_colors_checkbox.isChecked():
             steps.append("colors")
-        if self._three_d_workflow_texture_scaling_checkbox.isChecked():
-            steps.append("texture_scaling")
         return tuple(steps)
 
     def three_d_texture_scaling_config(self) -> list[dict[str, object]]:
