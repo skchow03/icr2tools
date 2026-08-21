@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from pathlib import Path
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS
+from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS, read_mark_colors
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
 
 
@@ -24,6 +25,7 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
         self,
         colors: Mapping[str, int],
         palette: Sequence[QtGui.QColor] | None,
+        track3d_path: Path | None = None,
         parent: QtWidgets.QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -31,6 +33,7 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
         self.resize(640, 760)
 
         self._palette = list(palette) if palette is not None else []
+        self._track3d_path = track3d_path
         self._spin_boxes: dict[str, QtWidgets.QSpinBox] = {}
         self._swatches: dict[str, ClickableSwatchLabel] = {}
 
@@ -41,40 +44,29 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
         description.setWordWrap(True)
         layout.addWidget(description)
 
-        table = QtWidgets.QTableWidget(len(DEFAULT_TRACK3D_COLORS), 3, self)
+        initial_colors = dict(DEFAULT_TRACK3D_COLORS)
+        initial_colors.update(colors)
+        table = QtWidgets.QTableWidget(0, 3, self)
         table.setHorizontalHeaderLabels(["Polygon Type", "Color Index", "Swatch"])
         table.verticalHeader().setVisible(False)
         table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.horizontalHeader().setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.ResizeToContents)
-        table.horizontalHeader().setSectionResizeMode(2, QtWidgets.QHeaderView.ResizeToContents)
-
-        for row, (name, default_index) in enumerate(DEFAULT_TRACK3D_COLORS.items()):
-            resolved_index = int(colors.get(name, default_index))
-            name_item = QtWidgets.QTableWidgetItem(name)
-            table.setItem(row, 0, name_item)
-
-            spin = QtWidgets.QSpinBox(table)
-            spin.setRange(0, 255)
-            spin.setValue(resolved_index)
-            spin.valueChanged.connect(lambda _value, key=name: self._update_swatch(key))
-            table.setCellWidget(row, 1, spin)
-            self._spin_boxes[name] = spin
-
-            swatch = ClickableSwatchLabel(table)
-            swatch.setFixedSize(52, 20)
-            swatch.setFrameShape(QtWidgets.QFrame.Box)
-            swatch.setFrameShadow(QtWidgets.QFrame.Plain)
-            swatch.setToolTip("Palette swatch for selected index (click to choose from palette)")
-            swatch.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
-            swatch.clicked.connect(lambda key=name: self._select_index_from_palette(key))
-            table.setCellWidget(row, 2, swatch)
-            self._swatches[name] = swatch
+        table.horizontalHeader().setSectionResizeMode(
+            1, QtWidgets.QHeaderView.ResizeToContents
+        )
+        table.horizontalHeader().setSectionResizeMode(
+            2, QtWidgets.QHeaderView.ResizeToContents
+        )
 
         self._table = table
+        for name, index in initial_colors.items():
+            self._add_color_row(name, index)
         layout.addWidget(table, stretch=1)
 
+        import_button = QtWidgets.QPushButton("Import Mark Colors", self)
+        import_button.clicked.connect(self._import_mark_colors)
+        layout.addWidget(import_button)
         reset_button = QtWidgets.QPushButton("Reset to defaults", self)
         reset_button.clicked.connect(self._reset_defaults)
         layout.addWidget(reset_button)
@@ -90,6 +82,42 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
         for key in self._spin_boxes:
             self._update_swatch(key)
 
+    def _add_color_row(self, name: str, index: int) -> None:
+        if name in self._spin_boxes:
+            self._spin_boxes[name].setValue(int(index))
+            return
+        row = self._table.rowCount()
+        self._table.insertRow(row)
+        self._table.setItem(row, 0, QtWidgets.QTableWidgetItem(name))
+        spin = QtWidgets.QSpinBox(self._table)
+        spin.setRange(0, 255)
+        spin.setValue(int(index))
+        spin.valueChanged.connect(lambda _value, key=name: self._update_swatch(key))
+        self._table.setCellWidget(row, 1, spin)
+        self._spin_boxes[name] = spin
+        swatch = ClickableSwatchLabel(self._table)
+        swatch.setFixedSize(52, 20)
+        swatch.setFrameShape(QtWidgets.QFrame.Box)
+        swatch.setCursor(QtGui.QCursor(QtCore.Qt.PointingHandCursor))
+        swatch.clicked.connect(lambda key=name: self._select_index_from_palette(key))
+        self._table.setCellWidget(row, 2, swatch)
+        self._swatches[name] = swatch
+        self._update_swatch(name)
+
+    def _import_mark_colors(self) -> None:
+        if self._track3d_path is None:
+            QtWidgets.QMessageBox.warning(
+                self, "Import Mark Colors", "Select a track.3D file first."
+            )
+            return
+        try:
+            colors = read_mark_colors(self._track3d_path)
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.warning(self, "Import Mark Colors", str(exc))
+            return
+        for name, index in colors.items():
+            self._add_color_row(name, index)
+
     def selected_colors(self) -> dict[str, int]:
         return {name: int(spin.value()) for name, spin in self._spin_boxes.items()}
 
@@ -104,7 +132,8 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
         if 0 <= index < len(self._palette):
             color = self._palette[index]
             swatch.setStyleSheet(
-                "background-color: rgb(%d, %d, %d); border: 1px solid #555;" % (
+                "background-color: rgb(%d, %d, %d); border: 1px solid #555;"
+                % (
                     color.red(),
                     color.green(),
                     color.blue(),
@@ -132,6 +161,9 @@ class Track3DColorDefinitionsDialog(QtWidgets.QDialog):
             selection_mode=True,
             initial_index=current_index,
         )
-        if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.selected_index is None:
+        if (
+            dialog.exec_() != QtWidgets.QDialog.Accepted
+            or dialog.selected_index is None
+        ):
             return
         self._spin_boxes[name].setValue(int(dialog.selected_index))

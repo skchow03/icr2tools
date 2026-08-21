@@ -14,7 +14,6 @@ from sg_viewer.services.template_files import (
 
 from icr2_core.three_d.three_d_tools import ToolError, inspect_file, process_file
 from sg_viewer.replacecolors import (
-    DEFAULT_TRACK3D_COLORS,
     replace_color_section_from_indices,
 )
 from sg_viewer.ui.palette_dialog import PaletteColorDialog
@@ -323,7 +322,7 @@ class Track3DToolsController:
         resolved_path = path.resolve()
         try:
             colors = self._read_pcx_256_palette(resolved_path)
-        except (OSError, ValueError) as exc:
+        except OSError as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
                 "Load SUNNY.PCX Palette",
@@ -885,6 +884,7 @@ class Track3DToolsController:
         dialog = Track3DColorDefinitionsDialog(
             colors=self._track3d_colors,
             palette=self._sunny_palette,
+            track3d_path=self._selected_track3d_path,
             parent=self._window,
         )
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
@@ -960,7 +960,7 @@ class Track3DToolsController:
             replacement_count = replace_color_section_from_indices(
                 input_path, self._track3d_colors
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window, "3D Tools", f"Could not update colors:\n{exc}"
             )
