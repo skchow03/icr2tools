@@ -191,7 +191,6 @@ class Track3DController:
             w._three_d_workflow_detail_lists_checkbox,
             w._three_d_workflow_see_through_checkbox,
             w._three_d_workflow_colors_checkbox,
-            w._three_d_workflow_texture_scaling_checkbox,
         ):
             checkbox.toggled.connect(
                 lambda _checked: h._document_controller.persist_project_metadata()
