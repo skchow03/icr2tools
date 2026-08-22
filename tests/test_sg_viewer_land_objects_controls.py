@@ -93,6 +93,38 @@ def test_land_object_export_default_file_name_uses_underscores(qapp, monkeypatch
         window.close()
 
 
+def test_land_object_export_defaults_to_track3d_folder(qapp, monkeypatch, tmp_path):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "My Object",
+                    "points": [
+                        ("0", "0", "0"),
+                        ("1", "0", "0"),
+                        ("0", "1", "0"),
+                    ],
+                    "polygons": [("0,1,2", "0")],
+                }
+            ]
+        )
+        window.set_selected_track3d_path_text(str(tmp_path / "track.3d"))
+        captured = {}
+
+        def _fake_get_save_file_name(*args, **kwargs):
+            captured["default_path"] = args[2]
+            return ("", "")
+
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog, "getSaveFileName", _fake_get_save_file_name
+        )
+        window._export_selected_land_object_to_3d()
+        assert captured["default_path"] == str(tmp_path / "My_Object.3D")
+    finally:
+        window.close()
+
+
 def test_land_polygon_move_up_down_reorders_rows(qapp):
     window = SGViewerWindow()
     try:

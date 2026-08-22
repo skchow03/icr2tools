@@ -192,6 +192,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self.setWindowTitle("SG CREATE")
         self.resize(960, 720)
         self.controller = None
+        self._selected_track3d_path: Path | None = None
         self._selected_section_index: int | None = None
         self._section_subindex_metadata: dict[int, tuple[int, ...]] = {}
         self._updating_fsect_table = False
@@ -3158,6 +3159,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._three_d_workflow_backup_checkbox.isChecked()
 
     def set_selected_track3d_path_text(self, text: str) -> None:
+        self._selected_track3d_path = None if text == "none" else Path(text)
         self._three_d_file_selected_path_label.setText(f"Selected .3D file: {text}")
 
     def set_selected_colors_path_text(self, text: str) -> None:
@@ -5575,7 +5577,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         if error is not None:
             QtWidgets.QMessageBox.warning(self, "Export Object to .3D", error)
             return
-        default_path = f"{name.replace(' ', '_')}.3D"
+        default_filename = f"{name.replace(' ', '_')}.3D"
+        default_path = (
+            str(self._selected_track3d_path.parent / default_filename)
+            if self._selected_track3d_path is not None
+            else default_filename
+        )
         file_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Export Object to .3D",
