@@ -857,8 +857,13 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._build_ui()
 
     def _build_ui(self) -> None:
-        layout = QtWidgets.QVBoxLayout(self)
+        outer_layout = QtWidgets.QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.controls_panel = QtWidgets.QWidget()
+        layout = QtWidgets.QVBoxLayout(self.controls_panel)
         _apply_panel_layout(layout)
+        outer_layout.addWidget(self.controls_panel, 3)
         # Create preset-backed preview state before default presets are loaded.
         self.transparency_checkbox = QtWidgets.QCheckBox("Paint transparency")
         self.transparency_checkbox.setChecked(True)
@@ -939,6 +944,10 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         action_row.addStretch(1)
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
+
+        self.preview_panel = QtWidgets.QWidget()
+        preview_layout = QtWidgets.QVBoxLayout(self.preview_panel)
+        _apply_panel_layout(preview_layout)
         self.preview_pane = PreviewPane("Output preview")
         preview_options = QtWidgets.QHBoxLayout()
         self.transparency_color_btn = QtWidgets.QPushButton()
@@ -953,8 +962,9 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         preview_options.addWidget(self.previous_preview_btn)
         preview_options.addWidget(self.preview_position_label)
         preview_options.addWidget(self.next_preview_btn)
-        layout.addLayout(preview_options)
-        layout.addWidget(self.preview_pane)
+        preview_layout.addLayout(preview_options)
+        preview_layout.addWidget(self.preview_pane, 1)
+        outer_layout.addWidget(self.preview_panel, 2)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
         self.input_edit.textChanged.connect(self._preview_source_changed)
@@ -985,7 +995,10 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
             with Image.open(preview_path) as source:
                 preview = source.convert("RGBA")
             threshold = self.alpha_threshold_spin.value()
-            alpha = preview.getchannel("A").point(lambda value: 0 if value <= threshold else value)
+            # PMP stores visibility as runs rather than retaining an alpha value:
+            # every included pixel is fully opaque and every excluded pixel is
+            # fully transparent. Mirror that binary representation in preview.
+            alpha = preview.getchannel("A").point(lambda value: 0 if value <= threshold else 255)
             preview.putalpha(alpha)
             if self.transparency_checkbox.isChecked():
                 color = self._transparency_color
