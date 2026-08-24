@@ -16,6 +16,8 @@ OPTIMIZED_END = 245
 OPTIMIZED_SLOTS = OPTIMIZED_END - OPTIMIZED_START + 1
 BROWN_BASE_INDEX = 244
 BROWN_DARK_INDEX = 245
+DIRT_BASE_RGB = np.array([0xB2, 0x9A, 0x71], dtype=np.uint8)
+DIRT_DARK_RGB = np.array([0x9E, 0x82, 0x5D], dtype=np.uint8)
 
 
 def _nearest_centroid_indices(
@@ -320,41 +322,6 @@ class SunnyPaletteOptimizer:
         order = np.concatenate([neutral_order, chromatic_order])
         return optimized_rgb[order]
 
-    def _compute_brown_pair(self) -> tuple[np.ndarray, np.ndarray]:
-        candidates: list[np.ndarray] = []
-        for image in self.rgb_images.values():
-            flat = image.reshape(-1, 3)
-            mask = (
-                (flat[:, 0] > flat[:, 1])
-                & (flat[:, 1] > flat[:, 2])
-                & (flat[:, 0] < 200)
-            )
-            filtered = flat[mask]
-            if filtered.size:
-                candidates.append(filtered)
-        if candidates:
-            pixels = np.vstack(candidates)
-            if pixels.shape[0] > self.max_texture_samples:
-                rng = np.random.default_rng(self.random_state)
-                idx = rng.choice(
-                    pixels.shape[0], size=self.max_texture_samples, replace=False
-                )
-                pixels = pixels[idx]
-            lab_pixels = self._rgb_to_lab(pixels.reshape(-1, 1, 3)).reshape(-1, 3)
-            base_lab = _kmeans(lab_pixels, 1, n_init=5, random_state=self.random_state)[
-                0
-            ]
-        else:
-            fallback = np.array([[120, 90, 55]], dtype=np.uint8)
-            base_lab = self._rgb_to_lab(fallback.reshape(-1, 1, 3)).reshape(-1, 3)[0]
-
-        dark_lab = base_lab.copy()
-        dark_lab[0] = max(0.0, dark_lab[0] - 15.0)
-
-        base_rgb = self._lab_to_rgb_u8(base_lab.reshape(1, 3))[0]
-        dark_rgb = self._lab_to_rgb_u8(dark_lab.reshape(1, 3))[0]
-        return base_rgb, dark_rgb
-
     def compute_palette(self) -> np.ndarray:
         palette = self.fixed_palette.copy()
         slot_count = optimized_slot_count(self.dirt_present)
@@ -369,10 +336,9 @@ class SunnyPaletteOptimizer:
 
         palette[OPTIMIZED_START : optimized_end + 1] = optimized_rgb
         if self.dirt_present:
-            self._emit_progress("Computing reserved dirt colors", 0.98)
-            brown_base, brown_dark = self._compute_brown_pair()
-            palette[BROWN_BASE_INDEX] = brown_base
-            palette[BROWN_DARK_INDEX] = brown_dark
+            self._emit_progress("Adding game-standard dirt colors", 0.98)
+            palette[BROWN_BASE_INDEX] = DIRT_BASE_RGB
+            palette[BROWN_DARK_INDEX] = DIRT_DARK_RGB
         self._emit_progress("Optimized palette ready", 1.0)
         return palette
 

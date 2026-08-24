@@ -483,7 +483,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.delete_preset_btn.clicked.connect(self._delete_selected_preset)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
-            "Enable this if your textures include dirt/brown tones that should be reserved in the optimized palette."
+            "Reserve the game-standard dirt colors #b29a71 and #9e825d in the "
+            "optimized palette."
         )
 
         folder_controls.addWidget(self.folder_btn)

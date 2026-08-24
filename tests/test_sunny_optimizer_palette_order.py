@@ -1,6 +1,14 @@
 import numpy as np
 
-from sunny_optimizer.model import OPTIMIZED_SLOTS, SunnyPaletteOptimizer, optimized_slot_count
+from sunny_optimizer.model import (
+    BROWN_BASE_INDEX,
+    BROWN_DARK_INDEX,
+    DIRT_BASE_RGB,
+    DIRT_DARK_RGB,
+    OPTIMIZED_SLOTS,
+    SunnyPaletteOptimizer,
+    optimized_slot_count,
+)
 
 
 def test_reorder_optimized_colors_places_neutrals_first_and_sorted() -> None:
@@ -44,5 +52,5 @@ def test_compute_palette_uses_244_245_only_when_dirt_present() -> None:
     np.testing.assert_array_equal(palette_without_dirt[245], np.array([255, 0, 0], dtype=np.uint8))
 
     assert optimized_slot_count(True) == OPTIMIZED_SLOTS - 2
-    assert not np.array_equal(palette_with_dirt[244], np.array([255, 0, 0], dtype=np.uint8))
-    assert not np.array_equal(palette_with_dirt[245], np.array([255, 0, 0], dtype=np.uint8))
+    np.testing.assert_array_equal(palette_with_dirt[BROWN_BASE_INDEX], DIRT_BASE_RGB)
+    np.testing.assert_array_equal(palette_with_dirt[BROWN_DARK_INDEX], DIRT_DARK_RGB)
