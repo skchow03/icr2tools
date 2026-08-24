@@ -1137,6 +1137,17 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         self.output_edit = self._make_browse_row(layout, "Output image (.png):", self._browse_output)
         self.output_edit._acceptor = lambda p: (len(p)==1 and (p[0].suffix.lower()==".png" or not p[0].exists()), "Drop a .png output file path.")
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
+        layout.addWidget(QtWidgets.QLabel("Batch convert folder (.pmp → .png)"))
+        self.source_folder_edit = self._make_browse_row(layout, "Source folder:", self._browse_source_folder)
+        self.source_folder_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a source folder path.")
+        self.source_folder_edit._on_accept = lambda p: self.source_folder_edit.setText(str(p[0]))
+        self.target_folder_edit = self._make_browse_row(layout, "Target folder:", self._browse_target_folder)
+        self.target_folder_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a target folder path.")
+        self.target_folder_edit._on_accept = lambda p: self.target_folder_edit.setText(str(p[0]))
+        self.batch_btn = QtWidgets.QPushButton("Convert Folder to PNG")
+        _set_secondary_button(self.batch_btn)
+        self.batch_btn.clicked.connect(self._convert_folder_to_png)
+        layout.addWidget(self.batch_btn)
 
         layout.addStretch(1)
         self._build_preset_controls(layout)
@@ -1156,6 +1167,10 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         self.input_edit.textChanged.connect(self._refresh_preview)
         self.palette_edit.textChanged.connect(self._refresh_preview)
         self.crop_checkbox.toggled.connect(self._refresh_preview)
+        self.source_folder_edit.textChanged.connect(self._update_batch_controls)
+        self.target_folder_edit.textChanged.connect(self._update_batch_controls)
+        self.palette_edit.textChanged.connect(self._update_batch_controls)
+        self._update_batch_controls()
         self._refresh_preview()
 
     def _refresh_preview(self) -> None:
@@ -1212,6 +1227,22 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         if path:
             self.palette_edit.setText(path)
 
+    def _browse_source_folder(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select source folder")
+        if path:
+            self.source_folder_edit.setText(path)
+
+    def _browse_target_folder(self) -> None:
+        path = QtWidgets.QFileDialog.getExistingDirectory(self, "Select target folder")
+        if path:
+            self.target_folder_edit.setText(path)
+
+    def _update_batch_controls(self) -> None:
+        source_error = _validate_path(self.source_folder_edit.text().strip(), label="Source folder", expected_suffixes=(), folder_only=True)
+        target_error = _validate_path(self.target_folder_edit.text().strip(), label="Target folder", expected_suffixes=(), folder_only=True)
+        palette_error = _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",))
+        self.batch_btn.setEnabled(not source_error and not target_error and not palette_error)
+
     def _convert(self) -> None:
         try:
             self.set_status(STATUS_PROCESSING, "Exporting PNG from PMP...")
@@ -1239,6 +1270,50 @@ class PmpToPngWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin):
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"PMP conversion failed: {exc}")
             QtWidgets.QMessageBox.critical(self, "PMP conversion failed", str(exc))
+
+    def _convert_folder_to_png(self) -> None:
+        source_error = _validate_path(self.source_folder_edit.text().strip(), label="Source folder", expected_suffixes=(), folder_only=True)
+        target_error = _validate_path(self.target_folder_edit.text().strip(), label="Target folder", expected_suffixes=(), folder_only=True)
+        palette_error = _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",))
+        if source_error or target_error or palette_error:
+            self.set_status(STATUS_VALIDATING, "Missing/invalid batch fields.")
+            return
+
+        try:
+            source_dir = Path(self.source_folder_edit.text().strip())
+            target_dir = Path(self.target_folder_edit.text().strip())
+            selected_inputs = sorted(p for p in source_dir.iterdir() if p.is_file() and p.suffix.lower() == ".pmp")
+            if not selected_inputs:
+                self.set_status(STATUS_IDLE, "No .pmp files found in source folder.")
+                return
+
+            overwrite_targets = [target_dir / f"{src.stem}.png" for src in selected_inputs if (target_dir / f"{src.stem}.png").exists()]
+            if overwrite_targets:
+                answer = QtWidgets.QMessageBox.warning(
+                    self,
+                    "Overwrite existing PNG files?",
+                    f"{len(overwrite_targets)} existing .png file(s) will be overwritten in:\n{target_dir}\n\nContinue?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No,
+                )
+                if answer != QtWidgets.QMessageBox.Yes:
+                    self.set_status(STATUS_IDLE, "Folder conversion cancelled.")
+                    return
+
+            palette_path = self.palette_edit.text().strip()
+            converted = 0
+            for source_path in selected_inputs:
+                convert_pmp_to_png(
+                    str(source_path),
+                    str(target_dir / f"{source_path.stem}.png"),
+                    palette_path,
+                    crop=self.crop_checkbox.isChecked(),
+                )
+                converted += 1
+            self.set_status(STATUS_SUCCESS, f"Converted {converted} file(s) to PNG in {target_dir}")
+        except Exception as exc:  # pragma: no cover
+            self.set_status(STATUS_FAILURE, f"Folder PNG conversion failed: {exc}")
+            QtWidgets.QMessageBox.critical(self, "Folder PNG conversion failed", str(exc))
 
 
 class TextureToolsWindow(QtWidgets.QMainWindow):
