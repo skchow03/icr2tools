@@ -349,7 +349,7 @@ class PreviewPane(QtWidgets.QGroupBox):
         self.image_view.setStyleSheet("border: 1px solid #d1d5db; background: #fff;")
         self.image_view.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
         self.image_view.setRenderHint(QtGui.QPainter.Antialiasing, True)
-        self.image_view.setTransformationAnchor(QtWidgets.QGraphicsView.AnchorUnderMouse)
+        self.image_view.setTransformationAnchor(QtWidgets.QGraphicsView.NoAnchor)
         self.image_view.setResizeAnchor(QtWidgets.QGraphicsView.AnchorViewCenter)
         self.image_view.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
         self.image_view.setInteractive(False)
@@ -400,7 +400,14 @@ class PreviewPane(QtWidgets.QGroupBox):
                     factor = 1.15 if delta > 0 else 1 / 1.15
                     new_zoom = self._zoom_factor * factor
                     if 0.02 <= new_zoom <= 80:
+                        # Anchor explicitly instead of relying on AnchorUnderMouse.  The
+                        # latter is inconsistent when this view lives in a scrolling tab.
+                        cursor_pos = event.pos()
+                        scene_before = self.image_view.mapToScene(cursor_pos)
                         self.image_view.scale(factor, factor)
+                        scene_after = self.image_view.mapToScene(cursor_pos)
+                        delta_scene = scene_after - scene_before
+                        self.image_view.translate(delta_scene.x(), delta_scene.y())
                         self._zoom_factor = new_zoom
                 return True
             if event.type() == QtCore.QEvent.MouseButtonPress and event.button() == QtCore.Qt.LeftButton:
@@ -852,6 +859,10 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
     def _build_ui(self) -> None:
         layout = QtWidgets.QVBoxLayout(self)
         _apply_panel_layout(layout)
+        # Create preset-backed preview state before default presets are loaded.
+        self.transparency_checkbox = QtWidgets.QCheckBox("Paint transparency")
+        self.transparency_checkbox.setChecked(True)
+        self._transparency_color = QtGui.QColor(0, 255, 0)
         section, section_layout = _make_section_card("1. Choose input")
         section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
         layout.addWidget(section)
@@ -929,10 +940,31 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         action_row.addWidget(convert_btn)
         layout.addLayout(action_row)
         self.preview_pane = PreviewPane("Output preview")
+        preview_options = QtWidgets.QHBoxLayout()
+        self.transparency_color_btn = QtWidgets.QPushButton()
+        self.transparency_color_btn.setToolTip("Choose the transparency preview color")
+        self._update_transparency_color_button()
+        self.previous_preview_btn = QtWidgets.QPushButton("◀ Previous")
+        self.next_preview_btn = QtWidgets.QPushButton("Next ▶")
+        self.preview_position_label = QtWidgets.QLabel("")
+        preview_options.addWidget(self.transparency_checkbox)
+        preview_options.addWidget(self.transparency_color_btn)
+        preview_options.addStretch(1)
+        preview_options.addWidget(self.previous_preview_btn)
+        preview_options.addWidget(self.preview_position_label)
+        preview_options.addWidget(self.next_preview_btn)
+        layout.addLayout(preview_options)
         layout.addWidget(self.preview_pane)
         layout.addWidget(self.status_label)
         self.set_status(STATUS_IDLE, "Ready")
-        self.input_edit.textChanged.connect(self._refresh_preview)
+        self.input_edit.textChanged.connect(self._preview_source_changed)
+        self.source_folder_edit.textChanged.connect(self._preview_source_changed)
+        self.alpha_threshold_spin.valueChanged.connect(self._refresh_preview)
+        self.transparency_checkbox.toggled.connect(self._refresh_preview)
+        self.transparency_color_btn.clicked.connect(self._choose_transparency_color)
+        self.previous_preview_btn.clicked.connect(lambda: self._step_preview(-1))
+        self.next_preview_btn.clicked.connect(lambda: self._step_preview(1))
+        self._preview_index = 0
         self.source_folder_edit.textChanged.connect(self._update_batch_controls)
         self.target_folder_edit.textChanged.connect(self._update_batch_controls)
         self.palette_edit.textChanged.connect(self._update_batch_controls)
@@ -940,24 +972,93 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._refresh_preview()
 
     def _refresh_preview(self) -> None:
-        raw = self.input_edit.text().strip()
-        if not raw:
+        candidates = self._preview_candidates()
+        if not candidates:
             self.preview_pane.clear_preview()
+            self.preview_position_label.clear()
+            self.previous_preview_btn.setEnabled(False)
+            self.next_preview_btn.setEnabled(False)
             return
+        self._preview_index = min(self._preview_index, len(candidates) - 1)
+        preview_path = candidates[self._preview_index]
         try:
-            preview = Image.open(raw)
-            self.preview_pane.set_preview(preview, caption=f"{_fmt_dimensions(preview)} • PNG source")
+            with Image.open(preview_path) as source:
+                preview = source.convert("RGBA")
+            threshold = self.alpha_threshold_spin.value()
+            alpha = preview.getchannel("A").point(lambda value: 0 if value <= threshold else value)
+            preview.putalpha(alpha)
+            if self.transparency_checkbox.isChecked():
+                color = self._transparency_color
+                background = Image.new("RGBA", preview.size, (color.red(), color.green(), color.blue(), 255))
+                preview = Image.alpha_composite(background, preview)
+            count = len(candidates)
+            self.preview_position_label.setText(f"{self._preview_index + 1} of {count}" if count > 1 else "")
+            self.previous_preview_btn.setEnabled(count > 1)
+            self.next_preview_btn.setEnabled(count > 1)
+            self.preview_pane.set_preview(
+                preview,
+                caption=f"{_fmt_dimensions(preview)} • {preview_path.name} • alpha ≤ {threshold} transparent",
+            )
         except Exception as exc:
             self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
 
+    def _preview_source_changed(self) -> None:
+        self._preview_index = 0
+        self._refresh_preview()
+
+    def _preview_candidates(self) -> list[Path]:
+        folder = Path(self.source_folder_edit.text().strip())
+        if self.source_folder_edit.text().strip() and folder.is_dir():
+            return sorted(
+                (path for path in folder.iterdir() if path.is_file() and path.suffix.lower() == ".png"),
+                key=lambda path: path.name.lower(),
+            )
+        raw = self.input_edit.text().strip()
+        return [Path(raw)] if raw else []
+
+    def _step_preview(self, offset: int) -> None:
+        candidates = self._preview_candidates()
+        if not candidates:
+            return
+        self._preview_index = (self._preview_index + offset) % len(candidates)
+        self._refresh_preview()
+
+    def _choose_transparency_color(self) -> None:
+        color = QtWidgets.QColorDialog.getColor(self._transparency_color, self, "Transparency preview color")
+        if color.isValid():
+            self._transparency_color = color
+            self._update_transparency_color_button()
+            self._refresh_preview()
+
+    def _update_transparency_color_button(self) -> None:
+        color_name = self._transparency_color.name().upper()
+        self.transparency_color_btn.setText(color_name)
+        self.transparency_color_btn.setStyleSheet(
+            f"background-color: {color_name}; color: {'#000' if self._transparency_color.lightness() > 127 else '#fff'};"
+        )
+
     def _collect_preset_values(self) -> dict[str, str]:
-        return {"palette_path": self.palette_edit.text().strip(), "output_path": self.output_edit.text().strip(), "alpha_threshold": str(self.alpha_threshold_spin.value()), "header_size": self.size_field.text().strip(), "dither": "1" if self.dither_checkbox.isChecked() else "0"}
+        return {
+            "palette_path": self.palette_edit.text().strip(),
+            "output_path": self.output_edit.text().strip(),
+            "alpha_threshold": str(self.alpha_threshold_spin.value()),
+            "header_size": self.size_field.text().strip(),
+            "dither": "1" if self.dither_checkbox.isChecked() else "0",
+            "paint_transparency": "1" if self.transparency_checkbox.isChecked() else "0",
+            "transparency_color": self._transparency_color.name(),
+        }
 
     def _apply_preset(self, preset: dict[str, str]) -> None:
         self.palette_edit.setText(preset.get("palette_path", self.palette_edit.text()))
         self.output_edit.setText(preset.get("output_path", self.output_edit.text()))
         self.dither_checkbox.setChecked(preset.get("dither", "0") == "1")
         self.size_field.setText(preset.get("header_size", self.size_field.text()))
+        self.transparency_checkbox.setChecked(preset.get("paint_transparency", "1") == "1")
+        color = QtGui.QColor(preset.get("transparency_color", "#00ff00"))
+        if color.isValid():
+            self._transparency_color = color
+            if hasattr(self, "transparency_color_btn"):
+                self._update_transparency_color_button()
         try:
             self.alpha_threshold_spin.setValue(int(preset.get("alpha_threshold", str(self.alpha_threshold_spin.value()))))
         except ValueError:
