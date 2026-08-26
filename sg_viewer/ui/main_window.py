@@ -834,6 +834,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Generate an elevation change for the selected Xsect."
         )
         self._generate_elevation_change_button.setEnabled(False)
+        self._rebuild_elevation_graphs_button = ElevationTabButton("Rebuild Graphs")
+        self._rebuild_elevation_graphs_button.setToolTip(
+            "Recalculate section distances and rebuild elevation graph data from "
+            "the current SG document."
+        )
+        self._rebuild_elevation_graphs_button.setEnabled(False)
         self._raise_lower_elevations_button = ElevationTabButton("Raise/Lower")
         self._raise_lower_elevations_button.setToolTip("Raise or lower all elevations.")
         self._raise_lower_elevations_button.setEnabled(False)
@@ -2339,6 +2345,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._edit_xsect_list_button,
             self._copy_xsect_button,
             self._generate_elevation_change_button,
+            self._rebuild_elevation_graphs_button,
             self._flatten_elevations_button,
             self._raise_lower_elevations_button,
         )
@@ -3235,6 +3242,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     @property
     def generate_elevation_change_button(self) -> QtWidgets.QPushButton:
         return self._generate_elevation_change_button
+
+    @property
+    def rebuild_elevation_graphs_button(self) -> QtWidgets.QPushButton:
+        return self._rebuild_elevation_graphs_button
 
     @property
     def raise_lower_elevations_button(self) -> QtWidgets.QPushButton:

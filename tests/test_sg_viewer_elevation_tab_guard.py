@@ -93,6 +93,18 @@ def test_elevation_workflow_tab_is_treated_as_active_for_slider_edits(qapp):
         window.close()
 
 
+def test_elevation_tab_exposes_rebuild_graphs_button(qapp):
+    window = SGViewerWindow()
+    try:
+        button = window.rebuild_elevation_graphs_button
+
+        assert button.text() == "Rebuild Graphs"
+        assert "section distances" in button.toolTip()
+        assert button in window._elevation_toolbar_buttons()
+    finally:
+        window.close()
+
+
 def test_grade_edit_is_ignored_when_elevation_tab_not_active(qapp, monkeypatch):
     window = SGViewerWindow()
     try:

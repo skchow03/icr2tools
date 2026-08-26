@@ -51,3 +51,27 @@ def test_loading_sg_data_updates_runtime_xsections_metadata(qapp):
         assert [idx for idx, _ in metadata] == [0, 1, 2, 3, 4]
     finally:
         preview.close()
+
+
+def test_rebuild_elevation_graph_data_discards_stale_profile_caches(qapp):
+    preview = PreviewWidgetQt()
+    try:
+        preview.load_sg_data(_make_sgfile(2), status_message="imported")
+        profile = preview.build_elevation_profile(0)
+        assert profile is not None
+
+        cache_key = (10, preview._runtime._sg_version)
+        preview._runtime._elevation_profile_cache[cache_key] = (
+            [999.0],
+            [(999.0, 1000.0)],
+            [(0, 1)],
+        )
+
+        assert preview.rebuild_elevation_graph_data() is True
+        rebuilt = preview.build_elevation_profile(0)
+
+        assert rebuilt is not None
+        assert rebuilt.dlongs != [999.0]
+        assert rebuilt.section_ranges != [(999.0, 1000.0)]
+    finally:
+        preview.close()

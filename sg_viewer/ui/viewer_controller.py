@@ -1810,7 +1810,28 @@ class SGViewerController:
         can_generate = combo_enabled and bool(sections)
         self._window.copy_xsect_button.setEnabled(can_generate)
         self._window.generate_elevation_change_button.setEnabled(can_generate)
+        self._window.rebuild_elevation_graphs_button.setEnabled(can_generate)
         self._generate_elevation_change_action.setEnabled(can_generate)
+
+    def _rebuild_elevation_graphs(self) -> None:
+        """Rebuild the elevation plots and their dlong data from the SG model."""
+        selected_xsect = self._current_xsect_index()
+        if not self._window.preview.rebuild_elevation_graph_data():
+            self._window.show_status_message(
+                "Unable to rebuild elevation graphs: no SG file is loaded."
+            )
+            return
+
+        self._elevation_controller.manual_profile_y_range = None
+        self._window.profile_widget.set_profile_data(None)
+        self._populate_xsect_choices(preferred_index=selected_xsect)
+        self._sync_after_section_mutation()
+        self._refresh_xsect_elevation_panel()
+        self._refresh_xsect_elevation_table()
+        self._section_editing_coordinator.update_xsect_table()
+        self._window.show_status_message(
+            "Elevation graphs and section distance data rebuilt from SG."
+        )
 
     def _update_copy_fsects_buttons(self) -> None:
         selection = self._active_selection
