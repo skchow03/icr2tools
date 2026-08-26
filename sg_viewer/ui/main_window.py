@@ -819,6 +819,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._xsect_combo = QtWidgets.QComboBox()
         self._xsect_combo.setEnabled(False)
         self._edit_xsect_list_button = ElevationTabButton("Edit Xsect data...")
+        self._edit_xsect_list_button.setToolTip(
+            "Edit X-section DLAT, elevation, and grade data. "
+            "This is unavailable only when no X-section data is loaded."
+        )
         self._edit_xsect_list_button.setEnabled(False)
         self._copy_xsect_button = ElevationTabButton("Copy Xsect")
         self._copy_xsect_button.setToolTip(

@@ -324,6 +324,27 @@ def test_workflow_toolbar_buttons_hidden_outside_matching_tabs(qapp):
         window.close()
 
 
+def test_new_track_allows_editing_default_xsect_data_from_elevation_tab(qapp):
+    window = SGViewerWindow()
+    try:
+        tabs = window.right_sidebar_tabs
+        elevation_index = next(
+            index
+            for index in range(tabs.count())
+            if tabs.tabText(index).rstrip("*") == "Elevation"
+        )
+
+        tabs.setCurrentIndex(elevation_index)
+
+        button = window.edit_xsect_list_button
+        assert window.preview.get_xsect_metadata()
+        assert button.isVisible()
+        assert button.isEnabled()
+        assert "no X-section data is loaded" in button.toolTip()
+    finally:
+        window.close()
+
+
 def test_right_sidebar_uses_grouped_workflow_tabs(qapp):
     window = SGViewerWindow()
     try:

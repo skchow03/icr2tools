@@ -561,6 +561,11 @@ class DocumentController:
         self._host._active_selection = None
         self._host._window.update_selection_sidebar(None)
         self._host._window.set_table_actions_enabled(False)
+        # A new track already owns the default X-sections, so their data can be
+        # edited before the first section is drawn.  Keep this in sync with the
+        # X-section table menu action below rather than gating it with the
+        # section-dependent table actions.
+        self._host._window.edit_xsect_list_button.setEnabled(True)
         self._host._xsect_table_action.setEnabled(True)
         self._host._window.delete_section_button.setEnabled(False)
         self._host._window.delete_section_button.setChecked(False)
