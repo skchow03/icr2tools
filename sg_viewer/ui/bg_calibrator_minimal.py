@@ -235,6 +235,12 @@ class Calibrator(QtWidgets.QMainWindow):
         open_btn.clicked.connect(self.open_image)
         add_point_btn = QtWidgets.QPushButton("Add calibration point")
         add_point_btn.clicked.connect(self.view.start_point_add)
+        self.remove_point_btn = QtWidgets.QPushButton(
+            "Remove selected calibration point"
+        )
+        self.remove_point_btn.clicked.connect(self.remove_selected_point)
+        self.remove_point_btn.setEnabled(False)
+        self.table.itemSelectionChanged.connect(self._update_remove_point_button)
         save_btn = QtWidgets.QPushButton("Save Settings…")
         save_btn.clicked.connect(self.save_settings)
         load_btn = QtWidgets.QPushButton("Load Settings…")
@@ -248,6 +254,7 @@ class Calibrator(QtWidgets.QMainWindow):
         right = QtWidgets.QVBoxLayout()
         right.addWidget(open_btn)
         right.addWidget(add_point_btn)
+        right.addWidget(self.remove_point_btn)
         right.addWidget(save_btn)
         right.addWidget(load_btn)
         right.addWidget(send_btn)
@@ -306,6 +313,33 @@ class Calibrator(QtWidgets.QMainWindow):
 
     def add_point(self, x, y):
         self._add_point(x, y)
+
+    def _update_remove_point_button(self):
+        self.remove_point_btn.setEnabled(bool(self.table.selectionModel().selectedRows()))
+
+    def remove_selected_point(self):
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
+            return
+
+        row = selected_rows[0].row()
+        if row >= len(self.points):
+            return
+
+        point = self.points.pop(row)
+        for item in point.items or []:
+            self.scene.removeItem(item)
+
+        self._suppress_table_edit = True
+        self.table.removeRow(row)
+        for remaining_row in range(row, self.table.rowCount()):
+            self.table.item(remaining_row, 0).setText(str(remaining_row + 1))
+        self._suppress_table_edit = False
+
+        self.out_scale.clear()
+        self.out_ul.clear()
+        self.recompute()
+        self._update_remove_point_button()
 
     def _add_point(self, x, y, lat=None, lon=None):
         pen = QtGui.QPen(QtGui.QColor("cyan"))

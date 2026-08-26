@@ -70,3 +70,29 @@ def test_send_values_includes_current_image_path(qapp, monkeypatch, tmp_path):
         assert payload["image_path"] == str(image_path)
     finally:
         window.close()
+
+
+def test_remove_selected_calibration_point(qapp):
+    window = bg_calibrator_minimal.Calibrator()
+    try:
+        window.image_size = (100, 100)
+        window._add_point(10.0, 20.0, 1.0, 2.0)
+        window._add_point(30.0, 40.0, 3.0, 4.0)
+        removed_items = list(window.points[0].items)
+        window.out_scale.setText("42.0")
+        window.out_ul.setText("1.0, 2.0")
+
+        window.table.selectRow(0)
+        assert window.remove_point_btn.isEnabled()
+        window.remove_point_btn.click()
+
+        assert len(window.points) == 1
+        assert (window.points[0].px, window.points[0].py) == (30.0, 40.0)
+        assert window.table.rowCount() == 1
+        assert window.table.item(0, 0).text() == "1"
+        assert all(item.scene() is None for item in removed_items)
+        assert window.out_scale.text() == ""
+        assert window.out_ul.text() == ""
+        assert not window.remove_point_btn.isEnabled()
+    finally:
+        window.close()
