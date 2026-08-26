@@ -144,6 +144,24 @@ class _RuntimePersistenceMixin:
         self._realign_fsects_after_recalc(old_sections, old_fsects)
         return True
 
+    def rebuild_elevation_graph_data(self) -> bool:
+        """Rebuild dlong-derived elevation data from the current SG document."""
+        if not self.recalculate_dlongs():
+            return False
+
+        # Recreate the preview section/dlong model as well as the graph caches.
+        # This deliberately takes the full path so it can repair stale topology
+        # left behind by an inserted section, rather than merely repainting it.
+        self._refresh_from_document(mark_unsaved=False)
+        self._elevation_bounds_cache.clear()
+        self._elevation_xsect_bounds_cache.clear()
+        self._elevation_xsect_bounds_dirty.clear()
+        self._elevation_profile_cache.clear()
+        self._elevation_profile_alt_cache.clear()
+        self._elevation_profile_dirty.clear()
+        self._context.request_repaint()
+        return True
+
     def refresh_fsections_preview(self) -> bool:
         # Full refresh path: use for any edit that can change SG topology,
         # section geometry, or derived document/dlong state. This path rebuilds

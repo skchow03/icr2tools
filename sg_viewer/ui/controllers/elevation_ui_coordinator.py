@@ -28,6 +28,9 @@ class ElevationUiCoordinator:
         window.xsect_combo.currentIndexChanged.connect(host._refresh_elevation_profile)
         window.copy_xsect_button.clicked.connect(self.copy_xsect_data_to_targets)
         window.generate_elevation_change_button.clicked.connect(host._open_generate_elevation_change_dialog)
+        window.rebuild_elevation_graphs_button.clicked.connect(
+            host._rebuild_elevation_graphs
+        )
         window.generateElevationChangeApplied.connect(host._on_generate_elevation_change_applied)
         window.altitude_slider.valueChanged.connect(host._on_altitude_slider_changed)
         window.altitude_slider.sliderReleased.connect(host._on_altitude_slider_released)
