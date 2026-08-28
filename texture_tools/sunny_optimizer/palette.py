@@ -12,6 +12,23 @@ except ImportError:  # pragma: no cover
 
 PALETTE_COLUMNS = 64
 PALETTE_ROWS = 4
+PALETTE_COLOR_COUNT = 256
+
+
+def optimal_grid_shape(width: int, height: int, item_count: int = PALETTE_COLOR_COUNT) -> tuple[int, int]:
+    """Return the columns and rows that maximize square tile size in a rectangle."""
+    if width <= 0 or height <= 0 or item_count <= 0:
+        return PALETTE_COLUMNS, PALETTE_ROWS
+
+    candidates: list[tuple[float, int, int, int]] = []
+    for columns in range(1, item_count + 1):
+        rows = (item_count + columns - 1) // columns
+        tile_size = min(width / columns, height / rows)
+        unused_cells = columns * rows - item_count
+        # Prefer larger tiles, then fewer empty cells and finally the wider grid.
+        candidates.append((tile_size, -unused_cells, columns, rows))
+    _, _, columns, rows = max(candidates)
+    return columns, rows
 
 
 def load_sunny_palette(path: str | Path) -> np.ndarray:
@@ -102,6 +119,7 @@ def visualize_palette(
     tile_size: int = 16,
     selected_index: int | None = None,
     usage_counts: np.ndarray | None = None,
+    columns: int = PALETTE_COLUMNS,
 ) -> QtGui.QImage:
     palette = np.asarray(palette_array, dtype=np.uint8)
     if palette.shape != (256, 3):
@@ -115,15 +133,15 @@ def visualize_palette(
             raise ValueError("usage_counts must be shape (256,)")
         max_count = int(counts.max(initial=0))
 
-    image = QtGui.QImage(
-        PALETTE_COLUMNS * tile_size,
-        PALETTE_ROWS * tile_size,
-        QtGui.QImage.Format_RGB888,
-    )
+    if columns <= 0:
+        raise ValueError("columns must be positive")
+    rows = (len(palette) + columns - 1) // columns
+    image = QtGui.QImage(columns * tile_size, rows * tile_size, QtGui.QImage.Format_RGB888)
+    image.fill(QtGui.QColor(32, 32, 32))
     painter = QtGui.QPainter(image)
     for i, (r, g, b) in enumerate(palette):
-        x = (i % PALETTE_COLUMNS) * tile_size
-        y = (i // PALETTE_COLUMNS) * tile_size
+        x = (i % columns) * tile_size
+        y = (i // columns) * tile_size
         count = int(counts[i]) if counts is not None else 0
         fill_color = QtGui.QColor(int(r), int(g), int(b))
         painter.fillRect(x, y, tile_size, tile_size, fill_color)
