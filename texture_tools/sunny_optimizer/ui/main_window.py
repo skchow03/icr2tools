@@ -153,6 +153,58 @@ class ClickablePaletteLabel(QtWidgets.QLabel):
         super().mousePressEvent(event)
 
 
+class OptimizationProgressDialog(QtWidgets.QDialog):
+    """Modal progress surface that cannot be dismissed while work is running."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._can_close = False
+        self.setWindowTitle("Optimizing Palette")
+        self.setModal(True)
+        self.setMinimumSize(560, 360)
+
+        layout = QtWidgets.QVBoxLayout(self)
+        self.progress_label = QtWidgets.QLabel("Preparing optimization…")
+        self.progress_label.setWordWrap(True)
+        layout.addWidget(self.progress_label)
+
+        self.progress = QtWidgets.QProgressBar()
+        self.progress.setRange(0, 100)
+        self.progress.setValue(0)
+        layout.addWidget(self.progress)
+
+        log_label = QtWidgets.QLabel("Optimization log")
+        log_label.setStyleSheet("font-weight: 700;")
+        layout.addWidget(log_label)
+        self.log = QtWidgets.QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumBlockCount(200)
+        layout.addWidget(self.log, 1)
+
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Ok)
+        self.ok_button = buttons.button(QtWidgets.QDialogButtonBox.Ok)
+        self.ok_button.setEnabled(False)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def finish(self, message: str, *, succeeded: bool) -> None:
+        self.progress_label.setText(message)
+        if succeeded:
+            self.progress.setValue(100)
+        self._can_close = True
+        self.ok_button.setEnabled(True)
+
+    def reject(self) -> None:
+        if self._can_close:
+            super().reject()
+
+    def closeEvent(self, event: QtGui.QCloseEvent) -> None:
+        if self._can_close:
+            super().closeEvent(event)
+        else:
+            event.ignore()
+
+
 class MainWindow(QtWidgets.QMainWindow):
     SORT_BY_NAME = "Name"
     SORT_BY_COLOR_COUNT = "Color count"
@@ -177,6 +229,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.selected_palette_index: int | None = None
         self._palette_image_size: int = 0
         self._optimization_preview_palette: np.ndarray | None = None
+        self._optimization_dialog: OptimizationProgressDialog | None = None
         self._syncing_previews = False
         self.loaded_texture_folder: Path | None = None
         self._last_sunny_palette_path: Path | None = None
@@ -407,8 +460,6 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_controls.addWidget(self.reset_previews_btn)
         preview_controls.addStretch(1)
         center_panel.addLayout(preview_controls)
-        right_panel = QtWidgets.QVBoxLayout()
-        right_panel.setSpacing(10)
         self.palette_label = ClickablePaletteLabel()
         self.palette_label.setMinimumSize(96, 96)
         self.palette_label.setSizePolicy(
@@ -431,7 +482,6 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_preview_layout.addWidget(self.palette_label, 1)
         palette_preview_layout.addWidget(self.palette_details_label)
         palette_preview_layout.addWidget(self.highlight_checkbox)
-        center_panel.addWidget(palette_preview_card)
         self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
         self.compute_btn.setProperty("primary", True)
         self.compute_btn.clicked.connect(self.compute_palette)
@@ -442,19 +492,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.save_btn.clicked.connect(self.save_palette_dialog)
         self.save_hint_label = QtWidgets.QLabel()
         self.save_hint_label.setWordWrap(True)
-        self.compute_progress_label = QtWidgets.QLabel("Idle")
-        self.compute_progress_label.setWordWrap(True)
-        self.compute_progress_label.setStyleSheet("color: #4b5563;")
-        self.compute_progress = QtWidgets.QProgressBar()
-        self.compute_progress.setRange(0, 100)
-        self.compute_progress.setValue(0)
-        self.compute_progress.setFormat("%p%")
-        self.compute_progress.setTextVisible(False)
-        self.optimization_log = QtWidgets.QPlainTextEdit()
-        self.optimization_log.setReadOnly(True)
-        self.optimization_log.setPlaceholderText("Optimization log will appear here")
-        self.optimization_log.setMaximumBlockCount(200)
-        self.optimization_log.setMinimumHeight(120)
+        palette_preview_layout.addWidget(self.save_btn)
+        palette_preview_layout.addWidget(self.save_hint_label)
+        center_panel.addWidget(palette_preview_card)
         palette_source_card = QtWidgets.QFrame()
         palette_source_card.setObjectName("sectionCard")
         palette_source_layout = QtWidgets.QVBoxLayout(palette_source_card)
@@ -481,21 +521,13 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_path_row.addWidget(self.palette_path_recent_btn)
         palette_source_layout.addLayout(palette_path_row)
 
-        right_panel.addWidget(palette_source_card)
-        right_panel.addWidget(self.dirt_checkbox)
-        right_panel.addWidget(self.compute_btn)
-        right_panel.addWidget(self.compute_hint_label)
-        right_panel.addWidget(self.compute_progress_label)
-        right_panel.addWidget(self.compute_progress)
-        right_panel.addWidget(QtWidgets.QLabel("Optimization log"))
-        right_panel.addWidget(self.optimization_log)
-        right_panel.addWidget(self.save_btn)
-        right_panel.addWidget(self.save_hint_label)
-        right_panel.addStretch(1)
+        left_panel.addWidget(palette_source_card)
+        left_panel.addWidget(self.dirt_checkbox)
+        left_panel.addWidget(self.compute_btn)
+        left_panel.addWidget(self.compute_hint_label)
 
         root.addLayout(left_panel, 3)
         root.addLayout(center_panel, 4)
-        root.addLayout(right_panel, 2)
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
@@ -906,13 +938,14 @@ class MainWindow(QtWidgets.QMainWindow):
             self._syncing_previews = False
 
     def _append_optimization_log(self, message: str, percent: int, elapsed: float) -> None:
+        if self._optimization_dialog is None:
+            return
         clamped_percent = min(100, max(0, int(percent)))
-        self.optimization_log.appendPlainText(
+        log = self._optimization_dialog.log
+        log.appendPlainText(
             f"[{elapsed:6.1f}s | {clamped_percent:3d}%] {message}"
         )
-        self.optimization_log.verticalScrollBar().setValue(
-            self.optimization_log.verticalScrollBar().maximum()
-        )
+        log.verticalScrollBar().setValue(log.verticalScrollBar().maximum())
 
     def compute_palette(self) -> None:
         if not self.texture_images:
@@ -940,15 +973,20 @@ class MainWindow(QtWidgets.QMainWindow):
         step_total = 4
         started_at = time.perf_counter()
         logged_messages: set[str] = set()
-        self.optimization_log.clear()
+        self._optimization_dialog = OptimizationProgressDialog(self)
+        self._optimization_dialog.show()
+        QtWidgets.QApplication.processEvents()
 
         def set_progress(step_num: int, message: str, percent: int) -> None:
             elapsed = time.perf_counter() - started_at
             clamped_percent = min(100, max(0, int(percent)))
             progress_text = f"Step {step_num}/{step_total}: {message} ({elapsed:.1f}s)"
-            self.compute_progress_label.setText(progress_text)
-            self.compute_progress.setToolTip(progress_text)
-            self.compute_progress.setValue(clamped_percent)
+            dialog = self._optimization_dialog
+            if dialog is None:
+                return
+            dialog.progress_label.setText(progress_text)
+            dialog.progress.setToolTip(progress_text)
+            dialog.progress.setValue(clamped_percent)
             if message and message not in logged_messages:
                 logged_messages.add(message)
                 self._append_optimization_log(message, clamped_percent, elapsed)
@@ -1013,11 +1051,12 @@ class MainWindow(QtWidgets.QMainWindow):
                 "Optimization stopped. The previous palette is shown."
             )
             self._refresh_palette_view()
-            self.compute_progress.setValue(0)
             elapsed = time.perf_counter() - started_at
             failure_text = f"Failure after {elapsed:.1f}s"
-            self.compute_progress_label.setText(failure_text)
-            self.compute_progress.setToolTip(failure_text)
+            self._append_optimization_log(str(exc), 0, elapsed)
+            if self._optimization_dialog is not None:
+                self._optimization_dialog.progress.setValue(0)
+                self._optimization_dialog.finish(failure_text, succeeded=False)
             palette_filename = Path(palette_path).name if palette_path else "<unknown>"
             self._set_inline_status(
                 f"Optimization failed for {palette_filename}: {exc}",
@@ -1034,10 +1073,10 @@ class MainWindow(QtWidgets.QMainWindow):
             "Optimized palette ready. Click a color tile to inspect index, hex, and RGB values."
         )
         total_elapsed = time.perf_counter() - started_at
-        self.compute_progress.setValue(100)
         success_text = f"Success in {total_elapsed:.1f}s"
-        self.compute_progress_label.setText(success_text)
-        self.compute_progress.setToolTip(success_text)
+        self._append_optimization_log("Optimization complete", 100, total_elapsed)
+        if self._optimization_dialog is not None:
+            self._optimization_dialog.finish(success_text, succeeded=True)
 
         self._refresh_texture_list()
         self._refresh_palette_view()
