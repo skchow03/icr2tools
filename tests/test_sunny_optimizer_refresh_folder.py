@@ -121,6 +121,16 @@ def test_optimize_palette_uses_resizable_splitter_and_preview_titles(qapp) -> No
     assert not any("Scroll to zoom" in text for text in labels)
 
 
+def test_files_section_uses_select_buttons_without_recent_palette_dropdown(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+
+    assert window.folder_btn.text() == "Select folder..."
+    assert window.palette_path_browse_btn.text() == "Select palette file"
+    assert not hasattr(window, "palette_recent_btn")
+    assert not hasattr(window, "palette_path_recent_btn")
+
+
 def test_apply_loaded_palette_updates_palette_and_all_texture_previews(
     qapp, tmp_path: Path
 ) -> None:
@@ -146,6 +156,14 @@ def test_apply_loaded_palette_updates_palette_and_all_texture_previews(
     assert set(window.indexed_images) == {"a.png", "b.png"}
     assert set(window.quantized_images) == {"a.png", "b.png"}
     assert window.palette_preview_title.text() == "Palette from loaded sunny.pcx"
+    assert window._apply_palette_dialog is not None
+    assert window._apply_palette_dialog.windowTitle() == "Applying Loaded Palette"
+    assert window._apply_palette_dialog.progress.value() == 100
+    assert (
+        "Applied sunny.pcx to 2 textures"
+        in window._apply_palette_dialog.progress_label.text()
+    )
+    assert "Applying palette to a.png (1/2)" in window._apply_palette_dialog.log.toPlainText()
 
 
 def test_successful_optimization_updates_palette_header(
