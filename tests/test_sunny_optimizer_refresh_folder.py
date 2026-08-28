@@ -4,7 +4,7 @@ import pytest
 
 try:  # pragma: no cover
     from PIL import Image
-    from PyQt5 import QtWidgets
+    from PyQt5 import QtCore, QtWidgets
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 or Pillow not available", allow_module_level=True)
 
@@ -108,6 +108,9 @@ def test_optimize_palette_uses_resizable_splitter_and_preview_titles(qapp) -> No
 
     assert window.main_splitter.count() == 2
     assert not window.main_splitter.childrenCollapsible()
+    assert window.preview_palette_splitter.orientation() == QtCore.Qt.Vertical
+    assert window.preview_palette_splitter.count() == 2
+    assert not window.preview_palette_splitter.childrenCollapsible()
     labels = {label.text() for label in window.findChildren(QtWidgets.QLabel)}
     assert "Files" in labels
     assert "Original" in labels
