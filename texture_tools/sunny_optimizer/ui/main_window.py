@@ -164,15 +164,22 @@ class ClickablePaletteLabel(QtWidgets.QLabel):
 class OptimizationProgressDialog(QtWidgets.QDialog):
     """Modal progress surface that cannot be dismissed while work is running."""
 
-    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        title: str = "Optimizing Palette",
+        initial_message: str = "Preparing optimization…",
+        log_title: str = "Optimization log",
+    ) -> None:
         super().__init__(parent)
         self._can_close = False
-        self.setWindowTitle("Optimizing Palette")
+        self.setWindowTitle(title)
         self.setModal(True)
         self.setMinimumSize(560, 360)
 
         layout = QtWidgets.QVBoxLayout(self)
-        self.progress_label = QtWidgets.QLabel("Preparing optimization…")
+        self.progress_label = QtWidgets.QLabel(initial_message)
         self.progress_label.setWordWrap(True)
         layout.addWidget(self.progress_label)
 
@@ -181,7 +188,7 @@ class OptimizationProgressDialog(QtWidgets.QDialog):
         self.progress.setValue(0)
         layout.addWidget(self.progress)
 
-        log_label = QtWidgets.QLabel("Optimization log")
+        log_label = QtWidgets.QLabel(log_title)
         log_label.setStyleSheet("font-weight: 700;")
         layout.addWidget(log_label)
         self.log = QtWidgets.QPlainTextEdit()
@@ -239,6 +246,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._palette_grid_shape = (PALETTE_COLUMNS, PALETTE_ROWS)
         self._optimization_preview_palette: np.ndarray | None = None
         self._optimization_dialog: OptimizationProgressDialog | None = None
+        self._apply_palette_dialog: OptimizationProgressDialog | None = None
         self._syncing_previews = False
         self.loaded_texture_folder: Path | None = None
         self._last_sunny_palette_path: Path | None = None
@@ -363,17 +371,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.inline_fix_folder_btn.clicked.connect(self._focus_folder_selection)
         self.inline_fix_palette_btn = QtWidgets.QPushButton("Select Palette (.pcx)")
         self.inline_fix_palette_btn.clicked.connect(self._focus_palette_selection)
-        self.palette_recent_btn = QtWidgets.QToolButton()
-        self.palette_recent_btn.setText("▼")
-        self.palette_recent_btn.setToolTip("Recent palettes")
-        self.palette_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.palette_recent_btn.pressed.connect(self._show_recent_palette_menu)
         self.inline_dismiss_btn = QtWidgets.QPushButton("Dismiss")
         self.inline_dismiss_btn.clicked.connect(self._clear_inline_status)
         self.inline_action_row.setVisible(False)
         inline_actions.addWidget(self.inline_fix_folder_btn)
         inline_actions.addWidget(self.inline_fix_palette_btn)
-        inline_actions.addWidget(self.palette_recent_btn)
         inline_actions.addStretch(1)
         inline_actions.addWidget(self.inline_dismiss_btn)
 
@@ -386,7 +388,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.folder_path_label.setStyleSheet("color: #4b5563;")
         self.folder_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.folder_btn = QtWidgets.QPushButton("Browse…")
+        self.folder_btn = QtWidgets.QPushButton("Select folder...")
         self.folder_btn.clicked.connect(self.select_folder)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
@@ -439,13 +441,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.palette_path_label.setStyleSheet("color: #4b5563;")
         self.palette_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.palette_path_browse_btn = QtWidgets.QPushButton("Browse SUNNY…")
+        self.palette_path_browse_btn = QtWidgets.QPushButton("Select palette file")
         self.palette_path_browse_btn.clicked.connect(self._select_base_palette)
-        self.palette_path_recent_btn = QtWidgets.QToolButton()
-        self.palette_path_recent_btn.setText("▼")
-        self.palette_path_recent_btn.setToolTip("Recent palettes")
-        self.palette_path_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.palette_path_recent_btn.pressed.connect(self._show_recent_palette_menu)
         self.apply_loaded_palette_btn = QtWidgets.QPushButton("Apply Loaded Palette")
         self.apply_loaded_palette_btn.setToolTip(
             "Use the selected SUNNY palette for the palette display and all paletted previews."
@@ -453,7 +450,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self.apply_loaded_palette_btn.clicked.connect(self.apply_loaded_palette)
         palette_path_row.addWidget(self.palette_path_label, 1)
         palette_path_row.addWidget(self.palette_path_browse_btn)
-        palette_path_row.addWidget(self.palette_path_recent_btn)
         palette_path_row.addWidget(self.apply_loaded_palette_btn)
         top_card_layout.addLayout(palette_path_row)
         left_panel.addWidget(top_card)
@@ -570,19 +566,6 @@ class MainWindow(QtWidgets.QMainWindow):
         if not folder:
             return
         self._load_folder(Path(folder))
-
-    def _show_recent_palette_menu(self) -> None:
-        menu = QtWidgets.QMenu(self.inline_fix_palette_btn)
-        values = self.settings.get_recent_paths(self.RECENT_PALETTE_KEY)
-        if not values:
-            action = menu.addAction("No recent palettes")
-            action.setEnabled(False)
-        for value in values:
-            action = menu.addAction(value)
-            action.triggered.connect(lambda _checked=False, v=value: self._set_palette_path(v))
-        self.inline_fix_palette_btn.setMenu(menu)
-        if hasattr(self, "palette_path_recent_btn"):
-            self.palette_path_recent_btn.setMenu(menu)
 
     def _set_palette_path(self, palette_path: str) -> None:
         resolved_palette = Path(palette_path).expanduser()
@@ -862,16 +845,43 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_action_states()
             return
 
+        started_at = time.perf_counter()
+        self._apply_palette_dialog = OptimizationProgressDialog(
+            self,
+            title="Applying Loaded Palette",
+            initial_message=f"Loading {palette_path.name}…",
+            log_title="Apply palette progress",
+        )
+        self._apply_palette_dialog.show()
+        QtWidgets.QApplication.processEvents()
+
         try:
             palette = load_sunny_palette(palette_path)
             quantizer = Quantizer(palette)
             indexed_images: dict[str, np.ndarray] = {}
             quantized_images: dict[str, np.ndarray] = {}
-            for name, image in self.texture_images.items():
+            texture_count = len(self.texture_images)
+            for texture_number, (name, image) in enumerate(self.texture_images.items(), start=1):
+                dialog = self._apply_palette_dialog
+                if dialog is not None:
+                    message = f"Applying palette to {name} ({texture_number}/{texture_count})"
+                    dialog.progress_label.setText(message)
+                    dialog.progress.setValue(round((texture_number - 1) / texture_count * 100))
+                    dialog.log.appendPlainText(message)
+                    QtWidgets.QApplication.processEvents()
                 indexed, quantized = quantizer.quantize_image(image)
                 indexed_images[name] = indexed
                 quantized_images[name] = quantized
+                if dialog is not None:
+                    dialog.progress.setValue(round(texture_number / texture_count * 100))
+                    QtWidgets.QApplication.processEvents()
         except Exception as exc:  # prototype surface
+            elapsed = time.perf_counter() - started_at
+            if self._apply_palette_dialog is not None:
+                self._apply_palette_dialog.log.appendPlainText(str(exc))
+                self._apply_palette_dialog.finish(
+                    f"Failed after {elapsed:.1f}s", succeeded=False
+                )
             self._set_inline_status(
                 f"Could not apply {palette_path.name}: {exc}",
                 level="error",
@@ -892,6 +902,12 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_palette_view()
         self._refresh_current_preview()
         self._update_action_states()
+        elapsed = time.perf_counter() - started_at
+        if self._apply_palette_dialog is not None:
+            self._apply_palette_dialog.finish(
+                f"Applied {palette_path.name} to {len(self.texture_images)} textures in {elapsed:.1f}s",
+                succeeded=True,
+            )
         self.statusBar().showMessage(
             f"Applied {palette_path.name} to {len(self.texture_images)} textures.", 5000
         )
