@@ -58,7 +58,7 @@ def test_update_preview_shows_placeholder_for_missing_paletted_preview(qapp) -> 
 
 
 
-def test_texture_list_shows_paletted_unique_color_counts(qapp) -> None:
+def test_texture_table_shows_color_counts_and_editable_budgets(qapp) -> None:
     _ = qapp
     window = MainWindow()
     window.texture_images = {
@@ -70,11 +70,22 @@ def test_texture_list_shows_paletted_unique_color_counts(qapp) -> None:
 
     window._refresh_texture_list()
 
-    item = window.texture_list.item(0)
-    widget = window.texture_list.itemWidget(item)
-    assert widget.original_color_count_label.text() == "Original: 2 colors"
-    assert widget.paletted_color_count_label.text() == "Paletted: 3 colors"
-    assert "Paletted unique colors: 3" in item.toolTip()
+    assert window.texture_list.horizontalHeaderItem(0).text() == "File name"
+    assert window.texture_list.item(0, 0).text() == "tex.png"
+    assert window.texture_list.item(0, 1).text() == "2"
+    assert window.texture_list.item(0, 4).text() == "3"
+    assert "Paletted unique colors: 3" in window.texture_list.item(0, 0).toolTip()
+
+    budget_edit = window.texture_list.cellWidget(0, 2)
+    required_edit = window.texture_list.cellWidget(0, 3)
+    assert isinstance(budget_edit, QtWidgets.QLineEdit)
+    assert isinstance(required_edit, QtWidgets.QLineEdit)
+    budget_edit.setText("12")
+    budget_edit.editingFinished.emit()
+    required_edit.setText("2")
+    required_edit.editingFinished.emit()
+    assert window.per_texture_budget["tex.png"] == 12
+    assert window.per_texture_required_unique_colors["tex.png"] == 2
 
 
 def test_optimization_progress_uses_separate_label_not_bar_text(qapp) -> None:
