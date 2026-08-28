@@ -15,6 +15,7 @@ from texture_tools.sunny_optimizer.palette import (
     PALETTE_COLUMNS,
     PALETTE_ROWS,
     load_sunny_palette,
+    optimal_grid_shape,
     save_palette,
     visualize_palette,
 )
@@ -234,6 +235,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.indexed_images: dict[str, np.ndarray] = {}
         self.selected_palette_index: int | None = None
         self._palette_image_dimensions = QtCore.QSize()
+        self._palette_grid_shape = (PALETTE_COLUMNS, PALETTE_ROWS)
         self._optimization_preview_palette: np.ndarray | None = None
         self._optimization_dialog: OptimizationProgressDialog | None = None
         self._syncing_previews = False
@@ -908,11 +910,15 @@ class MainWindow(QtWidgets.QMainWindow):
         is_optimizing = self._optimization_preview_palette is not None
         palette = self._optimization_preview_palette if is_optimizing else self.current_palette
         usage_counts = self._compute_palette_usage_counts() if self.indexed_images and not is_optimizing else None
+        contents_size = self.palette_label.contentsRect().size()
+        columns, rows = optimal_grid_shape(contents_size.width(), contents_size.height())
         image = visualize_palette(
             palette,
             selected_index=None if is_optimizing else self.selected_palette_index,
             usage_counts=usage_counts,
+            columns=columns,
         )
+        self._palette_grid_shape = (columns, rows)
         self._palette_image_dimensions = image.size()
         self.palette_label.setPixmap(
             QtGui.QPixmap.fromImage(image).scaled(
@@ -1158,13 +1164,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         source_x = int(x * self._palette_image_dimensions.width() / pixmap.width())
         source_y = int(y * self._palette_image_dimensions.height() / pixmap.height())
-        tile_width = max(1, self._palette_image_dimensions.width() // PALETTE_COLUMNS)
-        tile_height = max(1, self._palette_image_dimensions.height() // PALETTE_ROWS)
+        columns, rows = self._palette_grid_shape
+        tile_width = max(1, self._palette_image_dimensions.width() // columns)
+        tile_height = max(1, self._palette_image_dimensions.height() // rows)
         col = source_x // tile_width
         row = source_y // tile_height
-        if not (0 <= row < PALETTE_ROWS and 0 <= col < PALETTE_COLUMNS):
+        if not (0 <= row < rows and 0 <= col < columns):
             return
-        index = int(row * PALETTE_COLUMNS + col)
+        index = int(row * columns + col)
+        if index >= len(self.current_palette):
+            return
         self.selected_palette_index = index
         self._refresh_palette_view()
         self._update_palette_details(index)

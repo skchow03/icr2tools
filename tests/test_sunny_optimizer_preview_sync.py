@@ -7,7 +7,7 @@ except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
 from sunny_optimizer.ui.main_window import MainWindow
-from sunny_optimizer.palette import visualize_palette
+from sunny_optimizer.palette import optimal_grid_shape, visualize_palette
 
 
 @pytest.fixture
@@ -31,6 +31,14 @@ def test_palette_uses_four_rows_of_sixty_four_colors() -> None:
     assert image.height() == 4 * 8
 
 
+@pytest.mark.parametrize(
+    ("width", "height", "expected"),
+    [(640, 100, (43, 6)), (256, 256, (16, 16)), (100, 640, (6, 43))],
+)
+def test_optimal_palette_grid_maximizes_square_size(width, height, expected) -> None:
+    assert optimal_grid_shape(width, height) == expected
+
+
 def test_palette_click_maps_wide_grid_to_palette_index(qapp) -> None:
     _ = qapp
     window = MainWindow()
@@ -39,12 +47,14 @@ def test_palette_click_maps_wide_grid_to_palette_index(qapp) -> None:
 
     pixmap = window.palette_label.pixmap()
     assert pixmap is not None
-    # Index 194 is column 2 on the fourth row of the 64-column grid.
+    columns, rows = window._palette_grid_shape
+    assert (columns, rows) == (43, 6)
+    # Index 194 is column 22 on the fifth row of this dynamically selected grid.
     x_offset = (window.palette_label.width() - pixmap.width()) // 2
     y_offset = (window.palette_label.height() - pixmap.height()) // 2
     point = QtCore.QPoint(
-        x_offset + int(2.5 * pixmap.width() / 64),
-        y_offset + int(3.5 * pixmap.height() / 4),
+        x_offset + int(22.5 * pixmap.width() / columns),
+        y_offset + int(4.5 * pixmap.height() / rows),
     )
 
     window._on_palette_clicked(point)
