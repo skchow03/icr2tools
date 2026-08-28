@@ -342,9 +342,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.texture_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.texture_list.verticalHeader().setVisible(False)
         header = self.texture_list.horizontalHeader()
-        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
-        for column in range(1, 5):
-            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeToContents)
+        # Keep every column within the left pane.  ResizeToContents lets the
+        # numeric column headings establish a combined minimum wider than the
+        # pane, which leaves the file-name column (and users) horizontally
+        # scrolled.  Stretching the sections shares the available viewport
+        # width instead, while the item tooltips retain the full values.
+        for column in range(self.texture_list.columnCount()):
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.Stretch)
+        self.texture_list.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
         self.texture_list.currentCellChanged.connect(self._on_current_cell_changed)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
