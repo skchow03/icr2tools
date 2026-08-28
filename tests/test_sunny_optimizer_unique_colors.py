@@ -17,45 +17,13 @@ def qapp():
     return app
 
 
-def test_update_preview_shows_unique_color_counts(qapp) -> None:
+def test_preview_omits_redundant_color_count_labels(qapp) -> None:
     _ = qapp
     window = MainWindow()
 
-    rgb = np.array(
-        [
-            [[0, 0, 0], [255, 0, 0]],
-            [[255, 0, 0], [0, 255, 0]],
-        ],
-        dtype=np.uint8,
-    )
-    quant = np.array(
-        [
-            [[0, 0, 0], [128, 128, 128]],
-            [[128, 128, 128], [255, 255, 255]],
-        ],
-        dtype=np.uint8,
-    )
-    indexed = np.array([[1, 2], [2, 3]], dtype=np.uint8)
-
-    window.texture_images = {"tex.png": rgb}
-    window.quantized_images = {"tex.png": quant}
-    window.indexed_images = {"tex.png": indexed}
-
-    window._update_preview("tex.png")
-
-    assert window.orig_unique_colors_label.text() == "Original unique colors: 3"
-    assert window.paletted_unique_colors_label.text() == "Paletted unique colors: 3"
-
-
-def test_update_preview_shows_placeholder_for_missing_paletted_preview(qapp) -> None:
-    _ = qapp
-    window = MainWindow()
-    window.texture_images = {"tex.png": np.zeros((2, 2, 3), dtype=np.uint8)}
-
-    window._update_preview("tex.png")
-
-    assert window.paletted_unique_colors_label.text() == "Paletted unique colors: —"
-
+    assert not hasattr(window, "orig_unique_colors_label")
+    assert not hasattr(window, "paletted_unique_colors_label")
+    assert not hasattr(window, "texture_diagnostics_label")
 
 
 def test_texture_table_shows_color_counts_and_editable_budgets(qapp) -> None:

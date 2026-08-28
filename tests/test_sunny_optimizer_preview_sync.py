@@ -44,6 +44,34 @@ def test_sync_preview_views_copies_zoom_and_pan(qapp) -> None:
     assert target_view.horizontalScrollBar().value() == source_view.horizontalScrollBar().value()
     assert target_view.verticalScrollBar().value() == source_view.verticalScrollBar().value()
 
+def test_shared_preview_controls_apply_to_both_views(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    pixmap = window._to_pixmap(_sample_rgb())
+    window.orig_label.set_base_pixmap(pixmap)
+    window.quant_label.set_base_pixmap(pixmap)
+
+    window.orig_label._view.scale(2.0, 2.0)
+    window._reset_previews()
+
+    assert window.fit_previews_btn.text() == "Fit"
+    assert window.reset_previews_btn.text() == "Reset"
+    assert window.quant_label._view.transform().m11() == pytest.approx(
+        window.orig_label._view.transform().m11()
+    )
+    assert window.quant_label._view.transform().m22() == pytest.approx(
+        window.orig_label._view.transform().m22()
+    )
+
+
+def test_highlight_control_is_inside_palette_section(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+
+    palette_card = window.palette_label.parentWidget()
+    assert palette_card is not None
+    assert window.highlight_checkbox.parentWidget() is palette_card
+
 
 def test_append_optimization_log_shows_elapsed_percent_and_message(qapp) -> None:
     _ = qapp

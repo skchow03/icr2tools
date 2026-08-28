@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import html
 import json
 import time
 from pathlib import Path
@@ -382,38 +381,15 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_hint.setWordWrap(True)
         self.orig_label = ZoomableImageLabel("Original RGB")
         self.orig_label.setMinimumSize(300, 250)
-        self.orig_fit_btn = QtWidgets.QPushButton("Fit Original")
-        self.orig_fit_btn.clicked.connect(self.orig_label.fit_to_view)
-        self.orig_reset_btn = QtWidgets.QPushButton("Reset Original")
-        self.orig_reset_btn.clicked.connect(self.orig_label.reset_view)
-        orig_view_controls = QtWidgets.QHBoxLayout()
-        orig_view_controls.addWidget(self.orig_fit_btn)
-        orig_view_controls.addWidget(self.orig_reset_btn)
-        orig_view_controls.addStretch(1)
-        self.orig_unique_colors_label = QtWidgets.QLabel("Original unique colors: —")
         self.quant_label = ZoomableImageLabel("Quantized Preview")
         self.quant_label.setMinimumSize(300, 250)
-        self.quant_fit_btn = QtWidgets.QPushButton("Fit Quantized")
-        self.quant_fit_btn.clicked.connect(self.quant_label.fit_to_view)
-        self.quant_reset_btn = QtWidgets.QPushButton("Reset Quantized")
-        self.quant_reset_btn.clicked.connect(self.quant_label.reset_view)
-        quant_view_controls = QtWidgets.QHBoxLayout()
-        quant_view_controls.addWidget(self.quant_fit_btn)
-        quant_view_controls.addWidget(self.quant_reset_btn)
-        quant_view_controls.addStretch(1)
+        self.fit_previews_btn = QtWidgets.QPushButton("Fit")
+        self.fit_previews_btn.clicked.connect(self._fit_previews)
+        self.reset_previews_btn = QtWidgets.QPushButton("Reset")
+        self.reset_previews_btn.clicked.connect(self._reset_previews)
         self.highlight_checkbox = QtWidgets.QCheckBox("Highlight selected palette index in preview")
         self.highlight_checkbox.setChecked(True)
         self.highlight_checkbox.toggled.connect(self._refresh_current_preview)
-        self.paletted_unique_colors_label = QtWidgets.QLabel("Paletted unique colors: —")
-        self.texture_diagnostics_label = QtWidgets.QLabel("Diagnostics: generate a palette to inspect index usage.")
-        self.texture_diagnostics_label.setWordWrap(True)
-        self.texture_diagnostics_label.setTextFormat(QtCore.Qt.RichText)
-        self.texture_diagnostics_label.setTextInteractionFlags(QtCore.Qt.TextBrowserInteraction)
-        self.texture_diagnostics_label.setOpenExternalLinks(False)
-        self.texture_diagnostics_label.linkActivated.connect(self._on_diagnostics_index_clicked)
-        self.texture_diagnostics_label.setStyleSheet(
-            "background: #f8f9fb; border: 1px solid #d9dce3; border-radius: 6px; padding: 6px;"
-        )
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
@@ -421,16 +397,16 @@ class MainWindow(QtWidgets.QMainWindow):
         previews = QtWidgets.QHBoxLayout()
         original_pane = QtWidgets.QVBoxLayout()
         original_pane.addWidget(self.orig_label, 1)
-        original_pane.addLayout(orig_view_controls)
-        original_pane.addWidget(self.orig_unique_colors_label)
         quantized_pane = QtWidgets.QVBoxLayout()
         quantized_pane.addWidget(self.quant_label, 1)
-        quantized_pane.addLayout(quant_view_controls)
-        quantized_pane.addWidget(self.highlight_checkbox)
-        quantized_pane.addWidget(self.paletted_unique_colors_label)
         previews.addLayout(original_pane, 1)
         previews.addLayout(quantized_pane, 1)
         center_panel.addLayout(previews, 1)
+        preview_controls = QtWidgets.QHBoxLayout()
+        preview_controls.addWidget(self.fit_previews_btn)
+        preview_controls.addWidget(self.reset_previews_btn)
+        preview_controls.addStretch(1)
+        center_panel.addLayout(preview_controls)
         right_panel = QtWidgets.QVBoxLayout()
         right_panel.setSpacing(10)
         self.palette_label = ClickablePaletteLabel()
@@ -454,8 +430,8 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_preview_layout.addWidget(palette_preview_title)
         palette_preview_layout.addWidget(self.palette_label, 1)
         palette_preview_layout.addWidget(self.palette_details_label)
+        palette_preview_layout.addWidget(self.highlight_checkbox)
         center_panel.addWidget(palette_preview_card)
-        center_panel.addWidget(self.texture_diagnostics_label)
         self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
         self.compute_btn.setProperty("primary", True)
         self.compute_btn.clicked.connect(self.compute_palette)
@@ -810,121 +786,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_preview(self, texture_name: str) -> None:
         if not texture_name or texture_name not in self.texture_images:
-            self._update_texture_diagnostics(texture_name)
             return
         orig = self.texture_images[texture_name]
         self.orig_label.set_base_pixmap(self._to_pixmap(orig))
-        self.orig_unique_colors_label.setText(
-            f"Original unique colors: {self._count_unique_rgb_colors(orig)}"
-        )
 
         quant = self.quantized_images.get(texture_name)
-        indexed = self.indexed_images.get(texture_name)
         if quant is None:
             self.quant_label.clear_base_pixmap("Quantized Preview")
-            self.paletted_unique_colors_label.setText("Paletted unique colors: —")
         else:
             quant_display = self._build_highlighted_quantized_preview(texture_name, quant)
             self.quant_label.set_base_pixmap(self._to_pixmap(quant_display))
-            if indexed is None:
-                self.paletted_unique_colors_label.setText("Paletted unique colors: —")
-            else:
-                self.paletted_unique_colors_label.setText(
-                    f"Paletted unique colors: {self._count_unique_palette_indices(indexed)}"
-                )
-        self._update_texture_diagnostics(texture_name)
-
-    @staticmethod
-    def _optimized_palette_indices() -> tuple[int, int]:
-        return 176, 245
-
-    def _format_palette_index_link(self, index: int, count: int) -> str:
-        rgb = tuple(int(v) for v in self.current_palette[index])
-        hex_code = self._rgb_to_hex(rgb)
-        escaped_hex = html.escape(hex_code)
-        return (
-            f'<a href="palette-index:{index}">{index}</a>'
-            f' ({count} px, {escaped_hex})'
-        )
-
-    def _update_texture_diagnostics(self, texture_name: str) -> None:
-        if not hasattr(self, "texture_diagnostics_label"):
-            return
-        safe_name = html.escape(texture_name) if texture_name else "—"
-        budget = self.per_texture_budget.get(texture_name)
-        budget_text = str(budget) if budget is not None else "—"
-        required = self.per_texture_required_unique_colors.get(texture_name, 0)
-        required_text = str(required) if required else "—"
-        indexed = self.indexed_images.get(texture_name)
-        if indexed is None or indexed.size == 0:
-            self.texture_diagnostics_label.setText(
-                f"<b>Diagnostics for {safe_name}</b><br>"
-                f"Configured budget: {budget_text}<br>"
-                f"Required paletted unique colors: {required_text}<br>"
-                "Indexed preview: —<br>"
-                "Optimized range 176-245: —<br>"
-                "Top palette indices: —"
-            )
-            return
-
-        flat = np.asarray(indexed, dtype=np.int64).ravel()
-        valid_indices = flat[(0 <= flat) & (flat < 256)]
-        if valid_indices.size == 0:
-            self.texture_diagnostics_label.setText(
-                f"<b>Diagnostics for {safe_name}</b><br>"
-                f"Configured budget: {budget_text}<br>"
-                f"Required paletted unique colors: {required_text}<br>"
-                "Indexed preview: no valid palette indices<br>"
-                "Optimized range 176-245: 0 indices, 0 pixels<br>"
-                "Top palette indices: —"
-            )
-            return
-
-        counts = np.bincount(valid_indices, minlength=256)[:256]
-        used_indices = np.flatnonzero(counts)
-        opt_start, opt_end = self._optimized_palette_indices()
-        optimized_counts = counts[opt_start : opt_end + 1]
-        optimized_used = np.flatnonzero(optimized_counts) + opt_start
-        top_indices = sorted(
-            (int(index) for index in used_indices),
-            key=lambda index: (-int(counts[index]), index),
-        )[:8]
-        top_text = ", ".join(
-            self._format_palette_index_link(index, int(counts[index])) for index in top_indices
-        ) or "—"
-
-        target_status = "—"
-        if required:
-            target_status = (
-                "met"
-                if len(used_indices) >= required
-                else f"short by {required - len(used_indices)}"
-            )
-
-        self.texture_diagnostics_label.setText(
-            f"<b>Diagnostics for {safe_name}</b><br>"
-            f"Configured budget: {budget_text}<br>"
-            f"Required paletted unique colors: {required_text} ({target_status})<br>"
-            f"Unique palette indices used: {len(used_indices)}<br>"
-            f"Optimized range {opt_start}-{opt_end}: {len(optimized_used)} indices, "
-            f"{int(optimized_counts.sum())} pixels<br>"
-            f"Top palette indices: {top_text}"
-        )
-
-    def _on_diagnostics_index_clicked(self, link: str) -> None:
-        prefix = "palette-index:"
-        if not link.startswith(prefix):
-            return
-        try:
-            index = int(link[len(prefix) :])
-        except ValueError:
-            return
-        if not 0 <= index < 256:
-            return
-        self.selected_palette_index = index
-        self._refresh_palette_view()
-        self._update_palette_details(index)
-        self._refresh_current_preview()
 
     def _build_highlighted_quantized_preview(self, texture_name: str, quant: np.ndarray) -> np.ndarray:
         indexed = self.indexed_images.get(texture_name)
@@ -1016,6 +887,14 @@ class MainWindow(QtWidgets.QMainWindow):
         self.palette_details_label.setText(f"Optimizing: {message}")
         self._refresh_palette_view()
         QtWidgets.QApplication.processEvents()
+
+    def _fit_previews(self) -> None:
+        self.orig_label.fit_to_view()
+        self._sync_preview_views(self.orig_label, self.quant_label)
+
+    def _reset_previews(self) -> None:
+        self.orig_label.reset_view()
+        self._sync_preview_views(self.orig_label, self.quant_label)
 
     def _sync_preview_views(self, source: ZoomableImageLabel, target: ZoomableImageLabel) -> None:
         if self._syncing_previews:
