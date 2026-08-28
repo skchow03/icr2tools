@@ -331,10 +331,10 @@ class MainWindow(QtWidgets.QMainWindow):
         self.texture_list.setHorizontalHeaderLabels(
             [
                 "File name",
-                "Original number of colors",
+                "Original",
                 "Budget",
                 "Required",
-                "Paletted number of colors",
+                "Paletted",
             ]
         )
         self.texture_list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)

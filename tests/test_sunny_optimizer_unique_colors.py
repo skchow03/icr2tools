@@ -70,7 +70,13 @@ def test_texture_table_shows_color_counts_and_editable_budgets(qapp) -> None:
 
     window._refresh_texture_list()
 
-    assert window.texture_list.horizontalHeaderItem(0).text() == "File name"
+    assert [
+        window.texture_list.horizontalHeaderItem(column).text() for column in range(5)
+    ] == ["File name", "Original", "Budget", "Required", "Paletted"]
+    header = window.texture_list.horizontalHeader()
+    assert header.sectionResizeMode(0) == QtWidgets.QHeaderView.Stretch
+    for column in range(1, 5):
+        assert header.sectionResizeMode(column) == QtWidgets.QHeaderView.ResizeToContents
     assert window.texture_list.item(0, 0).text() == "tex.png"
     assert window.texture_list.item(0, 1).text() == "2"
     assert window.texture_list.item(0, 4).text() == "3"
