@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import json
 import time
 from pathlib import Path
 
@@ -226,10 +227,7 @@ class MainWindow(QtWidgets.QMainWindow):
     SORT_BY_BUDGET = "Budget"
     RECENT_TEXTURE_FOLDER_KEY = "sunny_optimizer:texture_folder"
     RECENT_PALETTE_KEY = "sunny_optimizer:palette"
-    WORKFLOW_PENDING = "Pending"
-    WORKFLOW_READY = "Ready"
-    WORKFLOW_DONE = "Done"
-    WORKFLOW_BLOCKED = "Blocked"
+    FOLDER_SETTINGS_FILENAME = "sunny_optimizer.json"
 
     def __init__(self) -> None:
         super().__init__()
@@ -254,24 +252,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._build_ui()
         self.setAcceptDrops(True)
-
-    def _workflow_style(self, status: str) -> str:
-        styles = {
-            self.WORKFLOW_PENDING: "background: #eef2f7; color: #44546f;",
-            self.WORKFLOW_READY: "background: #dbeafe; color: #1d4ed8;",
-            self.WORKFLOW_DONE: "background: #dcfce7; color: #166534;",
-            self.WORKFLOW_BLOCKED: "background: #fee2e2; color: #991b1b;",
-        }
-        return styles.get(status, styles[self.WORKFLOW_PENDING])
-
-    def _set_workflow_step_status(self, step_key: str, status: str) -> None:
-        chip = self.workflow_status_chips.get(step_key)
-        if chip is None:
-            return
-        chip.setText(status)
-        chip.setStyleSheet(
-            f"{self._workflow_style(status)} border: 1px solid #cfd8e3; border-radius: 10px; padding: 2px 8px; font-weight: 600;"
-        )
 
     def _show_drop_message(self, message: str) -> None:
         self.statusBar().showMessage(message, 5000)
@@ -404,56 +384,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
         left_panel = QtWidgets.QVBoxLayout()
         left_panel.setSpacing(10)
-        workflow_card = QtWidgets.QFrame()
-        workflow_card.setObjectName("sectionCard")
-        workflow_layout = QtWidgets.QVBoxLayout(workflow_card)
-        workflow_layout.setContentsMargins(10, 10, 10, 10)
-        workflow_layout.setSpacing(6)
-        workflow_title = QtWidgets.QLabel("Workflow")
-        workflow_title.setObjectName("sectionTitle")
-        workflow_layout.addWidget(workflow_title)
-        self.workflow_status_chips: dict[str, QtWidgets.QLabel] = {}
-        self.workflow_buttons: dict[str, QtWidgets.QPushButton] = {}
-        workflow_steps = [
-            ("folder", "1. Select folder", self.select_folder),
-            ("palette", "2. Select base palette", self._select_base_palette),
-            ("generate", "3. Generate optimized palette", self.compute_palette),
-            ("save", "4. Save result", self.save_palette_dialog),
-        ]
-        for step_key, text, handler in workflow_steps:
-            row = QtWidgets.QHBoxLayout()
-            button = QtWidgets.QPushButton(text)
-            button.setProperty("secondary", True)
-            button.clicked.connect(handler)
-            chip = QtWidgets.QLabel(self.WORKFLOW_PENDING)
-            chip.setAlignment(QtCore.Qt.AlignCenter)
-            chip.setMinimumWidth(68)
-            row.addWidget(button, 1)
-            row.addWidget(chip, 0)
-            workflow_layout.addLayout(row)
-            self.workflow_buttons[step_key] = button
-            self.workflow_status_chips[step_key] = chip
-            self._set_workflow_step_status(step_key, self.WORKFLOW_PENDING)
-
         left_panel.addWidget(self.inline_status_label)
         left_panel.addWidget(self.inline_action_row)
-        left_panel.addWidget(workflow_card)
         folder_controls = QtWidgets.QHBoxLayout()
-        self.folder_btn = QtWidgets.QPushButton("Select Texture Images Folder")
+        self.folder_path_label = QtWidgets.QLabel("No folder selected")
+        self.folder_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.folder_path_label.setStyleSheet("color: #4b5563;")
+        self.folder_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.folder_btn = QtWidgets.QPushButton("Browse…")
         self.folder_btn.clicked.connect(self.select_folder)
-        self.folder_recent_btn = QtWidgets.QToolButton()
-        self.folder_recent_btn.setText("▼")
-        self.folder_recent_btn.setToolTip("Recent texture folders")
-        self.folder_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.folder_recent_btn.pressed.connect(self._show_recent_folder_menu)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
-        self.search_box = QtWidgets.QLineEdit()
-        self.search_box.setPlaceholderText("Search textures by name...")
-        self.search_box.textChanged.connect(self._refresh_texture_list)
-        self.sort_combo = QtWidgets.QComboBox()
-        self.sort_combo.addItems([self.SORT_BY_NAME, self.SORT_BY_COLOR_COUNT, self.SORT_BY_BUDGET])
-        self.sort_combo.currentTextChanged.connect(self._refresh_texture_list)
         self.texture_list = QtWidgets.QListWidget()
         self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
         self.batch_actions_combo = QtWidgets.QComboBox()
@@ -473,28 +414,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.batch_budget_spinbox.setValue(OPTIMIZED_SLOTS)
         self.apply_batch_btn = QtWidgets.QPushButton("Apply Batch Action")
         self.apply_batch_btn.clicked.connect(self._apply_batch_action)
-        self.preset_combo = QtWidgets.QComboBox()
-        self.preset_combo.setEditable(False)
-        self.save_preset_btn = QtWidgets.QPushButton("Save Preset")
-        self.save_preset_btn.clicked.connect(self._save_preset_dialog)
-        self.load_preset_btn = QtWidgets.QPushButton("Load Preset")
-        self.load_preset_btn.clicked.connect(self._load_selected_preset)
-        self.delete_preset_btn = QtWidgets.QPushButton("Delete Preset")
-        self.delete_preset_btn.clicked.connect(self._delete_selected_preset)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
             "Reserve the game-standard dirt colors #b29a71 and #9e825d in the "
             "optimized palette."
         )
 
+        folder_controls.addWidget(self.folder_path_label, 1)
         folder_controls.addWidget(self.folder_btn)
-        folder_controls.addWidget(self.folder_recent_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
-        filter_controls = QtWidgets.QHBoxLayout()
-        filter_controls.addWidget(QtWidgets.QLabel("Search:"))
-        filter_controls.addWidget(self.search_box, 1)
-        filter_controls.addWidget(QtWidgets.QLabel("Sort by:"))
-        filter_controls.addWidget(self.sort_combo)
         batch_controls = QtWidgets.QHBoxLayout()
         batch_controls.addWidget(self.batch_actions_combo, 1)
         batch_controls.addWidget(QtWidgets.QLabel("Budget value:"))
@@ -505,27 +433,19 @@ class MainWindow(QtWidgets.QMainWindow):
         top_card_layout = QtWidgets.QVBoxLayout(top_card)
         top_card_layout.setContentsMargins(10, 10, 10, 10)
         top_card_layout.setSpacing(8)
-        top_title = QtWidgets.QLabel("Texture source and filters")
+        top_title = QtWidgets.QLabel("Texture source")
         top_title.setObjectName("sectionTitle")
         top_card_layout.addWidget(top_title)
         top_card_layout.addLayout(folder_controls)
-        top_card_layout.addLayout(filter_controls)
         left_panel.addWidget(top_card)
-        preset_controls = QtWidgets.QHBoxLayout()
-        preset_controls.addWidget(QtWidgets.QLabel("Presets:"))
-        preset_controls.addWidget(self.preset_combo, 1)
-        preset_controls.addWidget(self.save_preset_btn)
-        preset_controls.addWidget(self.load_preset_btn)
-        preset_controls.addWidget(self.delete_preset_btn)
         budget_card = QtWidgets.QFrame()
         budget_card.setObjectName("sectionCard")
         budget_card_layout = QtWidgets.QVBoxLayout(budget_card)
         budget_card_layout.setContentsMargins(10, 10, 10, 10)
         budget_card_layout.setSpacing(8)
-        budget_title = QtWidgets.QLabel("Budget and presets")
+        budget_title = QtWidgets.QLabel("Budget")
         budget_title.setObjectName("sectionTitle")
         budget_card_layout.addWidget(budget_title)
-        budget_card_layout.addLayout(preset_controls)
         budget_card_layout.addLayout(batch_controls)
         budget_card_layout.addWidget(self.batch_action_description_label)
         left_panel.addWidget(budget_card)
@@ -576,15 +496,19 @@ class MainWindow(QtWidgets.QMainWindow):
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
         center_panel.addWidget(preview_hint)
-        center_panel.addWidget(self.orig_label, 1)
-        center_panel.addLayout(orig_view_controls)
-        center_panel.addWidget(self.orig_unique_colors_label)
-        center_panel.addWidget(self.quant_label, 1)
-        center_panel.addLayout(quant_view_controls)
-        center_panel.addWidget(self.highlight_checkbox)
-        center_panel.addWidget(self.paletted_unique_colors_label)
-        center_panel.addWidget(self.texture_diagnostics_label)
-
+        previews = QtWidgets.QHBoxLayout()
+        original_pane = QtWidgets.QVBoxLayout()
+        original_pane.addWidget(self.orig_label, 1)
+        original_pane.addLayout(orig_view_controls)
+        original_pane.addWidget(self.orig_unique_colors_label)
+        quantized_pane = QtWidgets.QVBoxLayout()
+        quantized_pane.addWidget(self.quant_label, 1)
+        quantized_pane.addLayout(quant_view_controls)
+        quantized_pane.addWidget(self.highlight_checkbox)
+        quantized_pane.addWidget(self.paletted_unique_colors_label)
+        previews.addLayout(original_pane, 1)
+        previews.addLayout(quantized_pane, 1)
+        center_panel.addLayout(previews, 1)
         right_panel = QtWidgets.QVBoxLayout()
         right_panel.setSpacing(10)
         self.palette_label = ClickablePaletteLabel()
@@ -600,6 +524,16 @@ class MainWindow(QtWidgets.QMainWindow):
             "Palette selection: click a palette color tile to inspect index, hex, and RGB values."
         )
         self.palette_details_label.setWordWrap(True)
+        palette_preview_card = QtWidgets.QFrame()
+        palette_preview_card.setObjectName("sectionCard")
+        palette_preview_layout = QtWidgets.QVBoxLayout(palette_preview_card)
+        palette_preview_title = QtWidgets.QLabel("Palette")
+        palette_preview_title.setObjectName("sectionTitle")
+        palette_preview_layout.addWidget(palette_preview_title)
+        palette_preview_layout.addWidget(self.palette_label, 1)
+        palette_preview_layout.addWidget(self.palette_details_label)
+        center_panel.addWidget(palette_preview_card)
+        center_panel.addWidget(self.texture_diagnostics_label)
         self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
         self.compute_btn.setProperty("primary", True)
         self.compute_btn.clicked.connect(self.compute_palette)
@@ -650,8 +584,6 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_source_layout.addLayout(palette_path_row)
 
         right_panel.addWidget(palette_source_card)
-        right_panel.addWidget(self.palette_label)
-        right_panel.addWidget(self.palette_details_label)
         right_panel.addWidget(self.compute_btn)
         right_panel.addWidget(self.compute_hint_label)
         right_panel.addWidget(self.compute_progress_label)
@@ -671,7 +603,6 @@ class MainWindow(QtWidgets.QMainWindow):
         self._update_batch_action_description()
         self._update_action_states()
         self._restore_last_texture_folder()
-        self._refresh_preset_combo()
 
     def _update_batch_action_description(self) -> None:
         mode = self.batch_actions_combo.currentText()
@@ -682,89 +613,12 @@ class MainWindow(QtWidgets.QMainWindow):
         }
         self.batch_action_description_label.setText(description_map.get(mode, ""))
 
-    def _refresh_preset_combo(self) -> None:
-        current = self.preset_combo.currentText()
-        presets = self.settings.presets_for_tool("sunny_optimizer")
-        self.preset_combo.clear()
-        self.preset_combo.addItems(sorted(presets.keys()))
-        default_name = self.settings.default_preset_for_tool("sunny_optimizer")
-        target = current or default_name
-        if target:
-            idx = self.preset_combo.findText(target)
-            if idx >= 0:
-                self.preset_combo.setCurrentIndex(idx)
-
-    def _collect_preset_values(self) -> dict[str, str]:
-        return {
-            "palette_path": str(self._last_sunny_palette_path) if self._last_sunny_palette_path else "",
-            "include_dirt": str(self.dirt_checkbox.isChecked()),
-            "batch_budget": str(self.batch_budget_spinbox.value()),
-            "batch_mode": self.batch_actions_combo.currentText(),
-        }
-
-    def _save_preset_dialog(self) -> None:
-        name, ok = QtWidgets.QInputDialog.getText(self, "Save preset", "Preset name:")
-        if not ok or not name.strip():
-            return
-        preset_name = name.strip()
-        values = self._collect_preset_values()
-        if self.loaded_texture_folder is not None:
-            values["texture_budgets"] = ",".join(
-                f"{k}:{v}" for k, v in sorted(self.per_texture_budget.items())
-            )
-            values["texture_required_unique_colors"] = ",".join(
-                f"{k}:{v}" for k, v in sorted(self.per_texture_required_unique_colors.items())
-            )
-        self.settings.set_preset_for_tool("sunny_optimizer", preset_name, values)
-        self.settings.set_default_preset("sunny_optimizer", preset_name)
-        self._save_settings()
-        self._refresh_preset_combo()
-
-    def _load_selected_preset(self) -> None:
-        name = self.preset_combo.currentText().strip()
-        if not name:
-            return
-        preset = self.settings.presets_for_tool("sunny_optimizer").get(name, {})
-        palette_path = preset.get("palette_path", "")
-        if palette_path:
-            self._last_sunny_palette_path = Path(palette_path)
-            self.settings.last_sunny_palette = palette_path
-        self.dirt_checkbox.setChecked(preset.get("include_dirt", "False").lower() == "true")
-        self.batch_actions_combo.setCurrentText(preset.get("batch_mode", self.batch_actions_combo.currentText()))
-        try:
-            self.batch_budget_spinbox.setValue(int(preset.get("batch_budget", str(self.batch_budget_spinbox.value()))))
-        except ValueError:
-            pass
-        self.settings.set_default_preset("sunny_optimizer", name)
-        self._save_settings()
-
-    def _delete_selected_preset(self) -> None:
-        name = self.preset_combo.currentText().strip()
-        if not name:
-            return
-        self.settings.delete_preset_for_tool("sunny_optimizer", name)
-        if self.settings.default_preset_for_tool("sunny_optimizer") == name:
-            self.settings.default_presets.pop("sunny_optimizer", None)
-        self._save_settings()
-        self._refresh_preset_combo()
-
     def select_folder(self) -> None:
         start_dir = self.settings.last_texture_folder if self.settings.last_texture_folder else ""
         folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select RGB Texture Folder", start_dir)
         if not folder:
             return
         self._load_folder(Path(folder))
-
-    def _show_recent_folder_menu(self) -> None:
-        menu = QtWidgets.QMenu(self.folder_recent_btn)
-        values = self.settings.get_recent_paths(self.RECENT_TEXTURE_FOLDER_KEY)
-        if not values:
-            action = menu.addAction("No recent folders")
-            action.setEnabled(False)
-        for value in values:
-            action = menu.addAction(value)
-            action.triggered.connect(lambda _checked=False, v=value: self._load_folder(Path(v)))
-        self.folder_recent_btn.setMenu(menu)
 
     def _show_recent_palette_menu(self) -> None:
         menu = QtWidgets.QMenu(self.inline_fix_palette_btn)
@@ -822,8 +676,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         equal_budget = max(1, OPTIMIZED_SLOTS // len(image_files))
-        saved_budgets = self.settings.budgets_for_folder(resolved_folder)
-        saved_required_counts = self.settings.required_unique_colors_for_folder(resolved_folder)
+        saved_budgets, saved_required_counts = self._read_folder_settings(resolved_folder)
         for path in image_files:
             with Image.open(path) as img:
                 img = img.convert("RGB")
@@ -842,16 +695,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self._refresh_texture_list()
 
         self.loaded_texture_folder = resolved_folder
+        self.folder_path_label.setText(str(resolved_folder))
+        self.folder_path_label.setToolTip(str(resolved_folder))
         self.settings.last_texture_folder = str(resolved_folder)
         self.settings.push_recent_path(self.RECENT_TEXTURE_FOLDER_KEY, str(resolved_folder))
         self._save_settings()
+        self._write_folder_settings()
         self._update_action_states()
 
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
         self._persist_current_folder_budgets()
-        if self.sort_combo.currentText() == self.SORT_BY_BUDGET:
-            self._refresh_texture_list()
 
     def _on_required_unique_changed(self, texture_name: str, required_count: int) -> None:
         self.per_texture_required_unique_colors[texture_name] = required_count
@@ -860,21 +714,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.indexed_images.clear()
         self.selected_palette_index = None
         self._update_action_states()
-        if self.sort_combo.currentText() == self.SORT_BY_BUDGET:
-            self._refresh_texture_list()
 
     def _sorted_texture_names(self) -> list[str]:
-        texture_names = list(self.texture_images.keys())
-        sort_mode = self.sort_combo.currentText()
-        if sort_mode == self.SORT_BY_COLOR_COUNT:
-            texture_names.sort(
-                key=lambda n: (-self.texture_color_counts.get(n, 0), n.lower())
-            )
-        elif sort_mode == self.SORT_BY_BUDGET:
-            texture_names.sort(key=lambda n: (-self.per_texture_budget.get(n, 0), n.lower()))
-        else:
-            texture_names.sort(key=str.lower)
-        return texture_names
+        return sorted(self.texture_images, key=str.lower)
 
     def _refresh_texture_list(self) -> None:
         selected_texture = ""
@@ -883,11 +725,8 @@ class MainWindow(QtWidgets.QMainWindow):
             widget = self.texture_list.itemWidget(current)
             if widget is not None:
                 selected_texture = widget.texture_name
-        query = self.search_box.text().strip().lower()
         self.texture_list.clear()
         for texture_name in self._sorted_texture_names():
-            if query and query not in texture_name.lower():
-                continue
             item = QtWidgets.QListWidgetItem(self.texture_list)
             paletted_unique_color_count = self._paletted_unique_color_count(texture_name)
             widget = TextureBudgetItemWidget(
@@ -1023,6 +862,43 @@ class MainWindow(QtWidgets.QMainWindow):
             self.loaded_texture_folder, self.per_texture_required_unique_colors
         )
         self._save_settings()
+        self._write_folder_settings()
+
+    def _read_folder_settings(self, folder: Path) -> tuple[dict[str, int], dict[str, int]]:
+        """Load per-image values from the portable JSON file, falling back to old settings."""
+        budgets = self.settings.budgets_for_folder(folder)
+        required = self.settings.required_unique_colors_for_folder(folder)
+        settings_path = folder / self.FOLDER_SETTINGS_FILENAME
+        if not settings_path.is_file():
+            return budgets, required
+        try:
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            images = payload.get("images", [])
+            budgets = {str(item["file"]): int(item["budget"]) for item in images}
+            required = {str(item["file"]): int(item.get("required", 0)) for item in images}
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            self.statusBar().showMessage(f"Could not read {settings_path.name}; using saved defaults.", 5000)
+        return budgets, required
+
+    def _write_folder_settings(self) -> None:
+        """Refresh the selected folder's image manifest and optimization values."""
+        if self.loaded_texture_folder is None:
+            return
+        payload = {
+            "images": [
+                {
+                    "file": name,
+                    "budget": self.per_texture_budget[name],
+                    "required": self.per_texture_required_unique_colors.get(name, 0),
+                }
+                for name in sorted(self.texture_images, key=str.lower)
+            ]
+        }
+        settings_path = self.loaded_texture_folder / self.FOLDER_SETTINGS_FILENAME
+        try:
+            settings_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        except OSError as exc:
+            self.statusBar().showMessage(f"Could not write {settings_path.name}: {exc}", 5000)
 
     def _update_action_states(self) -> None:
         folder_ok = self.loaded_texture_folder is not None and self.loaded_texture_folder.exists() and self.loaded_texture_folder.is_dir()
@@ -1030,37 +906,9 @@ class MainWindow(QtWidgets.QMainWindow):
         has_palette_path = self._last_sunny_palette_path is not None and self._last_sunny_palette_path.exists()
         has_quantized_results = bool(self.quantized_images)
         has_inline_error = self.inline_status_label.isVisible()
-        has_inline_warning = has_inline_error and "warning" in self.inline_status_label.styleSheet()
 
         self.compute_btn.setEnabled(has_textures and has_palette_path)
         self.save_btn.setEnabled(has_quantized_results)
-        self.workflow_buttons["folder"].setEnabled(True)
-        self.workflow_buttons["palette"].setEnabled(True)
-        self.workflow_buttons["generate"].setEnabled(has_textures and has_palette_path)
-        self.workflow_buttons["save"].setEnabled(has_quantized_results)
-
-        self._set_workflow_step_status("folder", self.WORKFLOW_DONE if has_textures else self.WORKFLOW_READY)
-        if has_palette_path:
-            self._set_workflow_step_status("palette", self.WORKFLOW_DONE)
-        elif has_textures:
-            self._set_workflow_step_status("palette", self.WORKFLOW_READY)
-        else:
-            self._set_workflow_step_status("palette", self.WORKFLOW_PENDING)
-        if has_quantized_results:
-            self._set_workflow_step_status("generate", self.WORKFLOW_DONE)
-        elif has_textures and has_palette_path:
-            self._set_workflow_step_status("generate", self.WORKFLOW_READY)
-        elif has_textures:
-            self._set_workflow_step_status("generate", self.WORKFLOW_BLOCKED)
-        else:
-            self._set_workflow_step_status("generate", self.WORKFLOW_PENDING)
-        if has_quantized_results:
-            self._set_workflow_step_status("save", self.WORKFLOW_READY)
-        elif has_textures and has_palette_path:
-            self._set_workflow_step_status("save", self.WORKFLOW_PENDING)
-        else:
-            self._set_workflow_step_status("save", self.WORKFLOW_BLOCKED if has_inline_warning else self.WORKFLOW_PENDING)
-
         if has_textures and has_palette_path:
             self.compute_hint_label.setText("Step 2: Click Generate Optimized Palette when you are ready.")
         elif has_textures:
@@ -1310,7 +1158,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_inline_status(
                 "No textures are loaded.",
                 level="warning",
-                next_action="Use Workflow Step 1: Select folder.",
+                next_action="Select a texture folder.",
             )
             return
 
@@ -1323,7 +1171,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 self._set_inline_status(
                     "No base palette is selected.",
                     level="warning",
-                    next_action="Use Workflow Step 2: Select base palette.",
+                    next_action="Select a base palette.",
                 )
                 self._update_action_states()
                 return
@@ -1400,7 +1248,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._set_inline_status(
                 f"Optimization failed for {palette_filename}: {exc}",
                 level="error",
-                next_action="Use Workflow Step 2 to pick a valid .pcx palette, then Step 3 to generate.",
+                next_action="Pick a valid .pcx palette, then generate the optimized palette.",
             )
             return
         finally:
