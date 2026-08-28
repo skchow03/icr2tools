@@ -26,74 +26,6 @@ def _get_optimizer_class():
 
     return SunnyPaletteOptimizer
 
-class TextureBudgetItemWidget(QtWidgets.QWidget):
-    budget_changed = QtCore.pyqtSignal(str, int)
-    required_unique_changed = QtCore.pyqtSignal(str, int)
-
-    def __init__(
-        self,
-        texture_name: str,
-        initial_budget: int,
-        required_unique_colors: int,
-        unique_color_count: int,
-        paletted_unique_color_count: int | None = None,
-        parent: QtWidgets.QWidget | None = None,
-    ) -> None:
-        super().__init__(parent)
-        self.texture_name = texture_name
-        layout = QtWidgets.QHBoxLayout(self)
-        layout.setContentsMargins(4, 2, 4, 2)
-        label = QtWidgets.QLabel(texture_name)
-        color_counts_layout = QtWidgets.QVBoxLayout()
-        color_counts_layout.setContentsMargins(0, 0, 0, 0)
-        color_counts_layout.setSpacing(0)
-        self.original_color_count_label = QtWidgets.QLabel(f"Original: {unique_color_count} colors")
-        self.original_color_count_label.setStyleSheet("color: palette(mid);")
-        paletted_text = (
-            f"Paletted: {paletted_unique_color_count} colors"
-            if paletted_unique_color_count is not None
-            else "Paletted: —"
-        )
-        self.paletted_color_count_label = QtWidgets.QLabel(paletted_text)
-        self.paletted_color_count_label.setStyleSheet("color: palette(mid);")
-        color_counts_layout.addWidget(self.original_color_count_label)
-        color_counts_layout.addWidget(self.paletted_color_count_label)
-        self.spinbox = QtWidgets.QSpinBox()
-        self.spinbox.setRange(1, OPTIMIZED_SLOTS)
-        self.spinbox.setValue(initial_budget)
-        self.spinbox.setToolTip(
-            "Per-texture color budget: maximum optimized palette entries this texture can claim."
-        )
-        self.spinbox.valueChanged.connect(self._emit_change)
-        self.required_spinbox = QtWidgets.QSpinBox()
-        max_required = min(OPTIMIZED_SLOTS, max(0, unique_color_count))
-        self.required_spinbox.setRange(0, max_required)
-        self.required_spinbox.setValue(min(max_required, max(0, required_unique_colors)))
-        self.required_spinbox.setToolTip(
-            "Required paletted unique colors: the optimizer reserves representative "
-            "colors to try to make the quantized texture use at least this many "
-            "palette indices."
-        )
-        self.required_spinbox.valueChanged.connect(self._emit_required_change)
-        controls_layout = QtWidgets.QGridLayout()
-        controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setHorizontalSpacing(4)
-        controls_layout.setVerticalSpacing(2)
-        controls_layout.addWidget(QtWidgets.QLabel("Budget"), 0, 0)
-        controls_layout.addWidget(self.spinbox, 0, 1)
-        controls_layout.addWidget(QtWidgets.QLabel("Required"), 1, 0)
-        controls_layout.addWidget(self.required_spinbox, 1, 1)
-        layout.addWidget(label, 1)
-        layout.addLayout(color_counts_layout)
-        layout.addLayout(controls_layout)
-
-    def _emit_change(self, value: int) -> None:
-        self.budget_changed.emit(self.texture_name, int(value))
-
-    def _emit_required_change(self, value: int) -> None:
-        self.required_unique_changed.emit(self.texture_name, int(value))
-
-
 class PannableGraphicsView(QtWidgets.QGraphicsView):
     clicked = QtCore.pyqtSignal(QtCore.QPointF)
     view_changed = QtCore.pyqtSignal()
@@ -395,25 +327,25 @@ class MainWindow(QtWidgets.QMainWindow):
         self.folder_btn.clicked.connect(self.select_folder)
         self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
-        self.texture_list = QtWidgets.QListWidget()
-        self.texture_list.currentItemChanged.connect(self._on_current_item_changed)
-        self.batch_actions_combo = QtWidgets.QComboBox()
-        self.batch_actions_combo.addItems(
+        self.texture_list = QtWidgets.QTableWidget(0, 5)
+        self.texture_list.setHorizontalHeaderLabels(
             [
-                "Set all budgets equally",
-                "Normalize budgets",
-                "Apply value to selected textures only",
+                "File name",
+                "Original number of colors",
+                "Budget",
+                "Required",
+                "Paletted number of colors",
             ]
         )
-        self.batch_actions_combo.currentTextChanged.connect(self._update_batch_action_description)
-        self.batch_action_description_label = QtWidgets.QLabel()
-        self.batch_action_description_label.setWordWrap(True)
-        self.batch_action_description_label.setStyleSheet("color: #4b5563;")
-        self.batch_budget_spinbox = QtWidgets.QSpinBox()
-        self.batch_budget_spinbox.setRange(1, OPTIMIZED_SLOTS)
-        self.batch_budget_spinbox.setValue(OPTIMIZED_SLOTS)
-        self.apply_batch_btn = QtWidgets.QPushButton("Apply Batch Action")
-        self.apply_batch_btn.clicked.connect(self._apply_batch_action)
+        self.texture_list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.texture_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.texture_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.texture_list.verticalHeader().setVisible(False)
+        header = self.texture_list.horizontalHeader()
+        header.setSectionResizeMode(0, QtWidgets.QHeaderView.Stretch)
+        for column in range(1, 5):
+            header.setSectionResizeMode(column, QtWidgets.QHeaderView.ResizeToContents)
+        self.texture_list.currentCellChanged.connect(self._on_current_cell_changed)
         self.dirt_checkbox = QtWidgets.QCheckBox("Include dirt colors in optimization")
         self.dirt_checkbox.setToolTip(
             "Reserve the game-standard dirt colors #b29a71 and #9e825d in the "
@@ -423,11 +355,6 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_controls.addWidget(self.folder_path_label, 1)
         folder_controls.addWidget(self.folder_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
-        batch_controls = QtWidgets.QHBoxLayout()
-        batch_controls.addWidget(self.batch_actions_combo, 1)
-        batch_controls.addWidget(QtWidgets.QLabel("Budget value:"))
-        batch_controls.addWidget(self.batch_budget_spinbox)
-        batch_controls.addWidget(self.apply_batch_btn)
         top_card = QtWidgets.QFrame()
         top_card.setObjectName("sectionCard")
         top_card_layout = QtWidgets.QVBoxLayout(top_card)
@@ -438,19 +365,7 @@ class MainWindow(QtWidgets.QMainWindow):
         top_card_layout.addWidget(top_title)
         top_card_layout.addLayout(folder_controls)
         left_panel.addWidget(top_card)
-        budget_card = QtWidgets.QFrame()
-        budget_card.setObjectName("sectionCard")
-        budget_card_layout = QtWidgets.QVBoxLayout(budget_card)
-        budget_card_layout.setContentsMargins(10, 10, 10, 10)
-        budget_card_layout.setSpacing(8)
-        budget_title = QtWidgets.QLabel("Budget")
-        budget_title.setObjectName("sectionTitle")
-        budget_card_layout.addWidget(budget_title)
-        budget_card_layout.addLayout(batch_controls)
-        budget_card_layout.addWidget(self.batch_action_description_label)
-        left_panel.addWidget(budget_card)
         left_panel.addWidget(self.texture_list, 1)
-        left_panel.addWidget(self.dirt_checkbox)
 
         center_panel = QtWidgets.QVBoxLayout()
         center_panel.setSpacing(10)
@@ -584,6 +499,7 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_source_layout.addLayout(palette_path_row)
 
         right_panel.addWidget(palette_source_card)
+        right_panel.addWidget(self.dirt_checkbox)
         right_panel.addWidget(self.compute_btn)
         right_panel.addWidget(self.compute_hint_label)
         right_panel.addWidget(self.compute_progress_label)
@@ -600,18 +516,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
-        self._update_batch_action_description()
         self._update_action_states()
         self._restore_last_texture_folder()
-
-    def _update_batch_action_description(self) -> None:
-        mode = self.batch_actions_combo.currentText()
-        description_map = {
-            "Set all budgets equally": "Equal split: distributes the total budget evenly across all loaded textures.",
-            "Normalize budgets": "Proportional to unique colors: allocates more slots to textures with higher unique-color counts.",
-            "Apply value to selected textures only": "Selected-only overwrite: applies the budget value only to currently selected texture rows.",
-        }
-        self.batch_action_description_label.setText(description_map.get(mode, ""))
 
     def select_folder(self) -> None:
         start_dir = self.settings.last_texture_folder if self.settings.last_texture_folder else ""
@@ -664,7 +570,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quantized_images.clear()
         self.indexed_images.clear()
         self.selected_palette_index = None
-        self.texture_list.clear()
+        self.texture_list.setRowCount(0)
 
         image_files = [
             p
@@ -719,25 +625,46 @@ class MainWindow(QtWidgets.QMainWindow):
         return sorted(self.texture_images, key=str.lower)
 
     def _refresh_texture_list(self) -> None:
-        selected_texture = ""
-        current = self.texture_list.currentItem()
-        if current is not None:
-            widget = self.texture_list.itemWidget(current)
-            if widget is not None:
-                selected_texture = widget.texture_name
-        self.texture_list.clear()
-        for texture_name in self._sorted_texture_names():
-            item = QtWidgets.QListWidgetItem(self.texture_list)
+        selected_texture = self._current_texture_name()
+        self.texture_list.setRowCount(0)
+        for row, texture_name in enumerate(self._sorted_texture_names()):
+            self.texture_list.insertRow(row)
             paletted_unique_color_count = self._paletted_unique_color_count(texture_name)
-            widget = TextureBudgetItemWidget(
-                texture_name,
-                self.per_texture_budget[texture_name],
-                self.per_texture_required_unique_colors.get(texture_name, 0),
-                self.texture_color_counts.get(texture_name, 0),
-                paletted_unique_color_count,
+            file_item = QtWidgets.QTableWidgetItem(texture_name)
+            file_item.setData(QtCore.Qt.UserRole, texture_name)
+            original_item = QtWidgets.QTableWidgetItem(
+                str(self.texture_color_counts.get(texture_name, 0))
             )
-            widget.budget_changed.connect(self._on_budget_changed)
-            widget.required_unique_changed.connect(self._on_required_unique_changed)
+            paletted_item = QtWidgets.QTableWidgetItem(
+                str(paletted_unique_color_count) if paletted_unique_color_count is not None else "—"
+            )
+            for column, item in ((0, file_item), (1, original_item), (4, paletted_item)):
+                item.setFlags(item.flags() & ~QtCore.Qt.ItemIsEditable)
+                self.texture_list.setItem(row, column, item)
+
+            budget_edit = QtWidgets.QLineEdit(str(self.per_texture_budget[texture_name]))
+            budget_edit.setValidator(QtGui.QIntValidator(1, OPTIMIZED_SLOTS, budget_edit))
+            budget_edit.setToolTip(
+                "Per-texture color budget: maximum optimized palette entries this texture can claim."
+            )
+            budget_edit.editingFinished.connect(
+                lambda name=texture_name, edit=budget_edit: self._commit_budget_edit(name, edit)
+            )
+            self.texture_list.setCellWidget(row, 2, budget_edit)
+
+            max_required = min(OPTIMIZED_SLOTS, self.texture_color_counts.get(texture_name, 0))
+            required_edit = QtWidgets.QLineEdit(
+                str(self.per_texture_required_unique_colors.get(texture_name, 0))
+            )
+            required_edit.setValidator(QtGui.QIntValidator(0, max_required, required_edit))
+            required_edit.setToolTip(
+                "Required paletted unique colors: the optimizer tries to make the quantized "
+                "texture use at least this many palette indices."
+            )
+            required_edit.editingFinished.connect(
+                lambda name=texture_name, edit=required_edit: self._commit_required_edit(name, edit)
+            )
+            self.texture_list.setCellWidget(row, 3, required_edit)
             paletted_tooltip = (
                 str(paletted_unique_color_count) if paletted_unique_color_count is not None else "—"
             )
@@ -747,100 +674,36 @@ class MainWindow(QtWidgets.QMainWindow):
                 f"{self.per_texture_required_unique_colors.get(texture_name, 0) or '—'}\n"
                 f"Paletted unique colors: {paletted_tooltip}"
             )
-            item.setToolTip(tooltip)
-            widget.setToolTip(tooltip)
-            item.setSizeHint(widget.sizeHint())
-            self.texture_list.addItem(item)
-            self.texture_list.setItemWidget(item, widget)
-        if self.texture_list.count() == 0:
+            for column in (0, 1, 4):
+                self.texture_list.item(row, column).setToolTip(tooltip)
+        if self.texture_list.rowCount() == 0:
             self.orig_label.clear_base_pixmap("Original RGB")
             self.quant_label.clear_base_pixmap("Quantized Preview")
             return
-        for row in range(self.texture_list.count()):
-            item = self.texture_list.item(row)
-            widget = self.texture_list.itemWidget(item)
-            if widget is not None and widget.texture_name == selected_texture:
-                self.texture_list.setCurrentRow(row)
+        for row in range(self.texture_list.rowCount()):
+            if self.texture_list.item(row, 0).text() == selected_texture:
+                self.texture_list.selectRow(row)
                 return
-        self.texture_list.setCurrentRow(0)
+        self.texture_list.selectRow(0)
 
-    def _apply_batch_action(self) -> None:
-        if not self.texture_images:
-            QtWidgets.QMessageBox.information(self, "No textures", "Load textures before applying batch actions.")
-            return
-        mode = self.batch_actions_combo.currentText()
-        changed_textures: set[str] = set()
-        if mode == "Set all budgets equally":
-            equal_budget = max(1, OPTIMIZED_SLOTS // max(1, len(self.texture_images)))
-            texture_names = sorted(self.texture_images.keys())
-            summary_message = (
-                f"This will overwrite budgets for {len(texture_names)} textures.\n"
-                f"Resulting budget range: {equal_budget}–{equal_budget}\n"
-                f"Total allocated budget: {equal_budget * len(texture_names)}"
-            )
-            confirm = QtWidgets.QMessageBox.question(
-                self,
-                "Confirm batch action",
-                summary_message,
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.No,
-            )
-            if confirm != QtWidgets.QMessageBox.Yes:
-                return
-            for texture_name in self.texture_images:
-                previous_budget = self.per_texture_budget.get(texture_name)
-                self.per_texture_budget[texture_name] = equal_budget
-                if previous_budget != equal_budget:
-                    changed_textures.add(texture_name)
-        elif mode == "Normalize budgets":
-            total_colors = sum(max(1, self.texture_color_counts.get(name, 1)) for name in self.texture_images)
-            allocated = 0
-            names = sorted(self.texture_images.keys())
-            proposed_budgets: dict[str, int] = {}
-            for idx, texture_name in enumerate(names):
-                if idx == len(names) - 1:
-                    budget = max(1, OPTIMIZED_SLOTS - allocated)
-                else:
-                    portion = self.texture_color_counts.get(texture_name, 1) / max(1, total_colors)
-                    budget = max(1, int(round(portion * OPTIMIZED_SLOTS)))
-                    allocated += budget
-                proposed_budgets[texture_name] = min(OPTIMIZED_SLOTS, budget)
-            normalized_values = list(proposed_budgets.values())
-            summary_message = (
-                f"This will overwrite budgets for {len(names)} textures.\n"
-                f"Resulting budget range: {min(normalized_values)}–{max(normalized_values)}\n"
-                f"Total allocated budget: {sum(normalized_values)}"
-            )
-            confirm = QtWidgets.QMessageBox.question(
-                self,
-                "Confirm batch action",
-                summary_message,
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
-                QtWidgets.QMessageBox.No,
-            )
-            if confirm != QtWidgets.QMessageBox.Yes:
-                return
-            for texture_name, budget in proposed_budgets.items():
-                previous_budget = self.per_texture_budget.get(texture_name)
-                self.per_texture_budget[texture_name] = budget
-                if previous_budget != budget:
-                    changed_textures.add(texture_name)
+    def _commit_budget_edit(self, texture_name: str, edit: QtWidgets.QLineEdit) -> None:
+        if edit.hasAcceptableInput():
+            self._on_budget_changed(texture_name, int(edit.text()))
         else:
-            selected_items = self.texture_list.selectedItems()
-            if not selected_items:
-                QtWidgets.QMessageBox.information(self, "No selection", "Select one or more textures first.")
-                return
-            budget_value = int(self.batch_budget_spinbox.value())
-            for item in selected_items:
-                widget = self.texture_list.itemWidget(item)
-                if widget is not None:
-                    previous_budget = self.per_texture_budget.get(widget.texture_name)
-                    self.per_texture_budget[widget.texture_name] = budget_value
-                    if previous_budget != budget_value:
-                        changed_textures.add(widget.texture_name)
-        self._persist_current_folder_budgets()
-        self._refresh_texture_list()
-        self.statusBar().showMessage(f"{mode}: updated {len(changed_textures)} texture(s).", 5000)
+            edit.setText(str(self.per_texture_budget[texture_name]))
+
+    def _commit_required_edit(self, texture_name: str, edit: QtWidgets.QLineEdit) -> None:
+        if edit.hasAcceptableInput():
+            self._on_required_unique_changed(texture_name, int(edit.text()))
+        else:
+            edit.setText(str(self.per_texture_required_unique_colors.get(texture_name, 0)))
+
+    def _current_texture_name(self) -> str:
+        row = self.texture_list.currentRow()
+        if row < 0:
+            return ""
+        item = self.texture_list.item(row, 0)
+        return item.text() if item is not None else ""
 
     def _restore_last_texture_folder(self) -> None:
         folder_text = self.settings.last_texture_folder
@@ -923,19 +786,15 @@ class MainWindow(QtWidgets.QMainWindow):
         else:
             self.save_hint_label.setText("Step 3: Save is enabled after a palette has been computed.")
 
-    def _on_current_item_changed(
-        self,
-        current: QtWidgets.QListWidgetItem | None,
-        previous: QtWidgets.QListWidgetItem | None,
+    def _on_current_cell_changed(
+        self, current_row: int, current_column: int, previous_row: int, previous_column: int
     ) -> None:
-        _ = previous
-        if current is None:
+        _ = current_column, previous_row, previous_column
+        if current_row < 0:
             return
-        widget = self.texture_list.itemWidget(current)
-        if widget is None:
-            return
-        texture_name = widget.texture_name
-        self._update_preview(texture_name)
+        item = self.texture_list.item(current_row, 0)
+        if item is not None:
+            self._update_preview(item.text())
 
     def _to_pixmap(self, rgb_array: np.ndarray) -> QtGui.QPixmap:
         h, w, _ = rgb_array.shape
@@ -1079,13 +938,9 @@ class MainWindow(QtWidgets.QMainWindow):
         return result
 
     def _refresh_current_preview(self) -> None:
-        current = self.texture_list.currentItem()
-        if current is None:
-            return
-        widget = self.texture_list.itemWidget(current)
-        if widget is None:
-            return
-        self._update_preview(widget.texture_name)
+        texture_name = self._current_texture_name()
+        if texture_name:
+            self._update_preview(texture_name)
 
 
     def _paletted_unique_color_count(self, texture_name: str) -> int | None:
@@ -1263,23 +1118,16 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._refresh_texture_list()
         self._refresh_palette_view()
-        current = self.texture_list.currentItem()
-        if current is None:
-            return
-        widget = self.texture_list.itemWidget(current)
-        if widget is not None:
-            self._update_preview(widget.texture_name)
+        texture_name = self._current_texture_name()
+        if texture_name:
+            self._update_preview(texture_name)
         self._update_action_states()
 
 
     def _on_quantized_preview_clicked(self, point: QtCore.QPoint) -> None:
-        current = self.texture_list.currentItem()
-        if current is None:
+        texture_name = self._current_texture_name()
+        if not texture_name:
             return
-        widget = self.texture_list.itemWidget(current)
-        if widget is None:
-            return
-        texture_name = widget.texture_name
         indexed = self.indexed_images.get(texture_name)
         if indexed is None:
             return

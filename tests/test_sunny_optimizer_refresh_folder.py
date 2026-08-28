@@ -24,13 +24,10 @@ def _write_png(path: Path, rgb: tuple[int, int, int]) -> None:
 
 
 def _listed_texture_names(window: MainWindow) -> list[str]:
-    names: list[str] = []
-    for i in range(window.texture_list.count()):
-        item = window.texture_list.item(i)
-        widget = window.texture_list.itemWidget(item)
-        if widget is not None:
-            names.append(widget.texture_name)
-    return names
+    return [
+        window.texture_list.item(row, 0).text()
+        for row in range(window.texture_list.rowCount())
+    ]
 
 
 def test_refresh_folder_rescans_texture_list(qapp, tmp_path: Path) -> None:
