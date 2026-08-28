@@ -235,6 +235,8 @@ class MainWindow(QtWidgets.QMainWindow):
         self._last_sunny_palette_path: Path | None = None
         self.settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
         self.settings.load()
+        if self.settings.last_sunny_palette:
+            self._last_sunny_palette_path = Path(self.settings.last_sunny_palette).expanduser()
 
         self._build_ui()
         self.setAcceptDrops(True)
@@ -306,9 +308,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self._load_folder(path)
             self._show_drop_message(f"Loaded texture folder: {path}")
         elif kind == "palette":
-            self._last_sunny_palette_path = path.resolve()
-            self.settings.last_sunny_palette = str(self._last_sunny_palette_path)
-            self._save_settings()
+            self._set_palette_path(str(path.resolve()))
             self._show_drop_message(f"Palette set for optimization: {path.name}")
         elif kind == "image":
             self._load_folder(path.parent)
@@ -419,19 +419,33 @@ class MainWindow(QtWidgets.QMainWindow):
         top_card_layout = QtWidgets.QVBoxLayout(top_card)
         top_card_layout.setContentsMargins(10, 10, 10, 10)
         top_card_layout.setSpacing(8)
-        top_title = QtWidgets.QLabel("Texture source")
+        top_title = QtWidgets.QLabel("Files")
         top_title.setObjectName("sectionTitle")
         top_card_layout.addWidget(top_title)
         top_card_layout.addLayout(folder_controls)
+
+        palette_path_row = QtWidgets.QHBoxLayout()
+        self.palette_path_label = QtWidgets.QLabel("No base SUNNY palette selected")
+        self.palette_path_label.setToolTip("No base SUNNY palette selected")
+        self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.palette_path_label.setStyleSheet("color: #4b5563;")
+        self.palette_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        self.palette_path_browse_btn = QtWidgets.QPushButton("Browse SUNNY…")
+        self.palette_path_browse_btn.clicked.connect(self._select_base_palette)
+        self.palette_path_recent_btn = QtWidgets.QToolButton()
+        self.palette_path_recent_btn.setText("▼")
+        self.palette_path_recent_btn.setToolTip("Recent palettes")
+        self.palette_path_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self.palette_path_recent_btn.pressed.connect(self._show_recent_palette_menu)
+        palette_path_row.addWidget(self.palette_path_label, 1)
+        palette_path_row.addWidget(self.palette_path_browse_btn)
+        palette_path_row.addWidget(self.palette_path_recent_btn)
+        top_card_layout.addLayout(palette_path_row)
         left_panel.addWidget(top_card)
         left_panel.addWidget(self.texture_list, 1)
 
         center_panel = QtWidgets.QVBoxLayout()
         center_panel.setSpacing(10)
-        preview_hint = QtWidgets.QLabel(
-            "Scroll to zoom, drag to pan, click pixel to inspect palette index."
-        )
-        preview_hint.setWordWrap(True)
         self.orig_label = ZoomableImageLabel("Original RGB")
         self.orig_label.setMinimumSize(300, 250)
         self.quant_label = ZoomableImageLabel("Quantized Preview")
@@ -446,11 +460,16 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quant_label.image_clicked.connect(self._on_quantized_preview_clicked)
         self.orig_label.view_changed.connect(lambda: self._sync_preview_views(self.orig_label, self.quant_label))
         self.quant_label.view_changed.connect(lambda: self._sync_preview_views(self.quant_label, self.orig_label))
-        center_panel.addWidget(preview_hint)
         previews = QtWidgets.QHBoxLayout()
         original_pane = QtWidgets.QVBoxLayout()
+        original_title = QtWidgets.QLabel("Original")
+        original_title.setObjectName("sectionTitle")
+        original_pane.addWidget(original_title)
         original_pane.addWidget(self.orig_label, 1)
         quantized_pane = QtWidgets.QVBoxLayout()
+        paletted_title = QtWidgets.QLabel("Paletted")
+        paletted_title.setObjectName("sectionTitle")
+        quantized_pane.addWidget(paletted_title)
         quantized_pane.addWidget(self.quant_label, 1)
         previews.addLayout(original_pane, 1)
         previews.addLayout(quantized_pane, 1)
@@ -495,43 +514,28 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_preview_layout.addWidget(self.save_btn)
         palette_preview_layout.addWidget(self.save_hint_label)
         center_panel.addWidget(palette_preview_card)
-        palette_source_card = QtWidgets.QFrame()
-        palette_source_card.setObjectName("sectionCard")
-        palette_source_layout = QtWidgets.QVBoxLayout(palette_source_card)
-        palette_source_layout.setContentsMargins(10, 10, 10, 10)
-        palette_source_layout.setSpacing(8)
-        palette_source_title = QtWidgets.QLabel("Base SUNNY palette (.pcx)")
-        palette_source_title.setObjectName("sectionTitle")
-        palette_source_layout.addWidget(palette_source_title)
-        palette_path_row = QtWidgets.QHBoxLayout()
-        self.palette_path_label = QtWidgets.QLabel("No palette selected")
-        self.palette_path_label.setToolTip("No palette selected")
-        self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.palette_path_label.setStyleSheet("color: #4b5563;")
-        self.palette_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.palette_path_browse_btn = QtWidgets.QPushButton("Browse…")
-        self.palette_path_browse_btn.clicked.connect(self._select_base_palette)
-        self.palette_path_recent_btn = QtWidgets.QToolButton()
-        self.palette_path_recent_btn.setText("▼")
-        self.palette_path_recent_btn.setToolTip("Recent palettes")
-        self.palette_path_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
-        self.palette_path_recent_btn.pressed.connect(self._show_recent_palette_menu)
-        palette_path_row.addWidget(self.palette_path_label, 1)
-        palette_path_row.addWidget(self.palette_path_browse_btn)
-        palette_path_row.addWidget(self.palette_path_recent_btn)
-        palette_source_layout.addLayout(palette_path_row)
-
-        left_panel.addWidget(palette_source_card)
         left_panel.addWidget(self.dirt_checkbox)
         left_panel.addWidget(self.compute_btn)
         left_panel.addWidget(self.compute_hint_label)
 
-        root.addLayout(left_panel, 3)
-        root.addLayout(center_panel, 4)
+        left_widget = QtWidgets.QWidget()
+        left_widget.setLayout(left_panel)
+        center_widget = QtWidgets.QWidget()
+        center_widget.setLayout(center_panel)
+        self.main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.addWidget(left_widget)
+        self.main_splitter.addWidget(center_widget)
+        self.main_splitter.setStretchFactor(0, 3)
+        self.main_splitter.setStretchFactor(1, 4)
+        root.addWidget(self.main_splitter)
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
         self._update_action_states()
+        if self._last_sunny_palette_path is not None:
+            self.palette_path_label.setText(str(self._last_sunny_palette_path))
+            self.palette_path_label.setToolTip(str(self._last_sunny_palette_path))
         self._restore_last_texture_folder()
 
     def select_folder(self) -> None:
@@ -563,6 +567,8 @@ class MainWindow(QtWidgets.QMainWindow):
         if hasattr(self, "palette_path_label"):
             self.palette_path_label.setText(str(resolved_palette))
             self.palette_path_label.setToolTip(str(resolved_palette))
+        self._write_folder_settings()
+        self._update_action_states()
 
     def refresh_folder(self) -> None:
         if self.loaded_texture_folder is None:
@@ -597,7 +603,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         equal_budget = max(1, OPTIMIZED_SLOTS // len(image_files))
-        saved_budgets, saved_required_counts = self._read_folder_settings(resolved_folder)
+        saved_budgets, saved_required_counts, saved_palette_path = self._read_folder_settings(resolved_folder)
         for path in image_files:
             with Image.open(path) as img:
                 img = img.convert("RGB")
@@ -618,6 +624,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.loaded_texture_folder = resolved_folder
         self.folder_path_label.setText(str(resolved_folder))
         self.folder_path_label.setToolTip(str(resolved_folder))
+        if saved_palette_path:
+            palette_path = Path(saved_palette_path).expanduser()
+            if not palette_path.is_absolute():
+                palette_path = resolved_folder / palette_path
+            self._set_palette_path(str(palette_path.resolve()))
         self.settings.last_texture_folder = str(resolved_folder)
         self.settings.push_recent_path(self.RECENT_TEXTURE_FOLDER_KEY, str(resolved_folder))
         self._save_settings()
@@ -742,27 +753,30 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_settings()
         self._write_folder_settings()
 
-    def _read_folder_settings(self, folder: Path) -> tuple[dict[str, int], dict[str, int]]:
+    def _read_folder_settings(self, folder: Path) -> tuple[dict[str, int], dict[str, int], str]:
         """Load per-image values from the portable JSON file, falling back to old settings."""
         budgets = self.settings.budgets_for_folder(folder)
         required = self.settings.required_unique_colors_for_folder(folder)
         settings_path = folder / self.FOLDER_SETTINGS_FILENAME
         if not settings_path.is_file():
-            return budgets, required
+            return budgets, required, ""
+        palette_path = ""
         try:
             payload = json.loads(settings_path.read_text(encoding="utf-8"))
             images = payload.get("images", [])
             budgets = {str(item["file"]): int(item["budget"]) for item in images}
             required = {str(item["file"]): int(item.get("required", 0)) for item in images}
+            palette_path = str(payload.get("sunny_palette", "")).strip()
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
             self.statusBar().showMessage(f"Could not read {settings_path.name}; using saved defaults.", 5000)
-        return budgets, required
+        return budgets, required, palette_path
 
     def _write_folder_settings(self) -> None:
         """Refresh the selected folder's image manifest and optimization values."""
         if self.loaded_texture_folder is None:
             return
         payload = {
+            "sunny_palette": str(self._last_sunny_palette_path or ""),
             "images": [
                 {
                     "file": name,
@@ -788,7 +802,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.compute_btn.setEnabled(has_textures and has_palette_path)
         self.save_btn.setEnabled(has_quantized_results)
         if has_textures and has_palette_path:
-            self.compute_hint_label.setText("Step 2: Click Generate Optimized Palette when you are ready.")
+            self.compute_hint_label.setText("")
         elif has_textures:
             self.compute_hint_label.setText("Missing: select a base SUNNY .pcx palette.")
         elif not folder_ok:
@@ -797,9 +811,9 @@ class MainWindow(QtWidgets.QMainWindow):
             self.compute_hint_label.setText("Missing: texture images (.png/.jpg/.jpeg/.bmp) in selected folder.")
 
         if has_quantized_results:
-            self.save_hint_label.setText("Step 3: Save palette to write your optimized .pcx file.")
+            self.save_hint_label.setText("")
         else:
-            self.save_hint_label.setText("Step 3: Save is enabled after a palette has been computed.")
+            self.save_hint_label.setText("Save is enabled after a palette has been computed.")
 
     def _on_current_cell_changed(
         self, current_row: int, current_column: int, previous_row: int, previous_column: int
