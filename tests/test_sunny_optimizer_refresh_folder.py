@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 try:  # pragma: no cover
@@ -8,6 +9,7 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 or Pillow not available", allow_module_level=True)
 
+from sunny_optimizer.palette import save_palette
 from sunny_optimizer.ui.main_window import MainWindow
 
 
@@ -117,3 +119,66 @@ def test_optimize_palette_uses_resizable_splitter_and_preview_titles(qapp) -> No
     assert "Paletted" in labels
     assert not any(text.startswith(("Step 2", "Step 3")) for text in labels)
     assert not any("Scroll to zoom" in text for text in labels)
+
+
+def test_apply_loaded_palette_updates_palette_and_all_texture_previews(
+    qapp, tmp_path: Path
+) -> None:
+    _ = qapp
+    texture_folder = tmp_path / "textures"
+    texture_folder.mkdir()
+    _write_png(texture_folder / "a.png", (255, 0, 0))
+    _write_png(texture_folder / "b.png", (0, 255, 0))
+    palette_path = tmp_path / "sunny.pcx"
+    palette = np.zeros((256, 3), dtype=np.uint8)
+    palette[7] = (255, 0, 0)
+    palette[11] = (0, 255, 0)
+    save_palette(palette_path, palette)
+
+    window = MainWindow()
+    window._load_folder(texture_folder)
+    window._set_palette_path(str(palette_path))
+
+    assert window.apply_loaded_palette_btn.isEnabled()
+    window.apply_loaded_palette()
+
+    np.testing.assert_array_equal(window.current_palette, palette)
+    assert set(window.indexed_images) == {"a.png", "b.png"}
+    assert set(window.quantized_images) == {"a.png", "b.png"}
+    assert window.palette_preview_title.text() == "Palette from loaded sunny.pcx"
+
+
+def test_successful_optimization_updates_palette_header(
+    qapp, monkeypatch, tmp_path: Path
+) -> None:
+    _ = qapp
+    texture_folder = tmp_path / "textures"
+    texture_folder.mkdir()
+    _write_png(texture_folder / "a.png", (255, 0, 0))
+    palette_path = tmp_path / "sunny.pcx"
+    palette = np.zeros((256, 3), dtype=np.uint8)
+    save_palette(palette_path, palette)
+
+    class FakeOptimizer:
+        def __init__(self, **kwargs):
+            self.progress_callback = kwargs["progress_callback"]
+
+        def compute_palette(self):
+            return palette.copy()
+
+        def compute_quantized_images(self, _palette):
+            return (
+                {"a.png": np.zeros((8, 8), dtype=np.uint8)},
+                {"a.png": np.zeros((8, 8, 3), dtype=np.uint8)},
+            )
+
+    monkeypatch.setattr(
+        "sunny_optimizer.ui.main_window._get_optimizer_class", lambda: FakeOptimizer
+    )
+    window = MainWindow()
+    window._load_folder(texture_folder)
+    window._set_palette_path(str(palette_path))
+
+    window.compute_palette()
+
+    assert window.palette_preview_title.text() == "Palette from optimization"

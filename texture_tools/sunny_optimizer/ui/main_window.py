@@ -19,6 +19,7 @@ from texture_tools.sunny_optimizer.palette import (
     save_palette,
     visualize_palette,
 )
+from texture_tools.sunny_optimizer.quantizer import Quantizer
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 
 
@@ -445,9 +446,15 @@ class MainWindow(QtWidgets.QMainWindow):
         self.palette_path_recent_btn.setToolTip("Recent palettes")
         self.palette_path_recent_btn.setPopupMode(QtWidgets.QToolButton.InstantPopup)
         self.palette_path_recent_btn.pressed.connect(self._show_recent_palette_menu)
+        self.apply_loaded_palette_btn = QtWidgets.QPushButton("Apply Loaded Palette")
+        self.apply_loaded_palette_btn.setToolTip(
+            "Use the selected SUNNY palette for the palette display and all paletted previews."
+        )
+        self.apply_loaded_palette_btn.clicked.connect(self.apply_loaded_palette)
         palette_path_row.addWidget(self.palette_path_label, 1)
         palette_path_row.addWidget(self.palette_path_browse_btn)
         palette_path_row.addWidget(self.palette_path_recent_btn)
+        palette_path_row.addWidget(self.apply_loaded_palette_btn)
         top_card_layout.addLayout(palette_path_row)
         left_panel.addWidget(top_card)
         left_panel.addWidget(self.texture_list, 1)
@@ -507,9 +514,9 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_preview_card = QtWidgets.QFrame()
         palette_preview_card.setObjectName("sectionCard")
         palette_preview_layout = QtWidgets.QVBoxLayout(palette_preview_card)
-        palette_preview_title = QtWidgets.QLabel("Palette")
-        palette_preview_title.setObjectName("sectionTitle")
-        palette_preview_layout.addWidget(palette_preview_title)
+        self.palette_preview_title = QtWidgets.QLabel("Palette")
+        self.palette_preview_title.setObjectName("sectionTitle")
+        palette_preview_layout.addWidget(self.palette_preview_title)
         palette_preview_layout.addWidget(self.palette_label, 1)
         palette_preview_layout.addWidget(self.palette_details_label)
         palette_preview_layout.addWidget(self.highlight_checkbox)
@@ -819,6 +826,7 @@ class MainWindow(QtWidgets.QMainWindow):
         has_inline_error = self.inline_status_label.isVisible()
 
         self.compute_btn.setEnabled(has_textures and has_palette_path)
+        self.apply_loaded_palette_btn.setEnabled(has_textures and has_palette_path)
         self.save_btn.setEnabled(has_quantized_results)
         if has_textures and has_palette_path:
             self.compute_hint_label.setText("")
@@ -833,6 +841,60 @@ class MainWindow(QtWidgets.QMainWindow):
             self.save_hint_label.setText("")
         else:
             self.save_hint_label.setText("Save is enabled after a palette has been computed.")
+
+    def apply_loaded_palette(self) -> None:
+        """Load the selected palette and use it to preview every texture."""
+        if not self.texture_images:
+            self._set_inline_status(
+                "No textures are loaded.",
+                level="warning",
+                next_action="Select a texture folder.",
+            )
+            return
+
+        palette_path = self._last_sunny_palette_path
+        if palette_path is None or not palette_path.exists():
+            self._set_inline_status(
+                "No valid loaded palette is selected.",
+                level="warning",
+                next_action="Select a base palette.",
+            )
+            self._update_action_states()
+            return
+
+        try:
+            palette = load_sunny_palette(palette_path)
+            quantizer = Quantizer(palette)
+            indexed_images: dict[str, np.ndarray] = {}
+            quantized_images: dict[str, np.ndarray] = {}
+            for name, image in self.texture_images.items():
+                indexed, quantized = quantizer.quantize_image(image)
+                indexed_images[name] = indexed
+                quantized_images[name] = quantized
+        except Exception as exc:  # prototype surface
+            self._set_inline_status(
+                f"Could not apply {palette_path.name}: {exc}",
+                level="error",
+                next_action="Pick a valid .pcx palette.",
+            )
+            return
+
+        self.current_palette = palette
+        self.indexed_images = indexed_images
+        self.quantized_images = quantized_images
+        self.selected_palette_index = None
+        self.palette_preview_title.setText(f"Palette from loaded {palette_path.name}")
+        self.palette_details_label.setText(
+            "Loaded palette applied. Click a color tile to inspect index, hex, and RGB values."
+        )
+        self._clear_inline_status()
+        self._refresh_texture_list()
+        self._refresh_palette_view()
+        self._refresh_current_preview()
+        self._update_action_states()
+        self.statusBar().showMessage(
+            f"Applied {palette_path.name} to {len(self.texture_images)} textures.", 5000
+        )
 
     def _on_current_cell_changed(
         self, current_row: int, current_column: int, previous_row: int, previous_column: int
@@ -1106,6 +1168,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self._clear_inline_status()
         self._optimization_preview_palette = None
+        self.palette_preview_title.setText("Palette from optimization")
         self.palette_details_label.setText(
             "Optimized palette ready. Click a color tile to inspect index, hex, and RGB values."
         )
