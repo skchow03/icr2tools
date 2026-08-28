@@ -10,6 +10,7 @@ from .quantizer import Quantizer
 from .palette import load_sunny_palette, save_palette
 
 ProgressCallback = Callable[[str, float], None]
+PalettePreviewCallback = Callable[[np.ndarray, str], None]
 
 OPTIMIZED_START = 176
 OPTIMIZED_END = 245
@@ -61,6 +62,7 @@ def _kmeans(
     max_iter: int = 100,
     progress_callback: ProgressCallback | None = None,
     progress_label: str = "k-means",
+    centers_callback: Callable[[np.ndarray, str], None] | None = None,
 ) -> np.ndarray:
     samples = np.asarray(samples, dtype=np.float64)
     if samples.ndim != 2 or samples.shape[1] != 3:
@@ -93,6 +95,8 @@ def _kmeans(
         rng = np.random.default_rng(child_seed)
         emit(init_index, 0, f"initializing pass {init_index + 1}/{init_count}")
         centers = _initial_centers_kmeans_plus_plus(samples, n_clusters, rng)
+        if centers_callback is not None:
+            centers_callback(centers, f"{progress_label}: seeded color groups")
         labels = np.zeros(samples.shape[0], dtype=np.intp)
 
         for iteration in range(max_iter):
@@ -110,6 +114,11 @@ def _kmeans(
                 iteration + 1,
                 f"pass {init_index + 1}/{init_count}, iteration {iteration + 1}/{max_iter}",
             )
+            if centers_callback is not None:
+                centers_callback(
+                    new_centers,
+                    f"{progress_label}: refining color groups (pass {init_index + 1}/{init_count})",
+                )
             if np.allclose(new_centers, centers, rtol=1e-5, atol=1e-5):
                 centers = new_centers
                 break
@@ -156,6 +165,7 @@ class SunnyPaletteOptimizer:
         random_state: int = 7,
         max_texture_samples: int = 50_000,
         progress_callback: ProgressCallback | None = None,
+        palette_preview_callback: PalettePreviewCallback | None = None,
     ) -> None:
         self.rgb_images = rgb_images
         self.per_texture_color_budget = per_texture_color_budget
@@ -165,6 +175,7 @@ class SunnyPaletteOptimizer:
         self.random_state = random_state
         self.max_texture_samples = max_texture_samples
         self.progress_callback = progress_callback
+        self.palette_preview_callback = palette_preview_callback
 
         if self.fixed_palette.shape != (256, 3):
             raise ValueError("fixed_palette must have shape (256, 3)")
@@ -181,6 +192,12 @@ class SunnyPaletteOptimizer:
         if self.progress_callback is None:
             return
         self.progress_callback(message, min(1.0, max(0.0, fraction)))
+
+    def _emit_palette_preview(self, lab_colors: np.ndarray, message: str) -> None:
+        """Expose the real cluster colors for a lightweight UI visualization."""
+        if self.palette_preview_callback is None or lab_colors.size == 0:
+            return
+        self.palette_preview_callback(self._lab_to_rgb_u8(lab_colors), message)
 
     def _sample_pixels(self, rgb_image: np.ndarray) -> np.ndarray:
         flat = rgb_image.reshape(-1, 3)
@@ -230,12 +247,19 @@ class SunnyPaletteOptimizer:
                 random_state=self.random_state,
                 progress_callback=texture_progress,
                 progress_label=f"Clustering {name}",
+                centers_callback=lambda current, message: self._emit_palette_preview(
+                    np.vstack([*all_centroids, current]), message
+                ),
             )
             all_centroids.append(texture_centroids)
             if required > 0:
                 required_centroids.append(
                     texture_centroids[: min(required, texture_centroids.shape[0])]
                 )
+            self._emit_palette_preview(
+                np.vstack(all_centroids),
+                f"Collected color groups from {texture_index + 1}/{texture_total} textures",
+            )
             self._emit_progress(
                 f"Finished {name} ({texture_index + 1}/{texture_total})",
                 0.20 + (0.55 * (texture_index + 1) / max(1, texture_total)),
@@ -267,6 +291,9 @@ class SunnyPaletteOptimizer:
                 random_state=self.random_state,
                 progress_callback=final_progress,
                 progress_label="Prioritizing required texture colors",
+                centers_callback=lambda current, message: self._emit_palette_preview(
+                    current, message
+                ),
             )
             return final_centers[:slot_count]
 
@@ -281,6 +308,12 @@ class SunnyPaletteOptimizer:
                 random_state=self.random_state,
                 progress_callback=final_progress,
                 progress_label="Merging texture colors",
+                centers_callback=lambda current, message: self._emit_palette_preview(
+                    np.vstack([required_centroids, current])
+                    if reserved_count
+                    else current,
+                    message,
+                ),
             )
             final_centers = (
                 np.vstack([required_centroids, merged_centers])
@@ -330,6 +363,7 @@ class SunnyPaletteOptimizer:
         centroids = self._stage1_centroids()
         self._emit_progress("Merging texture centroids into palette slots", 0.76)
         optimized_lab = self._final_optimized_lab(centroids, slot_count)
+        self._emit_palette_preview(optimized_lab, "Merged color groups into palette slots")
         self._emit_progress("Converting optimized colors to RGB", 0.94)
         optimized_rgb = self._lab_to_rgb_u8(optimized_lab)
         optimized_rgb = self._reorder_optimized_colors(optimized_rgb, slot_count)

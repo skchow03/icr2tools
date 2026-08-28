@@ -58,3 +58,19 @@ def test_append_optimization_log_shows_elapsed_percent_and_message(qapp) -> None
     assert "Preparing optimizer" in visible_log
     assert "30%" in visible_log
     assert "1.2s" in visible_log
+
+
+def test_optimization_palette_preview_fills_reserved_tiles(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    fixed_palette = np.zeros((256, 3), dtype=np.uint8)
+    candidates = np.array([[255, 0, 0], [0, 128, 255]], dtype=np.uint8)
+
+    window._show_optimization_palette_preview(fixed_palette, candidates, "Grouping colors")
+
+    preview = window._optimization_preview_palette
+    assert preview is not None
+    np.testing.assert_array_equal(preview[176], candidates[0])
+    np.testing.assert_array_equal(preview[177], candidates[1])
+    np.testing.assert_array_equal(preview[178], candidates[0])
+    assert window.palette_details_label.text() == "Optimizing: Grouping colors"

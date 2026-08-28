@@ -107,6 +107,37 @@ def test_compute_palette_reports_detailed_progress() -> None:
     assert all(0.0 <= fraction <= 1.0 for _message, fraction in events)
 
 
+def test_compute_palette_reports_real_candidate_colors_for_preview() -> None:
+    image = np.array(
+        [[[255, 0, 0], [240, 20, 20], [0, 0, 255], [20, 20, 240]]],
+        dtype=np.uint8,
+    )
+    previews: list[tuple[np.ndarray, str]] = []
+    optimizer = SunnyPaletteOptimizer(
+        rgb_images={"a.png": image},
+        per_texture_color_budget={"a.png": 2},
+        fixed_palette=_fixed_palette(),
+        dirt_present=False,
+        random_state=123,
+        palette_preview_callback=lambda colors, message: previews.append(
+            (colors.copy(), message)
+        ),
+    )
+
+    optimizer.compute_palette()
+
+    assert len(previews) > 2
+    assert previews[0][0].shape == (2, 3)
+    assert previews[0][0].dtype == np.uint8
+    assert "Clustering a.png" in previews[0][1]
+    assert any(
+        message == "Collected color groups from 1/1 textures"
+        for _colors, message in previews
+    )
+    assert previews[-1][0].shape == (70, 3)
+    assert previews[-1][1] == "Merged color groups into palette slots"
+
+
 def test_compute_quantized_images_reports_per_image_progress() -> None:
     image = np.array(
         [
