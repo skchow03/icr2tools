@@ -19,6 +19,7 @@ from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 # Stable range in sunny_optimizer.model: OPTIMIZED_START=176, OPTIMIZED_END=245.
 # Keep local to avoid importing the heavy optimizer module at window creation time.
 OPTIMIZED_SLOTS = 70
+OPTIMIZED_START = 176
 
 
 def _get_optimizer_class():
@@ -176,6 +177,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.indexed_images: dict[str, np.ndarray] = {}
         self.selected_palette_index: int | None = None
         self._palette_image_size: int = 0
+        self._optimization_preview_palette: np.ndarray | None = None
         self._syncing_previews = False
         self.loaded_texture_folder: Path | None = None
         self._last_sunny_palette_path: Path | None = None
@@ -980,10 +982,12 @@ class MainWindow(QtWidgets.QMainWindow):
         return counts
 
     def _refresh_palette_view(self) -> None:
-        usage_counts = self._compute_palette_usage_counts() if self.indexed_images else None
+        is_optimizing = self._optimization_preview_palette is not None
+        palette = self._optimization_preview_palette if is_optimizing else self.current_palette
+        usage_counts = self._compute_palette_usage_counts() if self.indexed_images and not is_optimizing else None
         image = visualize_palette(
-            self.current_palette,
-            selected_index=self.selected_palette_index,
+            palette,
+            selected_index=None if is_optimizing else self.selected_palette_index,
             usage_counts=usage_counts,
         )
         self._palette_image_size = image.width()
@@ -994,6 +998,24 @@ class MainWindow(QtWidgets.QMainWindow):
                 QtCore.Qt.FastTransformation,
             )
         )
+
+    def _show_optimization_palette_preview(
+        self, fixed_palette: np.ndarray, candidate_colors: np.ndarray, message: str
+    ) -> None:
+        """Fill the optimized range with live, real clustering candidates."""
+        colors = np.asarray(candidate_colors, dtype=np.uint8).reshape(-1, 3)
+        if colors.size == 0:
+            return
+        preview = np.asarray(fixed_palette, dtype=np.uint8).copy()
+        slot_count = OPTIMIZED_SLOTS - (2 if self.dirt_checkbox.isChecked() else 0)
+        # Repeat early candidates so the whole reserved range stays lively; as more
+        # groups arrive, each tile converges toward a distinct optimized color.
+        tiled = np.resize(colors, (slot_count, 3))
+        preview[OPTIMIZED_START : OPTIMIZED_START + slot_count] = tiled
+        self._optimization_preview_palette = preview
+        self.palette_details_label.setText(f"Optimizing: {message}")
+        self._refresh_palette_view()
+        QtWidgets.QApplication.processEvents()
 
     def _sync_preview_views(self, source: ZoomableImageLabel, target: ZoomableImageLabel) -> None:
         if self._syncing_previews:
@@ -1071,6 +1093,11 @@ class MainWindow(QtWidgets.QMainWindow):
 
         try:
             fixed_palette = load_sunny_palette(palette_path)
+            self._optimization_preview_palette = fixed_palette.copy()
+            self.palette_details_label.setText(
+                "Optimizing: gathering texture colors into candidate groups…"
+            )
+            self._refresh_palette_view()
             resolved_palette = Path(palette_path).resolve()
             self._set_palette_path(str(resolved_palette))
             self._persist_current_folder_budgets()
@@ -1085,6 +1112,9 @@ class MainWindow(QtWidgets.QMainWindow):
                 per_texture_required_unique_colors=self.per_texture_required_unique_colors,
                 dirt_present=self.dirt_checkbox.isChecked(),
                 progress_callback=make_phase_progress(3, 30, 85),
+                palette_preview_callback=lambda colors, message: self._show_optimization_palette_preview(
+                    fixed_palette, colors, message
+                ),
             )
 
             set_progress(3, "Starting optimized palette computation", 30)
@@ -1099,6 +1129,11 @@ class MainWindow(QtWidgets.QMainWindow):
             )
             self.selected_palette_index = None
         except Exception as exc:  # prototype surface
+            self._optimization_preview_palette = None
+            self.palette_details_label.setText(
+                "Optimization stopped. The previous palette is shown."
+            )
+            self._refresh_palette_view()
             self.compute_progress.setValue(0)
             elapsed = time.perf_counter() - started_at
             failure_text = f"Failure after {elapsed:.1f}s"
@@ -1115,6 +1150,10 @@ class MainWindow(QtWidgets.QMainWindow):
             self._update_action_states()
 
         self._clear_inline_status()
+        self._optimization_preview_palette = None
+        self.palette_details_label.setText(
+            "Optimized palette ready. Click a color tile to inspect index, hex, and RGB values."
+        )
         total_elapsed = time.perf_counter() - started_at
         self.compute_progress.setValue(100)
         success_text = f"Success in {total_elapsed:.1f}s"
