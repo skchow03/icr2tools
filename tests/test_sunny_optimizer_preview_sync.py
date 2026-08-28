@@ -2,11 +2,12 @@ import numpy as np
 import pytest
 
 try:  # pragma: no cover
-    from PyQt5 import QtWidgets
+    from PyQt5 import QtCore, QtWidgets
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
 from sunny_optimizer.ui.main_window import MainWindow
+from sunny_optimizer.palette import visualize_palette
 
 
 @pytest.fixture
@@ -21,6 +22,34 @@ def _sample_rgb() -> np.ndarray:
     arr = np.zeros((64, 64, 3), dtype=np.uint8)
     arr[..., 0] = 128
     return arr
+
+
+def test_palette_uses_four_rows_of_sixty_four_colors() -> None:
+    image = visualize_palette(np.zeros((256, 3), dtype=np.uint8), tile_size=8)
+
+    assert image.width() == 64 * 8
+    assert image.height() == 4 * 8
+
+
+def test_palette_click_maps_wide_grid_to_palette_index(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    window.palette_label.resize(640, 100)
+    window._refresh_palette_view()
+
+    pixmap = window.palette_label.pixmap()
+    assert pixmap is not None
+    # Index 194 is column 2 on the fourth row of the 64-column grid.
+    x_offset = (window.palette_label.width() - pixmap.width()) // 2
+    y_offset = (window.palette_label.height() - pixmap.height()) // 2
+    point = QtCore.QPoint(
+        x_offset + int(2.5 * pixmap.width() / 64),
+        y_offset + int(3.5 * pixmap.height() / 4),
+    )
+
+    window._on_palette_clicked(point)
+
+    assert window.selected_palette_index == 194
 
 
 def test_sync_preview_views_copies_zoom_and_pan(qapp) -> None:

@@ -11,7 +11,13 @@ try:
 except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
 
-from texture_tools.sunny_optimizer.palette import load_sunny_palette, save_palette, visualize_palette
+from texture_tools.sunny_optimizer.palette import (
+    PALETTE_COLUMNS,
+    PALETTE_ROWS,
+    load_sunny_palette,
+    save_palette,
+    visualize_palette,
+)
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 
 
@@ -227,7 +233,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.quantized_images: dict[str, np.ndarray] = {}
         self.indexed_images: dict[str, np.ndarray] = {}
         self.selected_palette_index: int | None = None
-        self._palette_image_size: int = 0
+        self._palette_image_dimensions = QtCore.QSize()
         self._optimization_preview_palette: np.ndarray | None = None
         self._optimization_dialog: OptimizationProgressDialog | None = None
         self._syncing_previews = False
@@ -480,9 +486,9 @@ class MainWindow(QtWidgets.QMainWindow):
         preview_controls.addStretch(1)
         center_panel.addLayout(preview_controls)
         self.palette_label = ClickablePaletteLabel()
-        self.palette_label.setMinimumSize(96, 96)
+        self.palette_label.setMinimumSize(256, 32)
         self.palette_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred, QtWidgets.QSizePolicy.Preferred
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
         )
         self.palette_label.setAlignment(QtCore.Qt.AlignCenter)
         self.palette_label.setStyleSheet("background: #202020; padding: 2px;")
@@ -907,7 +913,7 @@ class MainWindow(QtWidgets.QMainWindow):
             selected_index=None if is_optimizing else self.selected_palette_index,
             usage_counts=usage_counts,
         )
-        self._palette_image_size = image.width()
+        self._palette_image_dimensions = image.size()
         self.palette_label.setPixmap(
             QtGui.QPixmap.fromImage(image).scaled(
                 self.palette_label.size(),
@@ -1141,7 +1147,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _on_palette_clicked(self, point: QtCore.QPoint) -> None:
         pixmap = self.palette_label.pixmap()
-        if pixmap is None or pixmap.isNull() or self._palette_image_size <= 0:
+        if pixmap is None or pixmap.isNull() or self._palette_image_dimensions.isEmpty():
             return
         x_offset = (self.palette_label.width() - pixmap.width()) // 2
         y_offset = (self.palette_label.height() - pixmap.height()) // 2
@@ -1150,14 +1156,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if x < 0 or y < 0 or x >= pixmap.width() or y >= pixmap.height():
             return
 
-        source_x = int(x * self._palette_image_size / pixmap.width())
-        source_y = int(y * self._palette_image_size / pixmap.height())
-        tile_size = max(1, self._palette_image_size // 16)
-        col = source_x // tile_size
-        row = source_y // tile_size
-        if not (0 <= row < 16 and 0 <= col < 16):
+        source_x = int(x * self._palette_image_dimensions.width() / pixmap.width())
+        source_y = int(y * self._palette_image_dimensions.height() / pixmap.height())
+        tile_width = max(1, self._palette_image_dimensions.width() // PALETTE_COLUMNS)
+        tile_height = max(1, self._palette_image_dimensions.height() // PALETTE_ROWS)
+        col = source_x // tile_width
+        row = source_y // tile_height
+        if not (0 <= row < PALETTE_ROWS and 0 <= col < PALETTE_COLUMNS):
             return
-        index = int(row * 16 + col)
+        index = int(row * PALETTE_COLUMNS + col)
         self.selected_palette_index = index
         self._refresh_palette_view()
         self._update_palette_details(index)

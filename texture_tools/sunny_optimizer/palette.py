@@ -10,6 +10,10 @@ except ImportError:  # pragma: no cover
     from PySide6 import QtGui  # type: ignore
 
 
+PALETTE_COLUMNS = 64
+PALETTE_ROWS = 4
+
+
 def load_sunny_palette(path: str | Path) -> np.ndarray:
     resolved_path = Path(path)
     data = resolved_path.read_bytes()
@@ -111,12 +115,15 @@ def visualize_palette(
             raise ValueError("usage_counts must be shape (256,)")
         max_count = int(counts.max(initial=0))
 
-    size = 16 * tile_size
-    image = QtGui.QImage(size, size, QtGui.QImage.Format_RGB888)
+    image = QtGui.QImage(
+        PALETTE_COLUMNS * tile_size,
+        PALETTE_ROWS * tile_size,
+        QtGui.QImage.Format_RGB888,
+    )
     painter = QtGui.QPainter(image)
     for i, (r, g, b) in enumerate(palette):
-        x = (i % 16) * tile_size
-        y = (i // 16) * tile_size
+        x = (i % PALETTE_COLUMNS) * tile_size
+        y = (i // PALETTE_COLUMNS) * tile_size
         count = int(counts[i]) if counts is not None else 0
         fill_color = QtGui.QColor(int(r), int(g), int(b))
         painter.fillRect(x, y, tile_size, tile_size, fill_color)
