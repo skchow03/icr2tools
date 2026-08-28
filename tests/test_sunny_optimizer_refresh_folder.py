@@ -56,7 +56,10 @@ def test_folder_manifest_is_created_and_refreshed(qapp, tmp_path: Path) -> None:
 
     manifest_path = tmp_path / window.FOLDER_SETTINGS_FILENAME
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert manifest == {"images": [{"file": "a.png", "budget": 70, "required": 0}]}
+    assert manifest == {
+        "sunny_palette": "",
+        "images": [{"file": "a.png", "budget": 70, "required": 0}],
+    }
 
     window.per_texture_budget["a.png"] = 23
     window.per_texture_required_unique_colors["a.png"] = 1
@@ -66,3 +69,48 @@ def test_folder_manifest_is_created_and_refreshed(qapp, tmp_path: Path) -> None:
     assert window.per_texture_budget == {"a.png": 23}
     assert window.per_texture_required_unique_colors == {"a.png": 1}
     assert window.folder_path_label.text() == str(tmp_path.resolve())
+
+
+def test_folder_manifest_restores_its_sunny_palette(qapp, tmp_path: Path) -> None:
+    import json
+
+    _ = qapp
+    texture_folder = tmp_path / "textures"
+    texture_folder.mkdir()
+    _write_png(texture_folder / "a.png", (255, 0, 0))
+    palette_path = tmp_path / "palettes" / "sunny.pcx"
+    palette_path.parent.mkdir()
+    palette_path.write_bytes(b"palette placeholder")
+    (texture_folder / MainWindow.FOLDER_SETTINGS_FILENAME).write_text(
+        json.dumps(
+            {
+                "sunny_palette": "../palettes/sunny.pcx",
+                "images": [{"file": "a.png", "budget": 12, "required": 0}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    window = MainWindow()
+    window._load_folder(texture_folder)
+
+    assert window._last_sunny_palette_path == palette_path.resolve()
+    assert window.palette_path_label.text() == str(palette_path.resolve())
+    saved = json.loads(
+        (texture_folder / MainWindow.FOLDER_SETTINGS_FILENAME).read_text(encoding="utf-8")
+    )
+    assert saved["sunny_palette"] == str(palette_path.resolve())
+
+
+def test_optimize_palette_uses_resizable_splitter_and_preview_titles(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+
+    assert window.main_splitter.count() == 2
+    assert not window.main_splitter.childrenCollapsible()
+    labels = {label.text() for label in window.findChildren(QtWidgets.QLabel)}
+    assert "Files" in labels
+    assert "Original" in labels
+    assert "Paletted" in labels
+    assert not any(text.startswith(("Step 2", "Step 3")) for text in labels)
+    assert not any("Scroll to zoom" in text for text in labels)
