@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
-from texture_tools.pmp import png_to_pmp
+from texture_tools.pmp import png_to_pmp, quantize_rgba_for_pmp
 from texture_tools.pmp_to_png import convert_pmp_to_png
 from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
@@ -719,17 +719,23 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
             return
         try:
             source_path = Path(item.data(QtCore.Qt.UserRole))
-            with Image.open(source_path) as source, Image.open(self._palette_path) as palette_source:
+            with Image.open(source_path) as source:
                 source_rgba = source.convert("RGBA")
-                palette = palette_source.convert("P")
-                output = source_rgba.convert("RGB").quantize(
-                    colors=256,
-                    method=Image.Quantize.FASTOCTREE,
-                    palette=palette,
-                    dither=Image.Dither.NONE,
-                )
-                preview = output.convert("RGBA")
                 is_sprite = self._sprite_flags.get(source_path.name, False)
+                if is_sprite:
+                    output = quantize_rgba_for_pmp(
+                        source_rgba, self._palette_path, dither=False
+                    )
+                else:
+                    with Image.open(self._palette_path) as palette_source:
+                        palette = palette_source.convert("P")
+                        output = source_rgba.convert("RGB").quantize(
+                            colors=256,
+                            method=Image.Quantize.FASTOCTREE,
+                            palette=palette,
+                            dither=Image.Dither.NONE,
+                        )
+                preview = output.convert("RGBA")
                 if is_sprite:
                     threshold = self._alpha_threshold()
                     alpha = source_rgba.getchannel("A").point(

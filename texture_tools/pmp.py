@@ -137,12 +137,25 @@ def _load_palette_from_pcx_trailer(path: Path) -> Image.Image:
     pal_img.putpalette(palette_values)
     return pal_img
 
-def _rgba_to_clean_rgb(rgba: Image.Image) -> Image.Image:
+
+def rgba_to_clean_rgb(rgba: Image.Image) -> Image.Image:
     """Flatten RGBA into a clean RGB image without carrying PNG metadata/chunks forward."""
     rgba = rgba.convert("RGBA").copy()
     rgb = Image.new("RGB", rgba.size, (0, 0, 0))
     rgb.paste(rgba, mask=rgba.getchannel("A"))
     return rgb
+
+
+def quantize_rgba_for_pmp(
+    rgba: Image.Image,
+    palette_path: str | Path | None,
+    *,
+    dither: bool = False,
+) -> Image.Image:
+    """Prepare and palette-quantize RGBA pixels exactly as the PMP encoder does."""
+    return _quantize_with_palette(
+        rgba_to_clean_rgb(rgba), palette_path, dither=dither
+    )
 
 
 def png_to_pmp(
@@ -184,10 +197,8 @@ def png_to_pmp(
         ) from exc
 
     alpha = rgba.getchannel("A")
-    rgb = _rgba_to_clean_rgb(rgba)
-
     try:
-        indexed = _quantize_with_palette(rgb, palette_path, dither=dither)
+        indexed = quantize_rgba_for_pmp(rgba, palette_path, dither=dither)
     except (OSError, UnidentifiedImageError, ValueError) as exc:
         raise ValueError(
             f"Unable to quantize image with palette '{palette_path}'. {exc}. "

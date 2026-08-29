@@ -10,6 +10,7 @@ except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
 from texture_tools.main import ConvertTexturesWidget, TextureToolsWindow
+from texture_tools.pmp import png_to_pmp
 
 
 @pytest.fixture
@@ -168,8 +169,9 @@ def test_supports_extended_selection_and_converts_selected_formats(
 def test_sprite_preview_updates_for_alpha_threshold(qapp, tmp_path: Path) -> None:
     _ = qapp
     sprite = Image.new("RGBA", (2, 1))
-    sprite.putdata(((255, 0, 0, 84), (0, 0, 255, 85)))
-    sprite.save(tmp_path / "sprite.png")
+    sprite.putdata(((255, 0, 0, 84), (255, 0, 0, 85)))
+    sprite_path = tmp_path / "sprite.png"
+    sprite.save(sprite_path)
     palette_path = tmp_path / "sunny.pcx"
     _save_palette(palette_path)
 
@@ -189,6 +191,27 @@ def test_sprite_preview_updates_for_alpha_threshold(qapp, tmp_path: Path) -> Non
         image = widget.preview_pane._pixmap_item.pixmap().toImage()
         assert image.pixelColor(0, 0).alpha() == 0
         assert image.pixelColor(1, 0).alpha() == 255
+
+        pmp_path = tmp_path / "sprite.pmp"
+        png_to_pmp(
+            sprite_path,
+            pmp_path,
+            size_field=0,
+            palette_path=palette_path,
+            alpha_transparent_threshold=84,
+        )
+        encoded_palette_index = pmp_path.read_bytes()[15]
+        with Image.open(palette_path) as palette:
+            palette_values = palette.getpalette()
+            encoded_color = tuple(
+                palette_values[encoded_palette_index * 3 : encoded_palette_index * 3 + 3]
+            )
+        displayed_color = image.pixelColor(1, 0)
+        assert (
+            displayed_color.red(),
+            displayed_color.green(),
+            displayed_color.blue(),
+        ) == encoded_color
         assert "alpha ≤ 33% transparent" in widget.preview_pane.meta_label.text()
 
         widget.alpha_threshold_slider.setValue(32)
