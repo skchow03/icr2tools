@@ -125,10 +125,64 @@ def test_files_section_uses_select_buttons_without_recent_palette_dropdown(qapp)
     _ = qapp
     window = MainWindow()
 
-    assert window.folder_btn.text() == "Select folder..."
-    assert window.palette_path_browse_btn.text() == "Select palette file"
+    assert window.folder_btn.text() == "Browse…"
+    assert window.refresh_folder_btn.text() == "Reload"
+    assert window.palette_path_browse_btn.text() == "Browse…"
+    assert window.apply_loaded_palette_btn.text() == "Apply"
+    assert window.export_destination_btn.text() == "Browse…"
     assert not hasattr(window, "palette_recent_btn")
     assert not hasattr(window, "palette_path_recent_btn")
+
+
+def test_file_selection_bar_is_one_row_with_read_only_elided_fields(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    window.show()
+    qapp.processEvents()
+
+    field_widgets = [
+        window.folder_path_label,
+        window.palette_path_label,
+        window.export_destination_label,
+    ]
+    assert all(isinstance(field, QtWidgets.QLineEdit) for field in field_widgets)
+    assert all(field.isReadOnly() for field in field_widgets)
+    labels = {label.text() for label in window.files_card.findChildren(QtWidgets.QLabel)}
+    assert {"Textures:", "Palette:", "Output:"} <= labels
+
+    controls = [
+        *field_widgets,
+        window.folder_btn,
+        window.refresh_folder_btn,
+        window.palette_path_browse_btn,
+        window.apply_loaded_palette_btn,
+        window.export_destination_btn,
+    ]
+    centers = [
+        control.mapTo(window.files_card, control.rect().center()).y()
+        for control in controls
+    ]
+    assert max(centers) - min(centers) <= 2
+    assert all(control.geometry().width() > 0 for control in controls)
+
+
+def test_path_field_middle_elides_and_only_then_shows_full_path_tooltip(qapp) -> None:
+    _ = qapp
+    window = MainWindow()
+    field = window.folder_path_label
+    full_path = r"C:\Dosprogs\icr2\projects\goiania\art"
+
+    field.resize(120, field.sizeHint().height())
+    field.setText(full_path)
+    assert "…" in field.text()
+    assert field.text().startswith("C:")
+    assert field.text().endswith("art")
+    assert field.toolTip() == full_path
+    assert field.fullText() == full_path
+
+    field.resize(1000, field.height())
+    assert field.text() == full_path
+    assert field.toolTip() == ""
 
 
 def test_apply_loaded_palette_updates_palette_and_all_texture_previews(
@@ -153,6 +207,7 @@ def test_apply_loaded_palette_updates_palette_and_all_texture_previews(
     window.apply_loaded_palette()
 
     np.testing.assert_array_equal(window.current_palette, palette)
+    assert not window.apply_loaded_palette_btn.isEnabled()
     assert set(window.indexed_images) == {"a.png", "b.png"}
     assert set(window.quantized_images) == {"a.png", "b.png"}
     assert window.palette_preview_title.text() == "Palette from loaded sunny.pcx"

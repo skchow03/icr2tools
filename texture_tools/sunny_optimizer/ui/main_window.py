@@ -34,6 +34,39 @@ def _get_optimizer_class():
 
     return SunnyPaletteOptimizer
 
+
+class ElidedPathEdit(QtWidgets.QLineEdit):
+    """Read-only path field that elides its display without losing the path."""
+
+    def __init__(self, text: str, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._full_text = text
+        self.setReadOnly(True)
+        self.setMinimumWidth(0)
+        self.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self._update_display_text()
+
+    def setText(self, text: str) -> None:
+        self._full_text = text
+        self._update_display_text()
+
+    def fullText(self) -> str:
+        return self._full_text
+
+    def resizeEvent(self, event: QtGui.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self._update_display_text()
+
+    def _update_display_text(self) -> None:
+        # Leave room for the line edit's contents margins and cursor padding.
+        available_width = max(0, self.contentsRect().width() - 8)
+        display_text = self.fontMetrics().elidedText(
+            self._full_text, QtCore.Qt.ElideMiddle, available_width
+        )
+        QtWidgets.QLineEdit.setText(self, display_text)
+        self.setToolTip(self._full_text if display_text != self._full_text else "")
+
+
 class PannableGraphicsView(QtWidgets.QGraphicsView):
     clicked = QtCore.pyqtSignal(QtCore.QPointF)
     view_changed = QtCore.pyqtSignal()
@@ -252,6 +285,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._syncing_previews = False
         self.loaded_texture_folder: Path | None = None
         self._last_sunny_palette_path: Path | None = None
+        self._applied_palette_path: Path | None = None
         self.export_destination: Path | None = None
         self.settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
         self.settings.load()
@@ -329,11 +363,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _update_export_destination_label(self) -> None:
         if self.export_destination is None:
-            text = "No export destination selected"
+            text = "Not selected"
         else:
             text = str(self.export_destination)
         self.export_destination_label.setText(text)
-        self.export_destination_label.setToolTip(text)
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
         if self._classify_drop(event.mimeData().urls()) is not None:
@@ -375,7 +408,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _build_ui(self) -> None:
         central = QtWidgets.QWidget()
-        root = QtWidgets.QHBoxLayout(central)
+        root = QtWidgets.QVBoxLayout(central)
         root.setContentsMargins(12, 12, 12, 12)
         root.setSpacing(12)
         self.setStyleSheet(
@@ -411,13 +444,12 @@ class MainWindow(QtWidgets.QMainWindow):
         left_panel.addWidget(self.inline_status_label)
         left_panel.addWidget(self.inline_action_row)
         file_controls = QtWidgets.QHBoxLayout()
-        self.folder_path_label = QtWidgets.QLabel("No folder selected")
-        self.folder_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.folder_path_label.setStyleSheet("color: #4b5563;")
-        self.folder_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.folder_btn = QtWidgets.QPushButton("Select folder...")
+        file_controls.setSpacing(6)
+        textures_label = QtWidgets.QLabel("Textures:")
+        self.folder_path_label = ElidedPathEdit("No folder selected")
+        self.folder_btn = QtWidgets.QPushButton("Browse…")
         self.folder_btn.clicked.connect(self.select_folder)
-        self.refresh_folder_btn = QtWidgets.QPushButton("Refresh Folder")
+        self.refresh_folder_btn = QtWidgets.QPushButton("Reload")
         self.refresh_folder_btn.clicked.connect(self.refresh_folder)
         self.texture_list = QtWidgets.QTableWidget(0, 5)
         self.texture_list.setHorizontalHeaderLabels(
@@ -449,42 +481,39 @@ class MainWindow(QtWidgets.QMainWindow):
             "optimized palette."
         )
 
-        file_controls.addWidget(self.folder_path_label, 1)
+        file_controls.addWidget(textures_label)
+        file_controls.addWidget(self.folder_path_label, 5)
         file_controls.addWidget(self.folder_btn)
         file_controls.addWidget(self.refresh_folder_btn)
+        file_controls.addWidget(self._file_group_separator())
         self.files_card = QtWidgets.QFrame()
         self.files_card.setObjectName("sectionCard")
         top_card_layout = QtWidgets.QVBoxLayout(self.files_card)
         top_card_layout.setContentsMargins(10, 10, 10, 10)
         top_card_layout.setSpacing(8)
-        self.palette_path_label = QtWidgets.QLabel("No base SUNNY palette selected")
-        self.palette_path_label.setToolTip("No base SUNNY palette selected")
-        self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.palette_path_label.setStyleSheet("color: #4b5563;")
-        self.palette_path_label.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
-        self.palette_path_browse_btn = QtWidgets.QPushButton("Select palette file")
+        palette_label = QtWidgets.QLabel("Palette:")
+        self.palette_path_label = ElidedPathEdit("No base SUNNY palette selected")
+        self.palette_path_browse_btn = QtWidgets.QPushButton("Browse…")
         self.palette_path_browse_btn.clicked.connect(self._select_base_palette)
-        self.apply_loaded_palette_btn = QtWidgets.QPushButton("Apply Loaded Palette")
+        self.apply_loaded_palette_btn = QtWidgets.QPushButton("Apply")
         self.apply_loaded_palette_btn.setToolTip(
             "Use the selected SUNNY palette for the palette display and all paletted previews."
         )
         self.apply_loaded_palette_btn.clicked.connect(self.apply_loaded_palette)
-        file_controls.addWidget(self.palette_path_label, 1)
+        file_controls.addWidget(palette_label)
+        file_controls.addWidget(self.palette_path_label, 3)
         file_controls.addWidget(self.palette_path_browse_btn)
         file_controls.addWidget(self.apply_loaded_palette_btn)
-        self.export_destination_label = QtWidgets.QLabel()
-        self.export_destination_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-        self.export_destination_label.setStyleSheet("color: #4b5563;")
-        self.export_destination_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
-        )
-        self.export_destination_btn = QtWidgets.QPushButton("Select Export Destination")
+        file_controls.addWidget(self._file_group_separator())
+        output_label = QtWidgets.QLabel("Output:")
+        self.export_destination_label = ElidedPathEdit("Not selected")
+        self.export_destination_btn = QtWidgets.QPushButton("Browse…")
         self.export_destination_btn.clicked.connect(self.select_export_destination)
-        file_controls.addWidget(self.export_destination_label, 1)
+        file_controls.addWidget(output_label)
+        file_controls.addWidget(self.export_destination_label, 2)
         file_controls.addWidget(self.export_destination_btn)
         top_card_layout.addLayout(file_controls)
         self._update_export_destination_label()
-        left_panel.addWidget(self.files_card)
         left_panel.addWidget(self.texture_list, 1)
 
         center_panel = QtWidgets.QVBoxLayout()
@@ -580,15 +609,22 @@ class MainWindow(QtWidgets.QMainWindow):
         self.main_splitter.addWidget(center_widget)
         self.main_splitter.setStretchFactor(0, 3)
         self.main_splitter.setStretchFactor(1, 4)
-        root.addWidget(self.main_splitter)
+        root.addWidget(self.files_card)
+        root.addWidget(self.main_splitter, 1)
         self.setCentralWidget(central)
         self.statusBar().showMessage("Ready")
         self._refresh_palette_view()
         self._update_action_states()
         if self._last_sunny_palette_path is not None:
             self.palette_path_label.setText(str(self._last_sunny_palette_path))
-            self.palette_path_label.setToolTip(str(self._last_sunny_palette_path))
         self._restore_last_texture_folder()
+
+    @staticmethod
+    def _file_group_separator() -> QtWidgets.QFrame:
+        separator = QtWidgets.QFrame()
+        separator.setFrameShape(QtWidgets.QFrame.VLine)
+        separator.setFrameShadow(QtWidgets.QFrame.Sunken)
+        return separator
 
     def select_folder(self) -> None:
         start_dir = self.settings.last_texture_folder if self.settings.last_texture_folder else ""
@@ -599,13 +635,14 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _set_palette_path(self, palette_path: str) -> None:
         resolved_palette = Path(palette_path).expanduser()
+        if resolved_palette != self._last_sunny_palette_path:
+            self._applied_palette_path = None
         self._last_sunny_palette_path = resolved_palette
         self.settings.last_sunny_palette = str(resolved_palette)
         self.settings.push_recent_path(self.RECENT_PALETTE_KEY, str(resolved_palette))
         self._save_settings()
         if hasattr(self, "palette_path_label"):
             self.palette_path_label.setText(str(resolved_palette))
-            self.palette_path_label.setToolTip(str(resolved_palette))
         self._write_folder_settings()
         self._update_action_states()
         self.sunny_palette_changed.emit(str(resolved_palette))
@@ -630,6 +667,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.per_texture_required_unique_colors.clear()
         self.quantized_images.clear()
         self.indexed_images.clear()
+        self._applied_palette_path = None
         self.selected_palette_index = None
         self.texture_list.setRowCount(0)
 
@@ -663,7 +701,6 @@ class MainWindow(QtWidgets.QMainWindow):
 
         self.loaded_texture_folder = resolved_folder
         self.folder_path_label.setText(str(resolved_folder))
-        self.folder_path_label.setToolTip(str(resolved_folder))
         if saved_palette_path:
             palette_path = Path(saved_palette_path).expanduser()
             if not palette_path.is_absolute():
@@ -836,12 +873,19 @@ class MainWindow(QtWidgets.QMainWindow):
     def _update_action_states(self) -> None:
         folder_ok = self.loaded_texture_folder is not None and self.loaded_texture_folder.exists() and self.loaded_texture_folder.is_dir()
         has_textures = folder_ok and bool(self.texture_images)
-        has_palette_path = self._last_sunny_palette_path is not None and self._last_sunny_palette_path.exists()
+        has_palette_path = (
+            self._last_sunny_palette_path is not None
+            and self._last_sunny_palette_path.is_file()
+            and self._last_sunny_palette_path.suffix.lower() == ".pcx"
+        )
         has_quantized_results = bool(self.quantized_images)
         has_inline_error = self.inline_status_label.isVisible()
 
         self.compute_btn.setEnabled(has_textures and has_palette_path)
-        self.apply_loaded_palette_btn.setEnabled(has_textures and has_palette_path)
+        palette_needs_applying = self._last_sunny_palette_path != self._applied_palette_path
+        self.apply_loaded_palette_btn.setEnabled(
+            has_textures and has_palette_path and palette_needs_applying
+        )
         self.save_btn.setEnabled(has_quantized_results)
         if has_textures and has_palette_path:
             self.compute_hint_label.setText("")
@@ -922,6 +966,7 @@ class MainWindow(QtWidgets.QMainWindow):
             return
 
         self.current_palette = palette
+        self._applied_palette_path = palette_path
         self.indexed_images = indexed_images
         self.quantized_images = quantized_images
         self.selected_palette_index = None
