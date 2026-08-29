@@ -842,7 +842,9 @@ class MainWindow(QtWidgets.QMainWindow):
         try:
             payload = json.loads(settings_path.read_text(encoding="utf-8"))
             images = payload.get("images", [])
-            budgets = {str(item["file"]): int(item["budget"]) for item in images}
+            budgets.update(
+                {str(item["file"]): int(item["budget"]) for item in images if "budget" in item}
+            )
             required = {str(item["file"]): int(item.get("required", 0)) for item in images}
             palette_path = str(payload.get("sunny_palette", "")).strip()
         except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
@@ -853,6 +855,17 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh the selected folder's image manifest and optimization values."""
         if self.loaded_texture_folder is None:
             return
+        existing_sprites: dict[str, bool] = {}
+        settings_path = self.loaded_texture_folder / self.FOLDER_SETTINGS_FILENAME
+        try:
+            existing_payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            existing_sprites = {
+                str(item["file"]): bool(item["sprite"])
+                for item in existing_payload.get("images", [])
+                if "file" in item and "sprite" in item
+            }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            pass
         payload = {
             "sunny_palette": str(self._last_sunny_palette_path or ""),
             "images": [
@@ -860,11 +873,11 @@ class MainWindow(QtWidgets.QMainWindow):
                     "file": name,
                     "budget": self.per_texture_budget[name],
                     "required": self.per_texture_required_unique_colors.get(name, 0),
+                    **({"sprite": existing_sprites[name]} if name in existing_sprites else {}),
                 }
                 for name in sorted(self.texture_images, key=str.lower)
             ]
         }
-        settings_path = self.loaded_texture_folder / self.FOLDER_SETTINGS_FILENAME
         try:
             settings_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         except OSError as exc:
