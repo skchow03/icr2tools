@@ -46,3 +46,39 @@ def test_texture_tools_about_dialog_text(qapp, monkeypatch) -> None:
     assert captured["title"] == "About ICR2 Texture Tools"
     assert captured["text"] == ABOUT_TEXT
     assert captured["text"] == 'ICR2 Texture Tools v0.1.0\nby SK Chow ("checkpoint10" on the icr2.net forums)'
+
+
+def test_files_are_global_above_tabs_and_feed_compatible_tools(qapp, tmp_path) -> None:
+    from PIL import Image
+
+    texture_folder = tmp_path / "textures"
+    texture_folder.mkdir()
+    Image.new("RGB", (2, 2), (12, 34, 56)).save(texture_folder / "wall.png")
+    palette_path = tmp_path / "SUNNY.PCX"
+    palette_path.write_bytes(b"placeholder")
+
+    window = TextureToolsWindow()
+    try:
+        central_layout = window.centralWidget().layout()
+        assert central_layout.indexOf(window.sunny_optimizer.files_card) == 0
+        assert central_layout.indexOf(window.intent_tabs) == 1
+
+        window.sunny_optimizer._load_folder(texture_folder)
+        window.sunny_optimizer._set_palette_path(str(palette_path))
+
+        assert window.mip_conversion.source_folder_edit.text() == str(texture_folder.resolve())
+        assert window.pmp_conversion.source_folder_edit.text() == str(texture_folder.resolve())
+        assert window.mip_conversion.palette_edit.text() == str(palette_path)
+        assert window.pmp_conversion.palette_edit.text() == str(palette_path)
+        assert window.pmp_to_png.palette_edit.text() == str(palette_path)
+    finally:
+        window.close()
+
+
+def test_optimizer_palette_actions_use_normal_button_styling(qapp) -> None:
+    window = TextureToolsWindow()
+    try:
+        assert window.sunny_optimizer.compute_btn.property("primary") is None
+        assert window.sunny_optimizer.save_btn.property("secondary") is None
+    finally:
+        window.close()

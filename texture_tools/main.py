@@ -1450,7 +1450,21 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
-        self.setCentralWidget(self.intent_tabs)
+
+        central = QtWidgets.QWidget()
+        central_layout = QtWidgets.QVBoxLayout(central)
+        central_layout.setContentsMargins(12, 12, 12, 12)
+        central_layout.setSpacing(10)
+        central_layout.addWidget(self.sunny_optimizer.files_card)
+        central_layout.addWidget(self.intent_tabs, 1)
+        self.setCentralWidget(central)
+
+        self.sunny_optimizer.texture_folder_changed.connect(self._use_global_texture_folder)
+        self.sunny_optimizer.sunny_palette_changed.connect(self._use_global_palette)
+        if self.sunny_optimizer.loaded_texture_folder is not None:
+            self._use_global_texture_folder(str(self.sunny_optimizer.loaded_texture_folder))
+        if self.sunny_optimizer._last_sunny_palette_path is not None:
+            self._use_global_palette(str(self.sunny_optimizer._last_sunny_palette_path))
         self._build_menu_bar()
 
     def _build_menu_bar(self) -> None:
@@ -1463,17 +1477,31 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         QtWidgets.QMessageBox.about(self, ABOUT_TITLE, ABOUT_TEXT)
 
     def _build_optimize_palette_tab(self) -> QtWidgets.QWidget:
-        sunny = SunnyOptimizerWindow()
-        sunny.setWindowFlags(QtCore.Qt.Widget)
-        sunny.setWindowTitle("Sunny Optimizer")
-        return sunny
+        self.sunny_optimizer = SunnyOptimizerWindow()
+        self.sunny_optimizer.setWindowFlags(QtCore.Qt.Widget)
+        self.sunny_optimizer.setWindowTitle("Sunny Optimizer")
+        return self.sunny_optimizer
 
     def _build_convert_formats_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(MipConversionWidget(self._settings), "MIP Conversion")
-        tabs.addTab(PmpConversionWidget(self._settings), "PNG → PMP")
-        tabs.addTab(PmpToPngWidget(self._settings), "PMP → PNG")
+        self.mip_conversion = MipConversionWidget(self._settings)
+        self.pmp_conversion = PmpConversionWidget(self._settings)
+        self.pmp_to_png = PmpToPngWidget(self._settings)
+        tabs.addTab(self.mip_conversion, "MIP Conversion")
+        tabs.addTab(self.pmp_conversion, "PNG → PMP")
+        tabs.addTab(self.pmp_to_png, "PMP → PNG")
         return tabs
+
+    def _use_global_texture_folder(self, folder: str) -> None:
+        """Share the RGB texture folder with tools that accept RGB batch input."""
+        self.mip_conversion.source_folder_edit.setText(folder)
+        self.pmp_conversion.source_folder_edit.setText(folder)
+
+    def _use_global_palette(self, palette: str) -> None:
+        """Share the selected SUNNY.PCX with every palette-aware conversion tool."""
+        self.mip_conversion.palette_edit.setText(palette)
+        self.pmp_conversion.palette_edit.setText(palette)
+        self.pmp_to_png.palette_edit.setText(palette)
 
     def _build_split_prepare_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
