@@ -26,6 +26,7 @@ def test_settings_round_trip(tmp_path: Path) -> None:
     settings = SunnyOptimizerSettings(settings_path)
     settings.last_texture_folder = str((tmp_path / "textures").resolve())
     settings.last_sunny_palette = str((tmp_path / "sunny.pcx").resolve())
+    settings.last_export_destination = str((tmp_path / "exports").resolve())
     settings.set_budgets_for_folder(tmp_path / "textures", {"a.png": 12, "b.png": 45})
     settings.save()
 
@@ -34,6 +35,7 @@ def test_settings_round_trip(tmp_path: Path) -> None:
 
     assert loaded.last_texture_folder == settings.last_texture_folder
     assert loaded.last_sunny_palette == settings.last_sunny_palette
+    assert loaded.last_export_destination == settings.last_export_destination
     assert loaded.budgets_for_folder(tmp_path / "textures") == {"a.png": 12, "b.png": 45}
 
 

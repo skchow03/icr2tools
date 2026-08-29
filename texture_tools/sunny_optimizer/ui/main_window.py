@@ -252,10 +252,13 @@ class MainWindow(QtWidgets.QMainWindow):
         self._syncing_previews = False
         self.loaded_texture_folder: Path | None = None
         self._last_sunny_palette_path: Path | None = None
+        self.export_destination: Path | None = None
         self.settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
         self.settings.load()
         if self.settings.last_sunny_palette:
             self._last_sunny_palette_path = Path(self.settings.last_sunny_palette).expanduser()
+        if getattr(self.settings, "last_export_destination", ""):
+            self.export_destination = Path(self.settings.last_export_destination).expanduser()
 
         self._build_ui()
         self.setAcceptDrops(True)
@@ -309,6 +312,28 @@ class MainWindow(QtWidgets.QMainWindow):
 
     def _focus_folder_selection(self) -> None:
         self.select_folder()
+
+    def select_export_destination(self) -> None:
+        initial_directory = str(self.export_destination or self.loaded_texture_folder or Path.home())
+        selected_path = QtWidgets.QFileDialog.getExistingDirectory(
+            self,
+            "Select export destination",
+            initial_directory,
+        )
+        if not selected_path:
+            return
+        self.export_destination = Path(selected_path).resolve()
+        self.settings.last_export_destination = str(self.export_destination)
+        self.settings.save()
+        self._update_export_destination_label()
+
+    def _update_export_destination_label(self) -> None:
+        if self.export_destination is None:
+            text = "No export destination selected"
+        else:
+            text = str(self.export_destination)
+        self.export_destination_label.setText(text)
+        self.export_destination_label.setToolTip(text)
 
     def dragEnterEvent(self, event: QtGui.QDragEnterEvent) -> None:
         if self._classify_drop(event.mimeData().urls()) is not None:
@@ -385,7 +410,7 @@ class MainWindow(QtWidgets.QMainWindow):
         left_panel.setSpacing(10)
         left_panel.addWidget(self.inline_status_label)
         left_panel.addWidget(self.inline_action_row)
-        folder_controls = QtWidgets.QHBoxLayout()
+        file_controls = QtWidgets.QHBoxLayout()
         self.folder_path_label = QtWidgets.QLabel("No folder selected")
         self.folder_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
         self.folder_path_label.setStyleSheet("color: #4b5563;")
@@ -424,20 +449,14 @@ class MainWindow(QtWidgets.QMainWindow):
             "optimized palette."
         )
 
-        folder_controls.addWidget(self.folder_path_label, 1)
-        folder_controls.addWidget(self.folder_btn)
-        folder_controls.addWidget(self.refresh_folder_btn)
+        file_controls.addWidget(self.folder_path_label, 1)
+        file_controls.addWidget(self.folder_btn)
+        file_controls.addWidget(self.refresh_folder_btn)
         self.files_card = QtWidgets.QFrame()
         self.files_card.setObjectName("sectionCard")
         top_card_layout = QtWidgets.QVBoxLayout(self.files_card)
         top_card_layout.setContentsMargins(10, 10, 10, 10)
         top_card_layout.setSpacing(8)
-        top_title = QtWidgets.QLabel("Files")
-        top_title.setObjectName("sectionTitle")
-        top_card_layout.addWidget(top_title)
-        top_card_layout.addLayout(folder_controls)
-
-        palette_path_row = QtWidgets.QHBoxLayout()
         self.palette_path_label = QtWidgets.QLabel("No base SUNNY palette selected")
         self.palette_path_label.setToolTip("No base SUNNY palette selected")
         self.palette_path_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
@@ -450,10 +469,21 @@ class MainWindow(QtWidgets.QMainWindow):
             "Use the selected SUNNY palette for the palette display and all paletted previews."
         )
         self.apply_loaded_palette_btn.clicked.connect(self.apply_loaded_palette)
-        palette_path_row.addWidget(self.palette_path_label, 1)
-        palette_path_row.addWidget(self.palette_path_browse_btn)
-        palette_path_row.addWidget(self.apply_loaded_palette_btn)
-        top_card_layout.addLayout(palette_path_row)
+        file_controls.addWidget(self.palette_path_label, 1)
+        file_controls.addWidget(self.palette_path_browse_btn)
+        file_controls.addWidget(self.apply_loaded_palette_btn)
+        self.export_destination_label = QtWidgets.QLabel()
+        self.export_destination_label.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        self.export_destination_label.setStyleSheet("color: #4b5563;")
+        self.export_destination_label.setSizePolicy(
+            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
+        )
+        self.export_destination_btn = QtWidgets.QPushButton("Select Export Destination")
+        self.export_destination_btn.clicked.connect(self.select_export_destination)
+        file_controls.addWidget(self.export_destination_label, 1)
+        file_controls.addWidget(self.export_destination_btn)
+        top_card_layout.addLayout(file_controls)
+        self._update_export_destination_label()
         left_panel.addWidget(self.files_card)
         left_panel.addWidget(self.texture_list, 1)
 
@@ -1275,10 +1305,15 @@ class MainWindow(QtWidgets.QMainWindow):
         if not self.quantized_images:
             self._update_action_states()
             return
+        suggested_path = (
+            self.export_destination / "sunny_optimized.pcx"
+            if self.export_destination is not None
+            else Path("sunny_optimized.pcx")
+        )
         path, _ = QtWidgets.QFileDialog.getSaveFileName(
             self,
             "Save optimized palette",
-            "sunny_optimized.pcx",
+            str(suggested_path),
             "PCX files (*.pcx *.PCX);;All files (*)",
         )
         if not path:

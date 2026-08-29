@@ -11,6 +11,7 @@ class SunnyOptimizerSettings:
         self.path = path
         self.last_texture_folder: str = ""
         self.last_sunny_palette: str = ""
+        self.last_export_destination: str = ""
         self.last_mip_source_folder: str = ""
         self.last_mip_target_folder: str = ""
         self.last_mip_palette: str = ""
@@ -35,6 +36,7 @@ class SunnyOptimizerSettings:
 
         self.last_texture_folder = parser.get("recent", "texture_folder", fallback="")
         self.last_sunny_palette = parser.get("recent", "sunny_palette", fallback="")
+        self.last_export_destination = parser.get("recent", "export_destination", fallback="")
         self.last_mip_source_folder = parser.get("recent", "mip_source_folder", fallback="")
         self.last_mip_target_folder = parser.get("recent", "mip_target_folder", fallback="")
         self.last_mip_palette = parser.get("recent", "mip_palette", fallback="")
@@ -110,6 +112,7 @@ class SunnyOptimizerSettings:
         parser["recent"] = {
             "texture_folder": self.last_texture_folder,
             "sunny_palette": self.last_sunny_palette,
+            "export_destination": self.last_export_destination,
             "mip_source_folder": self.last_mip_source_folder,
             "mip_target_folder": self.last_mip_target_folder,
             "mip_palette": self.last_mip_palette,
