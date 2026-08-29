@@ -34,6 +34,7 @@ def test_lists_supported_files_and_previews_selected_texture(qapp, tmp_path: Pat
 
     widget = ConvertTexturesWidget()
     try:
+        assert widget.sprite_button.text() == "Flag/unflag selected as sprite (PMP)"
         widget.set_source_folder(tmp_path)
         assert [widget.file_list.item(row).text() for row in range(widget.file_list.count())] == [
             "a.png",
@@ -213,5 +214,56 @@ def test_conversion_rejects_invalid_output_folder(qapp, tmp_path: Path, monkeypa
         assert errors == [
             ("Invalid Output folder", "Select a valid Output folder before converting textures.")
         ]
+    finally:
+        widget.close()
+
+
+@pytest.mark.parametrize("convert_action", ["_convert_selected", "_convert_all"])
+def test_conversion_lists_overwrites_and_requires_confirmation(
+    qapp, tmp_path: Path, monkeypatch, convert_action: str
+) -> None:
+    _ = qapp
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    Image.new("RGB", (1, 1), "blue").save(source_dir / "track.png")
+    existing_output = output_dir / "track.mip"
+    existing_output.write_bytes(b"existing")
+    palette_path = tmp_path / "sunny.pcx"
+    _save_palette(palette_path)
+    warnings = []
+    conversions = []
+
+    def decline_overwrite(_parent, title, message, buttons, default_button):
+        warnings.append((title, message, buttons, default_button))
+        return QtWidgets.QMessageBox.No
+
+    monkeypatch.setattr(QtWidgets.QMessageBox, "warning", decline_overwrite)
+    monkeypatch.setattr(
+        "texture_tools.main.img_to_mip",
+        lambda *args: conversions.append(args),
+    )
+
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(source_dir)
+        widget.set_palette(palette_path)
+        widget.set_output_folder(output_dir)
+        widget.file_list.item(0).setSelected(True)
+
+        getattr(widget, convert_action)()
+
+        assert conversions == []
+        assert warnings == [
+            (
+                "Overwrite existing textures?",
+                "The following files will be overwritten:\n\n"
+                f"• {existing_output}\n\nContinue with conversion?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+        ]
+        assert existing_output.read_bytes() == b"existing"
     finally:
         widget.close()
