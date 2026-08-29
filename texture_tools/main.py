@@ -266,6 +266,20 @@ def _collect_folder_image_inputs(source_dir: Path) -> list[Path]:
     return list(preferred.values())
 
 
+def _collect_convert_texture_inputs(source_dir: Path) -> list[Path]:
+    """Return every texture format supported by the new conversion browser."""
+    if not source_dir.is_dir():
+        return []
+    return sorted(
+        (
+            path
+            for path in source_dir.iterdir()
+            if path.is_file() and path.suffix.lower() in {".png", ".bmp", ".pcx"}
+        ),
+        key=lambda path: path.name.lower(),
+    )
+
+
 def _prepare_image_for_mip(image: Image.Image) -> Image.Image:
     """Prepare image for MIP conversion without introducing implicit dithering."""
     return image.convert("RGB")
@@ -415,6 +429,86 @@ class PreviewPane(QtWidgets.QGroupBox):
             elif event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
                 self.image_view.setCursor(QtCore.Qt.OpenHandCursor)
         return super().eventFilter(watched, event)
+
+
+class ConvertTexturesWidget(QtWidgets.QWidget):
+    """Browse source textures and preview their sunny.pcx-paletted output."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._source_folder: Path | None = None
+        self._palette_path: Path | None = None
+
+        layout = QtWidgets.QHBoxLayout(self)
+        _apply_panel_layout(layout)
+        layout.setSpacing(12)
+
+        files_group = QtWidgets.QGroupBox("Source textures")
+        files_layout = QtWidgets.QVBoxLayout(files_group)
+        self.folder_label = QtWidgets.QLabel("No texture folder selected.")
+        self.folder_label.setWordWrap(True)
+        self.file_list = QtWidgets.QListWidget()
+        self.file_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.file_list.currentItemChanged.connect(self._refresh_preview)
+        self.file_count_label = QtWidgets.QLabel("0 files")
+        self.file_count_label.setStyleSheet("color: #6b7280;")
+        files_layout.addWidget(self.folder_label)
+        files_layout.addWidget(self.file_list, 1)
+        files_layout.addWidget(self.file_count_label)
+        layout.addWidget(files_group, 2)
+
+        self.preview_pane = PreviewPane("Output preview")
+        self.preview_pane.setMinimumWidth(420)
+        layout.addWidget(self.preview_pane, 3)
+
+    def set_source_folder(self, folder: str | Path) -> None:
+        self._source_folder = Path(folder)
+        self.folder_label.setText(str(self._source_folder))
+        current_name = self.file_list.currentItem().text() if self.file_list.currentItem() else None
+        files = _collect_convert_texture_inputs(self._source_folder)
+        self.file_list.clear()
+        for path in files:
+            item = QtWidgets.QListWidgetItem(path.name)
+            item.setData(QtCore.Qt.UserRole, str(path))
+            self.file_list.addItem(item)
+        self.file_count_label.setText(f"{len(files)} file{'s' if len(files) != 1 else ''}")
+        if files:
+            matches = self.file_list.findItems(current_name, QtCore.Qt.MatchExactly) if current_name else []
+            self.file_list.setCurrentItem(matches[0] if matches else self.file_list.item(0))
+        else:
+            self.preview_pane.clear_preview("No .png, .bmp, or .pcx files in the selected folder.")
+
+    def set_palette(self, palette: str | Path) -> None:
+        self._palette_path = Path(palette)
+        self._refresh_preview()
+
+    def _refresh_preview(self, *_args) -> None:
+        item = self.file_list.currentItem()
+        if item is None:
+            self.preview_pane.clear_preview("Select a source texture to preview.")
+            return
+        if self._palette_path is None:
+            self.preview_pane.clear_preview("Select a sunny.pcx palette first.")
+            return
+        try:
+            source_path = Path(item.data(QtCore.Qt.UserRole))
+            with Image.open(source_path) as source, Image.open(self._palette_path) as palette_source:
+                palette = palette_source.convert("P")
+                output = source.convert("RGB").quantize(
+                    colors=256,
+                    method=Image.Quantize.FASTOCTREE,
+                    palette=palette,
+                    dither=Image.Dither.NONE,
+                )
+                preview = output.convert("RGB")
+            self.preview_pane.set_preview(
+                preview,
+                caption=f"{source_path.name} • {_fmt_dimensions(preview)} • Palette: {self._palette_path.name}",
+            )
+        except Exception as exc:
+            self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
+
+
 class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
     TOOL_PRESET_KEY = "mip_conversion"
     TOOL_RECENT_KEY = "mip_conversion"
@@ -1448,6 +1542,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
+        self.intent_tabs.addTab(self._build_convert_textures_tab(), "Convert textures")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
 
@@ -1492,16 +1587,22 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         tabs.addTab(self.pmp_to_png, "PMP → PNG")
         return tabs
 
+    def _build_convert_textures_tab(self) -> QtWidgets.QWidget:
+        self.convert_textures = ConvertTexturesWidget()
+        return self.convert_textures
+
     def _use_global_texture_folder(self, folder: str) -> None:
         """Share the RGB texture folder with tools that accept RGB batch input."""
         self.mip_conversion.source_folder_edit.setText(folder)
         self.pmp_conversion.source_folder_edit.setText(folder)
+        self.convert_textures.set_source_folder(folder)
 
     def _use_global_palette(self, palette: str) -> None:
         """Share the selected SUNNY.PCX with every palette-aware conversion tool."""
         self.mip_conversion.palette_edit.setText(palette)
         self.pmp_conversion.palette_edit.setText(palette)
         self.pmp_to_png.palette_edit.setText(palette)
+        self.convert_textures.set_palette(palette)
 
     def _build_split_prepare_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
