@@ -468,7 +468,9 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         self.folder_label = QtWidgets.QLabel("No texture folder selected.")
         self.folder_label.setWordWrap(True)
         self.file_list = QtWidgets.QListWidget()
-        self.file_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        # ExtendedSelection supplies the platform-standard Ctrl toggle and Shift
+        # range-selection behaviours while retaining a current item for preview.
+        self.file_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.file_list.currentItemChanged.connect(self._refresh_preview)
         self.file_count_label = QtWidgets.QLabel("0 files")
         self.file_count_label.setStyleSheet("color: #6b7280;")
@@ -488,6 +490,26 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         self.preview_pane = PreviewPane("Output preview")
         self.preview_pane.setMinimumWidth(420)
         layout.addWidget(self.preview_pane, 3)
+
+        actions_group = QtWidgets.QGroupBox("Convert textures")
+        actions_layout = QtWidgets.QVBoxLayout(actions_group)
+        help_label = QtWidgets.QLabel(
+            "Sprite (PMP) images are written as .pmp; all other images are written as .mip."
+        )
+        help_label.setWordWrap(True)
+        actions_layout.addWidget(help_label)
+        actions_layout.addStretch(1)
+        self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
+        self.convert_all_btn = QtWidgets.QPushButton("Convert All")
+        _set_primary_button(self.convert_selected_btn)
+        _set_secondary_button(self.convert_all_btn)
+        self.convert_selected_btn.clicked.connect(self._convert_selected)
+        self.convert_all_btn.clicked.connect(self._convert_all)
+        actions_layout.addWidget(self.convert_selected_btn)
+        actions_layout.addWidget(self.convert_all_btn)
+        layout.addWidget(actions_group, 1)
+
+        self._output_folder: Path | None = None
 
     def set_source_folder(self, folder: str | Path) -> None:
         self._source_folder = Path(folder)
@@ -579,6 +601,83 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
     def set_palette(self, palette: str | Path) -> None:
         self._palette_path = Path(palette)
         self._refresh_preview()
+
+    def set_output_folder(self, folder: str | Path | None) -> None:
+        """Set the shared Output folder used by both conversion actions."""
+        self._output_folder = Path(folder) if folder else None
+
+    def _convert_selected(self) -> None:
+        self._convert_items(self.file_list.selectedItems())
+
+    def _convert_all(self) -> None:
+        self._convert_items([self.file_list.item(row) for row in range(self.file_list.count())])
+
+    def _convert_items(self, items: list[QtWidgets.QListWidgetItem]) -> None:
+        output_folder = self._output_folder
+        if output_folder is None or not output_folder.is_dir():
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Invalid Output folder",
+                "Select a valid Output folder before converting textures.",
+            )
+            return
+        if not items:
+            QtWidgets.QMessageBox.warning(
+                self, "No textures selected", "Select one or more textures to convert."
+            )
+            return
+        if self._palette_path is None or not self._palette_path.is_file():
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Invalid palette",
+                "Select a valid SUNNY.PCX palette before converting textures.",
+            )
+            return
+
+        progress = QtWidgets.QProgressDialog("Preparing conversion…", "Cancel", 0, len(items), self)
+        progress.setWindowTitle("Converting textures")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        converted: list[Path] = []
+        failures: list[str] = []
+        cancelled = False
+        for index, item in enumerate(items, start=1):
+            source_path = Path(item.data(QtCore.Qt.UserRole))
+            progress.setLabelText(f"Converting {source_path.name} ({index} of {len(items)})…")
+            QtWidgets.QApplication.processEvents()
+            if progress.wasCanceled():
+                cancelled = True
+                break
+            try:
+                is_sprite = self._sprite_flags.get(source_path.name, False)
+                output_name = source_path.with_suffix(".pmp" if is_sprite else ".mip").name
+                output_path = output_folder / output_name
+                if is_sprite:
+                    png_to_pmp(
+                        source_path,
+                        output_path,
+                        size_field=0,
+                        palette_path=self._palette_path,
+                    )
+                else:
+                    with Image.open(source_path) as source:
+                        prepared = _prepare_image_for_mip(source)
+                        img_to_mip(prepared, str(output_path), str(self._palette_path), "track")
+                converted.append(output_path)
+            except Exception as exc:  # Continue the batch and report every failed file.
+                failures.append(f"{source_path.name}: {exc}")
+            progress.setValue(index)
+        progress.close()
+
+        result = f"Converted {len(converted)} of {len(items)} texture(s) to:\n{output_folder}"
+        if cancelled:
+            result += "\n\nConversion was cancelled."
+        if failures:
+            result += "\n\nFailed:\n" + "\n".join(failures)
+            QtWidgets.QMessageBox.warning(self, "Conversion complete with errors", result)
+        else:
+            QtWidgets.QMessageBox.information(self, "Conversion complete", result)
 
     def _refresh_preview(self, *_args) -> None:
         self._sync_sprite_button()
@@ -1655,10 +1754,12 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
         self.sunny_optimizer.texture_folder_changed.connect(self._use_global_texture_folder)
         self.sunny_optimizer.sunny_palette_changed.connect(self._use_global_palette)
+        self.sunny_optimizer.export_destination_changed.connect(self.convert_textures.set_output_folder)
         if self.sunny_optimizer.loaded_texture_folder is not None:
             self._use_global_texture_folder(str(self.sunny_optimizer.loaded_texture_folder))
         if self.sunny_optimizer._last_sunny_palette_path is not None:
             self._use_global_palette(str(self.sunny_optimizer._last_sunny_palette_path))
+        self.convert_textures.set_output_folder(self.sunny_optimizer.export_destination)
         self._build_menu_bar()
 
     def _build_menu_bar(self) -> None:

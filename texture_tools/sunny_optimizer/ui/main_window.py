@@ -256,6 +256,7 @@ class OptimizationProgressDialog(QtWidgets.QDialog):
 class MainWindow(QtWidgets.QMainWindow):
     texture_folder_changed = QtCore.pyqtSignal(str)
     sunny_palette_changed = QtCore.pyqtSignal(str)
+    export_destination_changed = QtCore.pyqtSignal(str)
     SORT_BY_NAME = "Name"
     SORT_BY_COLOR_COUNT = "Color count"
     SORT_BY_BUDGET = "Budget"
@@ -360,6 +361,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self.settings.last_export_destination = str(self.export_destination)
         self.settings.save()
         self._update_export_destination_label()
+        self.export_destination_changed.emit(str(self.export_destination))
 
     def _update_export_destination_label(self) -> None:
         if self.export_destination is None:

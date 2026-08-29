@@ -112,3 +112,74 @@ def test_detects_and_persists_pmp_sprites_and_allows_manual_override(qapp, tmp_p
         assert widget.file_list.item(1).text() == "sprite.png"
     finally:
         widget.close()
+
+
+def test_supports_extended_selection_and_converts_selected_formats(
+    qapp, tmp_path: Path, monkeypatch
+) -> None:
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    Image.new("RGB", (2, 2), "red").save(source_dir / "track.png")
+    Image.new("RGBA", (256, 256), (0, 0, 0, 0)).save(source_dir / "sprite.png")
+    palette_path = tmp_path / "sunny.pcx"
+    _save_palette(palette_path)
+    mip_calls = []
+    pmp_calls = []
+    messages = []
+    monkeypatch.setattr(
+        "texture_tools.main.img_to_mip",
+        lambda image, output, palette, mode: mip_calls.append(
+            (Path(output), Path(palette), mode)
+        ),
+    )
+    monkeypatch.setattr(
+        "texture_tools.main.png_to_pmp",
+        lambda source, output, **kwargs: pmp_calls.append((Path(source), Path(output), kwargs)),
+    )
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "information",
+        lambda _parent, title, message: messages.append((title, message)),
+    )
+
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(source_dir)
+        widget.set_palette(palette_path)
+        widget.set_output_folder(output_dir)
+        assert widget.file_list.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection
+
+        widget.file_list.clearSelection()
+        for row in range(widget.file_list.count()):
+            widget.file_list.item(row).setSelected(True)
+        widget._convert_selected()
+
+        assert mip_calls == [(output_dir / "track.mip", palette_path, "track")]
+        assert pmp_calls[0][0:2] == (source_dir / "sprite.png", output_dir / "sprite.pmp")
+        assert pmp_calls[0][2]["size_field"] == 0
+        assert messages == [("Conversion complete", f"Converted 2 of 2 texture(s) to:\n{output_dir}")]
+    finally:
+        widget.close()
+
+
+def test_conversion_rejects_invalid_output_folder(qapp, tmp_path: Path, monkeypatch) -> None:
+    _ = qapp
+    Image.new("RGB", (1, 1), "blue").save(tmp_path / "track.png")
+    errors = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "critical",
+        lambda _parent, title, message: errors.append((title, message)),
+    )
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        widget.set_output_folder(tmp_path / "missing")
+        widget._convert_all()
+        assert errors == [
+            ("Invalid Output folder", "Select a valid Output folder before converting textures.")
+        ]
+    finally:
+        widget.close()
