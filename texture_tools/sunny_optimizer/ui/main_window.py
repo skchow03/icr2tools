@@ -221,6 +221,8 @@ class OptimizationProgressDialog(QtWidgets.QDialog):
 
 
 class MainWindow(QtWidgets.QMainWindow):
+    texture_folder_changed = QtCore.pyqtSignal(str)
+    sunny_palette_changed = QtCore.pyqtSignal(str)
     SORT_BY_NAME = "Name"
     SORT_BY_COLOR_COUNT = "Color count"
     SORT_BY_BUDGET = "Budget"
@@ -425,9 +427,9 @@ class MainWindow(QtWidgets.QMainWindow):
         folder_controls.addWidget(self.folder_path_label, 1)
         folder_controls.addWidget(self.folder_btn)
         folder_controls.addWidget(self.refresh_folder_btn)
-        top_card = QtWidgets.QFrame()
-        top_card.setObjectName("sectionCard")
-        top_card_layout = QtWidgets.QVBoxLayout(top_card)
+        self.files_card = QtWidgets.QFrame()
+        self.files_card.setObjectName("sectionCard")
+        top_card_layout = QtWidgets.QVBoxLayout(self.files_card)
         top_card_layout.setContentsMargins(10, 10, 10, 10)
         top_card_layout.setSpacing(8)
         top_title = QtWidgets.QLabel("Files")
@@ -452,7 +454,7 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_path_row.addWidget(self.palette_path_browse_btn)
         palette_path_row.addWidget(self.apply_loaded_palette_btn)
         top_card_layout.addLayout(palette_path_row)
-        left_panel.addWidget(top_card)
+        left_panel.addWidget(self.files_card)
         left_panel.addWidget(self.texture_list, 1)
 
         center_panel = QtWidgets.QVBoxLayout()
@@ -517,12 +519,10 @@ class MainWindow(QtWidgets.QMainWindow):
         palette_preview_layout.addWidget(self.palette_details_label)
         palette_preview_layout.addWidget(self.highlight_checkbox)
         self.compute_btn = QtWidgets.QPushButton("Generate Optimized Palette")
-        self.compute_btn.setProperty("primary", True)
         self.compute_btn.clicked.connect(self.compute_palette)
         self.compute_hint_label = QtWidgets.QLabel()
         self.compute_hint_label.setWordWrap(True)
         self.save_btn = QtWidgets.QPushButton("Save Palette")
-        self.save_btn.setProperty("secondary", True)
         self.save_btn.clicked.connect(self.save_palette_dialog)
         self.save_hint_label = QtWidgets.QLabel()
         self.save_hint_label.setWordWrap(True)
@@ -578,6 +578,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.palette_path_label.setToolTip(str(resolved_palette))
         self._write_folder_settings()
         self._update_action_states()
+        self.sunny_palette_changed.emit(str(resolved_palette))
 
     def refresh_folder(self) -> None:
         if self.loaded_texture_folder is None:
@@ -643,6 +644,7 @@ class MainWindow(QtWidgets.QMainWindow):
         self._save_settings()
         self._write_folder_settings()
         self._update_action_states()
+        self.texture_folder_changed.emit(str(resolved_folder))
 
     def _on_budget_changed(self, texture_name: str, budget: int) -> None:
         self.per_texture_budget[texture_name] = budget
