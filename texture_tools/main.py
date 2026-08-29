@@ -498,17 +498,30 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         )
         help_label.setWordWrap(True)
         actions_layout.addWidget(help_label)
-        threshold_label = QtWidgets.QLabel("Treat alpha ≤ as transparent:")
+        threshold_label = QtWidgets.QLabel(
+            "PMP textures: Treat alpha ≤ as transparent:"
+        )
         threshold_label.setWordWrap(True)
         actions_layout.addWidget(threshold_label)
-        self.alpha_threshold_spin = QtWidgets.QSpinBox()
-        self.alpha_threshold_spin.setRange(0, 255)
-        self.alpha_threshold_spin.setValue(85)
-        self.alpha_threshold_spin.setToolTip(
-            "Pixels at or below this alpha value are omitted from PMP sprites."
+        threshold_row = QtWidgets.QHBoxLayout()
+        self.alpha_threshold_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.alpha_threshold_slider.setRange(0, 100)
+        self.alpha_threshold_slider.setValue(33)
+        self.alpha_threshold_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.alpha_threshold_slider.setTickInterval(10)
+        self.alpha_threshold_slider.setToolTip(
+            "For PMP textures, pixels at or below this alpha percentage are transparent."
         )
-        self.alpha_threshold_spin.valueChanged.connect(self._refresh_preview)
-        actions_layout.addWidget(self.alpha_threshold_spin)
+        self.alpha_threshold_value_label = QtWidgets.QLabel()
+        self.alpha_threshold_value_label.setMinimumWidth(42)
+        self.alpha_threshold_value_label.setAlignment(
+            QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter
+        )
+        self.alpha_threshold_slider.valueChanged.connect(self._alpha_threshold_changed)
+        threshold_row.addWidget(self.alpha_threshold_slider, 1)
+        threshold_row.addWidget(self.alpha_threshold_value_label)
+        actions_layout.addLayout(threshold_row)
+        self._alpha_threshold_changed(self.alpha_threshold_slider.value())
         actions_layout.addStretch(1)
         self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
         self.convert_all_btn = QtWidgets.QPushButton("Convert All")
@@ -521,6 +534,14 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         layout.addWidget(actions_group, 1)
 
         self._output_folder: Path | None = None
+
+    def _alpha_threshold_changed(self, percentage: int) -> None:
+        self.alpha_threshold_value_label.setText(f"{percentage}%")
+        self._refresh_preview()
+
+    def _alpha_threshold(self) -> int:
+        """Return the slider percentage converted to an 8-bit alpha value."""
+        return round(self.alpha_threshold_slider.value() * 255 / 100)
 
     def set_source_folder(self, folder: str | Path) -> None:
         self._source_folder = Path(folder)
@@ -671,7 +692,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                         output_path,
                         size_field=0,
                         palette_path=self._palette_path,
-                        alpha_transparent_threshold=self.alpha_threshold_spin.value(),
+                        alpha_transparent_threshold=self._alpha_threshold(),
                     )
                 else:
                     with Image.open(source_path) as source:
@@ -715,13 +736,13 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                 preview = output.convert("RGBA")
                 is_sprite = self._sprite_flags.get(source_path.name, False)
                 if is_sprite:
-                    threshold = self.alpha_threshold_spin.value()
+                    threshold = self._alpha_threshold()
                     alpha = source_rgba.getchannel("A").point(
                         lambda value: 0 if value <= threshold else 255
                     )
                     preview.putalpha(alpha)
             transparency_caption = (
-                f" • alpha ≤ {self.alpha_threshold_spin.value()} transparent"
+                f" • PMP alpha ≤ {self.alpha_threshold_slider.value()}% transparent"
                 if is_sprite
                 else ""
             )
