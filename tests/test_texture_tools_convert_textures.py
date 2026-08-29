@@ -159,7 +159,7 @@ def test_supports_extended_selection_and_converts_selected_formats(
         assert mip_calls == [(output_dir / "track.mip", palette_path, "track")]
         assert pmp_calls[0][0:2] == (source_dir / "sprite.png", output_dir / "sprite.pmp")
         assert pmp_calls[0][2]["size_field"] == 0
-        assert pmp_calls[0][2]["alpha_transparent_threshold"] == 85
+        assert pmp_calls[0][2]["alpha_transparent_threshold"] == 84
         assert messages == [("Conversion complete", f"Converted 2 of 2 texture(s) to:\n{output_dir}")]
     finally:
         widget.close()
@@ -168,7 +168,7 @@ def test_supports_extended_selection_and_converts_selected_formats(
 def test_sprite_preview_updates_for_alpha_threshold(qapp, tmp_path: Path) -> None:
     _ = qapp
     sprite = Image.new("RGBA", (2, 1))
-    sprite.putdata(((255, 0, 0, 85), (0, 0, 255, 86)))
+    sprite.putdata(((255, 0, 0, 84), (0, 0, 255, 85)))
     sprite.save(tmp_path / "sprite.png")
     palette_path = tmp_path / "sunny.pcx"
     _save_palette(palette_path)
@@ -179,13 +179,16 @@ def test_sprite_preview_updates_for_alpha_threshold(qapp, tmp_path: Path) -> Non
         widget.set_palette(palette_path)
         widget.sprite_button.setChecked(True)
 
-        assert widget.alpha_threshold_spin.value() == 85
+        assert widget.alpha_threshold_slider.minimum() == 0
+        assert widget.alpha_threshold_slider.maximum() == 100
+        assert widget.alpha_threshold_slider.value() == 33
+        assert widget.alpha_threshold_value_label.text() == "33%"
         image = widget.preview_pane._pixmap_item.pixmap().toImage()
         assert image.pixelColor(0, 0).alpha() == 0
         assert image.pixelColor(1, 0).alpha() == 255
-        assert "alpha ≤ 85 transparent" in widget.preview_pane.meta_label.text()
+        assert "PMP alpha ≤ 33% transparent" in widget.preview_pane.meta_label.text()
 
-        widget.alpha_threshold_spin.setValue(84)
+        widget.alpha_threshold_slider.setValue(32)
         image = widget.preview_pane._pixmap_item.pixmap().toImage()
         assert image.pixelColor(0, 0).alpha() == 255
         assert image.pixelColor(1, 0).alpha() == 255
