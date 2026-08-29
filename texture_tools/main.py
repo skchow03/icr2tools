@@ -498,6 +498,17 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         )
         help_label.setWordWrap(True)
         actions_layout.addWidget(help_label)
+        threshold_label = QtWidgets.QLabel("Treat alpha ≤ as transparent:")
+        threshold_label.setWordWrap(True)
+        actions_layout.addWidget(threshold_label)
+        self.alpha_threshold_spin = QtWidgets.QSpinBox()
+        self.alpha_threshold_spin.setRange(0, 255)
+        self.alpha_threshold_spin.setValue(85)
+        self.alpha_threshold_spin.setToolTip(
+            "Pixels at or below this alpha value are omitted from PMP sprites."
+        )
+        self.alpha_threshold_spin.valueChanged.connect(self._refresh_preview)
+        actions_layout.addWidget(self.alpha_threshold_spin)
         actions_layout.addStretch(1)
         self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
         self.convert_all_btn = QtWidgets.QPushButton("Convert All")
@@ -587,6 +598,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         self._sprite_flags[name] = checked
         item.setText(self._display_name(name))
         self._write_sprite_flags()
+        self._refresh_preview()
 
     def _sync_sprite_button(self) -> None:
         item = self.file_list.currentItem()
@@ -659,6 +671,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                         output_path,
                         size_field=0,
                         palette_path=self._palette_path,
+                        alpha_transparent_threshold=self.alpha_threshold_spin.value(),
                     )
                 else:
                     with Image.open(source_path) as source:
@@ -691,17 +704,33 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         try:
             source_path = Path(item.data(QtCore.Qt.UserRole))
             with Image.open(source_path) as source, Image.open(self._palette_path) as palette_source:
+                source_rgba = source.convert("RGBA")
                 palette = palette_source.convert("P")
-                output = source.convert("RGB").quantize(
+                output = source_rgba.convert("RGB").quantize(
                     colors=256,
                     method=Image.Quantize.FASTOCTREE,
                     palette=palette,
                     dither=Image.Dither.NONE,
                 )
-                preview = output.convert("RGB")
+                preview = output.convert("RGBA")
+                is_sprite = self._sprite_flags.get(source_path.name, False)
+                if is_sprite:
+                    threshold = self.alpha_threshold_spin.value()
+                    alpha = source_rgba.getchannel("A").point(
+                        lambda value: 0 if value <= threshold else 255
+                    )
+                    preview.putalpha(alpha)
+            transparency_caption = (
+                f" • alpha ≤ {self.alpha_threshold_spin.value()} transparent"
+                if is_sprite
+                else ""
+            )
             self.preview_pane.set_preview(
                 preview,
-                caption=f"{source_path.name} • {_fmt_dimensions(preview)} • Palette: {self._palette_path.name}",
+                caption=(
+                    f"{source_path.name} • {_fmt_dimensions(preview)} • "
+                    f"Palette: {self._palette_path.name}{transparency_caption}"
+                ),
             )
         except Exception as exc:
             self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
