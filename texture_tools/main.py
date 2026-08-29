@@ -474,7 +474,9 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         self.file_list.currentItemChanged.connect(self._refresh_preview)
         self.file_count_label = QtWidgets.QLabel("0 files")
         self.file_count_label.setStyleSheet("color: #6b7280;")
-        self.sprite_button = QtWidgets.QPushButton("Sprite (PMP)")
+        self.sprite_button = QtWidgets.QPushButton(
+            "Flag/unflag selected as sprite (PMP)"
+        )
         self.sprite_button.setCheckable(True)
         self.sprite_button.setEnabled(False)
         self.sprite_button.setToolTip(
@@ -666,6 +668,28 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                 "Select a valid SUNNY.PCX palette before converting textures.",
             )
             return
+
+        overwrite_targets = []
+        for item in items:
+            source_path = Path(item.data(QtCore.Qt.UserRole))
+            is_sprite = self._sprite_flags.get(source_path.name, False)
+            output_path = output_folder / source_path.with_suffix(
+                ".pmp" if is_sprite else ".mip"
+            ).name
+            if output_path.exists() and output_path not in overwrite_targets:
+                overwrite_targets.append(output_path)
+        if overwrite_targets:
+            target_list = "\n".join(f"• {path}" for path in overwrite_targets)
+            answer = QtWidgets.QMessageBox.warning(
+                self,
+                "Overwrite existing textures?",
+                "The following files will be overwritten:\n\n"
+                f"{target_list}\n\nContinue with conversion?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
 
         progress = QtWidgets.QProgressDialog("Preparing conversion…", "Cancel", 0, len(items), self)
         progress.setWindowTitle("Converting textures")
