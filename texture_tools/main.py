@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -280,6 +281,24 @@ def _collect_convert_texture_inputs(source_dir: Path) -> list[Path]:
     )
 
 
+def _is_pmp_sprite(path: Path) -> bool:
+    """Return whether a PNG satisfies the PMP sprite size/transparency rules."""
+    if path.suffix.lower() != ".png":
+        return False
+    try:
+        with Image.open(path) as image:
+            if image.size != (256, 256):
+                return False
+            alpha = image.convert("RGBA").getchannel("A")
+            alpha_counts = alpha.getcolors(256 * 256) or []
+            transparent_pixels = sum(
+                count for value, count in alpha_counts if value < 255
+            )
+            return transparent_pixels * 10 >= 256 * 256
+    except (OSError, ValueError):
+        return False
+
+
 def _prepare_image_for_mip(image: Image.Image) -> Image.Image:
     """Prepare image for MIP conversion without introducing implicit dithering."""
     return image.convert("RGB")
@@ -438,6 +457,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         super().__init__(parent)
         self._source_folder: Path | None = None
         self._palette_path: Path | None = None
+        self._sprite_flags: dict[str, bool] = {}
 
         layout = QtWidgets.QHBoxLayout(self)
         _apply_panel_layout(layout)
@@ -452,8 +472,16 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         self.file_list.currentItemChanged.connect(self._refresh_preview)
         self.file_count_label = QtWidgets.QLabel("0 files")
         self.file_count_label.setStyleSheet("color: #6b7280;")
+        self.sprite_button = QtWidgets.QPushButton("Sprite (PMP)")
+        self.sprite_button.setCheckable(True)
+        self.sprite_button.setEnabled(False)
+        self.sprite_button.setToolTip(
+            "Manually flag the selected PNG as a PMP sprite or regular texture."
+        )
+        self.sprite_button.toggled.connect(self._set_selected_sprite)
         files_layout.addWidget(self.folder_label)
         files_layout.addWidget(self.file_list, 1)
+        files_layout.addWidget(self.sprite_button)
         files_layout.addWidget(self.file_count_label)
         layout.addWidget(files_group, 2)
 
@@ -464,25 +492,96 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
     def set_source_folder(self, folder: str | Path) -> None:
         self._source_folder = Path(folder)
         self.folder_label.setText(str(self._source_folder))
-        current_name = self.file_list.currentItem().text() if self.file_list.currentItem() else None
+        current_item = self.file_list.currentItem()
+        current_name = Path(current_item.data(QtCore.Qt.UserRole)).name if current_item else None
         files = _collect_convert_texture_inputs(self._source_folder)
+        saved_flags = self._read_sprite_flags()
+        self._sprite_flags = {
+            path.name: saved_flags.get(path.name, _is_pmp_sprite(path)) for path in files
+        }
+        self._write_sprite_flags()
         self.file_list.clear()
         for path in files:
-            item = QtWidgets.QListWidgetItem(path.name)
+            item = QtWidgets.QListWidgetItem(self._display_name(path.name))
             item.setData(QtCore.Qt.UserRole, str(path))
             self.file_list.addItem(item)
         self.file_count_label.setText(f"{len(files)} file{'s' if len(files) != 1 else ''}")
         if files:
-            matches = self.file_list.findItems(current_name, QtCore.Qt.MatchExactly) if current_name else []
+            matches = [
+                self.file_list.item(row) for row in range(self.file_list.count())
+                if Path(self.file_list.item(row).data(QtCore.Qt.UserRole)).name == current_name
+            ]
             self.file_list.setCurrentItem(matches[0] if matches else self.file_list.item(0))
         else:
+            self._sync_sprite_button()
             self.preview_pane.clear_preview("No .png, .bmp, or .pcx files in the selected folder.")
+
+    def _display_name(self, name: str) -> str:
+        return f"{name} (PMP)" if self._sprite_flags.get(name, False) else name
+
+    def _read_sprite_flags(self) -> dict[str, bool]:
+        if self._source_folder is None:
+            return {}
+        settings_path = self._source_folder / SunnyOptimizerWindow.FOLDER_SETTINGS_FILENAME
+        try:
+            payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            return {
+                str(item["file"]): bool(item["sprite"])
+                for item in payload.get("images", [])
+                if "file" in item and "sprite" in item
+            }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return {}
+
+    def _write_sprite_flags(self) -> None:
+        if self._source_folder is None:
+            return
+        settings_path = self._source_folder / SunnyOptimizerWindow.FOLDER_SETTINGS_FILENAME
+        try:
+            payload = (
+                json.loads(settings_path.read_text(encoding="utf-8"))
+                if settings_path.is_file()
+                else {}
+            )
+            if not isinstance(payload, dict):
+                payload = {}
+            images = payload.get("images", [])
+            by_name = {
+                str(item["file"]): dict(item)
+                for item in images if isinstance(item, dict) and "file" in item
+            }
+            for name, is_sprite in self._sprite_flags.items():
+                by_name.setdefault(name, {"file": name})["sprite"] = is_sprite
+            payload["images"] = [by_name[name] for name in sorted(by_name, key=str.lower)]
+            settings_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            return
+
+    def _set_selected_sprite(self, checked: bool) -> None:
+        item = self.file_list.currentItem()
+        if item is None or not self.sprite_button.isEnabled():
+            return
+        name = Path(item.data(QtCore.Qt.UserRole)).name
+        self._sprite_flags[name] = checked
+        item.setText(self._display_name(name))
+        self._write_sprite_flags()
+
+    def _sync_sprite_button(self) -> None:
+        item = self.file_list.currentItem()
+        is_png = item is not None and Path(item.data(QtCore.Qt.UserRole)).suffix.lower() == ".png"
+        self.sprite_button.blockSignals(True)
+        self.sprite_button.setEnabled(is_png)
+        self.sprite_button.setChecked(
+            is_png and self._sprite_flags.get(Path(item.data(QtCore.Qt.UserRole)).name, False)
+        )
+        self.sprite_button.blockSignals(False)
 
     def set_palette(self, palette: str | Path) -> None:
         self._palette_path = Path(palette)
         self._refresh_preview()
 
     def _refresh_preview(self, *_args) -> None:
+        self._sync_sprite_button()
         item = self.file_list.currentItem()
         if item is None:
             self.preview_pane.clear_preview("Select a source texture to preview.")

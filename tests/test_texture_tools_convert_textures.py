@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pytest
@@ -70,3 +71,44 @@ def test_window_places_convert_textures_before_legacy_convert_formats(qapp, monk
         ]
     finally:
         window.close()
+
+
+def test_detects_and_persists_pmp_sprites_and_allows_manual_override(qapp, tmp_path: Path) -> None:
+    _ = qapp
+    sprite = Image.new("RGBA", (256, 256), (255, 0, 0, 255))
+    # 6,554 pixels is the smallest whole-pixel count that is at least 10%.
+    for index in range(6554):
+        sprite.putpixel((index % 256, index // 256), (255, 0, 0, 0))
+    sprite.save(tmp_path / "sprite.png")
+    Image.new("RGBA", (256, 256), (0, 0, 255, 255)).save(tmp_path / "opaque.png")
+    Image.new("RGBA", (255, 256), (0, 255, 0, 0)).save(tmp_path / "wrong-size.png")
+
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        assert [widget.file_list.item(row).text() for row in range(widget.file_list.count())] == [
+            "opaque.png",
+            "sprite.png (PMP)",
+            "wrong-size.png",
+        ]
+        manifest_path = tmp_path / "sunny_optimizer.json"
+        images = {
+            item["file"]: item["sprite"]
+            for item in json.loads(manifest_path.read_text(encoding="utf-8"))["images"]
+        }
+        assert images == {"opaque.png": False, "sprite.png": True, "wrong-size.png": False}
+
+        widget.file_list.setCurrentRow(1)
+        assert widget.sprite_button.isChecked()
+        widget.sprite_button.click()
+        assert widget.file_list.currentItem().text() == "sprite.png"
+        images = {
+            item["file"]: item["sprite"]
+            for item in json.loads(manifest_path.read_text(encoding="utf-8"))["images"]
+        }
+        assert images["sprite.png"] is False
+
+        widget.set_source_folder(tmp_path)
+        assert widget.file_list.item(1).text() == "sprite.png"
+    finally:
+        widget.close()
