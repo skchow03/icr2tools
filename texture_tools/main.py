@@ -501,14 +501,22 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         threshold_label = QtWidgets.QLabel("Treat alpha ≤ as transparent:")
         threshold_label.setWordWrap(True)
         actions_layout.addWidget(threshold_label)
-        self.alpha_threshold_spin = QtWidgets.QSpinBox()
-        self.alpha_threshold_spin.setRange(0, 255)
-        self.alpha_threshold_spin.setValue(85)
-        self.alpha_threshold_spin.setToolTip(
-            "Pixels at or below this alpha value are omitted from PMP sprites."
+        threshold_row = QtWidgets.QHBoxLayout()
+        self.alpha_threshold_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self.alpha_threshold_slider.setRange(0, 100)
+        self.alpha_threshold_slider.setValue(33)
+        self.alpha_threshold_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self.alpha_threshold_slider.setTickInterval(10)
+        self.alpha_threshold_slider.setToolTip(
+            "Pixels at or below this alpha percentage are omitted from PMP sprites."
         )
-        self.alpha_threshold_spin.valueChanged.connect(self._refresh_preview)
-        actions_layout.addWidget(self.alpha_threshold_spin)
+        self.alpha_threshold_value = QtWidgets.QLabel("33%")
+        self.alpha_threshold_value.setMinimumWidth(36)
+        self.alpha_threshold_value.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        self.alpha_threshold_slider.valueChanged.connect(self._alpha_threshold_changed)
+        threshold_row.addWidget(self.alpha_threshold_slider, 1)
+        threshold_row.addWidget(self.alpha_threshold_value)
+        actions_layout.addLayout(threshold_row)
         actions_layout.addStretch(1)
         self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
         self.convert_all_btn = QtWidgets.QPushButton("Convert All")
@@ -621,6 +629,14 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
     def _convert_selected(self) -> None:
         self._convert_items(self.file_list.selectedItems())
 
+    def _alpha_threshold_changed(self, value: int) -> None:
+        self.alpha_threshold_value.setText(f"{value}%")
+        self._refresh_preview()
+
+    def _alpha_threshold(self) -> int:
+        """Return the slider's percentage as an 8-bit alpha threshold."""
+        return round(self.alpha_threshold_slider.value() * 255 / 100)
+
     def _convert_all(self) -> None:
         self._convert_items([self.file_list.item(row) for row in range(self.file_list.count())])
 
@@ -671,7 +687,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                         output_path,
                         size_field=0,
                         palette_path=self._palette_path,
-                        alpha_transparent_threshold=self.alpha_threshold_spin.value(),
+                        alpha_transparent_threshold=self._alpha_threshold(),
                     )
                 else:
                     with Image.open(source_path) as source:
@@ -715,13 +731,13 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                 preview = output.convert("RGBA")
                 is_sprite = self._sprite_flags.get(source_path.name, False)
                 if is_sprite:
-                    threshold = self.alpha_threshold_spin.value()
+                    threshold = self._alpha_threshold()
                     alpha = source_rgba.getchannel("A").point(
                         lambda value: 0 if value <= threshold else 255
                     )
                     preview.putalpha(alpha)
             transparency_caption = (
-                f" • alpha ≤ {self.alpha_threshold_spin.value()} transparent"
+                f" • alpha ≤ {self.alpha_threshold_slider.value()}% transparent"
                 if is_sprite
                 else ""
             )
