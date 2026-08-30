@@ -20,8 +20,8 @@ def test_texture_tools_window_title_includes_version(qapp) -> None:
     _ = qapp
     window = TextureToolsWindow()
     try:
-        assert __version__ == "0.1.0"
-        assert window.windowTitle() == APP_TITLE == "Texture Tools v0.1.0"
+        assert __version__ == "1.0"
+        assert window.windowTitle() == APP_TITLE == "Texture Tools v1.0"
     finally:
         window.close()
 
@@ -43,9 +43,12 @@ def test_texture_tools_about_dialog_text(qapp, monkeypatch) -> None:
         window.close()
 
     assert captured["parent"] is window
-    assert captured["title"] == "About ICR2 Texture Tools"
+    assert captured["title"] == "About PPG (Palette, Paint and Graphics) for ICR2"
     assert captured["text"] == ABOUT_TEXT
-    assert captured["text"] == 'ICR2 Texture Tools v0.1.0\nby SK Chow ("checkpoint10" on the icr2.net forums)'
+    assert captured["text"] == (
+        'PPG (Palette, Paint and Graphics) for ICR2 v1.0\n'
+        'by SK Chow ("checkpoint10" on the icr2.net forums)'
+    )
 
 
 def test_files_are_global_above_tabs_and_feed_compatible_tools(qapp, tmp_path) -> None:
