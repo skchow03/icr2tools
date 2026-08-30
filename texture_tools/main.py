@@ -17,7 +17,7 @@ except ImportError:  # pragma: no cover
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
 from texture_tools.pmp import png_to_pmp
-from texture_tools.pmp_to_png import convert_pmp_to_png
+from texture_tools.pmp_to_png import convert_pmp_to_png, pmp_to_image
 from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
@@ -779,6 +779,155 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
             )
         except Exception as exc:
             self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
+
+
+class ConvertGameTexturesWidget(QtWidgets.QWidget):
+    """Batch-export MIP and PMP game textures as PNG images."""
+
+    def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._source_folder: Path | None = None
+        self._palette_path: Path | None = None
+        self._output_folder: Path | None = None
+
+        layout = QtWidgets.QHBoxLayout(self)
+        _apply_panel_layout(layout)
+        layout.setSpacing(12)
+
+        files_group = QtWidgets.QGroupBox("MIP/PMP files")
+        files_layout = QtWidgets.QVBoxLayout(files_group)
+        folder_row = QtWidgets.QHBoxLayout()
+        self.folder_label = QtWidgets.QLabel("No MIP/PMP folder selected.")
+        self.folder_label.setWordWrap(True)
+        self.select_folder_btn = QtWidgets.QPushButton("Select Folder…")
+        self.select_folder_btn.clicked.connect(self._select_folder)
+        folder_row.addWidget(self.folder_label, 1)
+        folder_row.addWidget(self.select_folder_btn)
+        files_layout.addLayout(folder_row)
+        self.file_list = QtWidgets.QListWidget()
+        self.file_list.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
+        self.file_list.currentItemChanged.connect(self._refresh_preview)
+        files_layout.addWidget(self.file_list, 1)
+        self.file_count_label = QtWidgets.QLabel("0 files")
+        self.file_count_label.setStyleSheet("color: #6b7280;")
+        files_layout.addWidget(self.file_count_label)
+        layout.addWidget(files_group, 2)
+
+        self.preview_pane = PreviewPane("Decoded preview")
+        self.preview_pane.setMinimumWidth(420)
+        layout.addWidget(self.preview_pane, 3)
+
+        actions_group = QtWidgets.QGroupBox("Export as PNG")
+        actions_layout = QtWidgets.QVBoxLayout(actions_group)
+        help_label = QtWidgets.QLabel(
+            "Uses the currently selected palette and writes PNG files to the currently selected Output folder."
+        )
+        help_label.setWordWrap(True)
+        actions_layout.addWidget(help_label)
+        actions_layout.addStretch(1)
+        self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
+        self.convert_all_btn = QtWidgets.QPushButton("Convert All")
+        _set_primary_button(self.convert_selected_btn)
+        _set_secondary_button(self.convert_all_btn)
+        self.convert_selected_btn.clicked.connect(self._convert_selected)
+        self.convert_all_btn.clicked.connect(self._convert_all)
+        actions_layout.addWidget(self.convert_selected_btn)
+        actions_layout.addWidget(self.convert_all_btn)
+        layout.addWidget(actions_group, 1)
+
+    def _select_folder(self) -> None:
+        start = str(self._source_folder) if self._source_folder else ""
+        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select MIP/PMP folder", start)
+        if folder:
+            self.set_source_folder(folder)
+
+    def set_source_folder(self, folder: str | Path) -> None:
+        self._source_folder = Path(folder)
+        self.folder_label.setText(str(self._source_folder))
+        files = sorted(
+            (path for path in self._source_folder.iterdir() if path.is_file() and path.suffix.lower() in {".mip", ".pmp"}),
+            key=lambda path: path.name.lower(),
+        ) if self._source_folder.is_dir() else []
+        self.file_list.clear()
+        for path in files:
+            item = QtWidgets.QListWidgetItem(path.name)
+            item.setData(QtCore.Qt.UserRole, str(path))
+            self.file_list.addItem(item)
+        self.file_count_label.setText(f"{len(files)} file{'s' if len(files) != 1 else ''}")
+        if files:
+            self.file_list.setCurrentRow(0)
+        else:
+            self.preview_pane.clear_preview("No .mip or .pmp files in the selected folder.")
+
+    def set_palette(self, palette: str | Path) -> None:
+        self._palette_path = Path(palette)
+        self._refresh_preview()
+
+    def set_output_folder(self, folder: str | Path | None) -> None:
+        self._output_folder = Path(folder) if folder else None
+
+    def _decode(self, path: Path) -> Image.Image:
+        assert self._palette_path is not None
+        if path.suffix.lower() == ".mip":
+            return mip_to_img(str(path), load_palette(str(self._palette_path)))[0]
+        return pmp_to_image(str(path), str(self._palette_path))
+
+    def _refresh_preview(self, *_args) -> None:
+        item = self.file_list.currentItem()
+        if item is None:
+            self.preview_pane.clear_preview("Select a MIP or PMP file to preview.")
+            return
+        if self._palette_path is None or not self._palette_path.is_file():
+            self.preview_pane.clear_preview("Select a sunny.pcx palette first.")
+            return
+        try:
+            path = Path(item.data(QtCore.Qt.UserRole))
+            preview = self._decode(path)
+            self.preview_pane.set_preview(
+                preview, caption=f"{path.name} • {_fmt_dimensions(preview)} • Palette: {self._palette_path.name}"
+            )
+        except Exception as exc:
+            self.preview_pane.clear_preview(f"Preview unavailable: {exc}")
+
+    def _convert_selected(self) -> None:
+        self._convert_items(self.file_list.selectedItems())
+
+    def _convert_all(self) -> None:
+        self._convert_items([self.file_list.item(row) for row in range(self.file_list.count())])
+
+    def _convert_items(self, items: list[QtWidgets.QListWidgetItem]) -> None:
+        if self._output_folder is None or not self._output_folder.is_dir():
+            QtWidgets.QMessageBox.critical(self, "Invalid Output folder", "Select a valid Output folder before converting textures.")
+            return
+        if not items:
+            QtWidgets.QMessageBox.warning(self, "No textures selected", "Select one or more textures to convert.")
+            return
+        if self._palette_path is None or not self._palette_path.is_file():
+            QtWidgets.QMessageBox.critical(self, "Invalid palette", "Select a valid SUNNY.PCX palette before converting textures.")
+            return
+        targets = [self._output_folder / f"{Path(item.data(QtCore.Qt.UserRole)).stem}.png" for item in items]
+        existing = list(dict.fromkeys(path for path in targets if path.exists()))
+        if existing:
+            answer = QtWidgets.QMessageBox.warning(
+                self, "Overwrite existing images?",
+                "The following files will be overwritten:\n\n" + "\n".join(f"• {path}" for path in existing) + "\n\nContinue with conversion?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No,
+            )
+            if answer != QtWidgets.QMessageBox.Yes:
+                return
+        converted, failures = 0, []
+        for item, target in zip(items, targets):
+            source = Path(item.data(QtCore.Qt.UserRole))
+            try:
+                self._decode(source).save(target)
+                converted += 1
+            except Exception as exc:
+                failures.append(f"{source.name}: {exc}")
+        message = f"Converted {converted} of {len(items)} texture(s) to:\n{self._output_folder}"
+        if failures:
+            QtWidgets.QMessageBox.warning(self, "Conversion complete with errors", message + "\n\nFailed:\n" + "\n".join(failures))
+        else:
+            QtWidgets.QMessageBox.information(self, "Conversion complete", message)
 
 
 class MipConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin, RecentPathMixin):
@@ -1814,7 +1963,8 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
-        self.intent_tabs.addTab(self._build_convert_textures_tab(), "Convert textures")
+        self.intent_tabs.addTab(self._build_convert_textures_tab(), "Convert from source")
+        self.intent_tabs.addTab(self._build_convert_game_textures_tab(), "Convert from mip/pmp")
         self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
 
@@ -1829,11 +1979,13 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.sunny_optimizer.texture_folder_changed.connect(self._use_global_texture_folder)
         self.sunny_optimizer.sunny_palette_changed.connect(self._use_global_palette)
         self.sunny_optimizer.export_destination_changed.connect(self.convert_textures.set_output_folder)
+        self.sunny_optimizer.export_destination_changed.connect(self.convert_game_textures.set_output_folder)
         if self.sunny_optimizer.loaded_texture_folder is not None:
             self._use_global_texture_folder(str(self.sunny_optimizer.loaded_texture_folder))
         if self.sunny_optimizer._last_sunny_palette_path is not None:
             self._use_global_palette(str(self.sunny_optimizer._last_sunny_palette_path))
         self.convert_textures.set_output_folder(self.sunny_optimizer.export_destination)
+        self.convert_game_textures.set_output_folder(self.sunny_optimizer.export_destination)
         self._build_menu_bar()
 
     def _build_menu_bar(self) -> None:
@@ -1865,6 +2017,10 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.convert_textures = ConvertTexturesWidget()
         return self.convert_textures
 
+    def _build_convert_game_textures_tab(self) -> QtWidgets.QWidget:
+        self.convert_game_textures = ConvertGameTexturesWidget()
+        return self.convert_game_textures
+
     def _use_global_texture_folder(self, folder: str) -> None:
         """Share the RGB texture folder with tools that accept RGB batch input."""
         self.mip_conversion.source_folder_edit.setText(folder)
@@ -1877,6 +2033,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.pmp_conversion.palette_edit.setText(palette)
         self.pmp_to_png.palette_edit.setText(palette)
         self.convert_textures.set_palette(palette)
+        self.convert_game_textures.set_palette(palette)
 
     def _build_split_prepare_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
