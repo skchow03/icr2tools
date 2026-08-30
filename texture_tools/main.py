@@ -34,11 +34,12 @@ UI_SECTION_SPACING = 10
 UI_PANEL_MARGINS = (12, 12, 12, 12)
 
 __version__ = "1.0"
-APP_TITLE = f"Texture Tools v{__version__}"
-ABOUT_PROGRAM_NAME = "PPG (Palette, Paint and Graphics) for ICR2"
+APP_TITLE = f"PPG for ICR2 v{__version__}"
+ABOUT_PROGRAM_NAME = "PPG for ICR2"
 ABOUT_TITLE = f"About {ABOUT_PROGRAM_NAME}"
 ABOUT_TEXT = (
     f"{ABOUT_PROGRAM_NAME} v{__version__}\n"
+    "(Palette, Paint, and Graphics for ICR2)\n"
     "by SK Chow (\"checkpoint10\" on the icr2.net forums)"
 )
 
