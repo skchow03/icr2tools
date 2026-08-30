@@ -40,7 +40,8 @@ ABOUT_TITLE = f"About {ABOUT_PROGRAM_NAME}"
 ABOUT_TEXT = (
     f"{ABOUT_PROGRAM_NAME} v{__version__}\n"
     "(Palette, Paint, and Graphics for ICR2)\n"
-    "by SK Chow (\"checkpoint10\" on the icr2.net forums)"
+    "by SK Chow (\"checkpoint10\" on the icr2.net forums)\n\n"
+    "The name ""PPG"" was chosen as a tribute to PPG Industries’ historic title sponsorship of the CART Indy Car World Series. This software is an independent project and is not affiliated with, authorized by, endorsed by, or sponsored by PPG Industries, CART, or their successors. All trademarks and names remain the property of their respective owners."
 )
 
 
