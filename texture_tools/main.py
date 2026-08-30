@@ -782,7 +782,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
 
 
 class ConvertGameTexturesWidget(QtWidgets.QWidget):
-    """Batch-export MIP and PMP game textures as PNG images."""
+    """Batch-export MIP and PMP game textures to common image formats."""
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
@@ -817,13 +817,47 @@ class ConvertGameTexturesWidget(QtWidgets.QWidget):
         self.preview_pane.setMinimumWidth(420)
         layout.addWidget(self.preview_pane, 3)
 
-        actions_group = QtWidgets.QGroupBox("Export as PNG")
+        actions_group = QtWidgets.QGroupBox("Export settings")
         actions_layout = QtWidgets.QVBoxLayout(actions_group)
         help_label = QtWidgets.QLabel(
-            "Uses the currently selected palette and writes PNG files to the currently selected Output folder."
+            "Uses the currently selected palette and writes images to the currently selected Output folder."
         )
         help_label.setWordWrap(True)
         actions_layout.addWidget(help_label)
+
+        format_row = QtWidgets.QHBoxLayout()
+        format_row.addWidget(QtWidgets.QLabel("File format:"))
+        self.output_format_combo = QtWidgets.QComboBox()
+        self.output_format_combo.addItems([".png", ".pcx", ".bmp"])
+        format_row.addWidget(self.output_format_combo, 1)
+        actions_layout.addLayout(format_row)
+
+        color_row = QtWidgets.QHBoxLayout()
+        color_row.addWidget(QtWidgets.QLabel("Color mode:"))
+        self.color_mode_combo = QtWidgets.QComboBox()
+        self.color_mode_combo.addItem("Paletted (8-bit)", "P")
+        self.color_mode_combo.addItem("Non-paletted (RGB)", "RGB")
+        color_row.addWidget(self.color_mode_combo, 1)
+        actions_layout.addLayout(color_row)
+
+        transparency_row = QtWidgets.QHBoxLayout()
+        self.transparency_label = QtWidgets.QLabel("PMP transparent color:")
+        self.transparency_color_spin = QtWidgets.QSpinBox()
+        self.transparency_color_spin.setRange(0, 255)
+        self.transparency_color_spin.setValue(0)
+        self.transparency_color_spin.setToolTip(
+            "Palette index used in BMP/PCX output wherever the PMP is transparent."
+        )
+        transparency_row.addWidget(self.transparency_label)
+        transparency_row.addWidget(self.transparency_color_spin, 1)
+        actions_layout.addLayout(transparency_row)
+        self.transparency_note = QtWidgets.QLabel()
+        self.transparency_note.setWordWrap(True)
+        self.transparency_note.setStyleSheet("color: #6b7280;")
+        actions_layout.addWidget(self.transparency_note)
+        self.output_format_combo.currentTextChanged.connect(self._update_export_settings)
+        self.file_list.currentItemChanged.connect(self._update_export_settings)
+        self._update_export_settings()
         actions_layout.addStretch(1)
         self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
         self.convert_all_btn = QtWidgets.QPushButton("Convert All")
@@ -872,6 +906,82 @@ class ConvertGameTexturesWidget(QtWidgets.QWidget):
             return mip_to_img(str(path), load_palette(str(self._palette_path)))[0]
         return pmp_to_image(str(path), str(self._palette_path))
 
+    def _update_export_settings(self, *_args) -> None:
+        is_png = self.output_format_combo.currentText() == ".png"
+        enabled = not is_png
+        self.transparency_label.setEnabled(enabled)
+        self.transparency_color_spin.setEnabled(enabled)
+        self.transparency_note.setText(
+            "PMP transparency is stored as PNG transparency."
+            if is_png
+            else "For PMP → BMP/PCX, transparent pixels use this palette color index."
+        )
+
+    def _prepare_export(self, source: Path, image: Image.Image) -> tuple[Image.Image, dict[str, int]]:
+        """Apply the selected color mode and PMP transparency representation."""
+        assert self._palette_path is not None
+        is_pmp = source.suffix.lower() == ".pmp"
+        output_format = self.output_format_combo.currentText()
+        paletted = self.color_mode_combo.currentData() == "P"
+        alpha = image.getchannel("A") if is_pmp else None
+
+        if paletted:
+            with Image.open(self._palette_path) as palette_file:
+                palette = palette_file.convert("P")
+                exported = image.convert("RGB").quantize(
+                    colors=256,
+                    method=Image.Quantize.FASTOCTREE,
+                    palette=palette,
+                    dither=Image.Dither.NONE,
+                )
+        else:
+            exported = image.convert("RGB")
+
+        save_options: dict[str, int] = {}
+        if not is_pmp:
+            return exported, save_options
+
+        transparent_index = self.transparency_color_spin.value()
+        if output_format == ".png":
+            if paletted:
+                transparent_mask = alpha.point(lambda value: 255 if value == 0 else 0)
+                # A paletted PNG can mark only a palette entry as transparent.
+                # Move opaque uses of that entry to the nearest available color
+                # before assigning it to transparent pixels.
+                palette_values = exported.getpalette() or []
+                if len(palette_values) >= 768:
+                    reserved_rgb = palette_values[transparent_index * 3:transparent_index * 3 + 3]
+                    replacement = min(
+                        (index for index in range(256) if index != transparent_index),
+                        key=lambda index: sum(
+                            (palette_values[index * 3 + channel] - reserved_rgb[channel]) ** 2
+                            for channel in range(3)
+                        ),
+                    )
+                    pixels = exported.load()
+                    alpha_pixels = alpha.load()
+                    for y in range(exported.height):
+                        for x in range(exported.width):
+                            if alpha_pixels[x, y] != 0 and pixels[x, y] == transparent_index:
+                                pixels[x, y] = replacement
+                exported.paste(transparent_index, mask=transparent_mask)
+                save_options["transparency"] = transparent_index
+            else:
+                exported = image.convert("RGBA")
+            return exported, save_options
+
+        with Image.open(self._palette_path) as palette_file:
+            raw_palette = palette_file.getpalette()
+        if raw_palette is None or len(raw_palette) < (transparent_index + 1) * 3:
+            raise ValueError("The selected palette does not contain the transparency color.")
+        if paletted:
+            fill: int | tuple[int, int, int] = transparent_index
+        else:
+            start = transparent_index * 3
+            fill = tuple(raw_palette[start:start + 3])
+        exported.paste(fill, mask=alpha.point(lambda value: 255 if value == 0 else 0))
+        return exported, save_options
+
     def _refresh_preview(self, *_args) -> None:
         item = self.file_list.currentItem()
         if item is None:
@@ -905,7 +1015,8 @@ class ConvertGameTexturesWidget(QtWidgets.QWidget):
         if self._palette_path is None or not self._palette_path.is_file():
             QtWidgets.QMessageBox.critical(self, "Invalid palette", "Select a valid SUNNY.PCX palette before converting textures.")
             return
-        targets = [self._output_folder / f"{Path(item.data(QtCore.Qt.UserRole)).stem}.png" for item in items]
+        suffix = self.output_format_combo.currentText()
+        targets = [self._output_folder / f"{Path(item.data(QtCore.Qt.UserRole)).stem}{suffix}" for item in items]
         existing = list(dict.fromkeys(path for path in targets if path.exists()))
         if existing:
             answer = QtWidgets.QMessageBox.warning(
@@ -919,7 +1030,8 @@ class ConvertGameTexturesWidget(QtWidgets.QWidget):
         for item, target in zip(items, targets):
             source = Path(item.data(QtCore.Qt.UserRole))
             try:
-                self._decode(source).save(target)
+                exported, save_options = self._prepare_export(source, self._decode(source))
+                exported.save(target, **save_options)
                 converted += 1
             except Exception as exc:
                 failures.append(f"{source.name}: {exc}")

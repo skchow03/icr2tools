@@ -164,6 +164,56 @@ def test_convert_game_textures_scans_previews_and_exports_pngs(
         widget.close()
 
 
+def test_game_texture_export_settings_support_formats_color_modes_and_pmp_transparency(
+    qapp, tmp_path: Path, monkeypatch
+) -> None:
+    _ = qapp
+    source_dir = tmp_path / "game"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    pmp_path = source_dir / "sprite.pmp"
+    pmp_path.write_bytes(b"pmp")
+    palette_path = tmp_path / "sunny.pcx"
+    _save_palette(palette_path)
+    decoded = Image.new("RGBA", (2, 1))
+    decoded.putdata(((255, 0, 0, 255), (0, 0, 255, 0)))
+    monkeypatch.setattr(
+        ConvertGameTexturesWidget, "_decode", lambda _self, _path: decoded.copy()
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *_args: None)
+
+    widget = ConvertGameTexturesWidget()
+    try:
+        widget.set_palette(palette_path)
+        widget.set_output_folder(output_dir)
+        widget.set_source_folder(source_dir)
+
+        assert [widget.output_format_combo.itemText(index) for index in range(3)] == [
+            ".png", ".pcx", ".bmp"
+        ]
+        assert widget.color_mode_combo.currentData() == "P"
+        assert widget.transparency_color_spin.value() == 0
+        assert not widget.transparency_color_spin.isEnabled()
+
+        widget._convert_all()
+        with Image.open(output_dir / "sprite.png") as exported_png:
+            assert exported_png.mode == "P"
+            assert exported_png.info["transparency"] == 0
+            assert exported_png.convert("RGBA").getpixel((0, 0))[3] == 255
+            assert exported_png.convert("RGBA").getpixel((1, 0))[3] == 0
+
+        widget.output_format_combo.setCurrentText(".bmp")
+        widget.color_mode_combo.setCurrentIndex(1)
+        assert widget.transparency_color_spin.isEnabled()
+        widget._convert_all()
+        with Image.open(output_dir / "sprite.bmp") as exported_bmp:
+            assert exported_bmp.mode == "RGB"
+            assert exported_bmp.getpixel((1, 0)) == (255, 0, 0)
+    finally:
+        widget.close()
+
+
 def test_supports_extended_selection_and_converts_selected_formats(
     qapp, tmp_path: Path, monkeypatch
 ) -> None:
