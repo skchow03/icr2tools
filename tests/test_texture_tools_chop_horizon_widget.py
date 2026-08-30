@@ -43,6 +43,19 @@ def test_source_and_outputs_preview_and_follow_start_panel(qapp, tmp_path: Path)
         widget.close()
 
 
+def test_output_previews_label_each_horizon_panel_by_direction(qapp) -> None:
+    _ = qapp
+    widget = ChopHorizonWidget()
+    try:
+        first_labels = [item.text() for item in widget.first_output_preview._panel_label_items]
+        second_labels = [item.text() for item in widget.second_output_preview._panel_label_items]
+
+        assert first_labels == ["S", "SW", "W", "NW"]
+        assert second_labels == ["N", "NE", "E", "SE"]
+    finally:
+        widget.close()
+
+
 def test_exports_default_mip_names_and_confirms_overwrite(qapp, tmp_path: Path, monkeypatch) -> None:
     _ = qapp
     source = tmp_path / "horizon.png"
