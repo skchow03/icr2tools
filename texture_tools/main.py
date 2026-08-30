@@ -18,7 +18,7 @@ except ImportError:  # pragma: no cover
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
 from texture_tools.pmp import png_to_pmp
 from texture_tools.pmp_to_png import convert_pmp_to_png, pmp_to_image
-from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
+from texture_tools.sunny_optimizer.chop_horizon import prepare_horizon_sheets
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 from texture_tools.sunny_optimizer.ui.main_window import MainWindow as SunnyOptimizerWindow
 
@@ -1364,6 +1364,8 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
+        self._source_image: Image.Image | None = None
+        self._output_images: tuple[Image.Image, Image.Image] | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1382,6 +1384,10 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".png", ".bmp"}, "Drop a .png or .bmp image.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
+        self.source_preview = PreviewPane("Source horizon preview")
+        self.source_preview.image_view.setMinimumHeight(120)
+        layout.addWidget(self.source_preview)
+
         layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         start_row = QtWidgets.QHBoxLayout()
         start_label = QtWidgets.QLabel("Start with panel:")
@@ -1395,12 +1401,21 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         start_row.addStretch(1)
         layout.addLayout(start_row)
 
+        output_preview_row = QtWidgets.QHBoxLayout()
+        self.first_output_preview = PreviewPane("Page03.mip preview")
+        self.second_output_preview = PreviewPane("Page03b.mip preview")
+        output_preview_row.addWidget(self.first_output_preview, 1)
+        output_preview_row.addWidget(self.second_output_preview, 1)
+        layout.addLayout(output_preview_row)
+
         layout.addWidget(QtWidgets.QLabel("3. Export"))
+        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
+        self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
+        self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
         self.output_edit, self.output_error = self._make_browse_row(layout, "Output folder:", self._browse_output)
         self.output_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a folder path.")
         self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
 
-        layout.addStretch(1)
         self.run_btn = QtWidgets.QPushButton("Run")
         _set_primary_button(self.run_btn)
         self.run_btn.clicked.connect(self._run)
@@ -1411,7 +1426,10 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         layout.addLayout(action_row)
         layout.addWidget(self.status_label)
         self.input_edit.textChanged.connect(self._update_validation_state)
+        self.input_edit.textChanged.connect(self._refresh_previews)
+        self.palette_edit.textChanged.connect(self._update_validation_state)
         self.output_edit.textChanged.connect(self._update_validation_state)
+        self.start_panel_spin.valueChanged.connect(self._refresh_output_previews)
         self._update_validation_state()
 
     def _make_browse_row(self, parent: QtWidgets.QVBoxLayout, label: str, callback) -> tuple[QtWidgets.QLineEdit, QtWidgets.QLabel]:
@@ -1435,6 +1453,7 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
     def _update_validation_state(self) -> bool:
         input_error = _validate_path(self.input_edit.text().strip(), label="Input", expected_suffixes=(".png", ".bmp"))
+        palette_error = _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",))
         output_error = _validate_path(
             self.output_edit.text().strip(),
             label="Output folder",
@@ -1442,8 +1461,9 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
             folder_only=True,
         )
         _set_field_error(self.input_edit, self.input_error, input_error)
+        _set_field_error(self.palette_edit, self.palette_error, palette_error)
         _set_field_error(self.output_edit, self.output_error, output_error)
-        problems = [name for name, err in (("input", input_error), ("output", output_error)) if err]
+        problems = [name for name, err in (("input", input_error), ("palette", palette_error), ("output", output_error)) if err]
         valid = not problems
         self.run_btn.setEnabled(valid)
         self.set_status(STATUS_IDLE if valid else STATUS_VALIDATING, "Ready" if valid else f"Missing/invalid: {', '.join(problems)}")
@@ -1461,15 +1481,68 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         if folder:
             self.output_edit.setText(folder)
 
+    def _browse_palette(self) -> None:
+        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette", "", "PCX palette (*.pcx)")
+        if path:
+            self.palette_edit.setText(path)
+
+    def set_palette(self, palette: str | Path) -> None:
+        self.palette_edit.setText(str(palette))
+
+    def _refresh_previews(self) -> None:
+        path = Path(self.input_edit.text().strip())
+        try:
+            with Image.open(path) as source:
+                self._source_image = source.convert("RGBA")
+            self.source_preview.set_preview(
+                self._source_image, caption=f"{path.name} · {_fmt_dimensions(self._source_image)}"
+            )
+        except (OSError, ValueError):
+            self._source_image = None
+            self._output_images = None
+            self.source_preview.clear_preview("Select a valid 2048×64 horizon image.")
+            self.first_output_preview.clear_preview()
+            self.second_output_preview.clear_preview()
+            return
+        self._refresh_output_previews()
+
+    def _refresh_output_previews(self) -> None:
+        path = self.input_edit.text().strip()
+        try:
+            self._output_images = prepare_horizon_sheets(path, self.start_panel_spin.value())
+        except (OSError, ValueError):
+            self._output_images = None
+            self.first_output_preview.clear_preview("Output preview unavailable.")
+            self.second_output_preview.clear_preview("Output preview unavailable.")
+            return
+        self.first_output_preview.set_preview(self._output_images[0], caption="Page03.mip · 256x256")
+        self.second_output_preview.set_preview(self._output_images[1], caption="Page03b.mip · 256x256")
+
     def _run(self) -> None:
         if not self._update_validation_state():
             return
         try:
-            out1, out2 = chop_horizon(
-                self.input_edit.text().strip(),
-                self.output_edit.text().strip(),
-                start_panel=self.start_panel_spin.value(),
-            )
+            output_dir = Path(self.output_edit.text().strip())
+            out1, out2 = output_dir / "Page03.mip", output_dir / "Page03b.mip"
+            existing = [path.name for path in (out1, out2) if path.exists()]
+            if existing:
+                answer = QtWidgets.QMessageBox.warning(
+                    self,
+                    "Overwrite existing horizon textures?",
+                    "The following file(s) already exist and will be overwritten:\n\n"
+                    + "\n".join(existing)
+                    + "\n\nContinue?",
+                    QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                    QtWidgets.QMessageBox.No,
+                )
+                if answer != QtWidgets.QMessageBox.Yes:
+                    self.set_status(STATUS_IDLE, "Export cancelled.")
+                    return
+            images = prepare_horizon_sheets(self.input_edit.text().strip(), self.start_panel_spin.value())
+            output_dir.mkdir(parents=True, exist_ok=True)
+            palette = self.palette_edit.text().strip()
+            img_to_mip(_prepare_image_for_mip(images[0]), str(out1), palette, "track", dither=False)
+            img_to_mip(_prepare_image_for_mip(images[1]), str(out2), palette, "track", dither=False)
             self.set_status(STATUS_SUCCESS, f"Created: {out1.name}, {out2.name}")
         except Exception as exc:  # pragma: no cover
             self.set_status(STATUS_FAILURE, f"Chop Horizon failed: {exc}")
@@ -2130,10 +2203,12 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         """Share the selected SUNNY.PCX with every palette-aware conversion tool."""
         self.convert_textures.set_palette(palette)
         self.convert_game_textures.set_palette(palette)
+        self.chop_horizon.set_palette(palette)
 
     def _build_split_prepare_tab(self) -> QtWidgets.QWidget:
         tabs = QtWidgets.QTabWidget()
-        tabs.addTab(ChopHorizonWidget(), "Chop Horizon")
+        self.chop_horizon = ChopHorizonWidget()
+        tabs.addTab(self.chop_horizon, "Chop Horizon")
         return tabs
 
 

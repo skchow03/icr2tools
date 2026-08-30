@@ -6,23 +6,22 @@ from tkinter import Button, Entry, Label, Spinbox, StringVar, Tk, filedialog, me
 from PIL import Image
 
 
-def chop_horizon(input_path: str | Path, output_dir: str | Path, start_panel: int = 1) -> tuple[Path, Path]:
+def prepare_horizon_sheets(
+    input_path: str | Path, start_panel: int = 1
+) -> tuple[Image.Image, Image.Image]:
+    """Load a horizon strip and arrange its panels into two texture sheets."""
     input_path = Path(input_path)
-    output_dir = Path(output_dir)
 
     if not 1 <= start_panel <= 8:
         raise ValueError(f"Start panel must be between 1 and 8, got {start_panel}")
 
-    img = Image.open(input_path).convert("RGBA")
+    with Image.open(input_path) as source:
+        img = source.convert("RGBA")
 
     if img.size != (2048, 64):
         raise ValueError(f"Expected 2048x64 image, got {img.size}")
 
-    segments = []
-    for i in range(8):
-        left = i * 256
-        segments.append(img.crop((left, 0, left + 256, 64)))
-
+    segments = [img.crop((i * 256, 0, (i + 1) * 256, 64)) for i in range(8)]
     start_index = start_panel - 1
     ordered_segments = segments[start_index:] + segments[:start_index]
 
@@ -30,9 +29,16 @@ def chop_horizon(input_path: str | Path, output_dir: str | Path, start_panel: in
     for sheet_index in range(2):
         sheet = Image.new("RGBA", (256, 256), (0, 0, 0, 0))
         for row in range(4):
-            segment_index = sheet_index * 4 + row
-            sheet.paste(ordered_segments[segment_index], (0, row * 64))
+            sheet.paste(ordered_segments[sheet_index * 4 + row], (0, row * 64))
         sheets.append(sheet)
+    return sheets[0], sheets[1]
+
+
+def chop_horizon(input_path: str | Path, output_dir: str | Path, start_panel: int = 1) -> tuple[Path, Path]:
+    input_path = Path(input_path)
+    output_dir = Path(output_dir)
+
+    sheets = prepare_horizon_sheets(input_path, start_panel)
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
