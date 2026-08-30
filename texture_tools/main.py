@@ -366,7 +366,13 @@ def _pil_to_pixmap(image: Image.Image) -> QtGui.QPixmap:
 
 
 class PreviewPane(QtWidgets.QGroupBox):
-    def __init__(self, title: str = "Preview", parent: QtWidgets.QWidget | None = None) -> None:
+    def __init__(
+        self,
+        title: str = "Preview",
+        parent: QtWidgets.QWidget | None = None,
+        *,
+        panel_labels: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(title, parent)
         layout = QtWidgets.QVBoxLayout(self)
         controls = QtWidgets.QHBoxLayout()
@@ -379,6 +385,15 @@ class PreviewPane(QtWidgets.QGroupBox):
         self._scene = QtWidgets.QGraphicsScene(self)
         self._pixmap_item = QtWidgets.QGraphicsPixmapItem()
         self._scene.addItem(self._pixmap_item)
+        self._panel_label_items: list[QtWidgets.QGraphicsSimpleTextItem] = []
+        for label in panel_labels:
+            item = self._scene.addSimpleText(label)
+            font = item.font()
+            font.setBold(True)
+            item.setFont(font)
+            item.setBrush(QtGui.QBrush(QtGui.QColor("#111827")))
+            item.hide()
+            self._panel_label_items.append(item)
 
         self.image_view = QtWidgets.QGraphicsView(self._scene)
         self.image_view.setMinimumHeight(160)
@@ -406,6 +421,7 @@ class PreviewPane(QtWidgets.QGroupBox):
     def set_preview(self, image: Image.Image, *, caption: str = "") -> None:
         pixmap = _pil_to_pixmap(image)
         self._pixmap_item.setPixmap(pixmap)
+        self._position_panel_labels(pixmap)
         self.image_label.hide()
         self.image_view.viewport().setCursor(QtCore.Qt.OpenHandCursor)
         self._fit_to_pane()
@@ -413,11 +429,22 @@ class PreviewPane(QtWidgets.QGroupBox):
 
     def clear_preview(self, message: str = "No preview available.") -> None:
         self._pixmap_item.setPixmap(QtGui.QPixmap())
+        for item in self._panel_label_items:
+            item.hide()
         self.image_label.setText(message)
         self.image_label.show()
         self.image_view.viewport().unsetCursor()
         self._fit_to_pane()
         self.meta_label.setText("")
+
+    def _position_panel_labels(self, pixmap: QtGui.QPixmap) -> None:
+        if not self._panel_label_items:
+            return
+        panel_height = pixmap.height() / len(self._panel_label_items)
+        for row, item in enumerate(self._panel_label_items):
+            bounds = item.boundingRect()
+            item.setPos(-bounds.width() - 8, row * panel_height + (panel_height - bounds.height()) / 2)
+            item.show()
 
     def _fit_to_pane(self) -> None:
         self.image_view.resetTransform()
@@ -425,7 +452,11 @@ class PreviewPane(QtWidgets.QGroupBox):
         pixmap = self._pixmap_item.pixmap()
         if pixmap.isNull():
             return
-        self.image_view.fitInView(self._pixmap_item, QtCore.Qt.KeepAspectRatio)
+        preview_bounds = self._pixmap_item.sceneBoundingRect()
+        for item in self._panel_label_items:
+            if item.isVisible():
+                preview_bounds = preview_bounds.united(item.sceneBoundingRect())
+        self.image_view.fitInView(preview_bounds, QtCore.Qt.KeepAspectRatio)
         self._zoom_factor = self.image_view.transform().m11()
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
@@ -1402,8 +1433,12 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         layout.addLayout(start_row)
 
         output_preview_row = QtWidgets.QHBoxLayout()
-        self.first_output_preview = PreviewPane("Page03.mip preview")
-        self.second_output_preview = PreviewPane("Page03b.mip preview")
+        self.first_output_preview = PreviewPane(
+            "Page03.mip preview", panel_labels=("S", "SW", "W", "NW")
+        )
+        self.second_output_preview = PreviewPane(
+            "Page03b.mip preview", panel_labels=("N", "NE", "E", "SE")
+        )
         output_preview_row.addWidget(self.first_output_preview, 1)
         output_preview_row.addWidget(self.second_output_preview, 1)
         layout.addLayout(output_preview_row)
