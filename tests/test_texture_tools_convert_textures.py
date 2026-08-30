@@ -9,7 +9,7 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
-from texture_tools.main import ConvertTexturesWidget, TextureToolsWindow
+from texture_tools.main import ConvertGameTexturesWidget, ConvertTexturesWidget, TextureToolsWindow
 
 
 @pytest.fixture
@@ -66,7 +66,8 @@ def test_window_places_convert_textures_before_legacy_convert_formats(qapp, monk
         labels = [window.intent_tabs.tabText(index) for index in range(window.intent_tabs.count())]
         assert labels == [
             "Optimize palette",
-            "Convert textures",
+            "Convert from source",
+            "Convert from mip/pmp",
             "Convert formats",
             "Split/prepare textures",
         ]
@@ -111,6 +112,54 @@ def test_detects_and_persists_pmp_sprites_and_allows_manual_override(qapp, tmp_p
 
         widget.set_source_folder(tmp_path)
         assert widget.file_list.item(1).text() == "sprite.png"
+    finally:
+        widget.close()
+
+
+def test_convert_game_textures_scans_previews_and_exports_pngs(
+    qapp, tmp_path: Path, monkeypatch
+) -> None:
+    _ = qapp
+    source_dir = tmp_path / "game"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    (source_dir / "z.PMP").write_bytes(b"pmp")
+    (source_dir / "a.mip").write_bytes(b"mip")
+    (source_dir / "ignored.png").write_bytes(b"png")
+    palette_path = tmp_path / "sunny.pcx"
+    _save_palette(palette_path)
+    decoded = Image.new("RGBA", (3, 2), "red")
+    monkeypatch.setattr(
+        ConvertGameTexturesWidget, "_decode", lambda _self, _path: decoded.copy()
+    )
+    messages = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "information",
+        lambda _parent, title, message: messages.append((title, message)),
+    )
+
+    widget = ConvertGameTexturesWidget()
+    try:
+        widget.set_palette(palette_path)
+        widget.set_output_folder(output_dir)
+        widget.set_source_folder(source_dir)
+
+        assert [widget.file_list.item(row).text() for row in range(widget.file_list.count())] == [
+            "a.mip",
+            "z.PMP",
+        ]
+        assert widget.file_list.selectionMode() == QtWidgets.QAbstractItemView.ExtendedSelection
+        assert widget.preview_pane._pixmap_item.pixmap().size().width() == 3
+
+        widget._convert_all()
+
+        assert (output_dir / "a.png").is_file()
+        assert (output_dir / "z.png").is_file()
+        assert messages == [
+            ("Conversion complete", f"Converted 2 of 2 texture(s) to:\n{output_dir}")
+        ]
     finally:
         widget.close()
 

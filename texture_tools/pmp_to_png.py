@@ -141,14 +141,10 @@ def parse_pmp(path: str):
     return metadata, runs
 
 
-def convert_pmp_to_png(
-    pmp_path: str,
-    png_path: str,
-    palette_path: str,
-    crop: bool = False,
-):
+def pmp_to_image(pmp_path: str, palette_path: str, crop: bool = False) -> Image.Image:
+    """Decode a PMP into an RGBA image without writing it to disk."""
     palette = load_palette(palette_path)
-    metadata, runs = parse_pmp(pmp_path)
+    _metadata, runs = parse_pmp(pmp_path)
 
     # NOTE:
     # PMP run coordinates are stored in a 256x256 atlas space.
@@ -158,22 +154,17 @@ def convert_pmp_to_png(
     img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
     pixels = img.load()
 
-    skipped_out_of_bounds = 0
-
     for y, x_start, x_end_exclusive, color_index in runs:
         if y >= height:
-            skipped_out_of_bounds += 1
             continue
 
         if x_start >= width:
-            skipped_out_of_bounds += 1
             continue
 
         clipped_x_start = max(0, x_start)
         clipped_x_end = min(x_end_exclusive, width)
 
         if clipped_x_start >= clipped_x_end:
-            skipped_out_of_bounds += 1
             continue
 
         rgba = palette[color_index]
@@ -186,6 +177,18 @@ def convert_pmp_to_png(
         if bbox:
             img = img.crop(bbox)
 
+    return img
+
+
+def convert_pmp_to_png(
+    pmp_path: str,
+    png_path: str,
+    palette_path: str,
+    crop: bool = False,
+):
+    img = pmp_to_image(pmp_path, palette_path, crop=crop)
+    metadata, _runs = parse_pmp(pmp_path)
+
     img.save(png_path)
 
     print("Converted PMP to PNG")
@@ -197,10 +200,6 @@ def convert_pmp_to_png(
     print("PMP metadata:")
     for key, value in metadata.items():
         print(f"  {key}: {value}")
-
-    if skipped_out_of_bounds:
-        print(f"Warning: skipped {skipped_out_of_bounds} out-of-bounds runs")
-
 
 def main():
     parser = argparse.ArgumentParser(
