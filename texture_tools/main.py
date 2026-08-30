@@ -33,11 +33,12 @@ UI_LABEL_WIDTH = 220
 UI_SECTION_SPACING = 10
 UI_PANEL_MARGINS = (12, 12, 12, 12)
 
-__version__ = "0.1.0"
+__version__ = "1.0"
 APP_TITLE = f"Texture Tools v{__version__}"
-ABOUT_TITLE = "About ICR2 Texture Tools"
+ABOUT_PROGRAM_NAME = "PPG (Palette, Paint and Graphics) for ICR2"
+ABOUT_TITLE = f"About {ABOUT_PROGRAM_NAME}"
 ABOUT_TEXT = (
-    f"ICR2 Texture Tools v{__version__}\n"
+    f"{ABOUT_PROGRAM_NAME} v{__version__}\n"
     "by SK Chow (\"checkpoint10\" on the icr2.net forums)"
 )
 
@@ -2098,7 +2099,7 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
     def _build_menu_bar(self) -> None:
         help_menu = self.menuBar().addMenu("&Help")
-        about_action = QtWidgets.QAction("About ICR2 Texture Tools", self)
+        about_action = QtWidgets.QAction(ABOUT_TITLE, self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
 
