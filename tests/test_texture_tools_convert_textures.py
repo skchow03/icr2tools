@@ -55,7 +55,7 @@ def test_lists_supported_files_and_previews_selected_texture(qapp, tmp_path: Pat
         widget.close()
 
 
-def test_window_places_convert_textures_before_legacy_convert_formats(qapp, monkeypatch, tmp_path: Path) -> None:
+def test_window_only_shows_current_conversion_tabs(qapp, monkeypatch, tmp_path: Path) -> None:
     _ = qapp
     monkeypatch.setattr(
         "texture_tools.main.SunnyOptimizerSettings.default_path",
@@ -68,7 +68,6 @@ def test_window_places_convert_textures_before_legacy_convert_formats(qapp, monk
             "Optimize palette",
             "Convert from source",
             "Convert from mip/pmp",
-            "Convert formats",
             "Split/prepare textures",
         ]
     finally:
