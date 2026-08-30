@@ -2070,14 +2070,10 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
             QPushButton[secondary="true"] { background: #f1f3f6; color: #374151; border: 1px solid #d1d5db; padding: 5px 10px; border-radius: 6px; }
             """
         )
-        self._settings = SunnyOptimizerSettings(SunnyOptimizerSettings.default_path())
-        self._settings.load()
-
         self.intent_tabs = QtWidgets.QTabWidget()
         self.intent_tabs.addTab(self._build_optimize_palette_tab(), "Optimize palette")
         self.intent_tabs.addTab(self._build_convert_textures_tab(), "Convert from source")
         self.intent_tabs.addTab(self._build_convert_game_textures_tab(), "Convert from mip/pmp")
-        self.intent_tabs.addTab(self._build_convert_formats_tab(), "Convert formats")
         self.intent_tabs.addTab(self._build_split_prepare_tab(), "Split/prepare textures")
 
         central = QtWidgets.QWidget()
@@ -2115,16 +2111,6 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.sunny_optimizer.setWindowTitle("Sunny Optimizer")
         return self.sunny_optimizer
 
-    def _build_convert_formats_tab(self) -> QtWidgets.QWidget:
-        tabs = QtWidgets.QTabWidget()
-        self.mip_conversion = MipConversionWidget(self._settings)
-        self.pmp_conversion = PmpConversionWidget(self._settings)
-        self.pmp_to_png = PmpToPngWidget(self._settings)
-        tabs.addTab(self.mip_conversion, "MIP Conversion")
-        tabs.addTab(self.pmp_conversion, "PNG → PMP")
-        tabs.addTab(self.pmp_to_png, "PMP → PNG")
-        return tabs
-
     def _build_convert_textures_tab(self) -> QtWidgets.QWidget:
         self.convert_textures = ConvertTexturesWidget()
         return self.convert_textures
@@ -2135,15 +2121,10 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
 
     def _use_global_texture_folder(self, folder: str) -> None:
         """Share the RGB texture folder with tools that accept RGB batch input."""
-        self.mip_conversion.source_folder_edit.setText(folder)
-        self.pmp_conversion.source_folder_edit.setText(folder)
         self.convert_textures.set_source_folder(folder)
 
     def _use_global_palette(self, palette: str) -> None:
         """Share the selected SUNNY.PCX with every palette-aware conversion tool."""
-        self.mip_conversion.palette_edit.setText(palette)
-        self.pmp_conversion.palette_edit.setText(palette)
-        self.pmp_to_png.palette_edit.setText(palette)
         self.convert_textures.set_palette(palette)
         self.convert_game_textures.set_palette(palette)
 

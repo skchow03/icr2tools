@@ -66,11 +66,9 @@ def test_files_are_global_above_tabs_and_feed_compatible_tools(qapp, tmp_path) -
         window.sunny_optimizer._load_folder(texture_folder)
         window.sunny_optimizer._set_palette_path(str(palette_path))
 
-        assert window.mip_conversion.source_folder_edit.text() == str(texture_folder.resolve())
-        assert window.pmp_conversion.source_folder_edit.text() == str(texture_folder.resolve())
-        assert window.mip_conversion.palette_edit.text() == str(palette_path)
-        assert window.pmp_conversion.palette_edit.text() == str(palette_path)
-        assert window.pmp_to_png.palette_edit.text() == str(palette_path)
+        assert window.convert_textures._source_folder == texture_folder.resolve()
+        assert window.convert_textures._palette_path == palette_path
+        assert window.convert_game_textures._palette_path == palette_path
     finally:
         window.close()
 
