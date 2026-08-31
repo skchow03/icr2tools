@@ -1501,6 +1501,17 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
     def _update_validation_state(self) -> bool:
         input_error = _validate_path(self.input_edit.text().strip(), label="Input", expected_suffixes=(".png", ".bmp"))
+        if input_error is None:
+            try:
+                with Image.open(self.input_edit.text().strip()) as source:
+                    source_size = source.size
+                if source_size != (2048, 64):
+                    input_error = (
+                        "Source horizon image must be 2048x64; "
+                        f"selected image is {source_size[0]}x{source_size[1]}."
+                    )
+            except (OSError, ValueError):
+                input_error = "Source horizon image could not be opened."
         palette_error = _validate_path(str(self._palette_path or ""), label="Palette", expected_suffixes=(".pcx",))
         output_error = _validate_path(
             str(self._output_folder or ""),
