@@ -1,3 +1,3 @@
 pyinstaller --noconfirm --windowed --onefile main.py ^
-  --name TextureTools ^
+  --name PPG ^
   --paths ..
