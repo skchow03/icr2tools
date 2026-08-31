@@ -30,6 +30,9 @@ def test_source_and_outputs_preview_and_follow_start_panel(qapp, tmp_path: Path)
     _source(source)
     widget = ChopHorizonWidget()
     try:
+        assert widget.run_btn.text() == "Export horizon textures"
+        assert widget.source_preview.image_view.hasHeightForWidth()
+        assert widget.source_preview.image_view.heightForWidth(2048) == 66
         widget.input_edit.setText(str(source))
         assert widget.source_preview._pixmap_item.pixmap().width() == 2048
         assert widget.first_output_preview._pixmap_item.pixmap().size().width() == 256
@@ -73,8 +76,8 @@ def test_exports_default_mip_names_and_confirms_overwrite(qapp, tmp_path: Path, 
     widget = ChopHorizonWidget()
     try:
         widget.input_edit.setText(str(source))
-        widget.palette_edit.setText(str(palette))
-        widget.output_edit.setText(str(tmp_path))
+        widget.set_palette(palette)
+        widget.set_output_folder(tmp_path)
         widget._run()
         assert calls == ["Page03.mip", "Page03b.mip"]
 
