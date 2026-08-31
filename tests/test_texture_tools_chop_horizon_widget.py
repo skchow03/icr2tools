@@ -59,6 +59,29 @@ def test_output_previews_label_each_horizon_panel_by_direction(qapp) -> None:
         widget.close()
 
 
+def test_rejects_source_with_wrong_dimensions(qapp, tmp_path: Path) -> None:
+    _ = qapp
+    source = tmp_path / "wrong-size.png"
+    palette = tmp_path / "sunny.pcx"
+    Image.new("RGB", (1024, 64)).save(source)
+    Image.new("P", (1, 1)).save(palette)
+
+    widget = ChopHorizonWidget()
+    try:
+        widget.set_palette(palette)
+        widget.set_output_folder(tmp_path)
+        widget.input_edit.setText(str(source))
+
+        assert not widget.run_btn.isEnabled()
+        assert not widget.input_error.isHidden()
+        assert widget.input_error.text() == (
+            "Source horizon image must be 2048x64; selected image is 1024x64."
+        )
+        assert "Missing/invalid: input" in widget.status_label.text()
+    finally:
+        widget.close()
+
+
 def test_exports_default_mip_names_and_confirms_overwrite(qapp, tmp_path: Path, monkeypatch) -> None:
     _ = qapp
     source = tmp_path / "horizon.png"
