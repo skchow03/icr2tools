@@ -365,6 +365,28 @@ def _pil_to_pixmap(image: Image.Image) -> QtGui.QPixmap:
     return QtGui.QPixmap.fromImage(qimage.copy())
 
 
+class AspectRatioGraphicsView(QtWidgets.QGraphicsView):
+    """A graphics view whose layout height follows a requested content ratio."""
+
+    def __init__(self, aspect_ratio: float, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._aspect_ratio = aspect_ratio
+        policy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        frame = self.frameWidth() * 2
+        return max(frame + 1, round(max(0, width - frame) / self._aspect_ratio) + frame)
+
+    def sizeHint(self) -> QtCore.QSize:
+        width = super().sizeHint().width()
+        return QtCore.QSize(width, self.heightForWidth(width))
+
+
 class PreviewPane(QtWidgets.QGroupBox):
     def __init__(
         self,
@@ -372,6 +394,7 @@ class PreviewPane(QtWidgets.QGroupBox):
         parent: QtWidgets.QWidget | None = None,
         *,
         panel_labels: tuple[str, ...] = (),
+        image_aspect_ratio: float | None = None,
     ) -> None:
         super().__init__(title, parent)
         layout = QtWidgets.QVBoxLayout(self)
@@ -395,8 +418,11 @@ class PreviewPane(QtWidgets.QGroupBox):
             item.hide()
             self._panel_label_items.append(item)
 
-        self.image_view = QtWidgets.QGraphicsView(self._scene)
-        self.image_view.setMinimumHeight(160)
+        if image_aspect_ratio is None:
+            self.image_view = QtWidgets.QGraphicsView(self._scene)
+            self.image_view.setMinimumHeight(160)
+        else:
+            self.image_view = AspectRatioGraphicsView(image_aspect_ratio, self._scene)
         self.image_view.setStyleSheet("border: 1px solid #d1d5db; background: #fff;")
         self.image_view.setRenderHint(QtGui.QPainter.SmoothPixmapTransform, True)
         self.image_view.setRenderHint(QtGui.QPainter.Antialiasing, True)
@@ -1397,6 +1423,8 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         super().__init__(parent)
         self._source_image: Image.Image | None = None
         self._output_images: tuple[Image.Image, Image.Image] | None = None
+        self._palette_path: Path | None = None
+        self._output_folder: Path | None = None
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1408,18 +1436,13 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         )
         description.setWordWrap(True)
         layout.addWidget(description)
-        section, section_layout = _make_section_card("1. Choose input")
-        section_layout.addWidget(QtWidgets.QLabel("Mode and input files"))
-        layout.addWidget(section)
         self.input_edit, self.input_error = self._make_browse_row(layout, "Source horizon image (2048x64):", self._browse_input)
         self.input_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower() in {".png", ".bmp"}, "Drop a .png or .bmp image.")
         self.input_edit._on_accept = lambda p: self.input_edit.setText(str(p[0]))
 
-        self.source_preview = PreviewPane("Source horizon preview")
-        self.source_preview.image_view.setMinimumHeight(120)
+        self.source_preview = PreviewPane("Source horizon preview", image_aspect_ratio=2048 / 64)
         layout.addWidget(self.source_preview)
 
-        layout.addWidget(QtWidgets.QLabel("2. Configure options"))
         start_row = QtWidgets.QHBoxLayout()
         start_label = QtWidgets.QLabel("Start with panel:")
         start_label.setMinimumWidth(UI_LABEL_WIDTH)
@@ -1443,15 +1466,7 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         output_preview_row.addWidget(self.second_output_preview, 1)
         layout.addLayout(output_preview_row)
 
-        layout.addWidget(QtWidgets.QLabel("3. Export"))
-        self.palette_edit, self.palette_error = self._make_browse_row(layout, "Palette file (.pcx):", self._browse_palette)
-        self.palette_edit._acceptor = lambda p: (len(p)==1 and p[0].is_file() and p[0].suffix.lower()==".pcx", "Drop a .pcx palette file.")
-        self.palette_edit._on_accept = lambda p: self.palette_edit.setText(str(p[0]))
-        self.output_edit, self.output_error = self._make_browse_row(layout, "Output folder:", self._browse_output)
-        self.output_edit._acceptor = lambda p: (len(p)==1 and p[0].is_dir(), "Drop a folder path.")
-        self.output_edit._on_accept = lambda p: self.output_edit.setText(str(p[0]))
-
-        self.run_btn = QtWidgets.QPushButton("Run")
+        self.run_btn = QtWidgets.QPushButton("Export horizon textures")
         _set_primary_button(self.run_btn)
         self.run_btn.clicked.connect(self._run)
         self.status_label = QtWidgets.QLabel()
@@ -1462,8 +1477,6 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         layout.addWidget(self.status_label)
         self.input_edit.textChanged.connect(self._update_validation_state)
         self.input_edit.textChanged.connect(self._refresh_previews)
-        self.palette_edit.textChanged.connect(self._update_validation_state)
-        self.output_edit.textChanged.connect(self._update_validation_state)
         self.start_panel_spin.valueChanged.connect(self._refresh_output_previews)
         self._update_validation_state()
 
@@ -1488,16 +1501,14 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
 
     def _update_validation_state(self) -> bool:
         input_error = _validate_path(self.input_edit.text().strip(), label="Input", expected_suffixes=(".png", ".bmp"))
-        palette_error = _validate_path(self.palette_edit.text().strip(), label="Palette", expected_suffixes=(".pcx",))
+        palette_error = _validate_path(str(self._palette_path or ""), label="Palette", expected_suffixes=(".pcx",))
         output_error = _validate_path(
-            self.output_edit.text().strip(),
+            str(self._output_folder or ""),
             label="Output folder",
             expected_suffixes=(),
             folder_only=True,
         )
         _set_field_error(self.input_edit, self.input_error, input_error)
-        _set_field_error(self.palette_edit, self.palette_error, palette_error)
-        _set_field_error(self.output_edit, self.output_error, output_error)
         problems = [name for name, err in (("input", input_error), ("palette", palette_error), ("output", output_error)) if err]
         valid = not problems
         self.run_btn.setEnabled(valid)
@@ -1508,21 +1519,14 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select source image", "", "Images (*.png *.bmp)")
         if path:
             self.input_edit.setText(path)
-            if not self.output_edit.text().strip():
-                self.output_edit.setText(str(Path(path).parent))
-
-    def _browse_output(self) -> None:
-        folder = QtWidgets.QFileDialog.getExistingDirectory(self, "Select output folder")
-        if folder:
-            self.output_edit.setText(folder)
-
-    def _browse_palette(self) -> None:
-        path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Select palette", "", "PCX palette (*.pcx)")
-        if path:
-            self.palette_edit.setText(path)
 
     def set_palette(self, palette: str | Path) -> None:
-        self.palette_edit.setText(str(palette))
+        self._palette_path = Path(palette)
+        self._update_validation_state()
+
+    def set_output_folder(self, folder: str | Path | None) -> None:
+        self._output_folder = Path(folder) if folder else None
+        self._update_validation_state()
 
     def _refresh_previews(self) -> None:
         path = Path(self.input_edit.text().strip())
@@ -1557,7 +1561,9 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
         if not self._update_validation_state():
             return
         try:
-            output_dir = Path(self.output_edit.text().strip())
+            assert self._output_folder is not None
+            assert self._palette_path is not None
+            output_dir = self._output_folder
             out1, out2 = output_dir / "Page03.mip", output_dir / "Page03b.mip"
             existing = [path.name for path in (out1, out2) if path.exists()]
             if existing:
@@ -1575,7 +1581,7 @@ class ChopHorizonWidget(QtWidgets.QWidget, SharedStatusMixin):
                     return
             images = prepare_horizon_sheets(self.input_edit.text().strip(), self.start_panel_spin.value())
             output_dir.mkdir(parents=True, exist_ok=True)
-            palette = self.palette_edit.text().strip()
+            palette = str(self._palette_path)
             img_to_mip(_prepare_image_for_mip(images[0]), str(out1), palette, "track", dither=False)
             img_to_mip(_prepare_image_for_mip(images[1]), str(out2), palette, "track", dither=False)
             self.set_status(STATUS_SUCCESS, f"Created: {out1.name}, {out2.name}")
@@ -2199,12 +2205,14 @@ class TextureToolsWindow(QtWidgets.QMainWindow):
         self.sunny_optimizer.sunny_palette_changed.connect(self._use_global_palette)
         self.sunny_optimizer.export_destination_changed.connect(self.convert_textures.set_output_folder)
         self.sunny_optimizer.export_destination_changed.connect(self.convert_game_textures.set_output_folder)
+        self.sunny_optimizer.export_destination_changed.connect(self.chop_horizon.set_output_folder)
         if self.sunny_optimizer.loaded_texture_folder is not None:
             self._use_global_texture_folder(str(self.sunny_optimizer.loaded_texture_folder))
         if self.sunny_optimizer._last_sunny_palette_path is not None:
             self._use_global_palette(str(self.sunny_optimizer._last_sunny_palette_path))
         self.convert_textures.set_output_folder(self.sunny_optimizer.export_destination)
         self.convert_game_textures.set_output_folder(self.sunny_optimizer.export_destination)
+        self.chop_horizon.set_output_folder(self.sunny_optimizer.export_destination)
         self._build_menu_bar()
 
     def _build_menu_bar(self) -> None:
