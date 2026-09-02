@@ -10,6 +10,7 @@ from PyQt5 import QtCore
 from icr2_core.lp.loader import load_lp_file
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import getxyz
+from track_viewer.common.lp_file_utils import resolve_lp_path
 
 
 @dataclass
@@ -67,8 +68,8 @@ def load_ai_line_records(
     if trk is None or not cline or track_path is None:
         return []
 
-    lp_path = track_path / f"{lp_name}.LP"
-    if not lp_path.exists():
+    lp_path = resolve_lp_path(track_path, lp_name)
+    if lp_path is None:
         return []
 
     length_arg = int(track_length) if track_length is not None else None
