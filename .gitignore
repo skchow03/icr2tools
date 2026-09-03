@@ -38,3 +38,4 @@ venv/
 Thumbs.db
 .DS_Store
 icr2timing/profiles.ini
+icr2timing/settings.ini

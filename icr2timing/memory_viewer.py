@@ -169,7 +169,7 @@ def build_parser() -> argparse.ArgumentParser:
 def configured_version() -> str:
     settings = configparser.ConfigParser()
     settings.read(Path(sys.argv[0]).resolve().parent / "settings.ini")
-    return settings.get("memory", "version", fallback="DOS").upper()
+    return settings.get("memory", "version", fallback="DOS102").upper()
 
 
 def main() -> int:
