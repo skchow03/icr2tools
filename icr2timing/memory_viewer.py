@@ -17,6 +17,11 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Running this file directly puts only ``icr2timing`` on sys.path.  Add the
+# repository root so the sibling ``icr2_core`` package can be imported.
+if __package__ is None or __package__ == "":
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
 
 
