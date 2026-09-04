@@ -1,7 +1,8 @@
 """Live, text-based viewer for named ICR2 memory addresses.
 
 Addresses in watches.ini are Ghidra image offsets. ICR2Memory translates them
-to host addresses by adding the signature-derived EXE base.
+to host addresses by adding the signature-derived EXE base. Signed 16.16
+fixed-point values can be displayed with ``type = 16.16``.
 """
 
 from __future__ import annotations
@@ -25,7 +26,8 @@ if __package__ is None or __package__ == "":
 from icr2_core.icr2_memory import ICR2Memory, WindowNotFoundError
 
 
-SUPPORTED_TYPES = set(ICR2Memory.TYPE_MAP) | {"bytes"}
+FIXED_16_16_TYPE = "16.16"
+SUPPORTED_TYPES = set(ICR2Memory.TYPE_MAP) | {"bytes", FIXED_16_16_TYPE}
 
 
 @dataclass(frozen=True)
@@ -70,7 +72,7 @@ def load_watches(path: Path, version: str) -> list[Watch]:
 
 
 def format_scalar(value, type_name: str, display: str) -> str:
-    if type_name.startswith("f"):
+    if type_name.startswith("f") or type_name == FIXED_16_16_TYPE:
         return f"{value:.6g}"
     if display == "hex":
         width = ICR2Memory.TYPE_MAP[type_name][1] * 2
@@ -90,6 +92,17 @@ def format_value(value, watch: Watch) -> str:
         return format_scalar(value, watch.type_name, watch.display)
     return "[" + ", ".join(format_scalar(v, watch.type_name, watch.display)
                             for v in value) + "]"
+
+
+def read_watch_value(memory: ICR2Memory, watch: Watch):
+    """Read a watch, converting signed 16.16 fixed-point data to floats."""
+    read_type = "i32" if watch.type_name == FIXED_16_16_TYPE else watch.type_name
+    value = memory.read(watch.ghidra_address, read_type, watch.count)
+    if watch.type_name != FIXED_16_16_TYPE:
+        return value
+    if watch.count == 1:
+        return value / 65536.0
+    return [item / 65536.0 for item in value]
 
 
 def append_changes(path: Path, version: str, changes: list[tuple[Watch, object]]) -> None:
@@ -120,7 +133,7 @@ def run(args: argparse.Namespace) -> int:
             changes = []
             for watch in watches:
                 try:
-                    value = memory.read(watch.ghidra_address, watch.type_name, watch.count)
+                    value = read_watch_value(memory, watch)
                     changed = watch.name in previous and previous[watch.name] != value
                     if changed:
                         changes.append((watch, value))
