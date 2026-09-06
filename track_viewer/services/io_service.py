@@ -26,6 +26,7 @@ from icr2_core.trk.track_loader import load_trk_from_folder
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.surface_mesh import GroundSurfaceStrip, build_ground_surface_mesh, compute_mesh_bounds
 from icr2_core.trk.trk_utils import get_cline_pos
+from track_viewer.common.lp_file_utils import resolve_lp_path
 from track_viewer.model.camera_models import CameraViewEntry, CameraViewListing
 from track_viewer.model.pit_models import PIT_PARAMETER_DEFINITIONS, PitParameters
 
@@ -512,7 +513,7 @@ class TrackIOService:
     def _detect_available_lp_files(self, track_folder: Path) -> List[str]:
         available: List[str] = []
         for name in LP_FILE_NAMES:
-            if (track_folder / f"{name}.LP").exists():
+            if resolve_lp_path(track_folder, name) is not None:
                 available.append(name)
         return available
 
