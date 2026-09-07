@@ -12,7 +12,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
@@ -70,6 +70,7 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         self._car_infos: List[CarDisplayInfo] = []
         self._current_struct_index: Optional[int] = None
         self._updating_table = False
+        self._default_values: Dict[int, Tuple[int, ...]] = {}
         self._values_per_car = cfg.car_state_size // 4
         self._locked_values = FrozenValueStore()
         self._field_definitions: List[CarFieldDefinition] = ensure_field_definitions(
@@ -177,7 +178,12 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             if tooltip:
                 index_item.setToolTip(tooltip)
             name_item = QtWidgets.QTableWidgetItem(definition.name)
-            name_item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+            name_item.setFlags(
+                QtCore.Qt.ItemIsSelectable
+                | QtCore.Qt.ItemIsEnabled
+                | QtCore.Qt.ItemIsUserCheckable
+            )
+            name_item.setCheckState(QtCore.Qt.Checked)
             if tooltip:
                 name_item.setToolTip(tooltip)
             self._table.setItem(row_idx, 0, index_item)
@@ -281,6 +287,8 @@ class CarDataEditorWidget(QtWidgets.QWidget):
     @QtCore.pyqtSlot(object)
     def on_state_updated(self, state: RaceState) -> None:
         self._latest_state = state
+        for struct_index, car in state.car_states.items():
+            self._default_values.setdefault(struct_index, tuple(car.values))
         self._show_status(
             f"Track: {state.track_name or 'UNKNOWN'} | Cars: {state.display_count}", 3000
         )
@@ -328,6 +336,11 @@ class CarDataEditorWidget(QtWidgets.QWidget):
         valid_structs = {info.struct_index for info in new_infos}
         self._range_tracker.retain_structs(valid_structs)
         self._locked_values.retain_structs(valid_structs)
+        self._default_values = {
+            index: values
+            for index, values in self._default_values.items()
+            if index in valid_structs
+        }
         self._car_combo.blockSignals(True)
         self._car_combo.clear()
         for info in new_infos:
@@ -463,6 +476,80 @@ class CarDataEditorWidget(QtWidgets.QWidget):
             f"Field {row_idx} updated to {new_val} for struct {self._current_struct_index}",
             2000,
         )
+
+    def reset_all_values_to_defaults(self) -> None:
+        """Restore every field for the selected car to its initial value."""
+
+        self._reset_values_to_defaults(range(self._values_per_car))
+
+    def reset_selected_values_to_defaults(self) -> None:
+        """Restore checked fields for the selected car to their initial values."""
+
+        checked_rows = (
+            row_idx
+            for row_idx in range(self._values_per_car)
+            if self._table.item(row_idx, 1) is not None
+            and self._table.item(row_idx, 1).checkState() == QtCore.Qt.Checked
+        )
+        self._reset_values_to_defaults(checked_rows)
+
+    def _reset_values_to_defaults(self, rows: Iterable[int]) -> None:
+        struct_index = self._current_struct_index
+        defaults = (
+            self._default_values.get(struct_index)
+            if struct_index is not None
+            else None
+        )
+        if struct_index is None or defaults is None:
+            self._show_status(
+                "Default values are not available for the selected car", 3000
+            )
+            return
+        if self._mem is None:
+            self._show_status("Memory connection not available", 3000)
+            return
+        row_indices = [row for row in rows if 0 <= row < len(defaults)]
+        if not row_indices:
+            self._show_status("No parameters are checked", 3000)
+            return
+        if not self._require_writes_enabled("reset car data values"):
+            return
+
+        reset_count = 0
+        for row_idx in row_indices:
+            value = defaults[row_idx]
+            exe_offset = (
+                self._cfg.car_state_base
+                + struct_index * self._cfg.car_state_size
+                + row_idx * 4
+            )
+            try:
+                self._mem.write(exe_offset, "i32", value)
+            except MemoryWritesDisabledError:
+                self._show_status("Memory writes remain disabled", 4000)
+                break
+            except Exception as exc:
+                log.exception("Failed to reset car data value")
+                self._show_status(f"Reset failed for field {row_idx}: {exc}", 5000)
+                break
+            if self._freeze_checkbox.isChecked():
+                self._locked_values.set(struct_index, row_idx, value)
+            self._range_tracker.update(struct_index, row_idx, value)
+            item = self._table.item(row_idx, 2)
+            if item is not None:
+                self._updating_table = True
+                try:
+                    item.setData(QtCore.Qt.UserRole, value)
+                    item.setText(str(value))
+                finally:
+                    self._updating_table = False
+            reset_count += 1
+
+        self._table.viewport().update()
+        if reset_count:
+            self._show_status(
+                f"Reset {reset_count} value(s) for struct {struct_index}", 3000
+            )
 
     # ------------------------------------------------------------------
     def _on_freeze_toggled(self, enabled: bool) -> None:
@@ -627,6 +714,21 @@ class CarDataEditor(QtWidgets.QMainWindow):
             parent=self,
         )
         self.setCentralWidget(self._widget)
+
+        tools_menu = self.menuBar().addMenu("Tools")
+        self._reset_all_action = tools_menu.addAction("Reset all values to defaults")
+        self._reset_all_action.triggered.connect(
+            self._widget.reset_all_values_to_defaults
+        )
+        self._reset_selected_action = tools_menu.addAction(
+            "Reset selected values to defaults"
+        )
+        self._reset_selected_action.setToolTip(
+            "Reset only the parameters checked in the Field column"
+        )
+        self._reset_selected_action.triggered.connect(
+            self._widget.reset_selected_values_to_defaults
+        )
 
         if self._updater is not None:
             self._updater.state_updated.connect(self._widget.on_state_updated)
