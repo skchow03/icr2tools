@@ -27,7 +27,7 @@ class Track3DDetailList:
     section: int
     sub_index: int
     lod_suffix: str
-    tso_ids: list[int]
+    tso_ids: list[int | str]
 
 
 @dataclass
@@ -36,7 +36,7 @@ class Track3DTopoList:
     sub_index: int
     side: str
     lod: str
-    tso_ids: list[int]
+    tso_ids: list[int | str]
 
 
 @dataclass(frozen=True)
@@ -357,7 +357,10 @@ def _format_detail_list_row(
     existing: Track3DDetailListDefinition, entry: Track3DDetailList
 ) -> str:
     non_tso_items = [item for item in existing.items if not item.startswith("__TSO")]
-    items = non_tso_items + [f"__TSO{tso_id}" for tso_id in entry.tso_ids]
+    items = non_tso_items + [
+        tso_id if isinstance(tso_id, str) else f"__TSO{tso_id}"
+        for tso_id in entry.tso_ids
+    ]
     return f"{_detail_list_label(entry)}: LIST {{ {', '.join(items)} }};"
 
 
@@ -429,7 +432,10 @@ def save_topo_lists_to_track3d(
         label = match.group(1)
         if not entry.tso_ids:
             return f"{label}: NIL;"
-        items = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
+        items = ", ".join(
+            tso_id if isinstance(tso_id, str) else f"__TSO{tso_id}"
+            for tso_id in entry.tso_ids
+        )
         return f"{label}: LIST {{ {items} }};"
 
     updated_text = _TOPO_LIST_RE.sub(replacement, original_text)

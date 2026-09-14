@@ -539,8 +539,8 @@ def test_referenced_object_list_tsos_are_emitted_for_pink_viewport_highlight() -
     assert referenced[-1] == (99, 100)
 
 
-@pytest.mark.parametrize("manual_value", ["741", "__TSO741", "  __tso741  "])
-def test_add_manually_accepts_tso_number_formats(monkeypatch, manual_value) -> None:
+@pytest.mark.parametrize("manual_value", ["741", "__TSO741", "tree", "Tree-01!"])
+def test_add_manually_accepts_any_value_without_spaces(monkeypatch, manual_value) -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_object_lists([Track3DObjectList("L", 3, 0, [38])])
@@ -553,8 +553,8 @@ def test_add_manually_accepts_tso_number_formats(monkeypatch, manual_value) -> N
     )
     tab.add_manual_tso_button.click()
 
-    assert tab.object_lists[0].tso_ids == [38, 741]
-    assert tab.tso_list.item(1).text() == "__TSO741"
+    assert tab.object_lists[0].tso_ids == [38, manual_value]
+    assert tab.tso_list.item(1).text() == manual_value
     assert tab.tso_list.currentRow() == 1
 
 
@@ -577,11 +577,12 @@ def test_add_manually_targets_detail_and_topo_lists(monkeypatch) -> None:
     topo_tab.section_list.setCurrentRow(0)
     topo_tab.add_manual_tso_button.click()
 
-    assert detail_tab.detail_lists[0].tso_ids == [11, 812]
-    assert topo_tab.topo_lists[0].tso_ids == [12, 812]
+    assert detail_tab.detail_lists[0].tso_ids == [11, "__TSO812"]
+    assert topo_tab.topo_lists[0].tso_ids == [12, "__TSO812"]
 
 
-def test_add_manually_rejects_invalid_tso_pointer(monkeypatch) -> None:
+@pytest.mark.parametrize("manual_value", ["", "two words", "tab\tvalue"])
+def test_add_manually_rejects_empty_or_whitespace_value(monkeypatch, manual_value) -> None:
     _app()
     tab = TSOVisibilityTab()
     tab.set_object_lists([Track3DObjectList("L", 3, 0, [38])])
@@ -590,7 +591,7 @@ def test_add_manually_rejects_invalid_tso_pointer(monkeypatch) -> None:
     monkeypatch.setattr(
         QtWidgets.QInputDialog,
         "getText",
-        lambda *_args, **_kwargs: ("tree", True),
+        lambda *_args, **_kwargs: (manual_value, True),
     )
     monkeypatch.setattr(
         QtWidgets.QMessageBox,
