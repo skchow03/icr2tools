@@ -539,7 +539,9 @@ def test_referenced_object_list_tsos_are_emitted_for_pink_viewport_highlight() -
     assert referenced[-1] == (99, 100)
 
 
-@pytest.mark.parametrize("manual_value", ["741", "__TSO741", "tree", "Tree-01!"])
+@pytest.mark.parametrize(
+    "manual_value", ["741", "__TSO741", "tree", "Tree-01!", "sec34_s1_HI"]
+)
 def test_add_manually_accepts_any_value_without_spaces(monkeypatch, manual_value) -> None:
     _app()
     tab = TSOVisibilityTab()
@@ -556,6 +558,38 @@ def test_add_manually_accepts_any_value_without_spaces(monkeypatch, manual_value
     assert tab.object_lists[0].tso_ids == [38, manual_value]
     assert tab.tso_list.item(1).text() == manual_value
     assert tab.tso_list.currentRow() == 1
+
+
+def test_add_manually_does_not_emit_label_as_tso_selection(monkeypatch) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([Track3DObjectList("L", 3, 0, [38])])
+    tab.section_list.setCurrentRow(0)
+    focused_tso_ids: list[int | None] = []
+    tab.selectedTSOPillChanged.connect(focused_tso_ids.append)
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: ("sec34_s1_HI", True),
+    )
+
+    tab.add_manual_tso_button.click()
+
+    assert focused_tso_ids[-1] is None
+    assert tab.object_lists[0].tso_ids == [38, "sec34_s1_HI"]
+
+
+def test_reordering_preserves_manual_list_entry() -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists(
+        [Track3DObjectList("L", 3, 0, [38, "sec34_s1_HI", 39])]
+    )
+    tab.section_list.setCurrentRow(0)
+
+    tab._on_tso_order_changed()
+
+    assert tab.object_lists[0].tso_ids == [38, "sec34_s1_HI", 39]
 
 
 def test_add_manually_targets_detail_and_topo_lists(monkeypatch) -> None:

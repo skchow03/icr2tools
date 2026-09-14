@@ -169,9 +169,13 @@ def parse_track3d_topo_lists(path: str | Path) -> list[Track3DTopoList]:
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     results: list[Track3DTopoList] = []
     for match in _TOPO_LIST_RE.finditer(text):
-        tso_ids: list[int] = []
-        for item in re.findall(r"\b__TSO(\d+)\b", match.group("body") or ""):
-            tso_ids.append(int(item))
+        tso_ids: list[int | str] = []
+        for raw_item in (match.group("body") or "").split(","):
+            item = raw_item.strip()
+            if not item:
+                continue
+            tso_match = re.fullmatch(r"__TSO(\d+)", item)
+            tso_ids.append(int(tso_match.group(1)) if tso_match else item)
         results.append(
             Track3DTopoList(
                 section=int(match.group("section")),
