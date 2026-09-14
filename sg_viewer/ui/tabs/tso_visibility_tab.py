@@ -727,7 +727,8 @@ class TSOVisibilityTab(QWidget):
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
         )
         self.add_manual_tso_button.setToolTip(
-            "Type a TSO pointer to add it to the selected ObjectList, DetailList, or Topo List."
+            "Type any value without spaces to add it unchanged to the selected "
+            "ObjectList, DetailList, or Topo List."
         )
         self.add_object_list_button.setToolTip(
             "Add a pointer to an ObjectList to the currently selected ObjectList."
@@ -1359,7 +1360,7 @@ class TSOVisibilityTab(QWidget):
                     "section": int(entry.section),
                     "sub_index": int(entry.sub_index),
                     "lod_suffix": str(entry.lod_suffix),
-                    "tso_ids": [int(tso_id) for tso_id in entry.tso_ids],
+                    "tso_ids": list(entry.tso_ids),
                 }
             )
         return payload
@@ -1376,6 +1377,21 @@ class TSOVisibilityTab(QWidget):
             for entry in self.topo_lists
         ]
 
+    @staticmethod
+    def _list_entries_from_payload(payload: object) -> list[int | str]:
+        if not isinstance(payload, list):
+            return []
+        return [
+            value
+            for value in payload
+            if (isinstance(value, int) and value >= 0)
+            or (
+                isinstance(value, str)
+                and bool(value)
+                and not any(character.isspace() for character in value)
+            )
+        ]
+
     def load_topo_lists_from_payload(self, payload: object) -> None:
         self.topo_lists = []
         if isinstance(payload, list):
@@ -1388,7 +1404,7 @@ class TSOVisibilityTab(QWidget):
                         sub_index=int(raw["sub_index"]),
                         side=str(raw["side"]).upper(),
                         lod=str(raw["lod"]).upper(),
-                        tso_ids=[int(value) for value in raw.get("tso_ids", [])],
+                        tso_ids=self._list_entries_from_payload(raw.get("tso_ids", [])),
                     )
                 except (KeyError, TypeError, ValueError):
                     continue
@@ -1412,15 +1428,7 @@ class TSOVisibilityTab(QWidget):
                 continue
             lod_suffix = str(raw_entry.get("lod_suffix", "")).strip().upper()
             raw_tso_ids = raw_entry.get("tso_ids", [])
-            tso_ids: list[int] = []
-            if isinstance(raw_tso_ids, list):
-                for tso_id in raw_tso_ids:
-                    try:
-                        parsed_id = int(tso_id)
-                    except (TypeError, ValueError):
-                        continue
-                    if parsed_id >= 0:
-                        tso_ids.append(parsed_id)
+            tso_ids = self._list_entries_from_payload(raw_tso_ids)
             parsed_lists.append(
                 Track3DDetailList(
                     section=section,
@@ -2305,34 +2313,22 @@ class TSOVisibilityTab(QWidget):
 
         value, accepted = QInputDialog.getText(
             self,
-            "Add TSO Manually",
-            "TSO pointer (for example, __TSO123 or 123):",
+            "Add Entry Manually",
+            "List entry (spaces are not allowed):",
         )
         if not accepted:
             return
-        normalized = value.strip()
-        if normalized.upper().startswith("__TSO"):
-            normalized = normalized[5:].strip()
-        try:
-            tso_id = int(normalized)
-        except ValueError:
+        if not value or any(character.isspace() for character in value):
             QMessageBox.warning(
                 self,
-                "Add TSO Manually",
-                "Enter a non-negative TSO number, such as __TSO123 or 123.",
-            )
-            return
-        if tso_id < 0:
-            QMessageBox.warning(
-                self,
-                "Add TSO Manually",
-                "Enter a non-negative TSO number, such as __TSO123 or 123.",
+                "Add Entry Manually",
+                "Enter a non-empty value without spaces.",
             )
             return
 
-        self._insert_tso_into_current_list(tso_id)
+        self._insert_tso_into_current_list(value)
 
-    def _insert_tso_into_current_list(self, tso_id: int) -> None:
+    def _insert_tso_into_current_list(self, tso_id: int | str) -> None:
         """Insert a TSO after the selected pill, or append it when none is selected."""
         row = self._find_object_list_index_for_current_selection()
         active_lists = self._active_lists()
