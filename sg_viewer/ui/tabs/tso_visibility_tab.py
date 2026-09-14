@@ -2049,7 +2049,7 @@ class TSOVisibilityTab(QWidget):
             item_tso_id = item.data(QtCore.Qt.UserRole)
             if isinstance(item_tso_id, int):
                 reordered_ids.append(item_tso_id)
-            elif isinstance(item_tso_id, str) and item_tso_id.startswith("ObjectList_"):
+            elif isinstance(item_tso_id, str):
                 reordered_ids.append(item_tso_id)
             elif text.startswith("__TSO"):
                 try:
@@ -2265,7 +2265,10 @@ class TSOVisibilityTab(QWidget):
             except ValueError:
                 self.selectedTSOPillChanged.emit(None)
                 return
-        self.selectedTSOPillChanged.emit(tso_id)
+        # Arbitrary list labels do not identify a trackside-object index.  Sending
+        # one to the preview would make it attempt ``int(label)`` and terminate
+        # the application from inside the Qt signal handler.
+        self.selectedTSOPillChanged.emit(tso_id if isinstance(tso_id, int) else None)
 
     def _resize_section_list(self) -> None:
         target_height = max(140, int(self.height() * 0.25))
@@ -2348,7 +2351,9 @@ class TSOVisibilityTab(QWidget):
         item = self.tso_list.item(insert_index)
         if item is not None:
             self.tso_list.setCurrentItem(item)
-        self.selectedTSOPillChanged.emit(tso_id)
+        # A manually entered label is a LIST item, not a trackside-object index.
+        # Keep it selected in the list without passing it to the numeric preview.
+        self.selectedTSOPillChanged.emit(tso_id if isinstance(tso_id, int) else None)
         self.selectedTSOsChanged.emit(
             tuple(item for item in active_lists[row].tso_ids if isinstance(item, int))
         )

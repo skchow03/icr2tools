@@ -49,3 +49,21 @@ def test_save_topo_lists_converts_nil_to_list_and_empty_list_to_nil(
         "TOPO_sec0_s0_R_HI: NIL;\n"
         "unrelated: NIL;\n"
     )
+
+
+def test_save_topo_lists_writes_manual_list_entry_unchanged(tmp_path: Path) -> None:
+    track3d = tmp_path / "track.3D"
+    track3d.write_text("TOPO_sec34_s1_L_HI: NIL;\n", encoding="utf-8")
+
+    save_topo_lists_to_track3d(
+        track3d,
+        [Track3DTopoList(34, 1, "L", "HI", ["sec34_s1_HI"])],
+        create_backup=False,
+    )
+
+    assert track3d.read_text(encoding="utf-8") == (
+        "TOPO_sec34_s1_L_HI: LIST { sec34_s1_HI };\n"
+    )
+    assert parse_track3d_topo_lists(track3d) == [
+        Track3DTopoList(34, 1, "L", "HI", ["sec34_s1_HI"])
+    ]
