@@ -312,6 +312,26 @@ class SGSettingsStore:
         visibility_state["detail_lists"] = detail_lists
         self.update(sg_path, tso_visibility=visibility_state)
 
+    def get_tso_visibility_topo_lists(self, sg_path: Path) -> list[dict[str, object]]:
+        payload = self.load(sg_path)
+        raw = payload.get("tso_visibility")
+        topo_lists = raw.get("topo_lists") if isinstance(raw, dict) else None
+        return (
+            [entry for entry in topo_lists if isinstance(entry, dict)]
+            if isinstance(topo_lists, list)
+            else []
+        )
+
+    def set_tso_visibility_topo_lists(
+        self, sg_path: Path, topo_lists: list[dict[str, object]]
+    ) -> None:
+        payload = self.load(sg_path)
+        raw_visibility = payload.get("tso_visibility")
+        visibility_state = (
+            dict(raw_visibility) if isinstance(raw_visibility, dict) else {}
+        )
+        visibility_state["topo_lists"] = topo_lists
+        self.update(sg_path, tso_visibility=visibility_state)
 
     def get_mrk_export_locations(self, sg_path: Path) -> dict[str, Path]:
         payload = self.load(sg_path)
