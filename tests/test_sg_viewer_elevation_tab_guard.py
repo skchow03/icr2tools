@@ -434,6 +434,12 @@ def test_files_sidebar_groups_tools_by_task(qapp):
             window.three_d_scale_texture_resolution_button
             not in standard_workflow.findChildren(QtWidgets.QPushButton)
         )
+        assert (
+            window.three_d_workflow_save_topo_lists_button
+            in standard_workflow.findChildren(QtWidgets.QPushButton)
+        )
+        assert "topo_lists" in window.three_d_workflow_options()
+        assert "topo_lists" in window.selected_three_d_workflow_steps()
         assert "texture_scaling" not in window.three_d_workflow_options()
         assert "texture_scaling" not in window.selected_three_d_workflow_steps()
     finally:

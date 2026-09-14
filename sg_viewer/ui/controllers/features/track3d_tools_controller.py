@@ -990,6 +990,9 @@ class Track3DToolsController:
             "detail_lists": lambda: self._window.tso_visibility_sidebar._on_save_detail_lists_to_track3d_requested(
                 create_backup=False
             ),
+            "topo_lists": lambda: self._window.tso_visibility_sidebar._on_save_topo_lists_to_track3d_requested(
+                create_backup=False
+            ),
             "see_through": lambda: self._on_three_d_fix_in_place_requested(
                 confirm=False
             ),
@@ -999,6 +1002,7 @@ class Track3DToolsController:
             "tso": "Saving TSOs",
             "object_lists": "Saving ObjectLists",
             "detail_lists": "Saving DetailLists",
+            "topo_lists": "Saving Topo Lists",
             "see_through": "Fixing see-through polygons",
             "colors": "Applying color replacements",
         }
@@ -1040,7 +1044,14 @@ class Track3DToolsController:
 
     def _on_three_d_apply_all_workflow_requested(self) -> None:
         self._run_three_d_workflow_steps(
-            ("tso", "object_lists", "detail_lists", "see_through", "colors")
+            (
+                "tso",
+                "object_lists",
+                "detail_lists",
+                "topo_lists",
+                "see_through",
+                "colors",
+            )
         )
 
     def _apply_saved_sunny_palette(self, sg_path: Path | None = None) -> None:

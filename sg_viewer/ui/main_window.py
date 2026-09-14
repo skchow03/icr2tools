@@ -539,6 +539,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_workflow_tso_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_object_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_topo_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_backup_checkbox = QtWidgets.QCheckBox(
@@ -548,6 +549,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._three_d_workflow_tso_checkbox,
             self._three_d_workflow_object_lists_checkbox,
             self._three_d_workflow_detail_lists_checkbox,
+            self._three_d_workflow_topo_lists_checkbox,
             self._three_d_workflow_see_through_checkbox,
             self._three_d_workflow_colors_checkbox,
             self._three_d_workflow_backup_checkbox,
@@ -564,6 +566,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._three_d_workflow_save_detail_lists_button = QtWidgets.QPushButton(
             "Save DetailLists"
+        )
+        self._three_d_workflow_save_topo_lists_button = QtWidgets.QPushButton(
+            "Save Topo Lists"
         )
         self._three_d_apply_all_workflow_button = QtWidgets.QPushButton(
             "Apply all to .3D"
@@ -1663,6 +1668,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._three_d_workflow_save_detail_lists_button,
             ),
             (
+                self._three_d_workflow_topo_lists_checkbox,
+                self._three_d_workflow_save_topo_lists_button,
+            ),
+            (
                 self._three_d_workflow_see_through_checkbox,
                 self._three_d_file_fix_in_place_button,
             ),
@@ -1675,6 +1684,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Save TSOs to .3D file",
             "Save ObjectLists",
             "Save DetailLists",
+            "Save Topo Lists",
             "Fix see-through (in place)",
             "Apply color replacements",
         )
@@ -3064,6 +3074,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._three_d_workflow_save_detail_lists_button
 
     @property
+    def three_d_workflow_save_topo_lists_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_workflow_save_topo_lists_button
+
+    @property
     def three_d_apply_selected_workflow_button(self) -> QtWidgets.QPushButton:
         return self._three_d_apply_selected_workflow_button
 
@@ -3076,6 +3090,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "tso": self._three_d_workflow_tso_checkbox.isChecked(),
             "object_lists": self._three_d_workflow_object_lists_checkbox.isChecked(),
             "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
+            "topo_lists": self._three_d_workflow_topo_lists_checkbox.isChecked(),
             "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
             "colors": self._three_d_workflow_colors_checkbox.isChecked(),
             "backup": self._three_d_workflow_backup_checkbox.isChecked(),
@@ -3088,6 +3103,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "tso": self._three_d_workflow_tso_checkbox,
             "object_lists": self._three_d_workflow_object_lists_checkbox,
             "detail_lists": self._three_d_workflow_detail_lists_checkbox,
+            "topo_lists": self._three_d_workflow_topo_lists_checkbox,
             "see_through": self._three_d_workflow_see_through_checkbox,
             "colors": self._three_d_workflow_colors_checkbox,
             "backup": self._three_d_workflow_backup_checkbox,
@@ -3106,6 +3122,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             steps.append("object_lists")
         if self._three_d_workflow_detail_lists_checkbox.isChecked():
             steps.append("detail_lists")
+        if self._three_d_workflow_topo_lists_checkbox.isChecked():
+            steps.append("topo_lists")
         if self._three_d_workflow_see_through_checkbox.isChecked():
             steps.append("see_through")
         if self._three_d_workflow_colors_checkbox.isChecked():
