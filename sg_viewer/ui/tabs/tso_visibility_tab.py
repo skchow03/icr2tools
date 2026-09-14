@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
     QGroupBox,
     QFrame,
     QHeaderView,
+    QInputDialog,
     QProgressDialog,
     QMessageBox,
     QHBoxLayout,
@@ -688,6 +689,7 @@ class TSOVisibilityTab(QWidget):
         self.auto_assign_button = QPushButton("Auto Assign")
         self.assignment_check_button = QPushButton("Check unassigned TSOs")
         self.add_tso_button = QPushButton("Add selected TSO to section >>")
+        self.add_manual_tso_button = QPushButton("Add Manually...")
         self.add_object_list_button = QPushButton("Add ObjectList to section")
         self.delete_tso_button = QPushButton("Remove selected TSO from section")
         self.copy_prev_button = QPushButton("Copy TSOs from previous section")
@@ -723,6 +725,9 @@ class TSOVisibilityTab(QWidget):
         )
         self.add_tso_button.setToolTip(
             "Add the selected TSO from the filter list to the currently selected section/sub-index."
+        )
+        self.add_manual_tso_button.setToolTip(
+            "Type a TSO pointer to add it to the selected ObjectList, DetailList, or Topo List."
         )
         self.add_object_list_button.setToolTip(
             "Add a pointer to an ObjectList to the currently selected ObjectList."
@@ -781,6 +786,7 @@ class TSOVisibilityTab(QWidget):
 
         center_panel.addStretch(1)
         center_panel.addWidget(self.add_tso_button)
+        center_panel.addWidget(self.add_manual_tso_button)
         center_panel.addWidget(self.add_object_list_button)
         center_panel.addWidget(self.delete_tso_button)
         center_panel.addWidget(self.copy_prev_button)
@@ -823,6 +829,7 @@ class TSOVisibilityTab(QWidget):
         )
         self.refresh_from_track3d_button.clicked.connect(self.refresh_from_track3d)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
+        self.add_manual_tso_button.clicked.connect(self._on_add_manual_tso_requested)
         self.add_object_list_button.clicked.connect(self._on_add_object_list_requested)
         self.delete_tso_button.clicked.connect(self._on_delete_tso_requested)
         self.copy_prev_button.clicked.connect(self._on_copy_from_previous_requested)
@@ -2286,6 +2293,50 @@ class TSOVisibilityTab(QWidget):
             return
         tso_id = selected_filter_item.data(QtCore.Qt.UserRole)
         if not isinstance(tso_id, int):
+            return
+
+        self._insert_tso_into_current_list(tso_id)
+
+    def _on_add_manual_tso_requested(self) -> None:
+        row = self._find_object_list_index_for_current_selection()
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
+            return
+
+        value, accepted = QInputDialog.getText(
+            self,
+            "Add TSO Manually",
+            "TSO pointer (for example, __TSO123 or 123):",
+        )
+        if not accepted:
+            return
+        normalized = value.strip()
+        if normalized.upper().startswith("__TSO"):
+            normalized = normalized[5:].strip()
+        try:
+            tso_id = int(normalized)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Add TSO Manually",
+                "Enter a non-negative TSO number, such as __TSO123 or 123.",
+            )
+            return
+        if tso_id < 0:
+            QMessageBox.warning(
+                self,
+                "Add TSO Manually",
+                "Enter a non-negative TSO number, such as __TSO123 or 123.",
+            )
+            return
+
+        self._insert_tso_into_current_list(tso_id)
+
+    def _insert_tso_into_current_list(self, tso_id: int) -> None:
+        """Insert a TSO after the selected pill, or append it when none is selected."""
+        row = self._find_object_list_index_for_current_selection()
+        active_lists = self._active_lists()
+        if row < 0 or row >= len(active_lists):
             return
 
         selected_pill = self.tso_list.currentItem()
