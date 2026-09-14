@@ -902,6 +902,10 @@ class SGViewerController:
             self._current_path,
             self._window.tso_visibility_sidebar.serialize_detail_lists(),
         )
+        self._sg_settings_store.set_tso_visibility_topo_lists(
+            self._current_path,
+            self._window.tso_visibility_sidebar.serialize_topo_lists(),
+        )
         self._sg_settings_store.set_tso_auto_update_relative_z(
             self._current_path,
             False,
@@ -1024,6 +1028,9 @@ class SGViewerController:
         )
         self._window.tso_visibility_sidebar.load_detail_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_detail_lists(self._current_path)
+        )
+        self._window.tso_visibility_sidebar.load_topo_lists_from_payload(
+            self._sg_settings_store.get_tso_visibility_topo_lists(self._current_path)
         )
         self._window.load_land_objects(
             self._sg_settings_store.get_land_objects(self._current_path)

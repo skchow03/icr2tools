@@ -35,12 +35,15 @@ from sg_viewer.io.track3d_parser import (
     Track3DDetailList,
     Track3DObjectList,
     Track3DSectionDlongList,
+    Track3DTopoList,
     parse_track3d,
     parse_track3d_detail_list_dlong_ranges,
     parse_track3d_detail_lists,
     parse_track3d_section_dlongs,
+    parse_track3d_topo_lists,
     save_detail_lists_to_track3d,
     save_object_lists_to_track3d,
+    save_topo_lists_to_track3d,
     track3d_has_detail_lists,
     track3d_has_object_lists,
 )
@@ -217,9 +220,14 @@ class TrackSectionListWidget(QTableWidget):
 
     def __init__(self):
         super().__init__()
-        self.setColumnCount(3)
+        self.setColumnCount(4)
         self.setHorizontalHeaderLabels(
-            ["ObjectLists L sections", "ObjectLists R sections", "DetailLists"]
+            [
+                "ObjectLists L sections",
+                "ObjectLists R sections",
+                "DetailLists",
+                "Topo Lists",
+            ]
         )
         self.verticalHeader().setVisible(False)
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -272,13 +280,24 @@ class TrackSectionListWidget(QTableWidget):
         left_entries: list[QTableWidgetItem],
         right_entries: list[QTableWidgetItem],
         detail_entries: list[QTableWidgetItem],
+        topo_entries: list[QTableWidgetItem],
     ) -> None:
-        self.setColumnCount(3)
+        self.setColumnCount(4)
         self.setHorizontalHeaderLabels(
-            ["ObjectLists L sections", "ObjectLists R sections", "DetailLists"]
+            [
+                "ObjectLists L sections",
+                "ObjectLists R sections",
+                "DetailLists",
+                "Topo Lists",
+            ]
         )
         self.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        row_count = max(len(left_entries), len(right_entries), len(detail_entries))
+        row_count = max(
+            len(left_entries),
+            len(right_entries),
+            len(detail_entries),
+            len(topo_entries),
+        )
         self.clear()
         self.setRowCount(row_count)
         self._flat_items = []
@@ -294,6 +313,10 @@ class TrackSectionListWidget(QTableWidget):
             if row < len(detail_entries):
                 item = detail_entries[row]
                 self.setItem(row, 2, item)
+                self._flat_items.append(item)
+            if row < len(topo_entries):
+                item = topo_entries[row]
+                self.setItem(row, 3, item)
                 self._flat_items.append(item)
 
 
@@ -651,11 +674,15 @@ class TSOVisibilityTab(QWidget):
 
         self.load_button = QPushButton("Load ObjectLists from track.3D")
         self.load_detail_lists_button = QPushButton("Load DetailLists from track.3D")
+        self.load_topo_lists_button = QPushButton("Populate Topo Lists from track.3D")
         self.refresh_from_track3d_button = QPushButton("Refresh from .3D")
         self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
         self.save_detail_lists_to_track3d_button = QPushButton(
             "Save DetailLists to track.3D"
+        )
+        self.save_topo_lists_to_track3d_button = QPushButton(
+            "Save Topo Lists to track.3D"
         )
         self.set_export_locations_button = QPushButton("Set export locations...")
         self.auto_assign_button = QPushButton("Auto Assign")
@@ -790,6 +817,10 @@ class TSOVisibilityTab(QWidget):
 
         self.load_button.clicked.connect(self.load_file)
         self.load_detail_lists_button.clicked.connect(self.load_detail_lists_file)
+        self.load_topo_lists_button.clicked.connect(self.load_topo_lists_file)
+        self.save_topo_lists_to_track3d_button.clicked.connect(
+            self._on_save_topo_lists_to_track3d_requested
+        )
         self.refresh_from_track3d_button.clicked.connect(self.refresh_from_track3d)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.add_object_list_button.clicked.connect(self._on_add_object_list_requested)
@@ -811,6 +842,7 @@ class TSOVisibilityTab(QWidget):
 
         self.object_lists = []
         self.detail_lists: list[Track3DDetailList] = []
+        self.topo_lists: list[Track3DTopoList] = []
         self._detail_list_dlong_ranges: dict[
             tuple[int, int, str], tuple[int | None, int | None]
         ] = {}
@@ -831,7 +863,9 @@ class TSOVisibilityTab(QWidget):
         file_group_layout.addWidget(self.load_button, 0, 0)
         file_group_layout.addWidget(self.load_detail_lists_button, 0, 1)
         file_group_layout.addWidget(self.refresh_from_track3d_button, 0, 2)
-        file_group_layout.addWidget(self.reconcile_button, 1, 0, 1, 3)
+        file_group_layout.addWidget(self.load_topo_lists_button, 1, 0, 1, 2)
+        file_group_layout.addWidget(self.save_topo_lists_to_track3d_button, 1, 2)
+        file_group_layout.addWidget(self.reconcile_button, 2, 0, 1, 3)
         file_group.setLayout(file_group_layout)
         layout.addWidget(file_group)
 
@@ -872,7 +906,7 @@ class TSOVisibilityTab(QWidget):
         if (
             isinstance(mapped, tuple)
             and len(mapped) == 2
-            and mapped[0] in {"object", "detail"}
+            and mapped[0] in {"object", "detail", "topo"}
             and isinstance(mapped[1], int)
         ):
             return (mapped[0], mapped[1])
@@ -884,7 +918,12 @@ class TSOVisibilityTab(QWidget):
         return self._current_selection_kind_index()[0] == "detail"
 
     def _active_lists(self):
-        return self.detail_lists if self._is_detail_mode() else self.object_lists
+        kind = self._current_selection_kind_index()[0]
+        if kind == "detail":
+            return self.detail_lists
+        if kind == "topo":
+            return self.topo_lists
+        return self.object_lists
 
     def apply_auto_assigned_object_lists(
         self, object_lists: list[Track3DObjectList]
@@ -973,7 +1012,7 @@ class TSOVisibilityTab(QWidget):
     def _collect_all_tso_ids(self) -> list[int]:
         all_ids = {
             tso_id
-            for object_list in (self.object_lists + self.detail_lists)
+            for object_list in (self.object_lists + self.detail_lists + self.topo_lists)
             for tso_id in object_list.tso_ids
             if isinstance(tso_id, int) and tso_id >= 0
         }
@@ -1100,7 +1139,7 @@ class TSOVisibilityTab(QWidget):
     def _assigned_tso_ids(self) -> set[int]:
         return {
             tso_id
-            for object_list in (self.object_lists + self.detail_lists)
+            for object_list in (self.object_lists + self.detail_lists + self.topo_lists)
             for tso_id in object_list.tso_ids
             if isinstance(tso_id, int) and tso_id >= 0
         }
@@ -1318,6 +1357,38 @@ class TSOVisibilityTab(QWidget):
             )
         return payload
 
+    def serialize_topo_lists(self) -> list[dict[str, object]]:
+        return [
+            {
+                "section": entry.section,
+                "sub_index": entry.sub_index,
+                "side": entry.side,
+                "lod": entry.lod,
+                "tso_ids": list(entry.tso_ids),
+            }
+            for entry in self.topo_lists
+        ]
+
+    def load_topo_lists_from_payload(self, payload: object) -> None:
+        self.topo_lists = []
+        if isinstance(payload, list):
+            for raw in payload:
+                if not isinstance(raw, dict):
+                    continue
+                try:
+                    entry = Track3DTopoList(
+                        section=int(raw["section"]),
+                        sub_index=int(raw["sub_index"]),
+                        side=str(raw["side"]).upper(),
+                        lod=str(raw["lod"]).upper(),
+                        tso_ids=[int(value) for value in raw.get("tso_ids", [])],
+                    )
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if entry.side in {"L", "R"} and entry.lod in {"HI", "MED", "LO"}:
+                    self.topo_lists.append(entry)
+        self.populate_table()
+
     def load_detail_lists_from_payload(self, payload: object) -> None:
         if not isinstance(payload, list):
             self.detail_lists = []
@@ -1430,6 +1501,10 @@ class TSOVisibilityTab(QWidget):
             entry.tso_ids = _unique_ids(entry.tso_ids)
         for entry in self.detail_lists:
             entry.tso_ids = _unique_ids(entry.tso_ids)
+        for entry in self.topo_lists:
+            entry.tso_ids = [
+                value for value in _unique_ids(entry.tso_ids) if isinstance(value, int)
+            ]
 
     def set_available_tso_ids(self, tso_ids: list[int] | tuple[int, ...]) -> None:
         self.available_tso_ids = sorted({tso_id for tso_id in tso_ids if tso_id >= 0})
@@ -1551,6 +1626,23 @@ class TSOVisibilityTab(QWidget):
         self.populate_table()
         self._emit_object_lists_changed()
 
+    def load_topo_lists_file(self) -> None:
+        path = self._configured_track3d_path("Populate Topo Lists")
+        if not path:
+            return
+        topo_lists = parse_track3d_topo_lists(path)
+        if not topo_lists:
+            QMessageBox.information(
+                self,
+                "Populate Topo Lists",
+                "The configured track.3D file does not contain any TOPO pointers.",
+            )
+            return
+        self.topo_lists = topo_lists
+        self._refresh_tso_filter_list()
+        self.populate_table()
+        self._emit_object_lists_changed()
+
     def refresh_from_track3d(self) -> None:
         """Rebuild visibility lists and their DLONG metadata from the configured .3D."""
         path = self._configured_track3d_path("Refresh from .3D")
@@ -1590,11 +1682,13 @@ class TSOVisibilityTab(QWidget):
 
         object_lists = parse_track3d(path)
         detail_lists = parse_track3d_detail_lists(path)
+        topo_lists = parse_track3d_topo_lists(path)
         detail_dlong_rows = parse_track3d_detail_list_dlong_ranges(path)
         catalog = parse_track3d_catalog(path)
 
         self.object_lists = object_lists
         self.detail_lists = detail_lists
+        self.topo_lists = topo_lists
         self.set_section_dlong_rows(section_rows)
         self.set_detail_list_dlong_rows(detail_dlong_rows)
         self._detail_list_tso_ids = {
@@ -1736,7 +1830,9 @@ class TSOVisibilityTab(QWidget):
                 self.available_tso_ids = sorted(
                     {
                         tso_id
-                        for object_list in (self.object_lists + self.detail_lists)
+                        for object_list in (
+                            self.object_lists + self.detail_lists + self.topo_lists
+                        )
                         for tso_id in object_list.tso_ids
                         if isinstance(tso_id, int) and tso_id >= 0
                     }
@@ -1787,6 +1883,13 @@ class TSOVisibilityTab(QWidget):
             updated_ids, row_changed = _remap_ids(detail_list.tso_ids)
             if row_changed:
                 detail_list.tso_ids = updated_ids
+                changed = True
+        for topo_list in self.topo_lists:
+            updated_ids, row_changed = _remap_ids(topo_list.tso_ids)
+            if row_changed:
+                topo_list.tso_ids = [
+                    value for value in updated_ids if isinstance(value, int)
+                ]
                 changed = True
 
         remapped_available_ids: set[int] = set()
@@ -1847,6 +1950,7 @@ class TSOVisibilityTab(QWidget):
         left_section_items: list[QTableWidgetItem] = []
         right_section_items: list[QTableWidgetItem] = []
         detail_section_items: list[QTableWidgetItem] = []
+        topo_section_items: list[QTableWidgetItem] = []
         for object_list_index, entry in enumerate(self.object_lists):
             if selected_tso_ids and not any(
                 tso_id in selected_tso_ids for tso_id in entry.tso_ids
@@ -1872,9 +1976,22 @@ class TSOVisibilityTab(QWidget):
             item.setData(QtCore.Qt.UserRole, ("detail", detail_list_index))
             detail_section_items.append(item)
 
+        for topo_list_index, entry in enumerate(self.topo_lists):
+            if selected_tso_ids and not any(
+                tso_id in selected_tso_ids for tso_id in entry.tso_ids
+            ):
+                continue
+            label = f"{entry.section} / {entry.sub_index} {entry.side} {entry.lod}"
+            item = QTableWidgetItem(label)
+            item.setData(QtCore.Qt.UserRole, ("topo", topo_list_index))
+            topo_section_items.append(item)
+
         with QtCore.QSignalBlocker(self.section_list):
             self.section_list.set_entries(
-                left_section_items, right_section_items, detail_section_items
+                left_section_items,
+                right_section_items,
+                detail_section_items,
+                topo_section_items,
             )
 
         if self.section_list.count() == 0:
@@ -1955,8 +2072,9 @@ class TSOVisibilityTab(QWidget):
         start = perf_counter()
         row = self._find_object_list_index_for_current_selection()
         active_lists = self._active_lists()
-        self.copy_prev_button.setEnabled(not self._is_detail_mode())
-        self.add_object_list_button.setEnabled(not self._is_detail_mode())
+        is_object_mode = self._current_selection_kind_index()[0] == "object"
+        self.copy_prev_button.setEnabled(is_object_mode)
+        self.add_object_list_button.setEnabled(is_object_mode)
         if row < 0 or row >= len(active_lists):
             self.selectedTSOsChanged.emit(tuple())
             self.referencedObjectListTSOsChanged.emit(tuple())
@@ -2360,6 +2478,45 @@ class TSOVisibilityTab(QWidget):
         if backup_path is not None:
             message += f"\nBackup created at:\n{backup_path}"
         QMessageBox.information(self, "Save DetailLists", message)
+        self.objectListsSaved.emit()
+
+    def _on_save_topo_lists_to_track3d_requested(
+        self, *, create_backup: bool = True
+    ) -> None:
+        if not self.topo_lists:
+            QMessageBox.information(self, "Save Topo Lists", "No Topo Lists to save.")
+            return
+        path = self._configured_track3d_path("Save Topo Lists")
+        if not path:
+            return
+        file_layout = [
+            (entry.section, entry.sub_index, entry.side, entry.lod)
+            for entry in parse_track3d_topo_lists(path)
+        ]
+        current_layout = [
+            (entry.section, entry.sub_index, entry.side, entry.lod)
+            for entry in self.topo_lists
+        ]
+        if file_layout != current_layout:
+            QMessageBox.warning(
+                self,
+                "Save Topo Lists",
+                "The configured track.3D TOPO layout no longer matches the loaded Topo Lists. Populate them again before saving.",
+            )
+            return
+        try:
+            backup_path = save_topo_lists_to_track3d(
+                path, self.topo_lists, create_backup=create_backup
+            )
+        except OSError as exc:
+            QMessageBox.critical(
+                self, "Save Topo Lists", f"Failed to update track.3D:\n{exc}"
+            )
+            return
+        message = "Updated track.3D with current Topo List TSO rows."
+        if backup_path is not None:
+            message += f"\nBackup created at:\n{backup_path}"
+        QMessageBox.information(self, "Save Topo Lists", message)
         self.objectListsSaved.emit()
 
     def _on_copy_from_previous_requested(self) -> None:

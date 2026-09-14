@@ -30,6 +30,15 @@ class Track3DDetailList:
     tso_ids: list[int]
 
 
+@dataclass
+class Track3DTopoList:
+    section: int
+    sub_index: int
+    side: str
+    lod: str
+    tso_ids: list[int]
+
+
 @dataclass(frozen=True)
 class Track3DDetailListDlongRange:
     section: int
@@ -148,6 +157,33 @@ def track3d_has_detail_lists(path: str | Path) -> bool:
     return bool(parse_track3d_catalog(path).detail_lists)
 
 
+_TOPO_LIST_RE = re.compile(
+    r"^(TOPO_sec(?P<section>\d+)_s(?P<sub>\d+)_(?P<side>[LR])_"
+    r"(?P<lod>HI|MED|LO)):\s*(?P<value>NIL|LIST\s*\{(?P<body>.*?)\})\s*;",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def parse_track3d_topo_lists(path: str | Path) -> list[Track3DTopoList]:
+    """Read every TOPO pointer, including pointers currently set to ``NIL``."""
+    text = Path(path).read_text(encoding="utf-8", errors="replace")
+    results: list[Track3DTopoList] = []
+    for match in _TOPO_LIST_RE.finditer(text):
+        tso_ids: list[int] = []
+        for item in re.findall(r"\b__TSO(\d+)\b", match.group("body") or ""):
+            tso_ids.append(int(item))
+        results.append(
+            Track3DTopoList(
+                section=int(match.group("section")),
+                sub_index=int(match.group("sub")),
+                side=match.group("side"),
+                lod=match.group("lod"),
+                tso_ids=tso_ids,
+            )
+        )
+    return results
+
+
 def parse_track3d_detail_list_dlong_ranges(
     path: str | Path,
 ) -> list[Track3DDetailListDlongRange]:
@@ -202,14 +238,9 @@ def _object_list_label(entry: Track3DObjectList) -> str:
 
 def _format_object_list_row(entry: Track3DObjectList) -> str:
     items = [
-        item if isinstance(item, str) else f"__TSO{item}"
-        for item in entry.tso_ids
+        item if isinstance(item, str) else f"__TSO{item}" for item in entry.tso_ids
     ]
-    return (
-        f"{_object_list_label(entry)}: LIST {{ "
-        f"{', '.join(items)} "
-        "};"
-    )
+    return f"{_object_list_label(entry)}: LIST {{ " f"{', '.join(items)} " "};"
 
 
 def _choose_object_list_insert_offset(
@@ -367,5 +398,45 @@ def save_detail_lists_to_track3d(
             updated_text[:start_offset] + replacement_text + updated_text[end_offset:]
         )
 
+    track3d_path.write_text(updated_text, encoding="utf-8")
+    return backup_path
+
+
+def save_topo_lists_to_track3d(
+    path: str | Path,
+    topo_lists: list[Track3DTopoList],
+    *,
+    create_backup: bool = True,
+) -> Path | None:
+    """Replace existing TOPO NIL/LIST pointers with the edited TSO assignments."""
+    track3d_path = Path(path)
+    original_text = track3d_path.read_text(encoding="utf-8", errors="ignore")
+    wanted = {
+        (entry.section, entry.sub_index, entry.side, entry.lod): entry
+        for entry in topo_lists
+    }
+
+    def replacement(match: re.Match[str]) -> str:
+        key = (
+            int(match.group("section")),
+            int(match.group("sub")),
+            match.group("side"),
+            match.group("lod"),
+        )
+        entry = wanted.get(key)
+        if entry is None:
+            return match.group(0)
+        label = match.group(1)
+        if not entry.tso_ids:
+            return f"{label}: NIL;"
+        items = ", ".join(f"__TSO{tso_id}" for tso_id in entry.tso_ids)
+        return f"{label}: LIST {{ {items} }};"
+
+    updated_text = _TOPO_LIST_RE.sub(replacement, original_text)
+    backup_path = None
+    if create_backup:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_path = track3d_path.with_suffix(f"{track3d_path.suffix}.bak_{timestamp}")
+        shutil.copy2(track3d_path, backup_path)
     track3d_path.write_text(updated_text, encoding="utf-8")
     return backup_path
