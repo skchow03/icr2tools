@@ -4,7 +4,11 @@ pytest.importorskip("PyQt5")
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.io.track3d_parser import Track3DObjectList
+from sg_viewer.io.track3d_parser import (
+    Track3DDetailList,
+    Track3DObjectList,
+    Track3DTopoList,
+)
 from sg_viewer.ui.tabs.tso_visibility_tab import (
     ObjectListPickerDialog,
     TSOVisibilityReconcileDialog,
@@ -247,9 +251,6 @@ def test_reconcile_dialog_can_sort_both_lists_by_side_then_section_then_subindex
         dialog.track3d_list_widget.item(row).text().split(" — ", 1)[0]
         for row in range(dialog.track3d_list_widget.count())
     ] == ["L / 5 / 0", "R / 1 / 0", "R / 1 / 1"]
-
-
-from sg_viewer.io.track3d_parser import Track3DDetailList
 
 
 def test_clear_all_object_lists_removes_tsos_but_keeps_lists() -> None:
@@ -536,3 +537,68 @@ def test_referenced_object_list_tsos_are_emitted_for_pink_viewport_highlight() -
     tab.section_list.setCurrentRow(0)
 
     assert referenced[-1] == (99, 100)
+
+
+@pytest.mark.parametrize("manual_value", ["741", "__TSO741", "  __tso741  "])
+def test_add_manually_accepts_tso_number_formats(monkeypatch, manual_value) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([Track3DObjectList("L", 3, 0, [38])])
+    tab.section_list.setCurrentRow(0)
+
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: (manual_value, True),
+    )
+    tab.add_manual_tso_button.click()
+
+    assert tab.object_lists[0].tso_ids == [38, 741]
+    assert tab.tso_list.item(1).text() == "__TSO741"
+    assert tab.tso_list.currentRow() == 1
+
+
+def test_add_manually_targets_detail_and_topo_lists(monkeypatch) -> None:
+    _app()
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: ("__TSO812", True),
+    )
+
+    detail_tab = TSOVisibilityTab()
+    detail_tab.set_detail_lists([Track3DDetailList(4, 0, "H", [11])])
+    detail_tab.section_list.setCurrentRow(0)
+    detail_tab.add_manual_tso_button.click()
+
+    topo_tab = TSOVisibilityTab()
+    topo_tab.topo_lists = [Track3DTopoList(5, 1, "R", "MED", [12])]
+    topo_tab.populate_table()
+    topo_tab.section_list.setCurrentRow(0)
+    topo_tab.add_manual_tso_button.click()
+
+    assert detail_tab.detail_lists[0].tso_ids == [11, 812]
+    assert topo_tab.topo_lists[0].tso_ids == [12, 812]
+
+
+def test_add_manually_rejects_invalid_tso_pointer(monkeypatch) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([Track3DObjectList("L", 3, 0, [38])])
+    tab.section_list.setCurrentRow(0)
+    warnings = []
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *_args, **_kwargs: ("tree", True),
+    )
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "warning",
+        lambda *args: warnings.append(args),
+    )
+
+    tab.add_manual_tso_button.click()
+
+    assert tab.object_lists[0].tso_ids == [38]
+    assert len(warnings) == 1
