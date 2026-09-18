@@ -388,9 +388,11 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         )
 
         window.measurement_units_combo.setCurrentIndex(0)
+        window._adjusted_section_dlongs = lambda _index: (0, 500 * 7200, 500 * 7200)
         window.update_selection_sidebar(selection)
         window.update_track_length_label(
-            f"Track Length: {window.format_length_with_secondary(selection.length)}"
+            f"Track Length: {window.format_length_with_secondary(selection.length)}",
+            selection.length,
         )
 
         assert window._section_start_dlong_label.text() == "Starting DLONG: 5280.0 ft"
@@ -402,11 +404,19 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         assert (
             window._track_stats_label.text() == "Track Length: 7200.0 ft (1.364 miles)"
         )
+        assert window._geometry_current_labels["index"].text() == "3"
+        assert window._geometry_current_labels["type"].text() == "Straight"
+        assert window._geometry_current_labels["length"].text() == "7200.0 ft"
+        assert window._geometry_current_labels["adjusted_start"].text() == "0.0 ft"
+        assert window._geometry_current_labels["adjusted_end"].text() == "7200.0 ft"
+        assert window._geometry_track_length_label.text() == "1.364 miles"
+        assert window._geometry_track_length_secondary_label.text() == "7200.0 ft"
 
         window.measurement_units_combo.setCurrentIndex(1)
         window.update_selection_sidebar(selection)
         window.update_track_length_label(
-            f"Track Length: {window.format_length_with_secondary(selection.length)}"
+            f"Track Length: {window.format_length_with_secondary(selection.length)}",
+            selection.length,
         )
 
         assert window._section_start_dlong_label.text() == "Starting DLONG: 1609.344 m"
@@ -416,6 +426,10 @@ def test_selection_and_track_length_show_secondary_units(qapp):
             == "Section Length: 2194.560 m (2.195 km)"
         )
         assert window._track_stats_label.text() == "Track Length: 2194.560 m (2.195 km)"
+        assert window._geometry_current_labels["length"].text() == "2194.560 m"
+        assert window._geometry_current_labels["adjusted_end"].text() == "2194.560 m"
+        assert window._geometry_track_length_label.text() == "1.364 miles"
+        assert window._geometry_track_length_secondary_label.text() == "2194.560 m"
     finally:
         window.close()
 

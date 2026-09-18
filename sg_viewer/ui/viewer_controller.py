@@ -1803,7 +1803,9 @@ class SGViewerController:
         total_length = float(metrics.status_messages[0])
 
         length_value = self._window.format_length_with_secondary(total_length)
-        self._window.update_track_length_label(f"Track Length: {length_value}")
+        self._window.update_track_length_label(
+            f"Track Length: {length_value}", total_length
+        )
 
     def _on_selected_section_changed(self, selection: SectionSelection | None) -> None:
         self._active_selection = selection
