@@ -31,7 +31,10 @@ class PreviewWidgetQt(QtWidgets.QWidget):
         show_status: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(parent)
-        self.setMinimumSize(640, 480)
+        # Let the surrounding layout and its toolbars determine the usable
+        # minimum width instead of reserving 640 pixels for the canvas.  The
+        # height floor keeps the editor controls vertically usable.
+        self.setMinimumHeight(480)
         self.setMouseTracking(True)
         self.setFocusPolicy(QtCore.Qt.StrongFocus)
 

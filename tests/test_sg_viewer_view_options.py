@@ -41,6 +41,8 @@ def qapp():
 def test_preview_widget_initializes_mrk_preview_state(qapp):
     widget = PreviewWidgetQt()
     try:
+        assert widget.minimumWidth() == 0
+        assert widget.minimumHeight() == 480
         assert widget.selected_mrk_wall_range is None
         assert widget.mrk_wall_height_500ths == 21000.0
         assert widget.mrk_armco_height_500ths == 18000.0
