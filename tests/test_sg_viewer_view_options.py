@@ -242,6 +242,23 @@ def test_main_splitter_allows_both_halves_to_shrink_without_a_minimum(qapp):
         window.close()
 
 
+def test_main_splitter_starts_with_sixty_forty_viewport_sidebar_split(qapp):
+    window = SGViewerWindow()
+    try:
+        window.resize(1400, 720)
+        window.show()
+        qapp.processEvents()
+
+        viewport_width, sidebar_width = window._main_splitter.sizes()
+        available_width = viewport_width + sidebar_width
+
+        assert available_width > 0
+        assert viewport_width / available_width == pytest.approx(0.6, abs=0.01)
+        assert sidebar_width / available_width == pytest.approx(0.4, abs=0.01)
+    finally:
+        window.close()
+
+
 def test_centerline_nodes_toolbar_checkbox_required_only_for_core_edit_tabs(qapp):
     from sg_viewer.ui.viewer_controller import SGViewerController
 

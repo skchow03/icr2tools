@@ -1806,7 +1806,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addWidget(self._right_sidebar_tabs, stretch=1)
         right_sidebar.setLayout(right_sidebar_layout)
         self._right_sidebar_container = right_sidebar
-        sidebar_width = max(320, right_sidebar.sizeHint().width())
         right_sidebar.setSizePolicy(
             QtWidgets.QSizePolicy.Ignored,
             QtWidgets.QSizePolicy.Expanding,
@@ -1821,11 +1820,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
         self._main_splitter.addWidget(preview_column)
         self._main_splitter.addWidget(right_sidebar)
+        # Start with a roomy viewport while keeping the splitter fully adjustable.
+        # Using proportional sizes instead of a fixed sidebar width also makes the
+        # initial layout consistent at different window sizes.
         self._main_splitter.setStretchFactor(0, 1)
-        self._main_splitter.setStretchFactor(1, 0)
-        self._main_splitter.setSizes(
-            [max(1, self.width() - sidebar_width), sidebar_width]
-        )
+        self._main_splitter.setStretchFactor(1, 1)
+        self._main_splitter.setSizes([3, 2])
         layout = QtWidgets.QHBoxLayout()
         layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
         layout.addWidget(self._main_splitter)
