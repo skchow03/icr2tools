@@ -4344,12 +4344,22 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 + centerline_pct * (section.grade[left_idx] - section.grade[right_idx])
             )
 
+        # Geometry edits live in the preview model until the SG is saved.  In
+        # particular, Scale Track to Length updates every preview section while
+        # ``sgfile.sects`` still contains the lengths that were originally
+        # loaded.  Use the live lengths so rebuilding this cache after an edit
+        # cannot repopulate the Geometry tab with stale adjusted DLONGs.
+        preview_sections, _track_length = self._preview.get_section_set()
+        if len(preview_sections) == len(sgfile.sects):
+            section_lengths = [section.length for section in preview_sections]
+        else:
+            section_lengths = [section.length for section in sgfile.sects]
+
         adjusted_lengths: list[int] = []
-        for index, section in enumerate(sgfile.sects):
+        for index, section_length in enumerate(section_lengths):
             previous_index = len(sgfile.sects) - 1 if index == 0 else index - 1
             begin_alt = centerline_altitudes[previous_index]
             end_alt = centerline_altitudes[index]
-            section_length = section.length
             if section_length == 0:
                 return None
             current_slope = centerline_grades[previous_index] / 8192

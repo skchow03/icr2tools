@@ -3231,6 +3231,35 @@ def test_adjusted_dlong_labels_auto_update_without_toggle(qapp):
         window.close()
 
 
+def test_adjusted_dlongs_use_live_preview_length_after_geometry_edit(qapp, monkeypatch):
+    window = SGViewerWindow()
+    try:
+        num_xsects = 2
+        data = [0] * (58 + 2 * num_xsects)
+        section = SGFile.Section(data, num_xsects)
+        section.length = 1000
+        section.alt = [0, 0]
+        section.grade = [0, 0]
+        window.preview._sgfile = SGFile(
+            [0, 0, 0, 0, 1, num_xsects],
+            1,
+            num_xsects,
+            [-100, 100],
+            [section],
+        )
+        monkeypatch.setattr(
+            window.preview,
+            "get_section_set",
+            lambda: ([SimpleNamespace(length=2500)], 2500),
+        )
+
+        assert window._rebuild_adjusted_section_ranges_cache() == (
+            (0, 2500, 2500),
+        )
+    finally:
+        window.close()
+
+
 def test_file_menu_exposes_export_csv_action_in_export_submenu(qapp):
     window = SGViewerWindow()
     try:
