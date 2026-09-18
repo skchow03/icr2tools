@@ -200,7 +200,7 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
         window.close()
 
 
-def test_main_splitter_keeps_sidebar_resizable_with_usable_minimum(qapp):
+def test_main_splitter_allows_both_halves_to_shrink_without_a_minimum(qapp):
     window = SGViewerWindow()
     try:
         window.resize(1400, 720)
@@ -210,13 +210,13 @@ def test_main_splitter_keeps_sidebar_resizable_with_usable_minimum(qapp):
         splitter = window._main_splitter
         sidebar = window._right_sidebar_container
         assert splitter.count() == 2
-        assert sidebar.minimumWidth() == 320
-        assert sidebar.maximumWidth() > sidebar.minimumWidth()
+        assert sidebar.minimumWidth() == 0
         assert (
             sidebar.sizePolicy().horizontalPolicy()
-            == QtWidgets.QSizePolicy.Preferred
+            == QtWidgets.QSizePolicy.Ignored
         )
-        assert not splitter.isCollapsible(1)
+        assert splitter.isCollapsible(0)
+        assert splitter.isCollapsible(1)
 
         splitter.setSizes([700, 600])
         qapp.processEvents()
@@ -229,13 +229,15 @@ def test_main_splitter_keeps_sidebar_resizable_with_usable_minimum(qapp):
 
         splitter.moveSplitter(splitter.width(), 1)
         qapp.processEvents()
-        assert splitter.sizes()[1] >= 320
+        assert splitter.sizes()[1] == 0
 
-        previous_total = sum(splitter.sizes())
-        window.resize(window.width() + 200, window.height())
+        splitter.moveSplitter(0, 1)
         qapp.processEvents()
-        assert sum(splitter.sizes()) > previous_total
-        assert splitter.sizes()[1] >= 320
+        assert splitter.sizes()[0] == 0
+
+        window.resize(240, window.height())
+        qapp.processEvents()
+        assert window.width() == 240
     finally:
         window.close()
 
