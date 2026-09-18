@@ -1805,25 +1805,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         right_sidebar_layout.addWidget(self._right_sidebar_tabs, stretch=1)
         right_sidebar.setLayout(right_sidebar_layout)
         self._right_sidebar_container = right_sidebar
-        # Keep the right sidebar width fixed so window resizing only grows/shrinks
-        # the track-diagram side of the window.
         sidebar_width = max(320, right_sidebar.sizeHint().width())
-        right_sidebar.setFixedWidth(sidebar_width)
+        right_sidebar.setMinimumWidth(320)
         right_sidebar.setSizePolicy(
-            QtWidgets.QSizePolicy.Fixed,
+            QtWidgets.QSizePolicy.Preferred,
             QtWidgets.QSizePolicy.Expanding,
         )
         preview_column.setLayout(preview_column_layout)
 
         container = QtWidgets.QWidget()
-        splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
-        splitter.addWidget(preview_column)
-        splitter.addWidget(right_sidebar)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 0)
-        splitter.setCollapsible(1, False)
+        self._main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
+        self._main_splitter.addWidget(preview_column)
+        self._main_splitter.addWidget(right_sidebar)
+        self._main_splitter.setStretchFactor(0, 1)
+        self._main_splitter.setStretchFactor(1, 0)
+        self._main_splitter.setCollapsible(1, False)
+        self._main_splitter.setSizes(
+            [max(1, self.width() - sidebar_width), sidebar_width]
+        )
         layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(splitter)
+        layout.addWidget(self._main_splitter)
         container.setLayout(layout)
         self.setCentralWidget(container)
         self._setup_marquee_status_bar()

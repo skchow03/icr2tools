@@ -198,6 +198,46 @@ def test_viewport_toolbar_labels_and_mouse_hint(qapp):
         window.close()
 
 
+def test_main_splitter_keeps_sidebar_resizable_with_usable_minimum(qapp):
+    window = SGViewerWindow()
+    try:
+        window.resize(1400, 720)
+        window.show()
+        qapp.processEvents()
+
+        splitter = window._main_splitter
+        sidebar = window._right_sidebar_container
+        assert splitter.count() == 2
+        assert sidebar.minimumWidth() == 320
+        assert sidebar.maximumWidth() > sidebar.minimumWidth()
+        assert (
+            sidebar.sizePolicy().horizontalPolicy()
+            == QtWidgets.QSizePolicy.Preferred
+        )
+        assert not splitter.isCollapsible(1)
+
+        splitter.setSizes([700, 600])
+        qapp.processEvents()
+        before = splitter.sizes()
+        splitter.moveSplitter(before[0] + 100, 1)
+        qapp.processEvents()
+        after = splitter.sizes()
+        assert after[0] > before[0]
+        assert after[1] < before[1]
+
+        splitter.moveSplitter(splitter.width(), 1)
+        qapp.processEvents()
+        assert splitter.sizes()[1] >= 320
+
+        previous_total = sum(splitter.sizes())
+        window.resize(window.width() + 200, window.height())
+        qapp.processEvents()
+        assert sum(splitter.sizes()) > previous_total
+        assert splitter.sizes()[1] >= 320
+    finally:
+        window.close()
+
+
 def test_centerline_nodes_toolbar_checkbox_required_only_for_core_edit_tabs(qapp):
     from sg_viewer.ui.viewer_controller import SGViewerController
 
