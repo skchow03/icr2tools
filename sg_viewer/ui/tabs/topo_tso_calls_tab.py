@@ -15,6 +15,9 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         super().__init__(parent)
         self.load_button = QtWidgets.QPushButton("Load LISTs from .3D file")
         self.section_combo = QtWidgets.QComboBox()
+        self.available_sections_list = self._make_list()
+        self.add_section_left_button = QtWidgets.QPushButton("Add selected to left")
+        self.add_section_right_button = QtWidgets.QPushButton("Add selected to right")
         self.left_list = self._make_list()
         self.right_list = self._make_list()
         self._calls: list[SectionTopoTsoCalls] = []
@@ -24,6 +27,7 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         layout.addWidget(self.load_button)
         layout.addWidget(QtWidgets.QLabel("Section:"))
         layout.addWidget(self.section_combo)
+        layout.addWidget(self._section_picker_panel())
         columns = QtWidgets.QHBoxLayout()
         columns.addWidget(self._list_panel("Output left side TSOs", self.left_list))
         columns.addWidget(self._list_panel("Output right side TSOs", self.right_list))
@@ -31,6 +35,12 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         layout.addStretch(1)
         self.load_button.clicked.connect(self.loadRequested)
         self.section_combo.currentIndexChanged.connect(self._show_section)
+        self.add_section_left_button.clicked.connect(
+            lambda: self._add_selected_section(self.left_list)
+        )
+        self.add_section_right_button.clicked.connect(
+            lambda: self._add_selected_section(self.right_list)
+        )
 
     def _make_list(self) -> QtWidgets.QListWidget:
         widget = QtWidgets.QListWidget()
@@ -57,6 +67,16 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         layout.addLayout(buttons)
         return group
 
+    def _section_picker_panel(self) -> QtWidgets.QGroupBox:
+        group = QtWidgets.QGroupBox("Available sections")
+        layout = QtWidgets.QVBoxLayout(group)
+        layout.addWidget(self.available_sections_list)
+        buttons = QtWidgets.QHBoxLayout()
+        buttons.addWidget(self.add_section_left_button)
+        buttons.addWidget(self.add_section_right_button)
+        layout.addLayout(buttons)
+        return group
+
     def set_calls(self, calls: list[SectionTopoTsoCalls]) -> None:
         self._calls = [
             SectionTopoTsoCalls(c.section, list(c.left), list(c.right)) for c in calls
@@ -64,6 +84,10 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         with QtCore.QSignalBlocker(self.section_combo):
             self.section_combo.clear()
             self.section_combo.addItems([call.section for call in self._calls])
+        self.available_sections_list.clear()
+        self.available_sections_list.addItems([call.section for call in self._calls])
+        if self.available_sections_list.count():
+            self.available_sections_list.setCurrentRow(0)
         self._visible_index = -1
         self._show_section(0)
 
@@ -121,6 +145,14 @@ class TopoTsoCallsTab(QtWidgets.QWidget):
         if ok:
             widget.addItem(value)
             self.changed.emit()
+
+    def _add_selected_section(self, widget: QtWidgets.QListWidget) -> None:
+        section = self.available_sections_list.currentItem()
+        if section is None:
+            return
+        widget.addItem(section.text())
+        widget.setCurrentRow(widget.count() - 1)
+        self.changed.emit()
 
     def _edit(self, widget: QtWidgets.QListWidget) -> None:
         item = widget.currentItem()
