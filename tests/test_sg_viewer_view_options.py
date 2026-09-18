@@ -497,6 +497,27 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         window.close()
 
 
+def test_geometry_track_length_uses_adjusted_end_of_last_section(qapp):
+    window = SGViewerWindow()
+    try:
+        planar_length = 500 * 5280
+        adjusted_length = 500 * 6000
+        window._adjusted_section_ranges_cache = (
+            (0, 500 * 2500, 500 * 2500),
+            (500 * 2500, adjusted_length, 500 * 3500),
+        )
+
+        window.update_track_length_label(
+            f"Track Length: {window.format_length_with_secondary(planar_length)}",
+            planar_length,
+        )
+
+        assert window._geometry_track_length_label.text() == "1.136 miles"
+        assert window._geometry_track_length_secondary_label.text() == "6000.0 ft"
+    finally:
+        window.close()
+
+
 def test_geometry_tab_shows_curve_radius_and_loop_state(qapp):
     window = SGViewerWindow()
     try:
