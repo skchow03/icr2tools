@@ -28,6 +28,10 @@ from sg_viewer.io.track3d_edit_plan import (
     build_selected_tso_definition_edit_plan,
 )
 from sg_viewer.io.track3d_texture_scaler import scale_track3d_texture_file
+from sg_viewer.services.track3d_topo_tso_calls import (
+    parse_topo_tso_calls,
+    update_topo_tso_calls,
+)
 
 
 @contextmanager
@@ -974,6 +978,43 @@ class Track3DToolsController:
             f"3D tools color fix complete: {input_path.name} ({replacement_count} updated)"
         )
 
+    def _on_load_topo_tso_calls_requested(self) -> None:
+        path = self._ensure_selected_track3d_file()
+        if path is None:
+            return
+        try:
+            calls = parse_topo_tso_calls(path)
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window, "TOPO/TSO calls", f"Could not read .3D file:\n{exc}"
+            )
+            return
+        self._window.topo_tso_calls_sidebar.set_calls(calls)
+        if self._current_path is not None:
+            self._sg_settings_store.set_topo_tso_calls(
+                self._current_path, self._window.topo_tso_calls_sidebar.serialize()
+            )
+        self._window.show_status_message(
+            f"Loaded TOPO/TSO calls for {len(calls)} section(s)."
+        )
+
+    def _on_update_topo_tso_calls_requested(self) -> None:
+        path = self._ensure_selected_track3d_file()
+        if path is None:
+            return
+        try:
+            count = update_topo_tso_calls(
+                path, self._window.topo_tso_calls_sidebar.calls()
+            )
+        except OSError as exc:
+            QtWidgets.QMessageBox.warning(
+                self._window, "TOPO/TSO calls", f"Could not update .3D file:\n{exc}"
+            )
+            return
+        self._window.show_status_message(
+            f"Updated {count} TOPO/TSO LIST call(s) in {path.name}."
+        )
+
     def _run_three_d_workflow_steps(self, steps: tuple[str, ...]) -> None:
         if not steps:
             QtWidgets.QMessageBox.information(
@@ -993,6 +1034,7 @@ class Track3DToolsController:
             "topo_lists": lambda: self._window.tso_visibility_sidebar._on_save_topo_lists_to_track3d_requested(
                 create_backup=False
             ),
+            "topo_tso_calls": self._on_update_topo_tso_calls_requested,
             "see_through": lambda: self._on_three_d_fix_in_place_requested(
                 confirm=False
             ),
@@ -1003,6 +1045,7 @@ class Track3DToolsController:
             "object_lists": "Saving ObjectLists",
             "detail_lists": "Saving DetailLists",
             "topo_lists": "Saving Topo Lists",
+            "topo_tso_calls": "Updating TOPO/TSO calls",
             "see_through": "Fixing see-through polygons",
             "colors": "Applying color replacements",
         }
@@ -1049,6 +1092,7 @@ class Track3DToolsController:
                 "object_lists",
                 "detail_lists",
                 "topo_lists",
+                "topo_tso_calls",
                 "see_through",
                 "colors",
             )

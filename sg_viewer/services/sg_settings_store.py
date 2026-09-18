@@ -333,6 +333,17 @@ class SGSettingsStore:
         visibility_state["topo_lists"] = topo_lists
         self.update(sg_path, tso_visibility=visibility_state)
 
+    def get_topo_tso_calls(self, sg_path: Path) -> list[dict[str, object]]:
+        raw = self.load(sg_path).get("topo_tso_calls")
+        return (
+            [entry for entry in raw if isinstance(entry, dict)]
+            if isinstance(raw, list)
+            else []
+        )
+
+    def set_topo_tso_calls(self, sg_path: Path, calls: list[dict[str, object]]) -> None:
+        self.update(sg_path, topo_tso_calls=calls)
+
     def get_mrk_export_locations(self, sg_path: Path) -> dict[str, Path]:
         payload = self.load(sg_path)
         raw = payload.get("mrk_export_locations")

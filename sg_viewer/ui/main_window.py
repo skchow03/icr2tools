@@ -67,6 +67,7 @@ from sg_viewer.ui.presentation.window_panels import (
     create_toolbar_navigation_panel,
 )
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
+from sg_viewer.ui.tabs.topo_tso_calls_tab import TopoTsoCallsTab
 
 MARQUEE_STATUS_INTERVAL_MS = 20
 
@@ -360,15 +361,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_move_object_up_button = QtWidgets.QPushButton("Move Up")
         self._tsd_move_object_down_button = QtWidgets.QPushButton("Move Down")
-        self._tsd_sort_objects_by_dlong_button = QtWidgets.QPushButton(
-            "Sort by DLONG"
-        )
+        self._tsd_sort_objects_by_dlong_button = QtWidgets.QPushButton("Sort by DLONG")
         self._tsd_remove_selected_object_button = QtWidgets.QPushButton(
             "Remove Selected TSD Object"
         )
-        self._tsd_export_objects_button = QtWidgets.QPushButton(
-            "Export all to .TSD"
-        )
+        self._tsd_export_objects_button = QtWidgets.QPushButton("Export all to .TSD")
         self._tsd_skid_marks_button = QtWidgets.QPushButton("Skid Marks...")
         self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
         self._tsd_objects_table.setHorizontalHeaderLabels(
@@ -540,6 +537,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._three_d_workflow_object_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_detail_lists_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_topo_lists_checkbox = QtWidgets.QCheckBox()
+        self._three_d_workflow_topo_tso_calls_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_see_through_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_colors_checkbox = QtWidgets.QCheckBox()
         self._three_d_workflow_backup_checkbox = QtWidgets.QCheckBox(
@@ -550,6 +548,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._three_d_workflow_object_lists_checkbox,
             self._three_d_workflow_detail_lists_checkbox,
             self._three_d_workflow_topo_lists_checkbox,
+            self._three_d_workflow_topo_tso_calls_checkbox,
             self._three_d_workflow_see_through_checkbox,
             self._three_d_workflow_colors_checkbox,
             self._three_d_workflow_backup_checkbox,
@@ -569,6 +568,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._three_d_workflow_save_topo_lists_button = QtWidgets.QPushButton(
             "Save Topo Lists"
+        )
+        self._three_d_workflow_save_topo_tso_calls_button = QtWidgets.QPushButton(
+            "Update TOPO/TSO calls"
         )
         self._three_d_apply_all_workflow_button = QtWidgets.QPushButton(
             "Apply all to .3D"
@@ -1483,6 +1485,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Select every TSO whose filename contains a regular-expression match."
         )
         self._tso_visibility_sidebar = TSOVisibilityTab()
+        self._topo_tso_calls_sidebar = TopoTsoCallsTab()
         self._land_objects_sidebar = QtWidgets.QWidget()
         land_layout = QtWidgets.QVBoxLayout()
         land_layout.addWidget(QtWidgets.QLabel("Land objects:"))
@@ -1672,6 +1675,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 self._three_d_workflow_save_topo_lists_button,
             ),
             (
+                self._three_d_workflow_topo_tso_calls_checkbox,
+                self._three_d_workflow_save_topo_tso_calls_button,
+            ),
+            (
                 self._three_d_workflow_see_through_checkbox,
                 self._three_d_file_fix_in_place_button,
             ),
@@ -1685,6 +1692,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Save ObjectLists",
             "Save DetailLists",
             "Save Topo Lists",
+            "Update TOPO/TSO calls",
             "Fix see-through (in place)",
             "Apply color replacements",
         )
@@ -1717,9 +1725,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         texture_scaling_warning.setWordWrap(True)
         advanced_export_layout.addWidget(texture_scaling_warning)
-        advanced_export_layout.addWidget(
-            self._three_d_scale_texture_resolution_button
-        )
+        advanced_export_layout.addWidget(self._three_d_scale_texture_resolution_button)
         advanced_export_group.setLayout(advanced_export_layout)
         export_layout.addWidget(advanced_export_group)
         export_layout.addStretch(1)
@@ -2454,6 +2460,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                 (
                     (self._tso_sidebar, "Objects"),
                     (self._tso_visibility_sidebar, "TSO Visibility"),
+                    (self._topo_tso_calls_sidebar, "TOPO/TSO calls"),
                     (self._land_objects_sidebar, "Draw land objects"),
                 ),
             ),
@@ -2990,6 +2997,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._tso_visibility_sidebar
 
     @property
+    def topo_tso_calls_sidebar(self) -> TopoTsoCallsTab:
+        return self._topo_tso_calls_sidebar
+
+    @property
     def three_d_file_select_button(self) -> QtWidgets.QPushButton:
         return self._three_d_file_select_button
 
@@ -3078,6 +3089,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._three_d_workflow_save_topo_lists_button
 
     @property
+    def three_d_workflow_save_topo_tso_calls_button(self) -> QtWidgets.QPushButton:
+        return self._three_d_workflow_save_topo_tso_calls_button
+
+    @property
     def three_d_apply_selected_workflow_button(self) -> QtWidgets.QPushButton:
         return self._three_d_apply_selected_workflow_button
 
@@ -3091,6 +3106,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "object_lists": self._three_d_workflow_object_lists_checkbox.isChecked(),
             "detail_lists": self._three_d_workflow_detail_lists_checkbox.isChecked(),
             "topo_lists": self._three_d_workflow_topo_lists_checkbox.isChecked(),
+            "topo_tso_calls": self._three_d_workflow_topo_tso_calls_checkbox.isChecked(),
             "see_through": self._three_d_workflow_see_through_checkbox.isChecked(),
             "colors": self._three_d_workflow_colors_checkbox.isChecked(),
             "backup": self._three_d_workflow_backup_checkbox.isChecked(),
@@ -3104,6 +3120,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "object_lists": self._three_d_workflow_object_lists_checkbox,
             "detail_lists": self._three_d_workflow_detail_lists_checkbox,
             "topo_lists": self._three_d_workflow_topo_lists_checkbox,
+            "topo_tso_calls": self._three_d_workflow_topo_tso_calls_checkbox,
             "see_through": self._three_d_workflow_see_through_checkbox,
             "colors": self._three_d_workflow_colors_checkbox,
             "backup": self._three_d_workflow_backup_checkbox,
@@ -3124,6 +3141,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             steps.append("detail_lists")
         if self._three_d_workflow_topo_lists_checkbox.isChecked():
             steps.append("topo_lists")
+        if self._three_d_workflow_topo_tso_calls_checkbox.isChecked():
+            steps.append("topo_tso_calls")
         if self._three_d_workflow_see_through_checkbox.isChecked():
             steps.append("see_through")
         if self._three_d_workflow_colors_checkbox.isChecked():
