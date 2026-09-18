@@ -804,6 +804,9 @@ class DocumentController:
         payload["three_d_texture_scaling"] = (
             self._host._window.three_d_texture_scaling_config()
         )
+        payload["topo_tso_calls"] = (
+            self._host._window.topo_tso_calls_sidebar.serialize()
+        )
         payload["tso_stamp_lists"] = [
             list(filenames)
             for filenames in self._host._trackside_objects_controller._tso_stamp_lists

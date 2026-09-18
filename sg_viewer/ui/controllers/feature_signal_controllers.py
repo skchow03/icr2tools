@@ -182,6 +182,15 @@ class Track3DController:
         w.three_d_workflow_save_topo_lists_button.clicked.connect(
             w.tso_visibility_sidebar._on_save_topo_lists_to_track3d_requested
         )
+        w.three_d_workflow_save_topo_tso_calls_button.clicked.connect(
+            c._on_update_topo_tso_calls_requested
+        )
+        w.topo_tso_calls_sidebar.loadRequested.connect(
+            c._on_load_topo_tso_calls_requested
+        )
+        w.topo_tso_calls_sidebar.changed.connect(
+            h._document_controller.persist_project_metadata
+        )
         w.three_d_apply_selected_workflow_button.clicked.connect(
             c._on_three_d_apply_selected_workflow_requested
         )
@@ -193,6 +202,7 @@ class Track3DController:
             w._three_d_workflow_object_lists_checkbox,
             w._three_d_workflow_detail_lists_checkbox,
             w._three_d_workflow_topo_lists_checkbox,
+            w._three_d_workflow_topo_tso_calls_checkbox,
             w._three_d_workflow_see_through_checkbox,
             w._three_d_workflow_colors_checkbox,
         ):

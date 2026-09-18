@@ -906,6 +906,9 @@ class SGViewerController:
             self._current_path,
             self._window.tso_visibility_sidebar.serialize_topo_lists(),
         )
+        self._sg_settings_store.set_topo_tso_calls(
+            self._current_path, self._window.topo_tso_calls_sidebar.serialize()
+        )
         self._sg_settings_store.set_tso_auto_update_relative_z(
             self._current_path,
             False,
@@ -938,6 +941,7 @@ class SGViewerController:
     ) -> None:
         self._clear_loaded_tsd_files()
         self._window.load_land_objects([])
+        self._window.topo_tso_calls_sidebar.set_calls([])
         self._generated_skid_mark_lines = ()
         self._skid_marks_rows_text = ""
         self._skid_marks_colors = DEFAULT_SKID_COLORS
@@ -1031,6 +1035,9 @@ class SGViewerController:
         )
         self._window.tso_visibility_sidebar.load_topo_lists_from_payload(
             self._sg_settings_store.get_tso_visibility_topo_lists(self._current_path)
+        )
+        self._window.topo_tso_calls_sidebar.load_payload(
+            self._sg_settings_store.get_topo_tso_calls(self._current_path)
         )
         self._window.load_land_objects(
             self._sg_settings_store.get_land_objects(self._current_path)
