@@ -3342,6 +3342,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._geometry_track_length_secondary_label.clear()
             return
 
+        # The Geometry tab reports the elevation-adjusted distance used by its
+        # Adjusted DLONG fields.  The preview's track length is the planar SG
+        # distance, so using it here can leave Full Track disagreeing with the
+        # adjusted end of the final section on tracks with elevation changes.
+        adjusted_ranges = self._adjusted_section_ranges_cache
+        if adjusted_ranges is None:
+            adjusted_ranges = self._rebuild_adjusted_section_ranges_cache()
+        if adjusted_ranges:
+            length = float(adjusted_ranges[-1][1])
+
         feet = units_from_500ths(length, "feet")
         self._geometry_track_length_label.setText(f"{feet / 5280.0:.3f} miles")
         self._geometry_track_length_secondary_label.setText(
@@ -4300,6 +4310,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def invalidate_adjusted_section_range_cache(self) -> None:
         self._adjusted_section_ranges_cache = None
+        # Keep Full Track synchronized even when an elevation edit does not
+        # otherwise cause the planar track-length display to be recalculated.
+        self._update_geometry_track_length()
 
     def _rebuild_adjusted_section_ranges_cache(
         self,
