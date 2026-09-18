@@ -233,9 +233,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter
         )
         self._marquee_status_label.setSizePolicy(
-            QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
+            QtWidgets.QSizePolicy.Ignored, QtWidgets.QSizePolicy.Preferred
         )
-        self._marquee_status_label.setMinimumWidth(200)
         self._marquee_status_text = ""
         self._marquee_status_offset = 0
         self._marquee_status_offset_px = 0
@@ -1763,6 +1762,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         preview_column = QtWidgets.QWidget()
         preview_column_layout = QtWidgets.QVBoxLayout()
+        preview_column_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
         preview_column_layout.addWidget(toolbar_panel.widget)
         preview_column_layout.addWidget(self._quick_display_toolbar)
         self._geometry_viewport_toolbar = self._create_tab_button_panel(
@@ -1792,6 +1792,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_geometry_tab_button_state()
         right_sidebar = QtWidgets.QWidget()
         right_sidebar_layout = QtWidgets.QVBoxLayout()
+        right_sidebar_layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
         right_sidebar_layout.setContentsMargins(0, 0, 0, 0)
         right_sidebar_layout.setSpacing(6)
         right_sidebar_header = QtWidgets.QWidget()
@@ -1806,12 +1807,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         right_sidebar.setLayout(right_sidebar_layout)
         self._right_sidebar_container = right_sidebar
         sidebar_width = max(320, right_sidebar.sizeHint().width())
-        right_sidebar.setMinimumWidth(320)
         right_sidebar.setSizePolicy(
-            QtWidgets.QSizePolicy.Preferred,
+            QtWidgets.QSizePolicy.Ignored,
             QtWidgets.QSizePolicy.Expanding,
         )
         preview_column.setLayout(preview_column_layout)
+        preview_column.setSizePolicy(
+            QtWidgets.QSizePolicy.Ignored,
+            QtWidgets.QSizePolicy.Expanding,
+        )
 
         container = QtWidgets.QWidget()
         self._main_splitter = QtWidgets.QSplitter(QtCore.Qt.Horizontal)
@@ -1819,11 +1823,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._main_splitter.addWidget(right_sidebar)
         self._main_splitter.setStretchFactor(0, 1)
         self._main_splitter.setStretchFactor(1, 0)
-        self._main_splitter.setCollapsible(1, False)
         self._main_splitter.setSizes(
             [max(1, self.width() - sidebar_width), sidebar_width]
         )
         layout = QtWidgets.QHBoxLayout()
+        layout.setSizeConstraint(QtWidgets.QLayout.SetNoConstraint)
         layout.addWidget(self._main_splitter)
         container.setLayout(layout)
         self.setCentralWidget(container)
