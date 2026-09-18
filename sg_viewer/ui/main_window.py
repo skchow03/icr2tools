@@ -882,6 +882,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_context_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_view_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_advanced_labels: dict[str, QtWidgets.QLabel] = {}
+        self._geometry_current_labels: dict[str, QtWidgets.QLabel] = {}
+        self._geometry_track_length_label = QtWidgets.QLabel("–")
+        self._geometry_track_length_secondary_label = QtWidgets.QLabel("")
+        self._geometry_track_length_secondary_label.setStyleSheet(
+            "color: palette(mid); font-size: 11px;"
+        )
+        self._geometry_track_length_500ths: float | None = None
         self._run_full_integrity_check_button = QtWidgets.QPushButton(
             "Run Full Integrity Check…"
         )
@@ -2117,161 +2124,46 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._right_sidebar_tabs.tabText(current_index).rstrip("*")
 
     def _create_section_inspector_panel(self) -> QtWidgets.QWidget:
-        scroll = QtWidgets.QScrollArea()
-        scroll.setWidgetResizable(True)
         content = QtWidgets.QWidget()
         layout = QtWidgets.QVBoxLayout(content)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
-        layout.addWidget(self._section_summary_title_label)
-        layout.addWidget(self._section_summary_detail_label)
 
         def group(title: str) -> QtWidgets.QFormLayout:
             box = QtWidgets.QGroupBox(title)
             form = QtWidgets.QFormLayout(box)
             form.setContentsMargins(8, 8, 8, 8)
-            form.setSpacing(4)
+            form.setSpacing(8)
             form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
-            layout.addWidget(box)
+            layout.addWidget(box, stretch=1)
             return form
 
-        def two_column_group(title: str) -> QtWidgets.QGridLayout:
-            box = QtWidgets.QGroupBox(title)
-            grid = QtWidgets.QGridLayout(box)
-            grid.setContentsMargins(8, 8, 8, 8)
-            grid.setHorizontalSpacing(12)
-            grid.setVerticalSpacing(4)
-            layout.addWidget(box)
-            return grid
-
-        health = two_column_group("Section Health")
-        health_items = (
-            ("selected", "Selected section"),
+        current = group("Current Section")
+        for key, caption in (
+            ("index", "Selected Section Index"),
+            ("type", "Type"),
             ("length", "Length"),
-            ("previous", "Previous connection"),
-            ("next", "Next connection"),
-            ("start_tangency", "Start tangency"),
-            ("end_tangency", "End tangency"),
-            ("radius", "Curve radius"),
-            ("boundaries", "Boundaries"),
-            ("fsects", "Fsects"),
-            ("dlong", "DLONG range"),
-            ("adjusted", "Adjusted DLONGs"),
-        )
-        for index, (key, label) in enumerate(health_items):
-            grid_row = index // 2
-            grid_column = (index % 2) * 2
-            name = QtWidgets.QLabel(label)
-            name.setStyleSheet("font-weight: bold;")
-            status = QtWidgets.QLabel("Unknown")
-            detail = QtWidgets.QLabel("–")
-            detail.setWordWrap(True)
-            row = QtWidgets.QWidget()
-            row_layout = QtWidgets.QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.addWidget(status)
-            row_layout.addWidget(detail, stretch=1)
-            health.addWidget(name, grid_row, grid_column)
-            health.addWidget(row, grid_row, grid_column + 1)
-            self._section_health_labels[key] = (status, detail)
-        health.addWidget(
-            self._run_full_integrity_check_button, (len(health_items) + 1) // 2, 0, 1, 4
-        )
-        health.setColumnStretch(1, 1)
-        health.setColumnStretch(3, 1)
-
-        for title, labels, store in (
-            (
-                "Geometry",
-                (
-                    "Type",
-                    "Start DLONG",
-                    "End DLONG",
-                    "Length",
-                    "Radius",
-                    "Start point",
-                    "End point",
-                    "Start heading",
-                    "End heading",
-                    "Curve center",
-                    "Curve arc/sweep",
-                    "Adjusted start",
-                    "Adjusted end",
-                    "Adjusted length",
-                ),
-                self._section_geometry_labels,
-            ),
-            (
-                "Connections",
-                (
-                    "Previous",
-                    "Next",
-                    "Previous length",
-                    "Next length",
-                    "Previous status",
-                    "Next status",
-                    "Gap to previous",
-                    "Gap to next",
-                    "Heading mismatch previous",
-                    "Heading mismatch next",
-                ),
-                self._section_connection_labels,
-            ),
-            (
-                "Boundaries / Walls",
-                ("Summary", "B0", "B1", "B2", "B3", "B4", "B5", "B6", "B7", "B8", "B9"),
-                self._section_boundary_labels,
-            ),
-            (
-                "Subsections / .3D",
-                (
-                    "Count",
-                    "Starts",
-                    "Adjusted start",
-                    "Adjusted end",
-                    "Adjusted length",
-                ),
-                self._section_subsection_labels,
-            ),
-            (
-                "Track Context",
-                ("Track length", "Miles", "Section position", "Lap percentage"),
-                self._section_context_labels,
-            ),
-            ("View", ("Zoom", "Units"), self._section_view_labels),
-            (
-                "Advanced / Raw SG Values",
-                (
-                    "Raw section id",
-                    "Raw previous id",
-                    "Raw next id",
-                    "SG radius",
-                    "SG angles",
-                    "Subindex starts",
-                ),
-                self._section_advanced_labels,
-            ),
+            ("adjusted_start", "Adjusted DLONG Start"),
+            ("adjusted_end", "Adjusted DLONG End"),
         ):
-            grid = two_column_group(title)
-            for index, label in enumerate(labels):
-                row = index // 2
-                column = (index % 2) * 2
-                name = QtWidgets.QLabel(label)
-                name.setStyleSheet("font-weight: bold;")
-                value = QtWidgets.QLabel("–")
-                value.setWordWrap(True)
-                grid.addWidget(name, row, column)
-                grid.addWidget(value, row, column + 1)
-                store[label] = value
-            grid.setColumnStretch(1, 1)
-            grid.setColumnStretch(3, 1)
+            value = QtWidgets.QLabel("–")
+            value.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+            current.addRow(caption, value)
+            self._geometry_current_labels[key] = value
+
+        full_track = group("Full Track")
+        track_length = QtWidgets.QWidget()
+        track_length_layout = QtWidgets.QVBoxLayout(track_length)
+        track_length_layout.setContentsMargins(0, 0, 0, 0)
+        track_length_layout.setSpacing(2)
+        track_length_layout.addWidget(self._geometry_track_length_label)
+        track_length_layout.addWidget(self._geometry_track_length_secondary_label)
+        full_track.addRow("Track Length", track_length)
 
         self._section_split_action_button.hide()
         self._section_delete_action_button.hide()
         self._section_set_start_finish_action_button.hide()
-        layout.addStretch(1)
-        scroll.setWidget(content)
-        return scroll
+        return content
 
     def _set_section_value(
         self, store: dict[str, QtWidgets.QLabel], key: str, value: str
@@ -3383,8 +3275,26 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._xsect_elevation_table.blockSignals(False)
             self._updating_xsect_table = False
 
-    def update_track_length_label(self, text: str) -> None:
+    def update_track_length_label(
+        self, text: str, length_500ths: float | None = None
+    ) -> None:
         self._track_stats_label.setText(text)
+        self._geometry_track_length_500ths = length_500ths
+        self._update_geometry_track_length()
+
+    def _update_geometry_track_length(self) -> None:
+        length = self._geometry_track_length_500ths
+        if length is None:
+            status = self._track_stats_label.text().removeprefix("Track Length: ")
+            self._geometry_track_length_label.setText(status)
+            self._geometry_track_length_secondary_label.clear()
+            return
+
+        feet = units_from_500ths(length, "feet")
+        self._geometry_track_length_label.setText(f"{feet / 5280.0:.3f} miles")
+        self._geometry_track_length_secondary_label.setText(
+            self.format_length(length)
+        )
 
     def format_length(self, value: float | int | None) -> str:
         return format_length(value, unit=self._current_measurement_unit())
@@ -3853,6 +3763,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_delete_action_button.setEnabled(False)
             self._section_set_start_finish_action_button.setEnabled(False)
             self._section_index_label.setText("Current Section: –")
+            for label in self._geometry_current_labels.values():
+                label.setText("–")
             self._update_current_section_banner(None)
             self._section_start_dlong_label.setText("Starting DLONG: –")
             self._section_end_dlong_label.setText("Ending DLONG: –")
@@ -3896,6 +3808,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._set_start_finish_button.isEnabled()
         )
         self._section_index_label.setText(f"Current Section: {selection.index}")
+        self._geometry_current_labels["index"].setText(str(selection.index))
+        self._geometry_current_labels["type"].setText(type_name)
+        self._geometry_current_labels["length"].setText(
+            self.format_length(selection.length)
+        )
         self._update_current_section_banner(selection.index)
         self._section_start_dlong_label.setText(
             f"Starting DLONG: {self.format_length(selection.start_dlong)}"
@@ -4272,6 +4189,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._adjusted_section_end_dlong_label.setText("Adjusted Ending DLONG: –")
             self._adjusted_section_length_label.setText("Adjusted Section Length: –")
+            self._geometry_current_labels["adjusted_start"].setText("–")
+            self._geometry_current_labels["adjusted_end"].setText("–")
             self._update_current_section_banner(self._selected_section_index)
             return
         start_dlong, end_dlong, length = adjusted
@@ -4283,6 +4202,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._adjusted_section_length_label.setText(
             f"Adjusted Section Length: {self.format_length_with_secondary(length)}"
+        )
+        self._geometry_current_labels["adjusted_start"].setText(
+            self.format_length(start_dlong)
+        )
+        self._geometry_current_labels["adjusted_end"].setText(
+            self.format_length(end_dlong)
         )
         self._update_current_section_banner(self._selected_section_index)
 
@@ -6310,6 +6235,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._update_fsect_table_headers()
         self._update_fsect_table(self._selected_section_index)
         self._update_boundary_dlat_labels(self._selected_section_index)
+        self._update_geometry_track_length()
         self._refresh_query_track_info_label()
         self._refresh_wall_defaults_summary()
         self._update_ruler_button_state()
