@@ -407,10 +407,12 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         assert window._geometry_current_labels["index"].text() == "3"
         assert window._geometry_current_labels["type"].text() == "Straight"
         assert window._geometry_current_labels["length"].text() == "7200.0 ft"
+        assert window._geometry_current_labels["radius"].isHidden()
         assert window._geometry_current_labels["adjusted_start"].text() == "0.0 ft"
         assert window._geometry_current_labels["adjusted_end"].text() == "7200.0 ft"
         assert window._geometry_track_length_label.text() == "1.364 miles"
         assert window._geometry_track_length_secondary_label.text() == "7200.0 ft"
+        assert window._geometry_loop_status_label.text() == "✓ Full loop complete"
 
         window.measurement_units_combo.setCurrentIndex(1)
         window.update_selection_sidebar(selection)
@@ -430,6 +432,35 @@ def test_selection_and_track_length_show_secondary_units(qapp):
         assert window._geometry_current_labels["adjusted_end"].text() == "2194.560 m"
         assert window._geometry_track_length_label.text() == "1.364 miles"
         assert window._geometry_track_length_secondary_label.text() == "2194.560 m"
+    finally:
+        window.close()
+
+
+def test_geometry_tab_shows_curve_radius_and_loop_state(qapp):
+    window = SGViewerWindow()
+    try:
+        curve = SectionSelection(
+            index=1,
+            type_name="Curve",
+            start_dlong=0.0,
+            end_dlong=2500.0,
+            length=2500.0,
+            previous_id=0,
+            next_id=2,
+            radius=5000.0,
+        )
+
+        window.update_selection_sidebar(curve)
+
+        assert not window._geometry_current_labels["radius"].isHidden()
+        assert not window._geometry_current_caption_labels["radius"].isHidden()
+        assert window._geometry_current_labels["radius"].text() == "10.0 ft"
+
+        window.update_track_length_label("Track Length: Not a closed loop")
+        assert window._geometry_loop_status_label.text() == "○ Open track — loop incomplete"
+
+        window.update_track_length_label("Track Length: –")
+        assert window._geometry_loop_status_label.text() == "– No track loaded"
     finally:
         window.close()
 

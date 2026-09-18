@@ -883,10 +883,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._section_view_labels: dict[str, QtWidgets.QLabel] = {}
         self._section_advanced_labels: dict[str, QtWidgets.QLabel] = {}
         self._geometry_current_labels: dict[str, QtWidgets.QLabel] = {}
+        self._geometry_current_caption_labels: dict[str, QtWidgets.QLabel] = {}
         self._geometry_track_length_label = QtWidgets.QLabel("–")
         self._geometry_track_length_secondary_label = QtWidgets.QLabel("")
+        self._geometry_loop_status_label = QtWidgets.QLabel("– No track loaded")
         self._geometry_track_length_secondary_label.setStyleSheet(
-            "color: palette(mid); font-size: 11px;"
+            "color: palette(mid); font-size: 14px;"
         )
         self._geometry_track_length_500ths: float | None = None
         self._run_full_integrity_check_button = QtWidgets.QPushButton(
@@ -2125,16 +2127,25 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def _create_section_inspector_panel(self) -> QtWidgets.QWidget:
         content = QtWidgets.QWidget()
+        content.setObjectName("geometryInspector")
+        content.setStyleSheet(
+            "#geometryInspector { font-size: 15px; }"
+            "#geometryInspector QGroupBox { font-size: 17px; font-weight: bold; "
+            "margin-top: 10px; padding-top: 10px; }"
+            "#geometryInspector QGroupBox QLabel { font-weight: normal; }"
+        )
         layout = QtWidgets.QVBoxLayout(content)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
 
         def group(title: str) -> QtWidgets.QFormLayout:
             box = QtWidgets.QGroupBox(title)
             form = QtWidgets.QFormLayout(box)
-            form.setContentsMargins(8, 8, 8, 8)
-            form.setSpacing(8)
+            form.setContentsMargins(12, 16, 12, 12)
+            form.setHorizontalSpacing(18)
+            form.setVerticalSpacing(12)
             form.setLabelAlignment(QtCore.Qt.AlignLeft | QtCore.Qt.AlignVCenter)
+            form.setFieldGrowthPolicy(QtWidgets.QFormLayout.AllNonFixedFieldsGrow)
             layout.addWidget(box, stretch=1)
             return form
 
@@ -2143,27 +2154,48 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             ("index", "Selected Section Index"),
             ("type", "Type"),
             ("length", "Length"),
+            ("radius", "Radius"),
             ("adjusted_start", "Adjusted DLONG Start"),
             ("adjusted_end", "Adjusted DLONG End"),
         ):
+            caption_label = QtWidgets.QLabel(caption)
             value = QtWidgets.QLabel("–")
+            value.setStyleSheet("font-size: 17px; font-weight: 600;")
             value.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
-            current.addRow(caption, value)
+            current.addRow(caption_label, value)
+            self._geometry_current_caption_labels[key] = caption_label
             self._geometry_current_labels[key] = value
+
+        # Radius is relevant only for curves; avoid showing an empty metric for
+        # straight sections or before a section has been selected.
+        self._set_geometry_radius_visible(False)
 
         full_track = group("Full Track")
         track_length = QtWidgets.QWidget()
         track_length_layout = QtWidgets.QVBoxLayout(track_length)
         track_length_layout.setContentsMargins(0, 0, 0, 0)
-        track_length_layout.setSpacing(2)
+        track_length_layout.setSpacing(3)
+        self._geometry_track_length_label.setStyleSheet(
+            "font-size: 20px; font-weight: 700;"
+        )
         track_length_layout.addWidget(self._geometry_track_length_label)
         track_length_layout.addWidget(self._geometry_track_length_secondary_label)
         full_track.addRow("Track Length", track_length)
+        self._geometry_loop_status_label.setStyleSheet(
+            "font-size: 17px; font-weight: 600; color: palette(mid);"
+        )
+        full_track.addRow("Loop Status", self._geometry_loop_status_label)
+
+        layout.addStretch()
 
         self._section_split_action_button.hide()
         self._section_delete_action_button.hide()
         self._section_set_start_finish_action_button.hide()
         return content
+
+    def _set_geometry_radius_visible(self, visible: bool) -> None:
+        self._geometry_current_caption_labels["radius"].setVisible(visible)
+        self._geometry_current_labels["radius"].setVisible(visible)
 
     def _set_section_value(
         self, store: dict[str, QtWidgets.QLabel], key: str, value: str
@@ -3280,6 +3312,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     ) -> None:
         self._track_stats_label.setText(text)
         self._geometry_track_length_500ths = length_500ths
+        if length_500ths is not None:
+            self._geometry_loop_status_label.setText("✓ Full loop complete")
+            self._geometry_loop_status_label.setStyleSheet(
+                "font-size: 17px; font-weight: 600; color: #238636;"
+            )
+        elif "not a closed loop" in text.lower():
+            self._geometry_loop_status_label.setText("○ Open track — loop incomplete")
+            self._geometry_loop_status_label.setStyleSheet(
+                "font-size: 17px; font-weight: 600; color: #9a6700;"
+            )
+        else:
+            self._geometry_loop_status_label.setText("– No track loaded")
+            self._geometry_loop_status_label.setStyleSheet(
+                "font-size: 17px; font-weight: 600; color: palette(mid);"
+            )
         self._update_geometry_track_length()
 
     def _update_geometry_track_length(self) -> None:
@@ -3765,6 +3812,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._section_index_label.setText("Current Section: –")
             for label in self._geometry_current_labels.values():
                 label.setText("–")
+            self._set_geometry_radius_visible(False)
             self._update_current_section_banner(None)
             self._section_start_dlong_label.setText("Starting DLONG: –")
             self._section_end_dlong_label.setText("Ending DLONG: –")
@@ -3812,6 +3860,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._geometry_current_labels["type"].setText(type_name)
         self._geometry_current_labels["length"].setText(
             self.format_length(selection.length)
+        )
+        is_curve = str(selection.type_name).lower() == "curve"
+        self._set_geometry_radius_visible(is_curve)
+        self._geometry_current_labels["radius"].setText(
+            self.format_length(radius_value) if is_curve else "–"
         )
         self._update_current_section_banner(selection.index)
         self._section_start_dlong_label.setText(
