@@ -325,15 +325,18 @@ def _face_block(
         f"% Outputing section from dlong = {start} to dlong = {end}",
         f"sec{section_index}_s0_{lod}: FACE ({plane_text}),",
         "LIST {",
-        # ICR2's SegmentTsoInfo reader follows this fixed tree shape. The inner
-        # BSPA owns the left TSO and wall branches; the outer BSPA owns that
-        # result and the right wall branch. Empty wall branches remain nil.
+        # BSPA has three child slots. SegmentTsoInfo expects the inner node's
+        # first child and the outer node's third child to be the left/right TSO
+        # lists respectively. Keep explicit NIL placeholders for both wall
+        # branches and the unused third inner branch so later materials cannot
+        # slide into one of those fixed slots.
         f"  BSPA ({plane_text}),",
         f"    BSPA ({plane_text}),",
         f"      LIST {{ {topo_left}, {tso_left} }},",
         "      nil,",
+        "      nil,",
         "    nil,",
-        f"  LIST {{ {topo_right}, {tso_right} }},",
+        f"    LIST {{ {topo_right}, {tso_right} }},",
         ]
     )
     scale = options.texture_units_per_texel
