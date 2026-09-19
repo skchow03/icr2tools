@@ -93,6 +93,21 @@ def test_segment_layout_has_required_eight_entries():
     assert len([value for value in data.group(1).split(",") if value.strip()]) == 4
 
 
+def test_faces_include_segment_tso_bspa_scaffold():
+    text = build_track3d_text(_square_track(), track_name="square")
+
+    # Four sections times three LODs, with two nested BSPA nodes per FACE.
+    assert text.count(": FACE ") == 12
+    assert text.count("  BSPA (") == 24
+    assert text.count("TOPO_sec0_s0_L_HI: NIL;") == 1
+    assert text.count("TSO_sec0_s0_L: NIL;") == 1
+    assert "LIST { TOPO_sec0_s0_L_HI, TSO_sec0_s0_L }," in text
+    assert "LIST { TOPO_sec0_s0_R_HI, TSO_sec0_s0_R }," in text
+
+    face = text.split("sec0_s0_HI: FACE", 1)[1].split("};", 1)[0]
+    assert face.index("BSPA") < face.index('MATERIAL GROUP = 2, MIP = "ASPHALT"')
+
+
 def test_texture_axes_match_trk23d_orientation():
     text = build_track3d_text(_square_track(), track_name="square")
     first_poly = text.split("POLY [T]", 1)[1].split("},", 1)[0]
