@@ -26,7 +26,8 @@ class Track3DOptions:
     high_segment_length: int = 60_000
     medium_segment_length: int = 120_000
     low_segment_length: int = 240_000
-    texture_units_per_texel: float = 375.0
+    texture_units_per_texel: float = 2_000.0
+    texture_wrap: int = 1_024
 
     def __post_init__(self) -> None:
         if min(
@@ -37,6 +38,8 @@ class Track3DOptions:
             raise ValueError("LOD segment lengths must be positive")
         if self.texture_units_per_texel <= 0:
             raise ValueError("texture_units_per_texel must be positive")
+        if self.texture_wrap <= 0:
+            raise ValueError("texture_wrap must be positive")
 
 
 @dataclass(frozen=True)
@@ -160,11 +163,40 @@ def _lerp(start: float, end: float, fraction: float) -> float:
     return start + (end - start) * fraction
 
 
+def _wrapped_texture_coordinate(value: float, wrap: int) -> float:
+    """Reflect a coordinate between zero and ``wrap``.
+
+    The stock TRK23D output reverses texture direction when the next run would
+    leave the valid texture-coordinate range.  The equivalent triangle wave
+    keeps every generated value nonnegative without introducing a modulo seam.
+    """
+
+    period = 2 * wrap
+    position = value % period
+    return position if position <= wrap else period - position
+
+
+def _lateral_texture_origin(trk: "TRKFile") -> float:
+    """Return the rightmost DLAT used by any textured ground polygon."""
+
+    values = []
+    for section in trk.sects:
+        values.extend(section.bound_dlat_start)
+        values.extend(section.bound_dlat_end)
+        values.extend(section.ground_dlat_start)
+        values.extend(section.ground_dlat_end)
+    if not values:
+        return 0.0
+    return float(min(values))
+
+
 def _section_polygons(
     trk: "TRKFile",
     centerline: Sequence[tuple[float, float]],
     section_index: int,
     target_length: int,
+    texture_units_per_texel: float,
+    texture_wrap: int,
 ) -> list[
     tuple[
         tuple[Point3D, Point3D, Point3D, Point3D],
@@ -176,10 +208,21 @@ def _section_polygons(
     if section.ground_fsects <= 0 or section.num_bounds <= 0:
         return []
     divisions = max(1, math.ceil(float(section.length) / target_length))
+    fractions = {division / divisions for division in range(divisions + 1)}
+
+    # Add vertices exactly where the reflected longitudinal texture coordinate
+    # changes direction.  Without these splits, a polygon spanning a turning
+    # point would interpolate across the texture instead of reaching its edge.
+    wrap_distance = texture_units_per_texel * texture_wrap
+    first_turn = math.floor(section.start_dlong / wrap_distance) + 1
+    turn_dlong = first_turn * wrap_distance
+    section_end = section.start_dlong + section.length
+    while turn_dlong < section_end:
+        fractions.add((turn_dlong - section.start_dlong) / section.length)
+        turn_dlong += wrap_distance
+    ordered_fractions = sorted(fractions)
     polygons = []
-    for division in range(divisions):
-        f0 = division / divisions
-        f1 = (division + 1) / divisions
+    for f0, f1 in zip(ordered_fractions, ordered_fractions[1:]):
         left0 = _lerp(section.bound_dlat_start[-1], section.bound_dlat_end[-1], f0)
         left1 = _lerp(section.bound_dlat_start[-1], section.bound_dlat_end[-1], f1)
         for ground in range(section.ground_fsects - 1, -1, -1):
@@ -245,10 +288,16 @@ def _face_block(
     lod: str,
     target_length: int,
     options: Track3DOptions,
+    lateral_origin: float,
 ) -> list[str]:
     section = trk.sects[section_index]
     polygons = _section_polygons(
-        trk, centerline, section_index, target_length
+        trk,
+        centerline,
+        section_index,
+        target_length,
+        options.texture_units_per_texel,
+        options.texture_wrap,
     )
     if not polygons:
         return [f"sec{section_index}_s0_{lod}: NIL;"]
@@ -264,17 +313,26 @@ def _face_block(
     for points, ground_type, texture_data in polygons:
         f0, f1, left0, left1, right0, right1 = texture_data
         material = material_for_ground_type(ground_type)
-        u0 = (section.start_dlong + section.length * f0) / scale
-        u1 = (section.start_dlong + section.length * f1) / scale
-        v_left0 = left0 / scale
-        v_left1 = left1 / scale
-        v_right0 = right0 / scale
-        v_right1 = right1 / scale
+        # Stock TRK23D maps lateral position to U and longitudinal distance to
+        # V.  DLAT is signed, so shift it by the track's rightmost extent before
+        # scaling.  V is reflected into the legal nonnegative texture span.
+        u_left0 = (left0 - lateral_origin) / scale
+        u_left1 = (left1 - lateral_origin) / scale
+        u_right0 = (right0 - lateral_origin) / scale
+        u_right1 = (right1 - lateral_origin) / scale
+        v0 = _wrapped_texture_coordinate(
+            (section.start_dlong + section.length * f0) / scale,
+            options.texture_wrap,
+        )
+        v1 = _wrapped_texture_coordinate(
+            (section.start_dlong + section.length * f1) / scale,
+            options.texture_wrap,
+        )
         texture_points = (
-            _textured_point(points[0], u0, v_left0),
-            _textured_point(points[1], u1, v_left1),
-            _textured_point(points[2], u1, v_right1),
-            _textured_point(points[3], u0, v_right0),
+            _textured_point(points[0], u_left0, v0),
+            _textured_point(points[1], u_left1, v1),
+            _textured_point(points[2], u_right1, v1),
+            _textured_point(points[3], u_right0, v0),
         )
         if material.mip is None:
             lines.extend(
@@ -317,6 +375,7 @@ def build_track3d_text(
     _validate_trk(trk)
     options = options or Track3DOptions()
     centerline = _centerline_positions(trk)
+    lateral_origin = _lateral_texture_origin(trk)
     lines = [
         "3D VERSION 3.0;",
         f"% Track {track_name} (generated by icr2tools trk23d)",
@@ -342,6 +401,7 @@ def build_track3d_text(
                     lod,
                     target_length,
                     options,
+                    lateral_origin,
                 )
             )
         section = trk.sects[section_index]
