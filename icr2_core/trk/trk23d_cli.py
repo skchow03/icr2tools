@@ -28,9 +28,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--texture-scale",
         type=float,
-        default=375.0,
+        default=2_000.0,
         metavar="UNITS_PER_TEXEL",
-        help="texture coordinate scale (default: 375 game units per texel)",
+        help="texture coordinate scale (default: 2000 game units per texel)",
     )
     return parser
 
