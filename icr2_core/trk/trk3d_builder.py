@@ -304,11 +304,38 @@ def _face_block(
     plane = _nondegenerate_plane(polygons)
     start = int(section.start_dlong)
     end = int(section.start_dlong + section.length)
+    topo_left = f"TOPO_sec{section_index}_s0_L_{lod}"
+    topo_right = f"TOPO_sec{section_index}_s0_R_{lod}"
+    tso_left = f"TSO_sec{section_index}_s0_L"
+    tso_right = f"TSO_sec{section_index}_s0_R"
+    plane_text = ", ".join(_point(point) for point in plane)
     lines = [
-        f"% Outputing section from dlong = {start} to dlong = {end}",
-        f"sec{section_index}_s0_{lod}: FACE ({', '.join(_point(p) for p in plane)}),",
-        "LIST {",
+        f"{topo_left}: NIL;",
+        f"{topo_right}: NIL;",
     ]
+    if lod == "HI":
+        lines.extend(
+            [
+                f"{tso_left}: NIL;",
+                f"{tso_right}: NIL;",
+            ]
+        )
+    lines.extend(
+        [
+        f"% Outputing section from dlong = {start} to dlong = {end}",
+        f"sec{section_index}_s0_{lod}: FACE ({plane_text}),",
+        "LIST {",
+        # ICR2's SegmentTsoInfo reader follows this fixed tree shape. The inner
+        # BSPA owns the left TSO and wall branches; the outer BSPA owns that
+        # result and the right wall branch. Empty wall branches remain nil.
+        f"  BSPA ({plane_text}),",
+        f"    BSPA ({plane_text}),",
+        f"      LIST {{ {topo_left}, {tso_left} }},",
+        "      nil,",
+        "    nil,",
+        f"  LIST {{ {topo_right}, {tso_right} }},",
+        ]
+    )
     scale = options.texture_units_per_texel
     for points, ground_type, texture_data in polygons:
         f0, f1, left0, left1, right0, right1 = texture_data
