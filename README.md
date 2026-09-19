@@ -43,3 +43,16 @@ python -m track_viewer
 # or, after ``pip install .``
 track-viewer
 ```
+
+### TRK to 3D converter
+
+Generate a Papyrus text track surface from a binary `.TRK` file:
+
+```bash
+trk23d path/to/track.trk [path/to/track.3D]
+# or
+python -m icr2_core.trk.trk23d_cli path/to/track.trk
+```
+
+The converter writes HI, MED, and LO ground meshes plus the section DLONG
+lists, hash data, and final index expected by track `.3D` source files.
