@@ -103,9 +103,17 @@ def test_faces_include_segment_tso_bspa_scaffold():
     assert text.count("TSO_sec0_s0_L: NIL;") == 1
     assert "LIST { TOPO_sec0_s0_L_HI, TSO_sec0_s0_L }," in text
     assert "LIST { TOPO_sec0_s0_R_HI, TSO_sec0_s0_R }," in text
+    assert text.count("      nil,\n      nil,\n    nil,\n    LIST {") == 12
 
     face = text.split("sec0_s0_HI: FACE", 1)[1].split("};", 1)[0]
     assert face.index("BSPA") < face.index('MATERIAL GROUP = 2, MIP = "ASPHALT"')
+    scaffold = face.split('MATERIAL GROUP = 2, MIP = "ASPHALT"', 1)[0]
+    assert re.search(
+        r"BSPA .*?BSPA .*?LIST \{ TOPO_sec0_s0_L_HI, TSO_sec0_s0_L \},"
+        r"\s*nil,\s*nil,\s*nil,\s*LIST \{ TOPO_sec0_s0_R_HI, TSO_sec0_s0_R \},",
+        scaffold,
+        re.DOTALL,
+    )
 
 
 def test_texture_axes_match_trk23d_orientation():
