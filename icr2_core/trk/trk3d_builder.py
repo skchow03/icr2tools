@@ -406,12 +406,17 @@ def build_track3d_text(
             )
         section = trk.sects[section_index]
         start = int(section.start_dlong)
-        end = int(section.start_dlong + section.length)
         lines.extend(
             [
+                # SegmentTsoInfo requires exactly eight compiled entries per
+                # layout: four HI slots, two MED slots, one LO slot, and DATA.
+                # A section currently has one face at each LOD, so pad the
+                # unused pointer slots and repeat its start DLONG just as stock
+                # TRK23D does for layouts with fewer than four HI faces.
                 f"sec{section_index}_l0: LIST {{ sec{section_index}_s0_HI, nil, "
-                f"sec{section_index}_s0_MED, nil, sec{section_index}_s0_LO, "
-                f"DATA {{ {start}, {end} }} }};",
+                f"nil, nil, sec{section_index}_s0_MED, nil, "
+                f"sec{section_index}_s0_LO, DATA {{ {start}, {start}, "
+                f"{start}, {start} }} }};",
                 "",
             ]
         )
@@ -422,9 +427,10 @@ def build_track3d_text(
         section_index = max(
             i for i, section in enumerate(trk.sects) if section.start_dlong <= dlong
         )
-        hash_values.extend((dlong, section_index))
+        # The hash contains one layout index for every 0x40000-DLONG bucket.
+        # It does not contain (DLONG, section) pairs.
+        hash_values.append(section_index)
         dlong += 0x40000
-    hash_values.extend((int(trk.trklength), trk.num_sects - 1))
     lines.append("hash: DATA { " + ", ".join(map(str, hash_values)) + " };")
     index_entries = ["hash"] + [f"sec{i}_l0" for i in range(trk.num_sects)]
     lines.append("index: LIST { " + ", ".join(index_entries) + " };")
