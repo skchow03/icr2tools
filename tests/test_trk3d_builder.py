@@ -62,9 +62,9 @@ def test_builds_complete_track3d_surface_and_lod_index():
     assert "sec0_s0_HI: FACE" in text
     assert "sec3_s0_LO: FACE" in text
     assert 'MATERIAL GROUP = 2, MIP = "ASPHALT"' in text
-    assert "sec0_l0: LIST { sec0_s0_HI, nil, sec0_s0_MED" in text
-    assert "DATA { 0, 100000 }" in text
-    assert "hash: DATA { 0, 0, 262144, 2, 400000, 3 };" in text
+    assert "sec0_l0: LIST { sec0_s0_HI, nil, nil, nil, sec0_s0_MED" in text
+    assert "DATA { 0, 0, 0, 0 }" in text
+    assert "hash: DATA { 0, 2 };" in text
     assert "index: LIST { hash, sec0_l0, sec1_l0, sec2_l0, sec3_l0 };" in text
 
     texture_coordinates = [
@@ -74,6 +74,23 @@ def test_builds_complete_track3d_surface_and_lod_index():
     assert texture_coordinates
     assert all(u >= 0 and v >= 0 for u, v in texture_coordinates)
     assert all(v <= 1_024 for _u, v in texture_coordinates)
+
+
+def test_segment_layout_has_required_eight_entries():
+    text = build_track3d_text(_square_track(), track_name="square")
+    match = re.search(r"sec0_l0: LIST \{(.*?)\};", text)
+    assert match is not None
+    body = match.group(1)
+    data = re.search(r"DATA \{([^}]*)\}", body)
+    assert data is not None
+    pointers = [
+        item.strip()
+        for item in re.sub(r"DATA \{.*?\}", "DATA", body).split(",")
+    ]
+
+    assert len(pointers) == 8
+    assert pointers[-1] == "DATA"
+    assert len([value for value in data.group(1).split(",") if value.strip()]) == 4
 
 
 def test_texture_axes_match_trk23d_orientation():
