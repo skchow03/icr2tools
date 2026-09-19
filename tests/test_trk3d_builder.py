@@ -93,6 +93,21 @@ def test_segment_layout_has_required_eight_entries():
     assert len([value for value in data.group(1).split(",") if value.strip()]) == 4
 
 
+def test_long_section_emits_multiple_stock_lod_layouts():
+    trk = _square_track()
+    trk.sects[0].length = 1_620_000
+    text = build_track3d_text(trk, track_name="long")
+
+    # round(1,620,000 / 360,000) = 5, then stock TRK23D rounds counts above
+    # two up to a multiple of four: 8 HI, 4 MED, 2 LO, and 2 layouts.
+    assert len(re.findall(r"^sec0_s\d+_HI: FACE", text, re.MULTILINE)) == 8
+    assert len(re.findall(r"^sec0_s\d+_MED: FACE", text, re.MULTILINE)) == 4
+    assert len(re.findall(r"^sec0_s\d+_LO: FACE", text, re.MULTILINE)) == 2
+    assert "sec0_l1: LIST { sec0_s4_HI, sec0_s5_HI, sec0_s6_HI, sec0_s7_HI" in text
+    assert "sec0_s2_MED, sec0_s3_MED, sec0_s1_LO" in text
+    assert "DATA { 810000, 1012500, 1215000, 1417500 }" in text
+
+
 def test_faces_include_segment_tso_bspa_scaffold():
     text = build_track3d_text(_square_track(), track_name="square")
 
