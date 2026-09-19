@@ -5,8 +5,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from .trk3d_builder import Track3DOptions, write_track3d
-from .trk_classes import TRKFile
+from trk3d_builder import Track3DOptions, write_track3d
+from trk_classes import TRKFile
 
 
 def build_parser() -> argparse.ArgumentParser:
