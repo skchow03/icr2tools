@@ -1,4 +1,5 @@
 import math
+import re
 from types import SimpleNamespace
 
 from icr2_core.trk.trk3d_builder import (
@@ -65,6 +66,31 @@ def test_builds_complete_track3d_surface_and_lod_index():
     assert "DATA { 0, 100000 }" in text
     assert "hash: DATA { 0, 0, 262144, 2, 400000, 3 };" in text
     assert "index: LIST { hash, sec0_l0, sec1_l0, sec2_l0, sec3_l0 };" in text
+
+    texture_coordinates = [
+        tuple(map(int, match))
+        for match in re.findall(r"t= <(-?\d+), (-?\d+)>", text)
+    ]
+    assert texture_coordinates
+    assert all(u >= 0 and v >= 0 for u, v in texture_coordinates)
+    assert all(v <= 1_024 for _u, v in texture_coordinates)
+
+
+def test_texture_axes_match_trk23d_orientation():
+    text = build_track3d_text(_square_track(), track_name="square")
+    first_poly = text.split("POLY [T]", 1)[1].split("},", 1)[0]
+    coordinates = [
+        tuple(map(int, match))
+        for match in re.findall(r"t= <(-?\d+), (-?\d+)>", first_poly)
+    ]
+
+    # The first two points run longitudinally: U stays on the same lateral
+    # edge while V changes. The second and third points cross the track: V is
+    # constant while U changes.
+    assert coordinates[0][0] == coordinates[1][0]
+    assert coordinates[0][1] != coordinates[1][1]
+    assert coordinates[1][1] == coordinates[2][1]
+    assert coordinates[1][0] != coordinates[2][0]
 
 
 def test_options_reject_nonpositive_mesh_lengths():
