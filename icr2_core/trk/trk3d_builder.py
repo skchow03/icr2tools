@@ -23,9 +23,9 @@ Point3D = tuple[float, float, float]
 class Track3DOptions:
     """Controls mesh density and texture coordinate generation."""
 
-    high_segment_length: int = 60_000
-    medium_segment_length: int = 120_000
-    low_segment_length: int = 240_000
+    high_segment_length: int = 360_000
+    medium_segment_length: int = 720_000
+    low_segment_length: int = 1_440_000
     texture_units_per_texel: float = 2_000.0
     texture_wrap: int = 1_024
 
@@ -190,11 +190,74 @@ def _lateral_texture_origin(trk: "TRKFile") -> float:
     return float(min(values))
 
 
+def _straight_vertical_divisions(
+    trk: "TRKFile",
+    section_index: int,
+    start_fraction: float = 0.0,
+    end_fraction: float = 1.0,
+) -> int:
+    """Match TRK23D's recursive elevation-error subdivision test."""
+
+    span = end_fraction - start_fraction
+    quarter = start_fraction + span * 0.25
+    three_quarters = start_fraction + span * 0.75
+    midpoint = start_fraction + span * 0.5
+
+    for dlat in (150_000.0, -150_000.0):
+        z0 = _altitude(trk, section_index, start_fraction, dlat)
+        z1 = _altitude(trk, section_index, end_fraction, dlat)
+        z25 = _altitude(trk, section_index, quarter, dlat)
+        z75 = _altitude(trk, section_index, three_quarters, dlat)
+        error = abs(z25 - _lerp(z0, z1, 0.25)) + abs(
+            z75 - _lerp(z0, z1, 0.75)
+        )
+        if error >= 10_000:
+            return _straight_vertical_divisions(
+                trk, section_index, start_fraction, midpoint
+            ) + _straight_vertical_divisions(
+                trk, section_index, midpoint, end_fraction
+            )
+    return 1
+
+
+def _high_detail_divisions(
+    trk: "TRKFile",
+    section_index: int,
+    nominal_length: int,
+) -> int:
+    """Return the stock TRK23D HI FACE count for one TRK section."""
+
+    section = trk.sects[section_index]
+    divisions = (int(section.length) + nominal_length // 2) // nominal_length
+    if section.type == 1:
+        divisions = max(
+            divisions,
+            _straight_vertical_divisions(trk, section_index),
+        )
+    elif section.type == 2:
+        # CurveSection::numSegments derives the centerline radius from the
+        # first cross section, then truncates this value before applying the
+        # common multiple-of-four rule below.
+        radius = float(section.pos1[0] + trk.xsect_dlats[0])
+        curve_divisions = int(
+            math.sqrt(abs(radius))
+            / 40.0
+            * abs(float(section.ang3))
+            / float(2**30)
+        )
+        divisions = max(divisions, curve_divisions)
+    divisions = max(1, divisions)
+    if divisions > 2:
+        divisions = ((divisions + 3) // 4) * 4
+    return divisions
+
+
 def _section_polygons(
     trk: "TRKFile",
     centerline: Sequence[tuple[float, float]],
     section_index: int,
-    target_length: int,
+    start_fraction: float,
+    end_fraction: float,
     texture_units_per_texel: float,
     texture_wrap: int,
 ) -> list[
@@ -207,17 +270,17 @@ def _section_polygons(
     section = trk.sects[section_index]
     if section.ground_fsects <= 0 or section.num_bounds <= 0:
         return []
-    divisions = max(1, math.ceil(float(section.length) / target_length))
-    fractions = {division / divisions for division in range(divisions + 1)}
+    fractions = {start_fraction, end_fraction}
 
     # Add vertices exactly where the reflected longitudinal texture coordinate
     # changes direction.  Without these splits, a polygon spanning a turning
     # point would interpolate across the texture instead of reaching its edge.
     wrap_distance = texture_units_per_texel * texture_wrap
-    first_turn = math.floor(section.start_dlong / wrap_distance) + 1
+    start_dlong = section.start_dlong + section.length * start_fraction
+    end_dlong = section.start_dlong + section.length * end_fraction
+    first_turn = math.floor(start_dlong / wrap_distance) + 1
     turn_dlong = first_turn * wrap_distance
-    section_end = section.start_dlong + section.length
-    while turn_dlong < section_end:
+    while turn_dlong < end_dlong:
         fractions.add((turn_dlong - section.start_dlong) / section.length)
         turn_dlong += wrap_distance
     ordered_fractions = sorted(fractions)
@@ -285,29 +348,33 @@ def _face_block(
     trk: "TRKFile",
     centerline: Sequence[tuple[float, float]],
     section_index: int,
+    segment_index: int,
+    segment_count: int,
     lod: str,
-    target_length: int,
     options: Track3DOptions,
     lateral_origin: float,
 ) -> list[str]:
     section = trk.sects[section_index]
+    start_fraction = segment_index / segment_count
+    end_fraction = (segment_index + 1) / segment_count
     polygons = _section_polygons(
         trk,
         centerline,
         section_index,
-        target_length,
+        start_fraction,
+        end_fraction,
         options.texture_units_per_texel,
         options.texture_wrap,
     )
     if not polygons:
-        return [f"sec{section_index}_s0_{lod}: NIL;"]
+        return [f"sec{section_index}_s{segment_index}_{lod}: NIL;"]
     plane = _nondegenerate_plane(polygons)
-    start = int(section.start_dlong)
-    end = int(section.start_dlong + section.length)
-    topo_left = f"TOPO_sec{section_index}_s0_L_{lod}"
-    topo_right = f"TOPO_sec{section_index}_s0_R_{lod}"
-    tso_left = f"TSO_sec{section_index}_s0_L"
-    tso_right = f"TSO_sec{section_index}_s0_R"
+    start = int(section.start_dlong + section.length * start_fraction)
+    end = int(section.start_dlong + section.length * end_fraction)
+    topo_left = f"TOPO_sec{section_index}_s{segment_index}_L_{lod}"
+    topo_right = f"TOPO_sec{section_index}_s{segment_index}_R_{lod}"
+    tso_left = f"TSO_sec{section_index}_s{segment_index}_L"
+    tso_right = f"TSO_sec{section_index}_s{segment_index}_R"
     plane_text = ", ".join(_point(point) for point in plane)
     lines = [
         f"{topo_left}: NIL;",
@@ -323,7 +390,7 @@ def _face_block(
     lines.extend(
         [
         f"% Outputing section from dlong = {start} to dlong = {end}",
-        f"sec{section_index}_s0_{lod}: FACE ({plane_text}),",
+        f"sec{section_index}_s{segment_index}_{lod}: FACE ({plane_text}),",
         "LIST {",
         # BSPA has three child slots. SegmentTsoInfo expects the inner node's
         # first child and the outer node's third child to be the left/right TSO
@@ -416,53 +483,84 @@ def build_track3d_text(
     lines.extend(f"{m.symbol}: [<0, 0, 0>, c= <{m.color}>];" for m in MATERIALS)
     lines.append("")
 
-    lod_lengths = (
-        ("HI", options.high_segment_length),
-        ("MED", options.medium_segment_length),
-        ("LO", options.low_segment_length),
-    )
+    layout_entries: list[tuple[str, int]] = []
     for section_index in range(trk.num_sects):
-        for lod, target_length in lod_lengths:
-            lines.extend(
-                _face_block(
-                    trk,
-                    centerline,
-                    section_index,
-                    lod,
-                    target_length,
-                    options,
-                    lateral_origin,
-                )
-            )
-        section = trk.sects[section_index]
-        start = int(section.start_dlong)
-        lines.extend(
-            [
-                # SegmentTsoInfo requires exactly eight compiled entries per
-                # layout: four HI slots, two MED slots, one LO slot, and DATA.
-                # A section currently has one face at each LOD, so pad the
-                # unused pointer slots and repeat its start DLONG just as stock
-                # TRK23D does for layouts with fewer than four HI faces.
-                f"sec{section_index}_l0: LIST {{ sec{section_index}_s0_HI, nil, "
-                f"nil, nil, sec{section_index}_s0_MED, nil, "
-                f"sec{section_index}_s0_LO, DATA {{ {start}, {start}, "
-                f"{start}, {start} }} }};",
-                "",
-            ]
+        high_count = _high_detail_divisions(
+            trk, section_index, options.high_segment_length
         )
+        lod_counts = (
+            ("HI", high_count),
+            ("MED", (high_count + 1) // 2),
+            ("LO", (high_count + 3) // 4),
+        )
+        for lod, segment_count in lod_counts:
+            for segment_index in range(segment_count):
+                lines.extend(
+                    _face_block(
+                        trk,
+                        centerline,
+                        section_index,
+                        segment_index,
+                        segment_count,
+                        lod,
+                        options,
+                        lateral_origin,
+                    )
+                )
+        section = trk.sects[section_index]
+        layout_count = (high_count + 3) // 4
+        medium_count = (high_count + 1) // 2
+        low_count = (high_count + 3) // 4
+        for layout_index in range(layout_count):
+            high_start = layout_index * 4
+            medium_start = layout_index * 2
+            high_refs = [
+                f"sec{section_index}_s{segment}_HI" if segment < high_count else "nil"
+                for segment in range(high_start, high_start + 4)
+            ]
+            medium_refs = [
+                f"sec{section_index}_s{segment}_MED"
+                if segment < medium_count
+                else "nil"
+                for segment in range(medium_start, medium_start + 2)
+            ]
+            low_ref = (
+                f"sec{section_index}_s{layout_index}_LO"
+                if layout_index < low_count
+                else "nil"
+            )
+            valid_high = min(high_count - 1, high_start + 3)
+            dlongs = [
+                int(
+                    section.start_dlong
+                    + section.length * min(segment, valid_high) / high_count
+                )
+                for segment in range(high_start, high_start + 4)
+            ]
+            layout_name = f"sec{section_index}_l{layout_index}"
+            layout_entries.append((layout_name, dlongs[0]))
+            lines.extend(
+                [
+                    f"{layout_name}: LIST {{ {', '.join(high_refs)}, "
+                    f"{', '.join(medium_refs)}, {low_ref}, "
+                    f"DATA {{ {', '.join(map(str, dlongs))} }} }};",
+                    "",
+                ]
+            )
 
     hash_values = []
     dlong = 0
     while dlong < int(trk.trklength):
-        section_index = max(
-            i for i, section in enumerate(trk.sects) if section.start_dlong <= dlong
+        layout_index = max(
+            i for i, (_name, start) in enumerate(layout_entries) if start <= dlong
         )
-        # The hash contains one layout index for every 0x40000-DLONG bucket.
-        # It does not contain (DLONG, section) pairs.
-        hash_values.append(section_index)
+        # The hash contains the global layout index for each 0x40000-DLONG
+        # bucket. Sections with multiple layouts therefore consume multiple
+        # consecutive index values.
+        hash_values.append(layout_index)
         dlong += 0x40000
     lines.append("hash: DATA { " + ", ".join(map(str, hash_values)) + " };")
-    index_entries = ["hash"] + [f"sec{i}_l0" for i in range(trk.num_sects)]
+    index_entries = ["hash"] + [name for name, _start in layout_entries]
     lines.append("index: LIST { " + ", ".join(index_entries) + " };")
     return "\n".join(lines) + "\n"
 
