@@ -688,6 +688,43 @@ def test_tools_menu_exposes_background_calibrator(qapp, monkeypatch):
         window.close()
 
 
+def test_geometry_tab_exposes_background_image_and_integrity_controls(qapp):
+    window = SGViewerWindow()
+    try:
+        geometry_panel = window._stats_sidebar_panel
+        group_titles = {
+            group.title() for group in geometry_panel.findChildren(QtWidgets.QGroupBox)
+        }
+
+        assert "Background Image" in group_titles
+        assert window._background_image_path_label.text() == "No image selected"
+        assert window.load_background_image_button.text() == "Load Image…"
+        assert window.background_image_settings_button.text() == "Settings…"
+        assert not window.background_image_settings_button.isEnabled()
+        assert window.open_background_calibrator_button.text() == "Calibrator…"
+        assert window.run_full_integrity_check_button.parentWidget() is not None
+    finally:
+        window.close()
+
+
+def test_geometry_background_path_updates_after_loading_image(qapp, tmp_path):
+    image_path = tmp_path / "background.png"
+    image = QtGui.QImage(2, 2, QtGui.QImage.Format_RGB32)
+    image.fill(QtGui.QColor("navy"))
+    assert image.save(str(image_path))
+
+    window = SGViewerWindow()
+    try:
+        window.preview.load_background_image(image_path)
+        window.update_visual_intensity_controls()
+
+        assert window._background_image_path_label.text() == str(image_path)
+        assert window._background_image_path_label.toolTip() == str(image_path)
+        assert window.background_image_settings_button.isEnabled()
+    finally:
+        window.close()
+
+
 def test_tools_menu_can_launch_tso_generator(qapp, monkeypatch):
     window = SGViewerWindow()
     try:

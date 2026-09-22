@@ -560,6 +560,15 @@ class SGViewerController:
         self._window.run_full_integrity_check_button.clicked.connect(
             self._run_sg_integrity_checks
         )
+        self._window.load_background_image_button.clicked.connect(
+            self._open_background_file_dialog
+        )
+        self._window.background_image_settings_button.clicked.connect(
+            self._show_background_settings_dialog
+        )
+        self._window.open_background_calibrator_button.clicked.connect(
+            self._launch_background_calibrator
+        )
         self._window.raise_lower_elevations_button.clicked.connect(
             self._open_raise_lower_elevations_dialog
         )

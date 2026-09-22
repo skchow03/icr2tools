@@ -893,6 +893,16 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._run_full_integrity_check_button = QtWidgets.QPushButton(
             "Run Full Integrity Check…"
         )
+        self._background_image_path_label = QtWidgets.QLabel("No image selected")
+        self._background_image_path_label.setObjectName("backgroundImagePathLabel")
+        self._background_image_path_label.setWordWrap(True)
+        self._background_image_path_label.setTextInteractionFlags(
+            QtCore.Qt.TextSelectableByMouse
+        )
+        self._load_background_image_button = QtWidgets.QPushButton("Load Image…")
+        self._background_image_settings_button = QtWidgets.QPushButton("Settings…")
+        self._background_image_settings_button.setEnabled(False)
+        self._open_background_calibrator_button = QtWidgets.QPushButton("Calibrator…")
         self._section_split_action_button = QtWidgets.QPushButton("Split")
         self._section_delete_action_button = QtWidgets.QPushButton("Delete Section")
         self._section_set_start_finish_action_button = QtWidgets.QPushButton(
@@ -2028,6 +2038,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._run_full_integrity_check_button
 
     @property
+    def load_background_image_button(self) -> QtWidgets.QPushButton:
+        return self._load_background_image_button
+
+    @property
+    def background_image_settings_button(self) -> QtWidgets.QPushButton:
+        return self._background_image_settings_button
+
+    @property
+    def open_background_calibrator_button(self) -> QtWidgets.QPushButton:
+        return self._open_background_calibrator_button
+
+    @property
     def ruler_button(self) -> QtWidgets.QPushButton:
         return self._ruler_button
 
@@ -2190,6 +2212,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "font-size: 17px; font-weight: 600; color: palette(mid);"
         )
         full_track.addRow("Loop Status", self._geometry_loop_status_label)
+        full_track.addRow(self._run_full_integrity_check_button)
+
+        background = group("Background Image")
+        background.addRow("Selected Path", self._background_image_path_label)
+        background_buttons = QtWidgets.QWidget()
+        background_buttons_layout = QtWidgets.QHBoxLayout(background_buttons)
+        background_buttons_layout.setContentsMargins(0, 0, 0, 0)
+        background_buttons_layout.setSpacing(6)
+        background_buttons_layout.addWidget(self._load_background_image_button)
+        background_buttons_layout.addWidget(self._background_image_settings_button)
+        background_buttons_layout.addWidget(self._open_background_calibrator_button)
+        background.addRow(background_buttons)
 
         layout.addStretch()
 
@@ -2449,6 +2483,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
     def update_visual_intensity_controls(self) -> None:
         has_background = bool(self._preview.has_background_image())
+        background_path = self._preview.get_background_image_path()
+        path_text = (
+            str(background_path) if background_path is not None else "No image selected"
+        )
+        self._background_image_path_label.setText(path_text)
+        self._background_image_path_label.setToolTip(path_text)
+        self._background_image_settings_button.setEnabled(has_background)
         background_active = (
             has_background and self._background_image_checkbox.isChecked()
         )
