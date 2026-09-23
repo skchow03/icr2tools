@@ -163,6 +163,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "Preview a corner-apex RACE path on asphalt, concrete, or paint; "
             "car performance and speeds are not optimized."
         )
+        self._candidate_race_options = {
+            "margin_feet": 5.0,
+            "pit_side": "auto",
+            "lookahead_feet": 60.0,
+            "corner_width_pct": 75,
+            "apex_position_pct": 60,
+        }
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._pit_tab = PitTabBuilder(self).build()
@@ -2705,14 +2712,84 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             )
             if choice != QtWidgets.QMessageBox.Yes:
                 return
-        margin, accepted = QtWidgets.QInputDialog.getDouble(
-            self, "Candidate Race Line",
-            "Car center clearance from pavement edge (feet):",
-            5.0, 0.0, 100.0, 1,
+        options = self._candidate_race_options
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Candidate Race Line")
+        form = QtWidgets.QFormLayout()
+
+        pit_side = QtWidgets.QComboBox(dialog)
+        pit_side.addItem("Auto (follow existing RACE)", "auto")
+        pit_side.addItem("Pit on left; race to the right", "left")
+        pit_side.addItem("Pit on right; race to the left", "right")
+        pit_side.setCurrentIndex(max(0, pit_side.findData(options["pit_side"])))
+        has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
+        pit_side.setEnabled(has_split)
+        pit_side.setToolTip(
+            "Used only where a TRK section has more than two boundaries. "
+            "Other extra walls can also trigger it; inspect the preview."
         )
-        if not accepted:
+
+        margin = QtWidgets.QDoubleSpinBox(dialog)
+        margin.setRange(0.0, 100.0)
+        margin.setDecimals(1)
+        margin.setSuffix(" ft")
+        margin.setValue(options["margin_feet"])
+        margin.setToolTip("Clearance from the car center to the paved edge.")
+
+        lookahead = QtWidgets.QDoubleSpinBox(dialog)
+        lookahead.setRange(10.0, 500.0)
+        lookahead.setSingleStep(10.0)
+        lookahead.setSuffix(" ft")
+        lookahead.setValue(options["lookahead_feet"])
+        lookahead.setToolTip(
+            "Distance on each side used to recognize a bend; larger values "
+            "smooth minor kinks and begin the transition earlier."
+        )
+
+        width = QtWidgets.QSpinBox(dialog)
+        width.setRange(0, 100)
+        width.setSingleStep(5)
+        width.setSuffix(" %")
+        width.setValue(options["corner_width_pct"])
+        width.setToolTip(
+            "0% aims at the middle of the paved corridor; 100% aims at "
+            "opposite edges at entry and apex, after clearance."
+        )
+
+        apex = QtWidgets.QSpinBox(dialog)
+        apex.setRange(40, 80)
+        apex.setSingleStep(5)
+        apex.setSuffix(" % of corner")
+        apex.setValue(options["apex_position_pct"])
+        apex.setToolTip("Higher values aim for a later apex within each detected bend.")
+
+        form.addRow("Pit side at split", pit_side)
+        form.addRow("Pavement clearance", margin)
+        form.addRow("Corner lookahead", lookahead)
+        form.addRow("Use of paved width", width)
+        form.addRow("Apex timing", apex)
+        if not has_split:
+            note = QtWidgets.QLabel("This TRK has no sections with extra boundaries.")
+            note.setWordWrap(True)
+            form.addRow(note)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
-        success, message = self.preview_api.generate_candidate_race_line(margin)
+        options.update(
+            margin_feet=margin.value(),
+            pit_side=pit_side.currentData() if has_split else "auto",
+            lookahead_feet=lookahead.value(),
+            corner_width_pct=width.value(),
+            apex_position_pct=apex.value(),
+        )
+        success, message = self.preview_api.generate_candidate_race_line(**options)
         if not success:
             QtWidgets.QMessageBox.warning(self, "Candidate Race Line", message)
             return
