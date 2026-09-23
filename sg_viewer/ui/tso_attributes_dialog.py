@@ -54,6 +54,9 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._pmp_bbox_height = 0
         self._original_sprite_height = 0
         self._rotation_point_combo = QtWidgets.QComboBox()
+        self._land_object_checkbox = QtWidgets.QCheckBox("Based on a land object")
+        self._land_object_combo = QtWidgets.QComboBox()
+        self._land_object_combo.setEditable(True)
 
         for spin in (
             self._x_spin,
@@ -117,6 +120,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         pitch_tilt_widget.setLayout(pitch_tilt_layout)
         form.addRow("Tilt / Pitch (tenths)", pitch_tilt_widget)
         form.addRow("Description", self._description_edit)
+        form.addRow("Geometry", self._land_object_checkbox)
+        form.addRow("Source land object", self._land_object_combo)
         self._bbox_length_label = QtWidgets.QLabel()
         self._bbox_width_label = QtWidgets.QLabel()
         bbox_length_layout = QtWidgets.QHBoxLayout()
@@ -143,6 +148,7 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         form.addRow("", self._pmp_bbox_label)
         form.addRow("Rotation point", self._rotation_point_combo)
         self._is_sprite_checkbox.toggled.connect(self._update_shape_controls)
+        self._land_object_checkbox.toggled.connect(self._update_shape_controls)
         self._pmp_button.clicked.connect(self._load_related_pmp)
         self._match_track_orientation_button.clicked.connect(
             self._request_track_orientation_match
@@ -165,6 +171,13 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         layout.addWidget(self._matching_filename_note)
         layout.addWidget(buttons)
         self.set_measurement_unit(self._measurement_unit)
+
+    def set_land_object_names(self, names: list[str]) -> None:
+        """Populate project land objects while preserving a stored missing reference."""
+        current = self._land_object_combo.currentText()
+        self._land_object_combo.clear()
+        self._land_object_combo.addItems(name for name in names if name.strip())
+        self._land_object_combo.setCurrentText(current)
 
     def set_measurement_unit(self, unit: str) -> None:
         previous_unit = self._measurement_unit
@@ -214,6 +227,8 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
         self._pitch_spin.setValue(int(obj.pitch))
         self._tilt_spin.setValue(int(obj.tilt))
         self._description_edit.setText(obj.description)
+        self._land_object_checkbox.setChecked(bool(obj.land_object_name.strip()))
+        self._land_object_combo.setCurrentText(obj.land_object_name.strip())
         self._bbox_length_spin.setValue(
             units_from_500ths(float(obj.bbox_length), self._measurement_unit)
         )
@@ -404,17 +419,25 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             pitch=int(self._pitch_spin.value()),
             tilt=int(self._tilt_spin.value()),
             description=self._description_edit.text().strip(),
-            bbox_length=max(
-                0,
-                units_to_500ths(
-                    float(self._bbox_length_spin.value()), self._measurement_unit
-                ),
+            bbox_length=(
+                0
+                if self._land_object_checkbox.isChecked()
+                else max(
+                    0,
+                    units_to_500ths(
+                        float(self._bbox_length_spin.value()), self._measurement_unit
+                    ),
+                )
             ),
-            bbox_width=max(
-                0,
-                units_to_500ths(
-                    float(self._bbox_width_spin.value()), self._measurement_unit
-                ),
+            bbox_width=(
+                0
+                if self._land_object_checkbox.isChecked()
+                else max(
+                    0,
+                    units_to_500ths(
+                        float(self._bbox_width_spin.value()), self._measurement_unit
+                    ),
+                )
             ),
             rotation_point=normalize_rotation_point(
                 str(self._rotation_point_combo.currentData() or "")
@@ -428,10 +451,16 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             ),
             sprite_height=self._original_sprite_height,
             pmp_bbox_height=self._pmp_bbox_height,
+            land_object_name=(
+                self._land_object_combo.currentText().strip()
+                if self._land_object_checkbox.isChecked()
+                else ""
+            ),
         )
 
     def _update_shape_controls(self) -> None:
-        is_sprite = bool(self._is_sprite_checkbox.isChecked())
+        is_land_object = bool(self._land_object_checkbox.isChecked())
+        is_sprite = bool(self._is_sprite_checkbox.isChecked()) and not is_land_object
         for widget in (
             self._bbox_length_label,
             self._bbox_length_spin,
@@ -440,11 +469,13 @@ class TracksideObjectAttributesDialog(QtWidgets.QDialog):
             self._bbox_width_spin,
             self._rotation_point_combo,
         ):
-            widget.setEnabled(not is_sprite)
+            widget.setEnabled(not is_sprite and not is_land_object)
         self._sprite_width_label.setEnabled(is_sprite)
         self._sprite_width_spin.setEnabled(is_sprite)
         self._pmp_button.setEnabled(is_sprite)
         self._pmp_bbox_label.setEnabled(is_sprite)
+        self._is_sprite_checkbox.setEnabled(not is_land_object)
+        self._land_object_combo.setEnabled(is_land_object)
 
     def _emit_preview_update(self) -> None:
         obj = self._build_object_from_form(warn_on_missing_filename=False)

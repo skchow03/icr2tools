@@ -165,6 +165,7 @@ class SgPreviewState:
     tsd_lines: tuple[TrackSurfaceDetailLine, ...] = ()
     tsd_palette: tuple[QtGui.QColor, ...] = ()
     trackside_objects: tuple[object, ...] = ()
+    land_object_definitions: dict = field(default_factory=dict)
     selected_trackside_object_index: int | None = None
     selected_trackside_object_indices: tuple[int, ...] = ()
     focused_trackside_object_index: int | None = None
@@ -293,6 +294,7 @@ def paint_preview(
                 selected_color=sg_preview_state.tso_box_selected_color,
                 highlighted_color=sg_preview_state.tso_box_highlighted_color,
                 pivot_color=sg_preview_state.tso_pivot_color,
+                land_object_definitions=sg_preview_state.land_object_definitions,
             )
         if base_state.show_centerline_and_nodes:
             _draw_centerlines(
@@ -1233,6 +1235,7 @@ def _draw_trackside_objects(
     selected_color: QtGui.QColor,
     highlighted_color: QtGui.QColor,
     pivot_color: QtGui.QColor,
+    land_object_definitions: dict,
 ) -> None:
     highlighted_indices = set(int(i) for i in move_enabled_indices)
     referenced_index_set = set(int(i) for i in referenced_indices)
@@ -1295,6 +1298,35 @@ def _draw_trackside_objects(
             )
         )
         painter.setBrush(QtCore.Qt.NoBrush)
+
+        land_object_name = str(getattr(obj, "land_object_name", "")).strip()
+        definition = land_object_definitions.get(land_object_name.casefold())
+        if land_object_name and definition is not None:
+            points, polygons = definition
+            cos_yaw = math.cos(yaw_radians)
+            sin_yaw = math.sin(yaw_radians)
+            for indices, _color_index, is_wall in polygons:
+                polygon = QtGui.QPolygonF()
+                for point_index in indices:
+                    if point_index < 0 or point_index >= len(points):
+                        polygon.clear()
+                        break
+                    local_x, local_y = points[point_index]
+                    world_x = float(obj.x) + local_x * cos_yaw - local_y * sin_yaw
+                    world_y = float(obj.y) + local_x * sin_yaw + local_y * cos_yaw
+                    polygon.append(
+                        sg_rendering.map_point(
+                            world_x, world_y, transform, widget_height
+                        )
+                    )
+                if polygon.size() >= (2 if is_wall else 3):
+                    (
+                        painter.drawPolyline(polygon)
+                        if is_wall
+                        else painter.drawPolygon(polygon)
+                    )
+            painter.restore()
+            continue
 
         is_sprite = bool(getattr(obj, "is_sprite", False))
         sprite_radius = max(0.0, float(getattr(obj, "sprite_width", 0.0)) * 0.5)

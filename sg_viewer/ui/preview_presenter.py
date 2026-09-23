@@ -86,6 +86,7 @@ class PreviewPresenter:
                 if self._runtime.show_trackside_objects
                 else ()
             ),
+            land_object_definitions=self._runtime.land_object_definitions,
             selected_trackside_object_index=self._runtime.selected_trackside_object_index,
             selected_trackside_object_indices=self._runtime.selected_trackside_object_indices,
             focused_trackside_object_index=self._runtime.focused_trackside_object_index,
