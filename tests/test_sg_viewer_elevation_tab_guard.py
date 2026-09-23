@@ -407,13 +407,20 @@ def test_files_sidebar_groups_tools_by_task(qapp):
         assert group_titles == [
             {
                 "Export Locations",
-                "Project Files",
                 "Color Mapping",
                 "Texture Resolution Scaling",
             },
             {"Standard Workflow", "Advanced"},
-            {"Other Tools"},
+            {"Project Files", "Other Tools"},
         ]
+
+        advanced_tab = tabs.widget(2)
+        assert any(
+            "experimental features" in label.text()
+            and "test and troubleshoot the tool" in label.text()
+            and "not recommended for normal use" in label.text()
+            for label in advanced_tab.findChildren(QtWidgets.QLabel)
+        )
 
         export_tab = tabs.widget(1)
         standard_workflow = next(
