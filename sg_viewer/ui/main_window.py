@@ -894,9 +894,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._run_full_integrity_check_button = QtWidgets.QPushButton(
             "Run Full Integrity Check…"
         )
-        self._scale_track_button = QtWidgets.QPushButton("Scale Track to Length…")
-        self._rotate_track_button = QtWidgets.QPushButton("Rotate Track…")
-        self._reverse_track_button = QtWidgets.QPushButton("Reverse Track")
+        # These controls share their QActions with the Track Transform menu.
+        # QToolButton provides setDefaultAction(), keeping the button's enabled
+        # state, text, and trigger behavior synchronized with the menu action.
+        self._scale_track_button = QtWidgets.QToolButton()
+        self._rotate_track_button = QtWidgets.QToolButton()
+        self._reverse_track_button = QtWidgets.QToolButton()
         self._background_image_path_label = QtWidgets.QLabel("No image selected")
         self._background_image_path_label.setObjectName("backgroundImagePathLabel")
         self._background_image_path_label.setWordWrap(True)
@@ -2052,15 +2055,15 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._run_full_integrity_check_button
 
     @property
-    def scale_track_button(self) -> QtWidgets.QPushButton:
+    def scale_track_button(self) -> QtWidgets.QToolButton:
         return self._scale_track_button
 
     @property
-    def rotate_track_button(self) -> QtWidgets.QPushButton:
+    def rotate_track_button(self) -> QtWidgets.QToolButton:
         return self._rotate_track_button
 
     @property
-    def reverse_track_button(self) -> QtWidgets.QPushButton:
+    def reverse_track_button(self) -> QtWidgets.QToolButton:
         return self._reverse_track_button
 
     @property
