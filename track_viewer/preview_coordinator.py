@@ -370,6 +370,13 @@ class PreviewCoordinator:
         self._apply_lp_changes(changes)
         return success, message
 
+    def generate_candidate_race_line(self, margin_feet: float) -> tuple[bool, str]:
+        success, message, changes = self._lp_session.generate_candidate_race_line(
+            margin_feet
+        )
+        self._apply_lp_changes(changes)
+        return success, message
+
     def copy_lp_speeds_from_replay(
         self,
         lp_name: str,

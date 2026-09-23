@@ -203,6 +203,9 @@ class TrackPreviewApi:
             lp_name, rpy, car_id, start_frame, end_frame
         )
 
+    def generate_candidate_race_line(self, margin_feet: float) -> tuple[bool, str]:
+        return self._coordinator.generate_candidate_race_line(margin_feet)
+
     def copy_lp_speeds_from_replay(
         self,
         lp_name: str,
