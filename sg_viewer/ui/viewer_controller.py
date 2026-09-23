@@ -312,6 +312,7 @@ class SGViewerController:
                 "_format_tso_distance_for_display",
                 "_parse_tso_distance_from_display",
                 "_build_default_tso",
+                "_append_tso_at_origin",
                 "_find_trackside_object_at_point",
                 "_rotation_pivot_local_offsets",
                 "_move_tso",

@@ -70,6 +70,27 @@ def test_land_object_rename_updates_list_and_save_does_not_duplicate(qapp):
         window.close()
 
 
+def test_send_land_object_to_tso_list_adds_origin_tso_and_switches_tab(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [{"name": "My Land Object", "points": [], "polygons": []}]
+        )
+        objects_tabs = window._sidebar_feature_tabs["Objects"]
+        objects_tabs.setCurrentWidget(window._land_objects_sidebar)
+
+        window._land_send_to_tso_button.click()
+
+        tso = window.controller._trackside_objects[-1]
+        assert tso.filename == "My_Land_Object"
+        assert (tso.x, tso.y, tso.z) == (0, 0, 0)
+        assert objects_tabs.currentWidget() is window._tso_sidebar
+        assert window.right_sidebar_tabs.currentWidget() is objects_tabs
+        assert window.tso_table.currentRow() == window.tso_table.rowCount() - 1
+    finally:
+        window.close()
+
+
 def test_land_object_export_default_file_name_uses_underscores(qapp, monkeypatch):
     window = SGViewerWindow()
     try:

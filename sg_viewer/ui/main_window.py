@@ -416,6 +416,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_add_object_button = QtWidgets.QPushButton("Add Object")
         self._land_remove_object_button = QtWidgets.QPushButton("Remove Object")
         self._land_export_object_button = QtWidgets.QPushButton("Export Object to .3D")
+        self._land_send_to_tso_button = QtWidgets.QPushButton("Send to TSO list")
         self._land_saved_objects: list[dict[str, object]] = []
         self._land_objects_table.setHorizontalHeaderLabels(["Name", "Notes"])
         self._land_objects_table.horizontalHeader().setStretchLastSection(True)
@@ -1513,6 +1514,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_object_header.addWidget(self._land_save_object_button)
         land_object_header.addWidget(self._land_remove_object_button)
         land_object_header.addWidget(self._land_export_object_button)
+        land_object_header.addWidget(self._land_send_to_tso_button)
         land_layout.addLayout(land_object_header)
         land_layout.addWidget(self._land_objects_table)
         land_layout.addWidget(QtWidgets.QLabel("Points"))
@@ -1567,6 +1569,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._land_export_object_button.clicked.connect(
             self._export_selected_land_object_to_3d
+        )
+        self._land_send_to_tso_button.clicked.connect(
+            self._send_selected_land_object_to_tso_list
         )
         self._land_objects_table.itemSelectionChanged.connect(
             self._load_selected_land_object
@@ -5615,6 +5620,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_move_polygon_down_button,
             self._land_remove_object_button,
             self._land_export_object_button,
+            self._land_send_to_tso_button,
         ):
             button.setEnabled(has_selection)
         if not has_selection:
@@ -5664,6 +5670,29 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self.controller, "set_land_objects_dirty"
         ):
             self.controller.set_land_objects_dirty(True)
+
+    def _send_selected_land_object_to_tso_list(self) -> None:
+        row = self._land_objects_table.currentRow()
+        if row < 0 or row >= len(self._land_saved_objects):
+            self.show_status_message("Select a land object to send to the TSO list.")
+            return
+        name = str(self._land_saved_objects[row].get("name", "")).strip()
+        if not name:
+            self.show_status_message("The selected land object needs a filename.")
+            return
+        filename = name.replace(" ", "_")
+        if self.controller is None:
+            return
+        self.controller._append_tso_at_origin(filename)
+
+        feature_tabs = self._sidebar_feature_tabs["Objects"]
+        objects_index = feature_tabs.indexOf(self._tso_sidebar)
+        workflow_index = self._right_sidebar_tabs.indexOf(feature_tabs)
+        if objects_index >= 0:
+            feature_tabs.setCurrentIndex(objects_index)
+        if workflow_index >= 0:
+            self._right_sidebar_tabs.setCurrentIndex(workflow_index)
+        self.show_status_message(f"Added '{filename}' to the TSO list at 0, 0, 0.")
 
     def _export_selected_land_object_to_3d(self) -> None:
         row = self._land_objects_table.currentRow()

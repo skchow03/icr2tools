@@ -1158,6 +1158,39 @@ class TracksideObjectsController:
                 "Add TSO active: click on the map to place one TSO."
             )
 
+    def _append_tso_at_origin(self, filename: str) -> None:
+        """Append and select a named TSO at the absolute origin."""
+        obj = TracksideObject(
+            filename=normalize_trackside_filename(filename),
+            x=0,
+            y=0,
+            z=0,
+            yaw=0,
+            pitch=0,
+            tilt=0,
+        )
+        attributes = self._tso_shape_attributes_for_filename(obj.filename)
+        if attributes:
+            obj = self._with_tso_shape_attributes(obj, attributes)
+        self._trackside_objects.append(obj)
+        row = len(self._trackside_objects) - 1
+        self._selected_trackside_object_indices = [row]
+        self._objects_tab_selected_trackside_object_indices = [row]
+        self._window.preview.set_trackside_objects(tuple(self._trackside_objects))
+        self._upsert_tso_table_row(row)
+        self._window.tso_table.selectRow(row)
+        item = self._window.tso_table.item(row, 0)
+        if item is not None:
+            self._window.tso_table.scrollToItem(
+                item, QtWidgets.QAbstractItemView.PositionAtCenter
+            )
+        self._window.preview.set_selected_trackside_object_indices((row,))
+        self._window.preview.set_selected_trackside_object_index(row)
+        self._mark_tso_visibility_sidebar_dirty()
+        self._schedule_tso_visibility_sidebar_refresh()
+        self._set_trackside_objects_dirty(True)
+        self._schedule_trackside_objects_persist()
+
     def _on_tso_stamp_requested(self) -> None:
         if self._tso_stamp_mode_active:
             self._set_tso_stamp_mode_active(False)
