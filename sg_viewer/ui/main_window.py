@@ -3406,9 +3406,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         feet = units_from_500ths(length, "feet")
         self._geometry_track_length_label.setText(f"{feet / 5280.0:.3f} miles")
-        self._geometry_track_length_secondary_label.setText(
-            self.format_length(length)
-        )
+        self._geometry_track_length_secondary_label.setText(self.format_length(length))
 
     def format_length(self, value: float | int | None) -> str:
         return format_length(value, unit=self._current_measurement_unit())
@@ -5048,10 +5046,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
     def _sync_all_land_objects_overlay(self) -> None:
         all_points: list[tuple[float, float]] = []
         all_polygons: list[tuple[tuple[int, ...], int, bool]] = []
+        definitions = {}
         for payload in self._land_saved_objects:
             if not isinstance(payload, dict):
                 continue
             points, polygons, _errors = self._parse_land_object_overlay(payload)
+            name = str(payload.get("name", "")).strip()
+            if name:
+                definitions[name.casefold()] = (tuple(points), tuple(polygons))
             point_offset = len(all_points)
             all_points.extend(points)
             all_polygons.extend(
@@ -5064,6 +5066,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
         self._preview.set_land_object_points_overlay(tuple(all_points))
         self._preview.set_land_object_polygons_overlay(tuple(all_polygons))
+        self._preview.set_land_object_definitions(definitions)
 
     def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
         if (
@@ -5689,7 +5692,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         filename = name.replace(" ", "_")
         if self.controller is None:
             return
-        self.controller._append_tso_at_origin(filename)
+        self.controller._append_tso_at_origin(filename, land_object_name=name)
 
         feature_tabs = self._sidebar_feature_tabs["Objects"]
         objects_index = feature_tabs.indexOf(self._tso_sidebar)

@@ -83,6 +83,8 @@ def test_send_land_object_to_tso_list_adds_origin_tso_and_switches_tab(qapp):
 
         tso = window.controller._trackside_objects[-1]
         assert tso.filename == "My_Land_Object"
+        assert tso.land_object_name == "My Land Object"
+        assert (tso.bbox_length, tso.bbox_width) == (0, 0)
         assert (tso.x, tso.y, tso.z) == (0, 0, 0)
         assert objects_tabs.currentWidget() is window._tso_sidebar
         assert window.right_sidebar_tabs.currentWidget() is objects_tabs
@@ -94,20 +96,24 @@ def test_send_land_object_to_tso_list_adds_origin_tso_and_switches_tab(qapp):
 def test_land_object_export_default_file_name_uses_underscores(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
-        window.load_land_objects([
-            {
-                "name": "My Object",
-                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
-                "polygons": [("0,1,2", "0")],
-            }
-        ])
+        window.load_land_objects(
+            [
+                {
+                    "name": "My Object",
+                    "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                    "polygons": [("0,1,2", "0")],
+                }
+            ]
+        )
         captured = {}
 
         def _fake_get_save_file_name(*args, **kwargs):
             captured["default_path"] = args[2]
             return ("", "")
 
-        monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", _fake_get_save_file_name)
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog, "getSaveFileName", _fake_get_save_file_name
+        )
         window._export_selected_land_object_to_3d()
         assert captured["default_path"] == "My_Object.3D"
     finally:
@@ -149,13 +155,15 @@ def test_land_object_export_defaults_to_track3d_folder(qapp, monkeypatch, tmp_pa
 def test_land_polygon_move_up_down_reorders_rows(qapp):
     window = SGViewerWindow()
     try:
-        window.load_land_objects([
-            {
-                "name": "Object 1",
-                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
-                "polygons": [("0,1,2", "1"), ("0,2,1", "2")],
-            }
-        ])
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                    "polygons": [("0,1,2", "1"), ("0,2,1", "2")],
+                }
+            ]
+        )
         window._land_polygons_table.selectRow(1)
         window._move_selected_land_polygon_row(-1)
         assert window._land_polygons_table.item(0, 0).text() == "0,2,1"
@@ -187,13 +195,15 @@ def test_land_polygon_mode_is_combo_and_wall_mode_persists(qapp):
 def test_land_polygon_wall_mode_allows_two_points_but_land_needs_three(qapp):
     window = SGViewerWindow()
     try:
-        window.load_land_objects([
-            {
-                "name": "Object 1",
-                "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
-                "polygons": [],
-            }
-        ])
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("0", "0", "0"), ("1", "0", "0"), ("0", "1", "0")],
+                    "polygons": [],
+                }
+            ]
+        )
         window._add_land_polygon_row()
         window._land_polygons_table.item(0, 0).setText("0,1")
         mode_widget = window._land_polygons_table.cellWidget(0, 2)
@@ -239,6 +249,7 @@ def test_land_polygon_wall_mode_draws_two_point_segment(qapp):
                 opaque_pixels += 1
     assert opaque_pixels > 0
 
+
 def test_land_polygon_export_applies_height_to_land_mode_vertices(qapp):
     window = SGViewerWindow()
     try:
@@ -263,6 +274,7 @@ def test_paint_preview_draws_land_objects_before_tsos(qapp, monkeypatch):
     def record(name):
         def _inner(*args, **kwargs):
             calls.append(name)
+
         return _inner
 
     for name in (
@@ -367,8 +379,7 @@ def test_land_points_table_uses_selected_measurement_unit_and_preserves_500ths(q
             ]
         )
         displayed = [
-            window._land_points_table.item(0, column).text()
-            for column in (1, 2, 3)
+            window._land_points_table.item(0, column).text() for column in (1, 2, 3)
         ]
         assert displayed == ["1", "2", "0.5"]
         assert window._land_points_table.horizontalHeaderItem(1).text() == "X (ft)"

@@ -22,7 +22,10 @@ from sg_viewer.preview.trackside_drag import quantize_trackside_drag_delta
 from sg_viewer.preview.transform_controller import TransformController
 from sg_viewer.preview.selection import build_node_positions, find_unconnected_node_hit
 from sg_viewer.services.preview_background import PreviewBackground
-from sg_viewer.services.trackside_objects import TracksideObject, normalize_rotation_point
+from sg_viewer.services.trackside_objects import (
+    TracksideObject,
+    normalize_rotation_point,
+)
 from sg_viewer.model.preview_state import SgPreviewViewState
 from sg_viewer.ui.elevation_profile import ElevationProfileData, ElevationSource
 from sg_viewer.geometry.centerline_utils import (
@@ -36,7 +39,12 @@ from sg_viewer.geometry.sg_geometry import (
 )
 from sg_viewer.model.sg_document import SGDocument
 from sg_viewer.ui.preview_editor import PreviewEditor
-from sg_viewer.preview.creation_controller import CreationController, CreationEvent, CreationEventContext, CreationUpdate
+from sg_viewer.preview.creation_controller import (
+    CreationController,
+    CreationEvent,
+    CreationEventContext,
+    CreationUpdate,
+)
 from sg_viewer.ui.preview_interaction import PreviewInteraction
 from sg_viewer.preview_runtime.preview_runtime_api import ViewerRuntimeApi
 from sg_viewer.ui.preview_state_controller import PreviewStateController
@@ -48,10 +56,13 @@ from sg_viewer.model.sg_model import PreviewData, SectionPreview
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.geometry.dlong import set_start_finish
 from sg_viewer.geometry.topology import is_closed_loop, loop_length
-from sg_viewer.preview.interaction_state import InteractionInputs, InteractionState, MouseIntent
+from sg_viewer.preview.interaction_state import (
+    InteractionInputs,
+    InteractionState,
+    MouseIntent,
+)
 from sg_viewer.preview.edit_session import apply_preview_to_sgfile
 from sg_viewer.preview.runtime_ops import PreviewRuntimeOps
-
 
 logger = logging.getLogger(__name__)
 
@@ -181,11 +192,13 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._ruler_label: str = ""
         self._ruler_notch_interval: float | None = None
         self._land_object_points_overlay: tuple[Point, ...] = ()
-        self._land_object_polygons_overlay: tuple[tuple[tuple[int, ...], int, bool], ...] = ()
+        self._land_object_polygons_overlay: tuple[
+            tuple[tuple[int, ...], int, bool], ...
+        ] = ()
         self._land_object_vertex_points_overlay: tuple[Point, ...] = ()
+        self._land_object_definitions = {}
         self._show_land_objects = True
         self._hi_detail_section_ranges: tuple[tuple[int, int, float, float], ...] = ()
-
 
         self._straight_creation = self._creation_controller.straight_interaction
         self._curve_creation = self._creation_controller.curve_interaction
@@ -197,7 +210,6 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._curve_creation,
         )
 
-
         self._show_curve_markers = True
         self._show_axes = False
         self._show_crosshair = False
@@ -205,7 +217,7 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._track_opacity = 1.0
         self._integrity_boundary_violation_points: tuple[Point, ...] = ()
 
-        self._node_status = {}   # (index, "start"|"end") -> "green" or "orange"
+        self._node_status = {}  # (index, "start"|"end") -> "green" or "orange"
         self._disconnected_nodes: set[tuple[int, str]] = set()
         self._node_radius_px = 6
         self._has_unsaved_changes = False
@@ -213,7 +225,9 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._sg_version = 0
         self._track_interaction_enabled = True
         self._last_load_warnings: list[str] = []
-        self._elevation_bounds_cache: dict[tuple[int, int], tuple[float, float] | None] = {}
+        self._elevation_bounds_cache: dict[
+            tuple[int, int], tuple[float, float] | None
+        ] = {}
         self._elevation_xsect_bounds_cache: dict[
             tuple[int, int], dict[int, tuple[float, float] | None]
         ] = {}
@@ -241,7 +255,6 @@ class PreviewRuntime(PreviewRuntimeOps):
             apply_preview_to_sgfile=self.sync_preview_to_sgfile_if_loaded,
             runtime_api=ViewerRuntimeApi(preview_context=self._context),
         )
-
 
         self._set_default_view_bounds()
 
@@ -305,8 +318,14 @@ class PreviewRuntime(PreviewRuntimeOps):
                 half_length,
                 half_width,
             )
-            center_x = float(obj.x) - (pivot_local_x * math.cos(yaw_radians) - pivot_local_y * math.sin(yaw_radians))
-            center_y = float(obj.y) - (pivot_local_x * math.sin(yaw_radians) + pivot_local_y * math.cos(yaw_radians))
+            center_x = float(obj.x) - (
+                pivot_local_x * math.cos(yaw_radians)
+                - pivot_local_y * math.sin(yaw_radians)
+            )
+            center_y = float(obj.y) - (
+                pivot_local_x * math.sin(yaw_radians)
+                + pivot_local_y * math.cos(yaw_radians)
+            )
             widget_height = self._widget_height()
             sx = offsets[0] + center_x * scale
             sy = widget_height - (offsets[1] + center_y * scale)
@@ -361,9 +380,16 @@ class PreviewRuntime(PreviewRuntimeOps):
         return QtCore.QRectF(start, current).normalized()
 
     def on_mouse_press(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if event.button() == QtCore.Qt.LeftButton and self._trackside_box_select_enabled:
-            self._trackside_box_select_drag_start_screen = QtCore.QPointF(event.localPos())
-            self._trackside_box_select_drag_current_screen = QtCore.QPointF(event.localPos())
+        if (
+            event.button() == QtCore.Qt.LeftButton
+            and self._trackside_box_select_enabled
+        ):
+            self._trackside_box_select_drag_start_screen = QtCore.QPointF(
+                event.localPos()
+            )
+            self._trackside_box_select_drag_current_screen = QtCore.QPointF(
+                event.localPos()
+            )
             event.accept()
             self._request_interaction_repaint()
             return
@@ -381,7 +407,10 @@ class PreviewRuntime(PreviewRuntimeOps):
                     )
                     if world_pos is not None:
                         self._active_trackside_drag_index = hit_index
-                        self._active_trackside_drag_origin = (world_pos[0], world_pos[1])
+                        self._active_trackside_drag_origin = (
+                            world_pos[0],
+                            world_pos[1],
+                        )
                         self._active_trackside_drag_remainder = (0.0, 0.0)
                         event.accept()
                         return
@@ -392,16 +421,13 @@ class PreviewRuntime(PreviewRuntimeOps):
         inputs = self._interaction_inputs()
         if (
             self._centerline_editing_enabled
-            and
-            self._track_interaction_enabled
+            and self._track_interaction_enabled
             and not inputs.delete_section_active
             and not inputs.creation_active
             and not inputs.split_section_mode
             and self._interaction.handle_mouse_press(event)
         ):
-            self.log_debug(
-                "mousePressEvent handled by interaction at %s", event.pos()
-            )
+            self.log_debug("mousePressEvent handled by interaction at %s", event.pos())
             return
 
         intent = self._interaction_state.on_mouse_press(event, inputs)
@@ -409,7 +435,9 @@ class PreviewRuntime(PreviewRuntimeOps):
 
     def on_mouse_move(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
         if self._trackside_box_select_drag_start_screen is not None:
-            self._trackside_box_select_drag_current_screen = QtCore.QPointF(event.localPos())
+            self._trackside_box_select_drag_current_screen = QtCore.QPointF(
+                event.localPos()
+            )
             event.accept()
             self._request_interaction_repaint()
             return
@@ -453,7 +481,10 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._apply_mouse_intent(intent, event)
 
     def on_mouse_release(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401
-        if self._trackside_box_select_drag_start_screen is not None and event.button() == QtCore.Qt.LeftButton:
+        if (
+            self._trackside_box_select_drag_start_screen is not None
+            and event.button() == QtCore.Qt.LeftButton
+        ):
             start_screen = self._trackside_box_select_drag_start_screen
             end_screen = QtCore.QPointF(event.localPos())
             self._trackside_box_select_drag_start_screen = None
@@ -484,13 +515,18 @@ class PreviewRuntime(PreviewRuntimeOps):
             self._request_interaction_repaint()
             return
 
-        if self._active_trackside_drag_index is not None and event.button() == QtCore.Qt.RightButton:
+        if (
+            self._active_trackside_drag_index is not None
+            and event.button() == QtCore.Qt.RightButton
+        ):
             active_index = self._active_trackside_drag_index
             self._drag_trackside_object_to(event.localPos())
             self._active_trackside_drag_index = None
             self._active_trackside_drag_origin = None
             self._active_trackside_drag_remainder = (0.0, 0.0)
-            drag_end_callback = getattr(self, "_trackside_object_drag_end_callback", None)
+            drag_end_callback = getattr(
+                self, "_trackside_object_drag_end_callback", None
+            )
             if callable(drag_end_callback):
                 drag_end_callback(active_index)
             event.accept()
@@ -573,7 +609,9 @@ class PreviewRuntime(PreviewRuntimeOps):
             has_split_hover_point=has_split_hover_point,
         )
 
-    def _apply_mouse_intent(self, intent: MouseIntent, event: QtGui.QMouseEvent) -> None:
+    def _apply_mouse_intent(
+        self, intent: MouseIntent, event: QtGui.QMouseEvent
+    ) -> None:
         if intent.kind == "start_pan":
             if intent.payload is not None:
                 self._transform_controller.begin_pan(intent.payload)
@@ -719,12 +757,20 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._context.request_repaint()
 
     @property
-    def land_object_polygons_overlay(self) -> tuple[tuple[tuple[int, ...], int, bool], ...]:
+    def land_object_polygons_overlay(
+        self,
+    ) -> tuple[tuple[tuple[int, ...], int, bool], ...]:
         return self._land_object_polygons_overlay
 
-    def set_land_object_polygons_overlay(self, polygons: tuple[tuple[tuple[int, ...], int, bool], ...]) -> None:
+    def set_land_object_polygons_overlay(
+        self, polygons: tuple[tuple[tuple[int, ...], int, bool], ...]
+    ) -> None:
         normalized = tuple(
-            (tuple(int(index) for index in polygon_indices), int(color_index), bool(filled))
+            (
+                tuple(int(index) for index in polygon_indices),
+                int(color_index),
+                bool(filled),
+            )
             for polygon_indices, color_index, filled in polygons
         )
         if normalized == self._land_object_polygons_overlay:
@@ -743,8 +789,20 @@ class PreviewRuntime(PreviewRuntimeOps):
         self._land_object_vertex_points_overlay = normalized
         self._context.request_repaint()
 
+    @property
+    def land_object_definitions(self):
+        return self._land_object_definitions
 
-def _rotation_pivot_local_offsets(rotation_point: str, half_length: float, half_width: float) -> tuple[float, float]:
+    def set_land_object_definitions(self, definitions) -> None:
+        if definitions == self._land_object_definitions:
+            return
+        self._land_object_definitions = dict(definitions)
+        self._context.request_repaint()
+
+
+def _rotation_pivot_local_offsets(
+    rotation_point: str, half_length: float, half_width: float
+) -> tuple[float, float]:
     if rotation_point == "top_left":
         return -half_length, half_width
     if rotation_point == "top_right":

@@ -97,6 +97,39 @@ def test_bbox_values_follow_current_measurement_unit(qapp):
         dialog.close()
 
 
+def test_land_object_reference_replaces_bbox(qapp):
+    dialog = TracksideObjectAttributesDialog()
+    try:
+        dialog.set_land_object_names(["Grandstand", "Tree Line"])
+        dialog.edit_object(
+            0,
+            TracksideObject(
+                filename="grandstand",
+                x=0,
+                y=0,
+                z=0,
+                yaw=0,
+                pitch=0,
+                tilt=0,
+                bbox_length=5000,
+                bbox_width=3000,
+            ),
+        )
+
+        dialog._land_object_checkbox.setChecked(True)
+        dialog._land_object_combo.setCurrentText("Grandstand")
+        updated = dialog._build_object_from_form()
+
+        assert updated is not None
+        assert updated.land_object_name == "Grandstand"
+        assert updated.bbox_length == 0
+        assert updated.bbox_width == 0
+        assert not dialog._bbox_length_spin.isEnabled()
+        assert not dialog._bbox_width_spin.isEnabled()
+    finally:
+        dialog.close()
+
+
 def test_tso_attributes_dialog_notes_matching_filename_fields_and_has_no_manual_apply_button(
     qapp,
 ):

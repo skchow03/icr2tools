@@ -731,7 +731,7 @@ class TracksideObjectsController:
 
     def _tso_shape_attributes_for_filename(
         self, filename: str, *, exclude_row: int | None = None
-    ) -> tuple[int, int, str, bool, int, int, int] | None:
+    ) -> tuple[int, int, str, bool, int, int, int, str] | None:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
             return None
@@ -747,13 +747,14 @@ class TracksideObjectsController:
                     max(0, int(existing.sprite_width)),
                     max(0, int(existing.sprite_height)),
                     max(0, int(existing.pmp_bbox_height)),
+                    existing.land_object_name,
                 )
         return None
 
     def _with_tso_shape_attributes(
         self,
         obj: TracksideObject,
-        attributes: tuple[int, int, str, bool, int, int, int],
+        attributes: tuple[int, int, str, bool, int, int, int, str],
     ) -> TracksideObject:
         (
             bbox_length,
@@ -763,6 +764,7 @@ class TracksideObjectsController:
             sprite_width,
             sprite_height,
             pmp_bbox_height,
+            land_object_name,
         ) = attributes
         return TracksideObject(
             filename=obj.filename,
@@ -780,10 +782,11 @@ class TracksideObjectsController:
             sprite_width=sprite_width,
             sprite_height=sprite_height,
             pmp_bbox_height=pmp_bbox_height,
+            land_object_name=land_object_name,
         )
 
     def _sync_tso_shape_attributes_for_filename(
-        self, filename: str, attributes: tuple[int, int, str, bool, int, int, int]
+        self, filename: str, attributes: tuple[int, int, str, bool, int, int, int, str]
     ) -> bool:
         target_filename = normalize_trackside_filename(filename)
         if not target_filename:
@@ -825,6 +828,12 @@ class TracksideObjectsController:
         self._tso_attributes_dialog.set_measurement_unit(
             self._window.current_measurement_unit()
         )
+        self._tso_attributes_dialog.set_land_object_names(
+            [
+                str(item.get("name", ""))
+                for item in self._window.serialize_land_objects()
+            ]
+        )
         self._tso_attributes_dialog.edit_object(row, self._trackside_objects[row])
         self._tso_attributes_dialog.show()
         self._tso_attributes_dialog.raise_()
@@ -853,6 +862,7 @@ class TracksideObjectsController:
             max(0, int(obj.sprite_width)),
             max(0, int(obj.sprite_height)),
             max(0, int(obj.pmp_bbox_height)),
+            obj.land_object_name,
         )
         self._trackside_objects[row] = self._with_tso_shape_attributes(obj, attributes)
         self._sync_tso_shape_attributes_for_filename(target_filename, attributes)
@@ -928,6 +938,7 @@ class TracksideObjectsController:
                 sprite_width=obj.sprite_width,
                 sprite_height=obj.sprite_height,
                 pmp_bbox_height=obj.pmp_bbox_height,
+                land_object_name=obj.land_object_name,
             )
             moved = True
         if not moved:
@@ -1158,7 +1169,9 @@ class TracksideObjectsController:
                 "Add TSO active: click on the map to place one TSO."
             )
 
-    def _append_tso_at_origin(self, filename: str) -> None:
+    def _append_tso_at_origin(
+        self, filename: str, *, land_object_name: str = ""
+    ) -> None:
         """Append and select a named TSO at the absolute origin."""
         obj = TracksideObject(
             filename=normalize_trackside_filename(filename),
@@ -1168,8 +1181,13 @@ class TracksideObjectsController:
             yaw=0,
             pitch=0,
             tilt=0,
+            land_object_name=land_object_name.strip(),
         )
-        attributes = self._tso_shape_attributes_for_filename(obj.filename)
+        attributes = (
+            self._tso_shape_attributes_for_filename(obj.filename)
+            if not obj.land_object_name
+            else None
+        )
         if attributes:
             obj = self._with_tso_shape_attributes(obj, attributes)
         self._trackside_objects.append(obj)
@@ -1582,6 +1600,7 @@ class TracksideObjectsController:
             sprite_width=source.sprite_width,
             sprite_height=source.sprite_height,
             pmp_bbox_height=source.pmp_bbox_height,
+            land_object_name=source.land_object_name,
         )
         self._trackside_objects.append(clone)
         clone_row = len(self._trackside_objects) - 1
@@ -1898,6 +1917,7 @@ class TracksideObjectsController:
                     sprite_width=obj.sprite_width,
                     sprite_height=obj.sprite_height,
                     pmp_bbox_height=obj.pmp_bbox_height,
+                    land_object_name=obj.land_object_name,
                 )
                 changed = True
 
@@ -2036,6 +2056,7 @@ class TracksideObjectsController:
                 sprite_width=existing.sprite_width,
                 sprite_height=existing.sprite_height,
                 pmp_bbox_height=existing.pmp_bbox_height,
+                land_object_name=existing.land_object_name,
             )
             inherited_attributes = self._tso_shape_attributes_for_filename(
                 filename, exclude_row=row
