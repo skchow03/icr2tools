@@ -272,7 +272,11 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
-    def generate_candidate_race_line(self, margin_feet: float) -> tuple[bool, str]:
+    def generate_candidate_race_line(
+        self, margin_feet: float, *, pit_side: str = "auto",
+        lookahead_feet: float = 60.0, corner_width_pct: int = 75,
+        apex_position_pct: int = 60,
+    ) -> tuple[bool, str]:
         """Replace the in-memory race path while retaining its speed profile."""
         if self.trk is None or not self.centerline or "RACE" not in self.available_lp_files:
             return False, "Load a track folder containing RACE.LP first."
@@ -287,6 +291,10 @@ class TrackPreviewModel(QtCore.QObject):
                 self.trk, self.centerline, [p.dlong for p in unique],
                 margin_feet=margin_feet,
                 reference_dlats=[p.dlat for p in unique],
+                pit_side=pit_side,
+                lookahead_feet=lookahead_feet,
+                corner_width_pct=corner_width_pct,
+                apex_position_pct=apex_position_pct,
             )
             if has_terminal:
                 dlats.append(dlats[0])
@@ -312,6 +320,8 @@ class TrackPreviewModel(QtCore.QObject):
         return True, (
             f"Generated a {len(records)}-record candidate race path with "
             f"{margin_feet:g} ft center clearance from the paved edge. "
+            f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
+            f"corner width: {corner_width_pct}%; apex: {apex_position_pct}%. "
             "Existing speeds and lateral-speed fields were retained. "
             "This is a geometry preview, not a game-ready LP; review and "
             "recalculate its other fields before saving RACE.LP."

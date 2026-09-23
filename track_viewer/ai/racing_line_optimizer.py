@@ -40,18 +40,39 @@ def _paved_intervals(trk, section_id: int, fraction: float) -> list[tuple[float,
     return merged
 
 
-def _paved_corridor(trk, dlongs, reference_dlats, margin_feet):
+def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
+    if pit_side not in {"auto", "left", "right"}:
+        raise ValueError("Pit side must be Auto, Left, or Right.")
     lower, upper = [], []
     previous = None
     for i, dlong in enumerate(dlongs):
         section_id, fraction = dlong2sect(trk, dlong)
+        section = trk.sects[section_id]
+        bounds = sorted(getbounddlat(trk, section_id, fraction, j)
+                        for j in range(section.num_bounds))
+        # Extra boundaries can mark a split, but do not encode which branch
+        # is the pit. When specified, keep the racing side of the innermost
+        # pit-side boundary. Ground types still determine usable pavement.
+        split = len(bounds) > 2
+        split_edge = (bounds[-2] if pit_side == "left" else bounds[1]) \
+            if split and pit_side != "auto" else None
         candidates = []
         for raw_lo, raw_hi in _paved_intervals(trk, section_id, fraction):
+            if split_edge is not None:
+                if pit_side == "left":
+                    raw_hi = min(raw_hi, split_edge)
+                else:
+                    raw_lo = max(raw_lo, split_edge)
             lo = raw_lo / DLAT_PER_FOOT + margin_feet
             hi = raw_hi / DLAT_PER_FOOT - margin_feet
             if hi > lo:
                 candidates.append((lo, hi))
         if not candidates:
+            if split_edge is not None:
+                raise ValueError(
+                    f"Pit-side choice leaves no paved racing corridor at DLONG "
+                    f"{dlong:.0f}; try Auto, the other side, or less clearance."
+                )
             raise ValueError(
                 f"No paved corridor wide enough at DLONG {dlong:.0f}; "
                 "reduce the clearance or inspect the TRK ground types."
@@ -84,10 +105,14 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet):
     return np.asarray(lower), np.asarray(upper)
 
 
-def _apex_targets(centers, lower, upper):
+def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
+                  corner_width_pct=75, apex_position_pct=60):
     """Plan outside/inside/outside targets around sustained signed turns."""
     n = len(centers)
-    look = max(2, min(6, n // 50))
+    spacing = float(np.median(np.linalg.norm(
+        np.roll(centers, -1, axis=0) - centers, axis=1
+    )))
+    look = max(2, min(n // 12, round(lookahead_feet / max(spacing, 1.0))))
     incoming = centers - np.roll(centers, look, axis=0)
     outgoing = np.roll(centers, -look, axis=0) - centers
     cross = incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0]
@@ -121,8 +146,11 @@ def _apex_targets(centers, lower, upper):
             continue
         magnitudes = np.abs(curvature[window])
         plateau = np.flatnonzero(magnitudes >= 0.9 * np.max(magnitudes))
-        apex_at = int(plateau[np.argmin(np.abs(plateau - 0.6 * length))])
-        lead = min(18, max(6, length // 2))
+        desired_apex = apex_position_pct / 100 * length
+        peak_at = plateau[np.argmin(np.abs(plateau - desired_apex))]
+        apex_at = int(round(0.4 * peak_at + 0.6 * desired_apex))
+        apex_at = max(0, min(length - 1, apex_at))
+        lead = min(max(6, 2 * look), max(6, length // 2), n // 6)
         entry, apex, exit_at = -lead, apex_at, length - 1 + lead
         for position in range(entry, exit_at + 1):
             i = (start + position) % n
@@ -133,8 +161,10 @@ def _apex_targets(centers, lower, upper):
                 t = (position - apex) / max(1, exit_at - apex)
                 blend = 1 - t * t * (3 - 2 * t)
             width = upper[i] - lower[i]
-            inside = upper[i] - 0.10 * width if sign > 0 else lower[i] + 0.10 * width
-            outside = lower[i] + 0.15 * width if sign > 0 else upper[i] - 0.15 * width
+            half_use = corner_width_pct / 200 * width
+            midpoint = (lower[i] + upper[i]) * 0.5
+            inside = midpoint + sign * half_use
+            outside = midpoint - sign * half_use
             desired = outside * (1 - blend) + inside * blend
             weight = 1.0 + 2.0 * blend
             weighted_target[i] += weight * desired
@@ -173,6 +203,10 @@ def optimize_race_line(
     *,
     margin_feet: float = 5.0,
     reference_dlats: list[float] | None = None,
+    pit_side: str = "auto",
+    lookahead_feet: float = 60.0,
+    corner_width_pct: int = 75,
+    apex_position_pct: int = 60,
     iterations: int = 160,
 ) -> list[float]:
     """Return DLATs at unique LP DLONGs within the continuous paved corridor.
@@ -184,10 +218,18 @@ def optimize_race_line(
         raise ValueError("Need at least eight LP samples and a nonnegative margin.")
     if any(b <= a for a, b in zip(dlongs, dlongs[1:])):
         raise ValueError("LP DLONG samples must be strictly increasing.")
+    if not 10 <= lookahead_feet <= 500:
+        raise ValueError("Lookahead must be between 10 and 500 feet.")
+    if not 0 <= corner_width_pct <= 100:
+        raise ValueError("Corner width must be between 0 and 100 percent.")
+    if not 40 <= apex_position_pct <= 80:
+        raise ValueError("Apex position must be between 40 and 80 percent.")
 
     if reference_dlats is not None and len(reference_dlats) != len(dlongs):
         raise ValueError("Reference RACE DLAT count does not match the LP grid.")
-    lower, upper = _paved_corridor(trk, dlongs, reference_dlats, margin_feet)
+    lower, upper = _paved_corridor(
+        trk, dlongs, reference_dlats, margin_feet, pit_side
+    )
     centers = []
     normals = []
     for dlong in dlongs:
@@ -198,7 +240,10 @@ def optimize_race_line(
 
     centers = np.asarray(centers, dtype=float)
     normals = np.asarray(normals, dtype=float)
-    targets, target_weight = _apex_targets(centers, lower, upper)
+    targets, target_weight = _apex_targets(
+        centers, lower, upper, lookahead_feet, corner_width_pct,
+        apex_position_pct,
+    )
     # A few smooth control values govern many LP records. Directly optimizing
     # every record is ill-conditioned: microscopic alternating DLAT changes
     # dominate the discrete curvature gradient.

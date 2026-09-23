@@ -80,12 +80,33 @@ class CandidateRaceLineTest(unittest.TestCase):
         left_turn = np.column_stack((30 * np.cos(a), 30 * np.sin(a)))
         centers = np.concatenate((straight, right_turn, back, left_turn))
         target, weight = optimizer._apex_targets(
-            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0)
+            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0),
+            lookahead_feet=15,
         )
         self.assertLess(target[70], -4)  # outside just before right turn
         self.assertGreater(target[115], 6)  # inside at right-turn apex
         self.assertLess(target[151], -3)  # outside after the turn
         self.assertGreater(weight[115], weight[30])
+
+        centered, _ = optimizer._apex_targets(
+            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0),
+            lookahead_feet=15, corner_width_pct=0,
+        )
+        wider, _ = optimizer._apex_targets(
+            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0),
+            lookahead_feet=15, corner_width_pct=100,
+        )
+        self.assertAlmostEqual(centered[115], 0, delta=0.1)
+        self.assertGreater(wider[115], target[115])
+        early, _ = optimizer._apex_targets(
+            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0),
+            lookahead_feet=15, apex_position_pct=40,
+        )
+        late, _ = optimizer._apex_targets(
+            centers, np.full(len(centers), -10.0), np.full(len(centers), 10.0),
+            lookahead_feet=15, apex_position_pct=80,
+        )
+        self.assertLess(np.argmax(early[85:145]), np.argmax(late[85:145]))
 
         tangent = np.roll(centers, -1, axis=0) - np.roll(centers, 1, axis=0)
         tangent /= np.linalg.norm(tangent, axis=1)[:, None]
@@ -104,12 +125,30 @@ class CandidateRaceLineTest(unittest.TestCase):
              patch.object(optimizer, "getxyz", side_effect=xyz):
             path = np.array(optimizer.optimize_race_line(
                 self.track, [], [i * 65536 for i in range(len(centers))],
-                margin_feet=3, reference_dlats=[0] * len(centers)
+                margin_feet=3, reference_dlats=[0] * len(centers),
+                lookahead_feet=15,
             )) / 6000
         self.assertLess(path[70], -4)
         self.assertGreater(path[115], 6)
         self.assertLess(path[151], -4)
         self.assertTrue(np.all(np.abs(path) <= 9.00001))
+
+    def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
+        self.track.sects[0].num_bounds = 3
+        self.track.sects[0].ground_fsects = 1
+        self.track.sects[0].ground_type = [40]
+        with patch.object(optimizer, "dlong2sect", return_value=(0, 0)), \
+             patch.object(optimizer, "getbounddlat",
+                          side_effect=lambda _t, _s, _f, i: [-20, 0, 20][i] * 6000), \
+             patch.object(optimizer, "getgrounddlat", return_value=-20 * 6000):
+            auto = optimizer._paved_corridor(self.track, self.dlongs, None, 2)
+            pit_left = optimizer._paved_corridor(self.track, self.dlongs, None, 2,
+                                                  "left")
+            pit_right = optimizer._paved_corridor(self.track, self.dlongs, None, 2,
+                                                   "right")
+        self.assertEqual((auto[0][0], auto[1][0]), (-18, 18))
+        self.assertEqual((pit_left[0][0], pit_left[1][0]), (-18, -2))
+        self.assertEqual((pit_right[0][0], pit_right[1][0]), (2, 18))
 
     def test_rejects_unusable_width(self):
         with self.assertRaisesRegex(ValueError, "No paved corridor wide enough"):
