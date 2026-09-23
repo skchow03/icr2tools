@@ -96,131 +96,31 @@ def _effective_curve_radius(section: SectionPreview) -> float:
     return 0.0
 
 
-
-
 @dataclass(frozen=True)
 class IntegrityMemoAuthor:
     name: str
     title: str
-    summary_clean: str
-    summary_minor: str
-    summary_warnings: str
-    summary_critical: str
-    recommendation_clean: str
-    recommendation_minor: str
-    recommendation_warnings: str
-    recommendation_critical: str
-    closing_notes: tuple[str, ...]
-    finding_section_notes: dict[str, tuple[str, ...]]
 
 
 INTEGRITY_MEMO_AUTHORS: tuple[IntegrityMemoAuthor, ...] = (
     IntegrityMemoAuthor(
         name="Johan Hugenhaltz",
         title="Senior Circuit Geometry Consultant",
-        summary_clean="No issues found. The circuit reads coherently and the geometric rhythm is presently respectable.",
-        summary_minor="Minor issues found. The layout mostly respects its own intentions, with a few details requesting persuasion.",
-        summary_warnings="Warnings found. Several areas interrupt the circuit flow and should be reviewed before the landscape develops opinions.",
-        summary_critical="Errors found. The layout has geometry issues that should be addressed before calling the circuit settled.",
-        recommendation_clean="Maintain the current checks as the layout evolves; good rhythm is easier to preserve than to recover.",
-        recommendation_minor="Review the noted items and confirm the circuit remains continuous, legible, and willing to flow.",
-        recommendation_warnings="Prioritize the warning items below, especially clearances, boundaries, and any corner geometry that argues with its neighbors.",
-        recommendation_critical="Address the error items when practical, then rerun the integrity review before leaning too hard on cambers, apexes, or other refinements.",
-        closing_notes=(
-            "The circuit may yet become respectable, provided the geometry is persuaded to behave.",
-            "A track must flow. This one currently negotiates with itself in several places.",
-        ),
-        finding_section_notes={
-            "Topology": (
-                "Cartographer's aside: the arrows should form a necklace, not a bowl of spaghetti.",
-                "Continuity note: every section deserves a neighbor; loneliness is poor circuit design.",
-            ),
-            "Join heading and boundary gap checks": (
-                "Transition gossip: the joins were asked to shake hands rather than exchange lawsuits.",
-                "Seam inspection: where one piece ends, the next should avoid arriving with jazz hands.",
-            ),
-            "Curve limits": (
-                "Radius etiquette: corners may be expressive, but they should not audition for modern art.",
-                "Arc commentary: enthusiasm is welcome; corkscrewing into mythology is optional.",
-            ),
-            "Centerline clearance and boundary ownership": (
-                "Personal space review: centerlines should not breathe directly into each other's helmets.",
-                "Boundary diplomacy: fences prefer clear jurisdiction before the tire marks arrive.",
-            ),
-        },
     ),
     IntegrityMemoAuthor(
         name="Herman Tinkerer",
         title="Safety and Facilities Engineering Consultant",
-        summary_clean="No issues found. The layout is serviceable from an integrity standpoint, pending the usual paperwork and coffee.",
-        summary_minor="Minor issues found. The facility concept is sound, but a few practical details deserve a clipboard pass.",
-        summary_warnings="Warnings found. Some geometry, clearance, or boundary items should be corrected before homologation becomes dramatic.",
-        summary_critical="Errors found. Structural track data issues should be addressed before this layout is treated as ready for operational review.",
-        recommendation_clean="Continue routine reviews after edits; service roads, runoff, and common sense all prefer early notice.",
-        recommendation_minor="Address the noted items and rerun the check before committing facility-side assumptions around them.",
-        recommendation_warnings="Correct warning items with particular attention to runoff logic, boundary ownership, and practical engineering tolerances.",
-        recommendation_critical="Review the error geometry first, then rerun the check before any safety or facility sign-off is attempted.",
-        closing_notes=(
-            "Additional runoff is recommended, preferably before the scenery begins arguing with the car.",
-            "The layout is serviceable, though several corners appear to have been approved by committee.",
-        ),
-        finding_section_notes={
-            "Topology": (
-                "Clipboard note: section references should point to reality, not to a tiny imaginary service road.",
-                "Facilities concern: the loop should close before anyone orders grandstands with confidence.",
-            ),
-            "Join heading and boundary gap checks": (
-                "Pavement meeting minutes: abrupt handoffs increase paperwork and reduce sandwich time.",
-                "Joint review: if the asphalt needs a running start to connect, maintenance will notice.",
-            ),
-            "Curve limits": (
-                "Engineering aside: tight radii are acceptable only when the coffee is stronger than the steering rack.",
-                "Corner audit: if a bend feels like a forklift test, perhaps widen the ambition.",
-            ),
-            "Centerline clearance and boundary ownership": (
-                "Runoff memo: personal space is cheaper than explaining tire barriers to accounting.",
-                "Boundary audit: ownership disputes are best settled before the walls become witnesses.",
-            ),
-        },
     ),
     IntegrityMemoAuthor(
         name="Toby Curbman",
         title="Temporary Circuit Operations Consultant",
-        summary_clean="No issues found. The course appears operational, assuming the cones arrive sober and in sufficient quantity.",
-        summary_minor="Minor issues found. The temporary works plan survives, though a few transitions should be checked before barriers appear.",
-        summary_warnings="Warnings found. Visibility, clearance, or boundary concerns need attention before anyone starts unloading concrete blocks.",
-        summary_critical="Errors found. The course has integrity issues that should be addressed before it gets dressed up as a circuit.",
-        recommendation_clean="Keep the report with the event pack and rerun after any late-night chicane inspiration.",
-        recommendation_minor="Tidy the noted details and verify transitions, access, and section continuity before final setup.",
-        recommendation_warnings="Work through the warning items before placing barriers; paint and cones are not a substitute for sound geometry.",
-        recommendation_critical="Work through the error items, then rerun the check before committing barriers, cones, or marshal posts.",
-        closing_notes=(
-            "Cones can solve many problems, but not all of these.",
-            "The course is close to operational, assuming the barriers are more confident than the geometry.",
-        ),
-        finding_section_notes={
-            "Topology": (
-                "Cone boss note: the route should loop without needing a volunteer to point dramatically.",
-                "Setup aside: if section IDs wander off, the forklift crew will follow them into legend.",
-            ),
-            "Join heading and boundary gap checks": (
-                "Barrier crew gossip: joins are easier when the pavement does not arrive wearing a fake mustache.",
-                "Temporary works note: gaps are where cones go to become folk heroes.",
-            ),
-            "Curve limits": (
-                "Chicane department: spice is good; making drivers fold the car in half is less good.",
-                "Corner note: the cones support creativity, but they have union limits.",
-            ),
-            "Centerline clearance and boundary ownership": (
-                "Marshal post aside: two lanes entering one personal bubble is how radios learn profanity.",
-                "Barrier placement note: boundaries should know whose lunch table they are guarding.",
-            ),
-        },
     ),
 )
 
 
-def choose_integrity_memo_author(rng: random.Random | None = None) -> IntegrityMemoAuthor:
+def choose_integrity_memo_author(
+    rng: random.Random | None = None,
+) -> IntegrityMemoAuthor:
     chooser = rng if rng is not None else random
     return chooser.choice(INTEGRITY_MEMO_AUTHORS)
 
@@ -233,11 +133,12 @@ def format_integrity_memo(
     rng: random.Random | None = None,
 ) -> str:
     memo_author = author if author is not None else choose_integrity_memo_author(rng)
-    timestamp = generated_at if generated_at is not None else datetime.now().astimezone()
+    timestamp = (
+        generated_at if generated_at is not None else datetime.now().astimezone()
+    )
     severity = _integrity_report_severity(report.text)
     summary = _memo_summary(memo_author, severity)
     recommendation = _memo_recommendation(memo_author, severity)
-    closing = memo_author.closing_notes[0] if len(memo_author.closing_notes) == 1 else (rng if rng is not None else random).choice(memo_author.closing_notes)
 
     lines = [
         "MEMORANDUM",
@@ -252,15 +153,14 @@ def format_integrity_memo(
         "",
         "Findings:",
     ]
-    lines.extend(_format_memo_findings(report.text, memo_author, rng))
-    lines.extend([
-        "",
-        "Recommendations:",
-        recommendation,
-        "",
-        "Closing note:",
-        closing,
-    ])
+    lines.extend(_format_memo_findings(report.text))
+    lines.extend(
+        [
+            "",
+            "Recommendations:",
+            recommendation,
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -269,10 +169,15 @@ def _integrity_report_severity(report_text: str) -> str:
         return "minor"
     critical_markers = (
         "Unconnected sections: none",
+        "Non-reciprocal section links: none",
+        "Sections with length <= 1 500ths: none",
         "Heading mismatches: none",
         "Computed endpoint gaps > 1 500ths: none",
     )
-    has_critical = any(marker.replace(": none", ": ") in report_text and marker not in report_text for marker in critical_markers)
+    has_critical = any(
+        marker.replace(": none", ": ") in report_text and marker not in report_text
+        for marker in critical_markers
+    )
     warning_markers = (
         "Curves with arc > 120°: ",
         "Curves with radius < ",
@@ -281,7 +186,9 @@ def _integrity_report_severity(report_text: str) -> str:
     )
     has_warning = False
     for line in report_text.splitlines():
-        if any(line.startswith(marker) for marker in warning_markers) and not line.endswith(": none"):
+        if any(
+            line.startswith(marker) for marker in warning_markers
+        ) and not line.endswith(": none"):
             if not line.startswith("No section had"):
                 has_warning = True
     if has_critical:
@@ -292,31 +199,36 @@ def _integrity_report_severity(report_text: str) -> str:
 
 
 def _memo_summary(author: IntegrityMemoAuthor, severity: str) -> str:
-    return {"critical": author.summary_critical, "warnings": author.summary_warnings, "minor": author.summary_minor}.get(severity, author.summary_clean)
+    del author
+    return {
+        "critical": "Errors found. The layout has geometry issues that should be addressed before further refinement.",
+        "warnings": "Warnings found. Review the identified geometry, clearance, and boundary items.",
+        "minor": "The review could not complete because no sections were available.",
+    }.get(severity, "No integrity issues were found.")
 
 
 def _memo_recommendation(author: IntegrityMemoAuthor, severity: str) -> str:
-    return {"critical": author.recommendation_critical, "warnings": author.recommendation_warnings, "minor": author.recommendation_minor}.get(severity, author.recommendation_clean)
+    del author
+    return {
+        "critical": "Address the error items when practical, then rerun the integrity review.",
+        "warnings": "Review the warning items and rerun the integrity review after making changes.",
+        "minor": "Load a track with sections and run the integrity review again.",
+    }.get(
+        severity,
+        "No corrective action is required. Rerun the review after geometry changes.",
+    )
 
 
 def _format_memo_findings(
     report_text: str,
-    author: IntegrityMemoAuthor | None = None,
-    rng: random.Random | None = None,
 ) -> list[str]:
     body = report_text.splitlines()
     if len(body) >= 2 and body[0] == "SG Integrity Report":
         body = body[2:]
 
-    chooser = rng if rng is not None else random
     formatted: list[str] = []
-    notes = author.finding_section_notes if author is not None else {}
     for line in body:
         formatted.append("  " + line if line else "")
-        section_notes = notes.get(line)
-        if section_notes:
-            note = section_notes[0] if len(section_notes) == 1 else chooser.choice(section_notes)
-            formatted.append(f"  ({note})")
     return formatted
 
 
@@ -356,17 +268,25 @@ def build_integrity_report(
         progress.complete(message="Integrity checks complete")
         return IntegrityReport(text="\n".join(lines))
 
+    lines.extend(_track_metrics_report(sections, measurement_unit))
+    lines.append("")
     lines.extend(_topology_report(sections, progress))
     lines.append("")
-    lines.extend(_heading_and_boundary_report(sections, fsects_by_section, measurement_unit, progress))
+    lines.extend(
+        _heading_and_boundary_report(
+            sections, fsects_by_section, measurement_unit, progress
+        )
+    )
     lines.append("")
     lines.extend(_curve_limits_report(sections, measurement_unit, progress))
     lines.append("")
-    centerline_lines, boundary_violation_points, spacing_violation_points = _centerline_clearance_report(
-        sections,
-        fsects_by_section,
-        measurement_unit,
-        progress,
+    centerline_lines, boundary_violation_points, spacing_violation_points = (
+        _centerline_clearance_report(
+            sections,
+            fsects_by_section,
+            measurement_unit,
+            progress,
+        )
     )
     lines.extend(centerline_lines)
     progress.complete(message="Integrity checks complete")
@@ -378,10 +298,34 @@ def build_integrity_report(
     )
 
 
-def _topology_report(sections: list[SectionPreview], progress: "_ProgressTracker") -> list[str]:
+def _track_metrics_report(
+    sections: list[SectionPreview], measurement_unit: str
+) -> list[str]:
+    lengths = [max(0.0, float(getattr(section, "length", 0.0))) for section in sections]
+    curve_count = sum(section.type_name == "curve" for section in sections)
+    total_length = sum(lengths)
+    return [
+        "Track metrics",
+        "-" * 72,
+        f"Total centerline length: {_format_world_distance(total_length, measurement_unit)}",
+        f"Section types: {len(sections) - curve_count} straight, {curve_count} curve",
+        f"Shortest section: {_format_world_distance(min(lengths), measurement_unit)}",
+        f"Longest section: {_format_world_distance(max(lengths), measurement_unit)}",
+        f"Average section length: {_format_world_distance(total_length / len(lengths), measurement_unit)}",
+    ]
+
+
+def _topology_report(
+    sections: list[SectionPreview], progress: "_ProgressTracker"
+) -> list[str]:
     n = len(sections)
     closed = is_closed_loop(sections)
-    lines = ["Topology", "-" * 72, f"Sections: {n}", f"Closed loop: {'YES' if closed else 'NO'}"]
+    lines = [
+        "Topology",
+        "-" * 72,
+        f"Sections: {n}",
+        f"Closed loop: {'YES' if closed else 'NO'}",
+    ]
 
     unconnected: list[str] = []
     for index, section in enumerate(sections):
@@ -401,6 +345,38 @@ def _topology_report(sections: list[SectionPreview], progress: "_ProgressTracker
         lines.extend(unconnected)
     else:
         lines.append("Unconnected sections: none")
+
+    inconsistent_links: list[str] = []
+    for index, section in enumerate(sections):
+        if 0 <= section.next_id < n and sections[section.next_id].previous_id != index:
+            inconsistent_links.append(
+                f"  - section {index} next_id={section.next_id}, but section "
+                f"{section.next_id} previous_id={sections[section.next_id].previous_id}"
+            )
+        if (
+            0 <= section.previous_id < n
+            and sections[section.previous_id].next_id != index
+        ):
+            inconsistent_links.append(
+                f"  - section {index} previous_id={section.previous_id}, but section "
+                f"{section.previous_id} next_id={sections[section.previous_id].next_id}"
+            )
+    if inconsistent_links:
+        lines.append(f"Non-reciprocal section links: {len(inconsistent_links)}")
+        lines.extend(inconsistent_links)
+    else:
+        lines.append("Non-reciprocal section links: none")
+
+    degenerate = [
+        index
+        for index, section in enumerate(sections)
+        if float(getattr(section, "length", 0.0)) <= 1.0
+    ]
+    if degenerate:
+        lines.append(f"Sections with length <= 1 500ths: {len(degenerate)}")
+        lines.extend(f"  - section {index}" for index in degenerate)
+    else:
+        lines.append("Sections with length <= 1 500ths: none")
 
     return lines
 
@@ -437,9 +413,9 @@ def _heading_and_boundary_report(
             mismatch_lines.append(
                 (
                     f"  - {index} -> {next_index}: heading Δ={mismatch:.3f}°, "
-                    f"centerline gap={_format_world_distance(center_gap, measurement_unit)}, "
-                    f"left boundary gap={_format_world_distance(left_gap, measurement_unit)}, "
-                    f"right boundary gap={_format_world_distance(right_gap, measurement_unit)}"
+                    f"centerline gap={_format_world_distance(center_gap, '500ths')}, "
+                    f"left boundary gap={_format_world_distance(left_gap, '500ths')}, "
+                    f"right boundary gap={_format_world_distance(right_gap, '500ths')}"
                 )
             )
 
@@ -452,11 +428,11 @@ def _heading_and_boundary_report(
         computed_endpoint_gap_lines.append(
             (
                 f"  - {index} -> {next_index}: computed end "
-                f"({_format_world_distance(computed_end[0], measurement_unit)}, "
-                f"{_format_world_distance(computed_end[1], measurement_unit)}) vs next start "
-                f"({_format_world_distance(next_section.start[0], measurement_unit)}, "
-                f"{_format_world_distance(next_section.start[1], measurement_unit)}), "
-                f"gap={_format_world_distance(computed_gap, measurement_unit)}"
+                f"({_format_world_distance(computed_end[0], '500ths')}, "
+                f"{_format_world_distance(computed_end[1], '500ths')}) vs next start "
+                f"({_format_world_distance(next_section.start[0], '500ths')}, "
+                f"{_format_world_distance(next_section.start[1], '500ths')}), "
+                f"gap={_format_world_distance(computed_gap, '500ths')}"
             )
         )
 
@@ -467,7 +443,9 @@ def _heading_and_boundary_report(
         lines.append("Heading mismatches: none")
 
     if computed_endpoint_gap_lines:
-        lines.append(f"Computed endpoint gaps > 1 500ths: {len(computed_endpoint_gap_lines)}")
+        lines.append(
+            f"Computed endpoint gaps > 1 500ths: {len(computed_endpoint_gap_lines)}"
+        )
         lines.extend(computed_endpoint_gap_lines)
     else:
         lines.append("Computed endpoint gaps > 1 500ths: none")
@@ -485,7 +463,13 @@ def _computed_section_end_xy(section: SectionPreview) -> Point | None:
         sang2 = getattr(section, "sang2", None)
         eang1 = getattr(section, "eang1", None)
         eang2 = getattr(section, "eang2", None)
-        if radius is None or sang1 is None or sang2 is None or eang1 is None or eang2 is None:
+        if (
+            radius is None
+            or sang1 is None
+            or sang2 is None
+            or eang1 is None
+            or eang2 is None
+        ):
             return None
         radius_value = float(radius)
         if abs(radius_value) <= 1e-9:
@@ -514,7 +498,9 @@ def _curve_limits_report(
     min_radius_world = _ft_to_world(MIN_RADIUS_FT)
 
     for index, section in enumerate(sections):
-        progress.step(message=f"Curve limit checks: section {index + 1}/{len(sections)}")
+        progress.step(
+            message=f"Curve limit checks: section {index + 1}/{len(sections)}"
+        )
         if section.type_name != "curve":
             continue
 
@@ -564,7 +550,9 @@ def _centerline_clearance_report(
         progress.step(
             message=f"Centerline setup: section {section_index + 1}/{len(sections)}"
         )
-        for seg_start, seg_end in _polyline_segments(_section_polyline_for_checks(section)):
+        for seg_start, seg_end in _polyline_segments(
+            _section_polyline_for_checks(section)
+        ):
             all_segments.append((section_index, seg_start, seg_end))
 
     segment_index = _build_segment_spatial_index(
@@ -578,7 +566,12 @@ def _centerline_clearance_report(
     findings: list[str] = []
     spacing_violation_points: list[Point] = []
     for section_index, section in enumerate(sections):
-        for sample_point, tangent, along_distance, ratio in _sample_polyline_with_distance(
+        for (
+            sample_point,
+            tangent,
+            along_distance,
+            ratio,
+        ) in _sample_polyline_with_distance(
             _section_polyline_for_checks(section),
             sample_step_world,
         ):
@@ -617,7 +610,11 @@ def _centerline_clearance_report(
                 )
             )
 
-            section_fsects = fsects_by_section[section_index] if section_index < len(fsects_by_section) else []
+            section_fsects = (
+                fsects_by_section[section_index]
+                if section_index < len(fsects_by_section)
+                else []
+            )
             left_dlat, right_dlat = _boundary_offsets_at_ratio(section_fsects, ratio)
             side_dlat = left_dlat
             conflict_vector = (
@@ -704,7 +701,9 @@ def _boundary_centerline_ownership_report_numpy(
         progress.step(
             message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
         )
-        samples = _sample_polyline_with_distance(_section_polyline_for_checks(section), sample_step_world)
+        samples = _sample_polyline_with_distance(
+            _section_polyline_for_checks(section), sample_step_world
+        )
         if not samples:
             continue
 
@@ -768,7 +767,9 @@ def _boundary_centerline_ownership_report_numpy(
                     side_points[unresolved_indices],
                     rival_prepared_polyline,
                 )
-                can_flip = rival_distances_candidate + 1e-6 < own_distances[unresolved_indices]
+                can_flip = (
+                    rival_distances_candidate + 1e-6 < own_distances[unresolved_indices]
+                )
                 if not np.any(can_flip):
                     continue
 
@@ -793,7 +794,9 @@ def _boundary_centerline_ownership_report_numpy(
                     f"({_format_world_distance(own_distances[first], measurement_unit)})"
                 )
             )
-            violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+            violation_points.append(
+                (float(boundary_point[0]), float(boundary_point[1]))
+            )
             break
 
         if findings and findings[-1].startswith(f"  - section {section_index} "):
@@ -826,7 +829,9 @@ def _boundary_centerline_ownership_report_fallback(
         progress.step(
             message=f"Boundary ownership checks: section {section_index + 1}/{len(sections)}"
         )
-        samples = _sample_polyline_with_distance(_section_polyline_for_checks(section), sample_step_world)
+        samples = _sample_polyline_with_distance(
+            _section_polyline_for_checks(section), sample_step_world
+        )
         if not samples:
             continue
 
@@ -836,7 +841,11 @@ def _boundary_centerline_ownership_report_fallback(
             if normal is None:
                 continue
 
-            ratio = 0.0 if total_distance <= 0 else min(max(along_distance / total_distance, 0.0), 1.0)
+            ratio = (
+                0.0
+                if total_distance <= 0
+                else min(max(along_distance / total_distance, 0.0), 1.0)
+            )
             left_dlat, right_dlat = _boundary_offsets_at_ratio(section_fsects, ratio)
             for side, dlat in (("left", left_dlat), ("right", right_dlat)):
                 boundary_point = (
@@ -870,7 +879,9 @@ def _boundary_centerline_ownership_report_fallback(
                         f"({_format_world_distance(own_dist, measurement_unit)})"
                     )
                 )
-                violation_points.append((float(boundary_point[0]), float(boundary_point[1])))
+                violation_points.append(
+                    (float(boundary_point[0]), float(boundary_point[1]))
+                )
                 break
 
             if findings and findings[-1].startswith(f"  - section {section_index} "):
@@ -892,12 +903,20 @@ def _estimate_progress_steps(sections: list[SectionPreview]) -> int:
         return 1
 
     sample_step_world = _ft_to_world(PERP_SAMPLE_STEP_FT)
-    centerline_samples = sum(_count_polyline_samples(_section_polyline_for_checks(section), sample_step_world) for section in sections)
+    centerline_samples = sum(
+        _count_polyline_samples(
+            _section_polyline_for_checks(section), sample_step_world
+        )
+        for section in sections
+    )
     return 1 + (4 * len(sections)) + centerline_samples
 
 
 def _centerline_sample_counts(sections: list[SectionPreview], step: float) -> list[int]:
-    return [_count_polyline_samples(_section_polyline_for_checks(section), step) for section in sections]
+    return [
+        _count_polyline_samples(_section_polyline_for_checks(section), step)
+        for section in sections
+    ]
 
 
 def _count_polyline_samples(polyline: list[Point], step: float) -> int:
@@ -938,7 +957,10 @@ def _boundary_offsets_at_ratio(
 ) -> tuple[float, float]:
     dlats = [0.0]
     for fsect in fsects:
-        dlat = float(fsect.start_dlat) + (float(fsect.end_dlat) - float(fsect.start_dlat)) * ratio
+        dlat = (
+            float(fsect.start_dlat)
+            + (float(fsect.end_dlat) - float(fsect.start_dlat)) * ratio
+        )
         dlats.append(dlat)
     return max(dlats), min(dlats)
 
@@ -968,8 +990,12 @@ def _boundary_gaps(
         center_gap = _distance(section.end, next_section.start)
         return center_gap, center_gap
 
-    section_left, section_right = _boundary_points(section.end, sec_heading, section_fsects, endtype="end")
-    next_left, next_right = _boundary_points(next_section.start, next_heading, next_fsects, endtype="start")
+    section_left, section_right = _boundary_points(
+        section.end, sec_heading, section_fsects, endtype="end"
+    )
+    next_left, next_right = _boundary_points(
+        next_section.start, next_heading, next_fsects, endtype="start"
+    )
 
     return _distance(section_left, next_left), _distance(section_right, next_right)
 
@@ -1002,7 +1028,9 @@ def _polyline_segments(polyline: list[Point]) -> list[tuple[Point, Point]]:
     return segments
 
 
-def _sample_polyline(polyline: list[Point], step: float) -> list[tuple[Point, tuple[float, float]]]:
+def _sample_polyline(
+    polyline: list[Point], step: float
+) -> list[tuple[Point, tuple[float, float]]]:
     if len(polyline) < 2:
         return []
 
@@ -1099,7 +1127,9 @@ def _nearest_section_distance(
         section_best_distance: dict[int, float] = {}
         max_radius = 8
         for radius_cells in range(1, max_radius + 1):
-            candidate_segment_indices = spatial_index.candidate_segments(point, radius_cells)
+            candidate_segment_indices = spatial_index.candidate_segments(
+                point, radius_cells
+            )
             if not candidate_segment_indices:
                 continue
 
@@ -1131,7 +1161,9 @@ def _nearest_section_distance(
         prepared_polyline = None
         if prepared_polyline_cache is not None:
             prepared_polyline = prepared_polyline_cache.get(index)
-        distance = _point_to_polyline_distance(point, _section_polyline_for_checks(section), prepared_polyline)
+        distance = _point_to_polyline_distance(
+            point, _section_polyline_for_checks(section), prepared_polyline
+        )
         if nearest_distance is None or distance < nearest_distance:
             nearest_distance = distance
             nearest_index = index
@@ -1173,7 +1205,9 @@ def _build_section_segment_spatial_index(
 ) -> _SectionSegmentSpatialIndex | None:
     indexed_segments: list[_IndexedSectionSegment] = []
     for section_index, section in enumerate(sections):
-        for seg_start, seg_end in _polyline_segments(_section_polyline_for_checks(section)):
+        for seg_start, seg_end in _polyline_segments(
+            _section_polyline_for_checks(section)
+        ):
             min_x = min(seg_start[0], seg_end[0])
             max_x = max(seg_start[0], seg_end[0])
             min_y = min(seg_start[1], seg_end[1])
@@ -1257,7 +1291,10 @@ def _boundary_offsets_at_ratio_numpy(
         return zeros, zeros
 
     start = np.asarray([float(fsect.start_dlat) for fsect in fsects], dtype=float)
-    delta = np.asarray([float(fsect.end_dlat) - float(fsect.start_dlat) for fsect in fsects], dtype=float)
+    delta = np.asarray(
+        [float(fsect.end_dlat) - float(fsect.start_dlat) for fsect in fsects],
+        dtype=float,
+    )
     interpolated = start[None, :] + ratio[:, None] * delta[None, :]
     left_dlat = np.maximum(np.max(interpolated, axis=1), 0.0)
     right_dlat = np.minimum(np.min(interpolated, axis=1), 0.0)
@@ -1296,14 +1333,19 @@ def _point_to_polyline_distance(
     )
 
 
-def _point_to_polyline_distance_numpy(point: Point, prepared_polyline: _PreparedPolyline) -> float:
+def _point_to_polyline_distance_numpy(
+    point: Point, prepared_polyline: _PreparedPolyline
+) -> float:
     if prepared_polyline.points.shape[0] < 2:
         return math.inf
 
     point_array = np.asarray(point, dtype=float)
     to_point = point_array - prepared_polyline.start
 
-    t = np.einsum("ij,ij->i", to_point, prepared_polyline.seg) / prepared_polyline.seg_len_sq_safe
+    t = (
+        np.einsum("ij,ij->i", to_point, prepared_polyline.seg)
+        / prepared_polyline.seg_len_sq_safe
+    )
     t = np.clip(t, 0.0, 1.0)
 
     closest = prepared_polyline.start + prepared_polyline.seg * t[:, None]
@@ -1325,10 +1367,16 @@ def _points_to_polyline_distance_numpy(
         return np.full(points.shape[0], math.inf, dtype=float)
 
     to_points = points[:, None, :] - prepared_polyline.start[None, :, :]
-    t = np.einsum("nsi,si->ns", to_points, prepared_polyline.seg) / prepared_polyline.seg_len_sq_safe[None, :]
+    t = (
+        np.einsum("nsi,si->ns", to_points, prepared_polyline.seg)
+        / prepared_polyline.seg_len_sq_safe[None, :]
+    )
     t = np.clip(t, 0.0, 1.0)
 
-    closest = prepared_polyline.start[None, :, :] + prepared_polyline.seg[None, :, :] * t[:, :, None]
+    closest = (
+        prepared_polyline.start[None, :, :]
+        + prepared_polyline.seg[None, :, :] * t[:, :, None]
+    )
     delta = closest - points[:, None, :]
     dists = np.hypot(delta[:, :, 0], delta[:, :, 1])
     if dists.size == 0:
@@ -1544,7 +1592,6 @@ def _is_adjacent_section(
         target.previous_id,
         target.next_id,
     )
-
 
 
 def _left_normal(tangent: tuple[float, float]) -> tuple[float, float] | None:

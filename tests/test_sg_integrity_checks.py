@@ -37,6 +37,7 @@ def _section(
         polyline=[start, end],
     )
 
+
 def _curve_section(*, section_id: int, radius_ft: float):
     radius_world = _ft_to_world(radius_ft)
     arc_radians = 1.0
@@ -84,7 +85,6 @@ def test_integrity_report_flags_perpendicular_centerline_spacing_violation() -> 
     assert "Sampling step: 10 ft" in report
 
 
-
 def test_integrity_report_flags_parallel_close_centerline_spacing_violation() -> None:
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
@@ -101,8 +101,9 @@ def test_integrity_report_flags_parallel_close_centerline_spacing_violation() ->
     assert "Sections with < 80 ft perpendicular spacing: 2" in report
 
 
-
-def test_integrity_report_does_not_flag_collinear_sections_with_only_longitudinal_proximity() -> None:
+def test_integrity_report_does_not_flag_collinear_sections_with_only_longitudinal_proximity() -> (
+    None
+):
     section_a = _section(
         section_id=0,
         start=(0.0, 0.0),
@@ -118,7 +119,10 @@ def test_integrity_report_does_not_flag_collinear_sections_with_only_longitudina
 
     assert "Sections with < 80 ft perpendicular spacing: none" in report
 
-def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_violation() -> None:
+
+def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_violation() -> (
+    None
+):
     section_a = _section(
         section_id=0,
         start=(0.0, 0.0),
@@ -144,7 +148,11 @@ def test_integrity_report_ignores_adjacent_perpendicular_centerline_spacing_viol
 
 def test_integrity_report_flags_boundary_closer_to_other_centerline() -> None:
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(100.0), 0.0))
-    section_b = _section(section_id=1, start=(0.0, _ft_to_world(10.0)), end=(_ft_to_world(100.0), _ft_to_world(10.0)))
+    section_b = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(10.0)),
+        end=(_ft_to_world(100.0), _ft_to_world(10.0)),
+    )
     wide_left_boundary = PreviewFSection(
         start_dlat=_ft_to_world(20.0),
         end_dlat=_ft_to_world(20.0),
@@ -190,8 +198,6 @@ def test_integrity_report_ignores_adjacent_boundary_ownership_violation() -> Non
     ).text
 
     assert "Boundary points closer to a different centerline: 1" not in report
-
-
 
 
 def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
@@ -245,6 +251,7 @@ def test_segment_spatial_index_matches_unindexed_probe_proximity() -> None:
     assert indexed_hit == 1
     assert indexed_hit == unindexed_hit
 
+
 def test_integrity_report_emits_progress_updates() -> None:
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
@@ -263,7 +270,9 @@ def test_integrity_report_emits_progress_updates() -> None:
     assert updates[-1].current == updates[-1].total
 
 
-def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segments() -> None:
+def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segments() -> (
+    None
+):
     from sg_viewer.services.sg_integrity_checks import (
         _build_section_segment_spatial_index,
         _nearest_section_distance,
@@ -307,7 +316,9 @@ def test_nearest_section_distance_index_matches_unindexed_with_sparse_long_segme
     assert indexed_nearest == unindexed_nearest
 
 
-def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting() -> None:
+def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting() -> (
+    None
+):
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_at_threshold = _section(
         section_id=1,
@@ -315,7 +326,9 @@ def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting()
         end=(_ft_to_world(200.0), _ft_to_world(80.0)),
     )
 
-    report_at_threshold = build_integrity_report([section_a, section_at_threshold], [[], []]).text
+    report_at_threshold = build_integrity_report(
+        [section_a, section_at_threshold], [[], []]
+    ).text
 
     assert "Sections with < 80 ft perpendicular spacing: none" in report_at_threshold
 
@@ -325,7 +338,9 @@ def test_integrity_report_centerline_spacing_threshold_boundary_and_formatting()
         end=(_ft_to_world(200.0), _ft_to_world(79.99)),
     )
 
-    report_below_threshold = build_integrity_report([section_a, section_below_threshold], [[], []]).text
+    report_below_threshold = build_integrity_report(
+        [section_a, section_below_threshold], [[], []]
+    ).text
 
     assert "Sections with < 80 ft perpendicular spacing: 2" in report_below_threshold
     assert "(0.0, 80.0) ft intersects section 1 within ±80 ft" in report_below_threshold
@@ -343,15 +358,25 @@ def test_integrity_report_curve_radius_threshold_boundary_and_formatting() -> No
     assert "section 0: radius=50.00 ft" not in report
 
 
-def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_distances(monkeypatch) -> None:
+def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_distances(
+    monkeypatch,
+) -> None:
     import sg_viewer.services.sg_integrity_checks as integrity_checks
 
     if integrity_checks.np is None:
         return
 
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(300.0), 0.0))
-    section_b = _section(section_id=1, start=(0.0, _ft_to_world(12.0)), end=(_ft_to_world(300.0), _ft_to_world(12.0)))
-    section_c = _section(section_id=2, start=(0.0, _ft_to_world(-80.0)), end=(_ft_to_world(300.0), _ft_to_world(-80.0)))
+    section_b = _section(
+        section_id=1,
+        start=(0.0, _ft_to_world(12.0)),
+        end=(_ft_to_world(300.0), _ft_to_world(12.0)),
+    )
+    section_c = _section(
+        section_id=2,
+        start=(0.0, _ft_to_world(-80.0)),
+        end=(_ft_to_world(300.0), _ft_to_world(-80.0)),
+    )
     wide_left_boundary = PreviewFSection(
         start_dlat=_ft_to_world(24.0),
         end_dlat=_ft_to_world(24.0),
@@ -381,22 +406,30 @@ def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_dis
         batched_calls += 1
         return original_batched(*args, **kwargs)
 
-    monkeypatch.setattr(integrity_checks, "_point_to_polyline_distance_numpy", _counted_scalar)
-    monkeypatch.setattr(integrity_checks, "_points_to_polyline_distance_numpy", _counted_batched)
-
-    numpy_lines, numpy_points = integrity_checks._boundary_centerline_ownership_report_numpy(
-        sections,
-        fsects_by_section,
-        sample_step_world,
-        "feet",
-        progress_numpy,
+    monkeypatch.setattr(
+        integrity_checks, "_point_to_polyline_distance_numpy", _counted_scalar
     )
-    fallback_lines, fallback_points = integrity_checks._boundary_centerline_ownership_report_fallback(
-        sections,
-        fsects_by_section,
-        sample_step_world,
-        "feet",
-        progress_fallback,
+    monkeypatch.setattr(
+        integrity_checks, "_points_to_polyline_distance_numpy", _counted_batched
+    )
+
+    numpy_lines, numpy_points = (
+        integrity_checks._boundary_centerline_ownership_report_numpy(
+            sections,
+            fsects_by_section,
+            sample_step_world,
+            "feet",
+            progress_numpy,
+        )
+    )
+    fallback_lines, fallback_points = (
+        integrity_checks._boundary_centerline_ownership_report_fallback(
+            sections,
+            fsects_by_section,
+            sample_step_world,
+            "feet",
+            progress_fallback,
+        )
     )
 
     assert numpy_lines == fallback_lines
@@ -405,7 +438,9 @@ def test_boundary_ownership_numpy_batching_matches_fallback_and_uses_batched_dis
     assert scalar_calls == 0
 
 
-def test_integrity_report_uses_start_end_when_polyline_is_missing_for_spacing_checks() -> None:
+def test_integrity_report_uses_start_end_when_polyline_is_missing_for_spacing_checks() -> (
+    None
+):
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(200.0), 0.0))
     section_b = _section(
         section_id=1,
@@ -449,7 +484,9 @@ def test_integrity_report_uses_curve_center_radius_when_radius_field_missing() -
     assert "section 0: radius=49.99 ft" in report
 
 
-def test_integrity_report_flags_computed_straight_endpoint_gap_over_one_world_unit() -> None:
+def test_integrity_report_flags_computed_straight_endpoint_gap_over_one_world_unit() -> (
+    None
+):
     section_a = _section(section_id=0, start=(0.0, 0.0), end=(_ft_to_world(100.0), 0.0))
     section_b = _section(
         section_id=1,
@@ -520,15 +557,18 @@ def test_integrity_memo_wraps_existing_findings_with_deterministic_author() -> N
         generated_at=datetime(2026, 7, 9, 12, 30, 0),
     )
 
-    assert memo.startswith("MEMORANDUM\n\nFrom: Johan Hugenhaltz, Senior Circuit Geometry Consultant")
+    assert memo.startswith(
+        "MEMORANDUM\n\nFrom: Johan Hugenhaltz, Senior Circuit Geometry Consultant"
+    )
     assert "To: SG CREATE Track Construction Department" in memo
     assert "Summary:\nWarnings found." in memo
     assert "Findings:" in memo
-    assert ("Cartographer's aside:" in memo) or ("Continuity note:" in memo)
+    assert "Cartographer's aside:" not in memo
+    assert "jazz hands" not in memo
     assert "Sections with < 80 ft perpendicular spacing: 2" in memo
     assert "Sampling step: 10 ft" in memo
     assert "Recommendations:" in memo
-    assert "Closing note:" in memo
+    assert "Closing note:" not in memo
 
 
 def test_integrity_memo_error_summary_is_softened() -> None:
@@ -560,7 +600,10 @@ def test_integrity_memo_error_summary_is_softened() -> None:
         generated_at=datetime(2026, 7, 9, 12, 30, 0),
     )
 
-    assert "Summary:\nErrors found. The layout has geometry issues that should be addressed" in memo
+    assert (
+        "Summary:\nErrors found. The layout has geometry issues that should be addressed"
+        in memo
+    )
     assert "Critical errors found" not in memo
     assert "must be corrected" not in memo
     assert "Recommendations:\nAddress the error items when practical" in memo
@@ -574,3 +617,47 @@ def test_choose_integrity_memo_author_can_be_seeded_for_tests() -> None:
     author_b = choose_integrity_memo_author(random.Random(2))
 
     assert author_a == author_b
+
+
+def test_integrity_report_uses_500ths_for_all_endpoint_gaps() -> None:
+    section_a = _section(section_id=0, start=(0.0, 0.0), end=(100.0, 0.0))
+    section_a.end_heading = (0.0, 1.0)
+    section_b = _section(
+        section_id=1,
+        start=(102.0, 0.0),
+        end=(202.0, 0.0),
+    )
+
+    report = build_integrity_report(
+        [section_a, section_b], [[], []], measurement_unit="meter"
+    ).text
+
+    assert "centerline gap=2 500ths" in report
+    assert "computed end (100 500ths, 0 500ths)" in report
+    assert "gap=2 500ths" in report
+
+
+def test_integrity_report_includes_track_metrics_and_additional_checks() -> None:
+    section_a = _section(
+        section_id=0,
+        start=(0.0, 0.0),
+        end=(_ft_to_world(100.0), 0.0),
+        previous_id=1,
+        next_id=1,
+    )
+    section_b = _section(
+        section_id=1,
+        start=(_ft_to_world(100.0), 0.0),
+        end=(_ft_to_world(100.0), 0.0),
+        previous_id=1,
+        next_id=0,
+    )
+
+    report = build_integrity_report([section_a, section_b], [[], []]).text
+
+    assert "Track metrics" in report
+    assert "Total centerline length: 100 ft" in report
+    assert "Section types: 2 straight, 0 curve" in report
+    assert "Average section length: 50 ft" in report
+    assert "Non-reciprocal section links: 2" in report
+    assert "Sections with length <= 1 500ths: 1" in report
