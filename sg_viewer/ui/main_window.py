@@ -1629,7 +1629,6 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         project_files_layout.addLayout(trackname_replace_layout)
         project_files_layout.addWidget(self._files_copy_template_button)
         project_files_group.setLayout(project_files_layout)
-        configure_layout.addWidget(project_files_group)
 
         color_mapping_group = QtWidgets.QGroupBox("Color Mapping")
         color_mapping_layout = QtWidgets.QVBoxLayout()
@@ -1756,6 +1755,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
 
         advanced_tab = QtWidgets.QWidget()
         advanced_layout = QtWidgets.QVBoxLayout()
+        advanced_note = QtWidgets.QLabel(
+            "This tab contains experimental features and features used to test and "
+            "troubleshoot the tool. It is not recommended for normal use."
+        )
+        advanced_note.setWordWrap(True)
+        advanced_layout.addWidget(advanced_note)
+        advanced_layout.addWidget(project_files_group)
         other_group = QtWidgets.QGroupBox("Other Tools")
         other_layout = QtWidgets.QVBoxLayout()
         other_layout.addWidget(self._three_d_file_catalog_inspector_button)
