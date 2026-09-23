@@ -443,7 +443,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.verticalHeader().setVisible(False)
         self._land_polygons_table = QtWidgets.QTableWidget(0, 4)
         self._land_polygons_table.setHorizontalHeaderLabels(
-            ["Polygon points", "Color", "Mode", "Height"]
+            ["Polygon points", "Color", "Mode", "Height (ft)"]
         )
         self._land_polygons_table.horizontalHeader().setStretchLastSection(True)
         self._land_polygons_table.setSelectionBehavior(
@@ -4858,6 +4858,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_points_table.setHorizontalHeaderLabels(
             ["#", f"X ({unit_label})", f"Y ({unit_label})", f"Z ({unit_label})", "", ""]
         )
+        self._land_polygons_table.setHorizontalHeaderLabels(
+            ["Polygon points", "Color", "Mode", f"Height ({unit_label})"]
+        )
 
     def _format_land_point_value(self, value_500ths: float) -> str:
         unit = self._current_measurement_unit()
@@ -5413,12 +5416,17 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             points_item = self._land_polygons_table.item(row, 0)
             color_item = self._land_polygons_table.item(row, 1)
             height_item = self._land_polygons_table.item(row, 3)
+            height_text = "0" if height_item is None else height_item.text().strip()
+            try:
+                stored_height = f"{self._land_point_value_500ths(height_text or '0'):g}"
+            except ValueError:
+                stored_height = height_text
             polygons.append(
                 (
                     "" if points_item is None else points_item.text(),
                     "0" if color_item is None else color_item.text(),
                     self._land_polygon_mode_text(row),
-                    "0" if height_item is None else height_item.text(),
+                    stored_height,
                 )
             )
         return {"name": name, "points": points, "polygons": polygons}
@@ -5589,7 +5597,11 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             )
             self._land_set_polygon_mode_widget(polygon_row, str(mode_text))
             self._land_polygons_table.setItem(
-                polygon_row, 3, QtWidgets.QTableWidgetItem(str(height_text))
+                polygon_row,
+                3,
+                QtWidgets.QTableWidgetItem(
+                    self._format_land_point_value(float(str(height_text) or "0"))
+                ),
             )
         self._land_points_table.blockSignals(False)
         self._land_polygons_table.blockSignals(False)
@@ -6414,6 +6426,21 @@ class SGViewerWindow(QtWidgets.QMainWindow):
                     item.setText(self._format_land_point_value(value_500ths))
         finally:
             self._land_points_table.blockSignals(signals_blocked)
+        signals_blocked = self._land_polygons_table.blockSignals(True)
+        try:
+            for row in range(self._land_polygons_table.rowCount()):
+                item = self._land_polygons_table.item(row, 3)
+                if item is None or not item.text().strip():
+                    continue
+                try:
+                    value_500ths = self._land_point_value_500ths(
+                        item.text(), unit=previous_unit
+                    )
+                except ValueError:
+                    continue
+                item.setText(self._format_land_point_value(value_500ths))
+        finally:
+            self._land_polygons_table.blockSignals(signals_blocked)
         self._update_land_points_table_headers()
         self._sync_altitude_range_spin_units(previous_unit)
         self._sync_pitwall_height_spin_units(previous_unit)

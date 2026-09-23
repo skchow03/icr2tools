@@ -397,6 +397,47 @@ def test_land_points_table_uses_selected_measurement_unit_and_preserves_500ths(q
         window.close()
 
 
+def test_land_polygon_height_uses_selected_measurement_unit_and_exports_500ths(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("0", "0", "0"), ("6000", "0", "0"), ("0", "6000", "0")],
+                    "polygons": [("0,1,2", "7", "Land", "6000")],
+                }
+            ]
+        )
+        assert (
+            window._land_polygons_table.horizontalHeaderItem(3).text() == "Height (ft)"
+        )
+        assert window._land_polygons_table.item(0, 3).text() == "1"
+
+        meter_index = window.measurement_units_combo.findData("meter")
+        window.measurement_units_combo.setCurrentIndex(meter_index)
+        assert (
+            window._land_polygons_table.horizontalHeaderItem(3).text() == "Height (m)"
+        )
+        assert float(window._land_polygons_table.item(0, 3).text()) == pytest.approx(
+            0.3048
+        )
+        assert window.serialize_land_objects()[0]["polygons"][0][3] == "6000"
+
+        points, polygons, error = window._parse_land_object_export_data(
+            window.serialize_land_objects()[0]
+        )
+        assert error is None
+        assert polygons == [((3, 4, 5), 7)]
+        assert points[3:] == [
+            (0.0, 0.0, 6000.0),
+            (6000.0, 0.0, 6000.0),
+            (0.0, 6000.0, 6000.0),
+        ]
+    finally:
+        window.close()
+
+
 def test_land_point_auto_set_height_uses_closest_boundary(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
