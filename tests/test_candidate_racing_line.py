@@ -133,6 +133,45 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertLess(path[151], -4)
         self.assertTrue(np.all(np.abs(path) <= 9.00001))
 
+    def test_linked_turns_share_handoff_and_straights_transition_once(self):
+        lower, upper = np.full(300, -10.0), np.full(300, 10.0)
+        # The first two corners form a close S bend. The third is separated
+        # by a straight, with another long straight across the lap seam.
+        corners = [(20, 60, 40, 1, 12, 1.0),
+                   (68, 108, 88, -1, 12, 1.0),
+                   (180, 210, 195, 1, 12, 1.0)]
+        target, weight = optimizer._linked_corner_targets(
+            corners, lower, upper, 75
+        )
+        self.assertGreater(target[40], 7)
+        self.assertLess(target[88], -7)
+        self.assertLess(abs(target[64]), 2)  # one shared S-bend handoff
+        self.assertEqual(weight[40], 3)
+
+        # One smooth move across the long straight prepares for the next
+        # outside entry; the other straight stays on the same side.
+        self.assertTrue(np.all(np.diff(target[120:169]) <= 1e-10))
+        self.assertTrue(np.allclose(target[222:], target[222]))
+        self.assertTrue(np.allclose(target[:9], target[222]))
+        self.assertLess(abs(target[299] - target[0]), 1e-10)
+
+        # A changing corridor still keeps every planned target in pavement.
+        variable_upper = upper + 2 * np.sin(np.arange(300) * 2 * np.pi / 300)
+        varied, _ = optimizer._linked_corner_targets(
+            corners, lower, variable_upper, 75
+        )
+        self.assertTrue(np.all(varied >= lower))
+        self.assertTrue(np.all(varied <= variable_upper))
+
+    def test_adjacent_same_direction_turns_keep_shared_outside_setup(self):
+        lower, upper = np.full(200, -10.0), np.full(200, 10.0)
+        corners = [(15, 55, 35, 1, 10, 1.0),
+                   (61, 100, 80, 1, 10, 1.0)]
+        target, _ = optimizer._linked_corner_targets(corners, lower, upper, 75)
+        self.assertAlmostEqual(target[58], -7.5)
+        self.assertGreater(target[35], 7)
+        self.assertGreater(target[80], 7)
+
     def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
         self.track.sects[0].num_bounds = 3
         self.track.sects[0].ground_fsects = 1
