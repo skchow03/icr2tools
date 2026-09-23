@@ -309,6 +309,49 @@ def test_centerline_nodes_toolbar_checkbox_required_only_for_core_edit_tabs(qapp
         window.close()
 
 
+def test_geometry_full_track_controls_and_streamlined_menus(qapp):
+    from sg_viewer.ui.viewer_controller import SGViewerController
+
+    window = SGViewerWindow()
+    try:
+        controller = SGViewerController(window)
+
+        menus = {
+            menu.title().replace("&", ""): menu
+            for menu in window.menuBar().findChildren(QtWidgets.QMenu)
+        }
+        view_action_texts = [action.text() for action in menus["View"].actions()]
+        tools_action_texts = [action.text() for action in menus["Tools"].actions()]
+
+        assert "Track Section DLONGs…" not in view_action_texts
+        assert "Clear Project Working Folder" not in view_action_texts
+        assert "Run 3D Tools…" not in tools_action_texts
+
+        full_track_group = next(
+            group
+            for group in window.findChildren(QtWidgets.QGroupBox)
+            if group.title() == "Full Track"
+        )
+        full_track_buttons = full_track_group.findChildren(QtWidgets.QPushButton)
+        assert window.scale_track_button in full_track_buttons
+        assert window.rotate_track_button in full_track_buttons
+        assert window.reverse_track_button in full_track_buttons
+        assert (
+            window.scale_track_button.defaultAction()
+            is controller._scale_track_action
+        )
+        assert (
+            window.rotate_track_button.defaultAction()
+            is controller._rotate_track_action
+        )
+        assert (
+            window.reverse_track_button.defaultAction()
+            is controller._reverse_track_action
+        )
+    finally:
+        window.close()
+
+
 def test_mouse_status_updates_for_sidebar_tabs(qapp):
     window = SGViewerWindow()
     try:

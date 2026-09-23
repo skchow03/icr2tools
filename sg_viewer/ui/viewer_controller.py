@@ -561,6 +561,15 @@ class SGViewerController:
         self._window.run_full_integrity_check_button.clicked.connect(
             self._run_sg_integrity_checks
         )
+        self._window.scale_track_button.setDefaultAction(
+            self._action_groups.section_editing.scale_track_action
+        )
+        self._window.rotate_track_button.setDefaultAction(
+            self._action_groups.section_editing.rotate_track_action
+        )
+        self._window.reverse_track_button.setDefaultAction(
+            self._action_groups.section_editing.reverse_track_action
+        )
         self._window.load_background_image_button.clicked.connect(
             self._open_background_file_dialog
         )
