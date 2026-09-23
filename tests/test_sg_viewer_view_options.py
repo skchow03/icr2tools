@@ -332,7 +332,7 @@ def test_geometry_full_track_controls_and_streamlined_menus(qapp):
             for group in window.findChildren(QtWidgets.QGroupBox)
             if group.title() == "Full Track"
         )
-        full_track_buttons = full_track_group.findChildren(QtWidgets.QPushButton)
+        full_track_buttons = full_track_group.findChildren(QtWidgets.QAbstractButton)
         assert window.scale_track_button in full_track_buttons
         assert window.rotate_track_button in full_track_buttons
         assert window.reverse_track_button in full_track_buttons
