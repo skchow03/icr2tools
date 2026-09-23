@@ -1,17 +1,145 @@
-"""Geometry-only candidate racing line for an existing ICR2 LP sampling grid.
+"""Pavement-aware candidate racing line on an existing ICR2 LP grid.
 
-This minimizes integrated squared curvature. It deliberately makes no claim
-about lap time: the car model and a speed profile are separate work.
+The path follows an apex plan and minimizes bending within the chosen paved
+corridor. This is a geometric candidate, not a minimum-lap-time solution.
 """
 
 from __future__ import annotations
 
 import numpy as np
 
-from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
+from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getgrounddlat, getxyz
 
 
 DLAT_PER_FOOT = 6000.0
+PAVED_GROUND_TYPES = frozenset(range(32, 55, 2))  # concrete, asphalt, paint
+
+
+def _paved_intervals(trk, section_id: int, fraction: float) -> list[tuple[float, float]]:
+    """Return connected paved DLAT intervals, ordered from right to left."""
+    section = trk.sects[section_id]
+    if section.num_bounds < 2 or section.ground_fsects < 1:
+        return []
+    left = max(getbounddlat(trk, section_id, fraction, i)
+               for i in range(section.num_bounds))
+    strips = []
+    # The ground f-sections run from the left boundary toward the right.
+    # This is the same strip construction used by build_ground_surface_mesh.
+    for i in range(section.ground_fsects - 1, -1, -1):
+        right = getgrounddlat(trk, section_id, fraction, i)
+        if section.ground_type[i] in PAVED_GROUND_TYPES:
+            strips.append((min(left, right), max(left, right)))
+        left = right
+    strips.sort()
+    merged = []
+    for lo, hi in strips:
+        if merged and lo <= merged[-1][1] + 1.0:
+            merged[-1] = (merged[-1][0], max(hi, merged[-1][1]))
+        else:
+            merged.append((lo, hi))
+    return merged
+
+
+def _paved_corridor(trk, dlongs, reference_dlats, margin_feet):
+    lower, upper = [], []
+    previous = None
+    for i, dlong in enumerate(dlongs):
+        section_id, fraction = dlong2sect(trk, dlong)
+        candidates = []
+        for raw_lo, raw_hi in _paved_intervals(trk, section_id, fraction):
+            lo = raw_lo / DLAT_PER_FOOT + margin_feet
+            hi = raw_hi / DLAT_PER_FOOT - margin_feet
+            if hi > lo:
+                candidates.append((lo, hi))
+        if not candidates:
+            raise ValueError(
+                f"No paved corridor wide enough at DLONG {dlong:.0f}; "
+                "reduce the clearance or inspect the TRK ground types."
+            )
+        reference = reference_dlats[i] / DLAT_PER_FOOT if reference_dlats else 0.0
+
+        def score(interval):
+            lo, hi = interval
+            distance = max(lo - reference, 0, reference - hi)
+            if previous is None:
+                return distance
+            overlap = min(hi, previous[1]) - max(lo, previous[0])
+            continuity = 0 if overlap >= 0 else 1000 + 10 * -overlap
+            previous_center = (previous[0] + previous[1]) * 0.5
+            return 3 * distance + continuity + max(
+                lo - previous_center, 0, previous_center - hi
+            )
+
+        chosen = min(candidates, key=score)
+        if previous is not None and min(chosen[1], previous[1]) < max(chosen[0], previous[0]):
+            raise ValueError(
+                f"Paved corridor is discontinuous at DLONG {dlong:.0f}; "
+                "inspect pavement or existing RACE line."
+            )
+        lower.append(chosen[0])
+        upper.append(chosen[1])
+        previous = chosen
+    if min(upper[0], upper[-1]) < max(lower[0], lower[-1]):
+        raise ValueError("Paved corridor is discontinuous at the start/finish seam.")
+    return np.asarray(lower), np.asarray(upper)
+
+
+def _apex_targets(centers, lower, upper):
+    """Plan outside/inside/outside targets around sustained signed turns."""
+    n = len(centers)
+    look = max(2, min(6, n // 50))
+    incoming = centers - np.roll(centers, look, axis=0)
+    outgoing = np.roll(centers, -look, axis=0) - centers
+    cross = incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0]
+    dot = np.sum(incoming * outgoing, axis=1)
+    distance = np.maximum(np.linalg.norm(incoming, axis=1), 1.0)
+    curvature = np.arctan2(cross, dot) / distance
+    for _ in range(2):
+        curvature = (np.roll(curvature, 1) + 2 * curvature
+                     + np.roll(curvature, -1)) * 0.25
+    threshold = max(0.00025, 0.12 * float(np.max(np.abs(curvature))))
+    signs = np.where(curvature > threshold, 1,
+                     np.where(curvature < -threshold, -1, 0))
+    # Tiny near-zero gaps inside a bend should not become separate corners.
+    for _ in range(3):
+        gaps = (signs == 0) & (np.roll(signs, 1) == np.roll(signs, -1))
+        signs[gaps] = np.roll(signs, 1)[gaps]
+
+    baseline = (lower + upper) * 0.5
+    weighted_target = 0.0001 * baseline
+    target_weight = np.full(n, 0.0001)
+    starts = [i for i in range(n) if signs[i] and signs[i] != signs[(i - 1) % n]]
+    for start in starts:
+        sign = signs[start]
+        length = 0
+        while length < n and signs[(start + length) % n] == sign:
+            length += 1
+        if length < 8 or length > 0.7 * n:
+            continue
+        window = np.array([(start + j) % n for j in range(length)])
+        if np.sum(np.abs(curvature[window]) * distance[window]) < 0.08:
+            continue
+        magnitudes = np.abs(curvature[window])
+        plateau = np.flatnonzero(magnitudes >= 0.9 * np.max(magnitudes))
+        apex_at = int(plateau[np.argmin(np.abs(plateau - 0.6 * length))])
+        lead = min(18, max(6, length // 2))
+        entry, apex, exit_at = -lead, apex_at, length - 1 + lead
+        for position in range(entry, exit_at + 1):
+            i = (start + position) % n
+            if position <= apex:
+                t = (position - entry) / max(1, apex - entry)
+                blend = t * t * (3 - 2 * t)
+            else:
+                t = (position - apex) / max(1, exit_at - apex)
+                blend = 1 - t * t * (3 - 2 * t)
+            width = upper[i] - lower[i]
+            inside = upper[i] - 0.10 * width if sign > 0 else lower[i] + 0.10 * width
+            outside = lower[i] + 0.15 * width if sign > 0 else upper[i] - 0.15 * width
+            desired = outside * (1 - blend) + inside * blend
+            weight = 1.0 + 2.0 * blend
+            weighted_target[i] += weight * desired
+            target_weight[i] += weight
+    return weighted_target / target_weight, target_weight
 
 
 def _energy_and_gradient(points: np.ndarray) -> tuple[float, np.ndarray]:
@@ -44,11 +172,12 @@ def optimize_race_line(
     dlongs: list[float],
     *,
     margin_feet: float = 5.0,
+    reference_dlats: list[float] | None = None,
     iterations: int = 160,
 ) -> list[float]:
-    """Return DLATs at the supplied unique LP DLONGs, inside TRK walls.
+    """Return DLATs at unique LP DLONGs within the continuous paved corridor.
 
-    The margin measures clearance from the line's *center* to each outer wall;
+    The margin measures clearance from the car center to the pavement edge;
     it should include half the car width and any desired safety clearance.
     """
     if len(dlongs) < 8 or margin_feet < 0:
@@ -56,32 +185,20 @@ def optimize_race_line(
     if any(b <= a for a, b in zip(dlongs, dlongs[1:])):
         raise ValueError("LP DLONG samples must be strictly increasing.")
 
+    if reference_dlats is not None and len(reference_dlats) != len(dlongs):
+        raise ValueError("Reference RACE DLAT count does not match the LP grid.")
+    lower, upper = _paved_corridor(trk, dlongs, reference_dlats, margin_feet)
     centers = []
     normals = []
-    lower = []
-    upper = []
     for dlong in dlongs:
-        section_id, fraction = dlong2sect(trk, dlong)
-        section = trk.sects[section_id]
-        if section.num_bounds < 2:
-            raise ValueError(f"Section {section_id} lacks two outer boundaries.")
-        bounds = [getbounddlat(trk, section_id, fraction, i)
-                  for i in range(section.num_bounds)]
-        lo = min(bounds) / DLAT_PER_FOOT + margin_feet
-        hi = max(bounds) / DLAT_PER_FOOT - margin_feet
-        if hi <= lo:
-            raise ValueError(f"No usable width at DLONG {dlong:.0f}; reduce the margin.")
         x, y, _ = getxyz(trk, dlong, 0, centerline)
         nx, ny, _ = getxyz(trk, dlong, DLAT_PER_FOOT, centerline)
         centers.append((x / DLAT_PER_FOOT, y / DLAT_PER_FOOT))
         normals.append(((nx - x) / DLAT_PER_FOOT, (ny - y) / DLAT_PER_FOOT))
-        lower.append(lo)
-        upper.append(hi)
 
     centers = np.asarray(centers, dtype=float)
     normals = np.asarray(normals, dtype=float)
-    lower = np.asarray(lower, dtype=float)
-    upper = np.asarray(upper, dtype=float)
+    targets, target_weight = _apex_targets(centers, lower, upper)
     # A few smooth control values govern many LP records. Directly optimizing
     # every record is ill-conditioned: microscopic alternating DLAT changes
     # dominate the discrete curvature gradient.
@@ -98,6 +215,8 @@ def optimize_race_line(
         (-3*t**3 + 3*t**2 + 3*t + 1) / 6,
         t**3 / 6,
     ], axis=1)
+    controls[:] = targets[np.round(np.arange(len(controls)) * count /
+                                    len(controls)).astype(int) % count]
 
     def evaluate(values):
         unconstrained = np.sum(values[indices] * weights, axis=1)
@@ -106,6 +225,14 @@ def optimize_race_line(
             centers + normals * offsets[:, None]
         )
         offset_gradient = np.sum(point_gradient * normals, axis=1)
+        # Apex targets prevent the smoothest path from simply following the
+        # outside edge through a whole bend. Small baseline weight applies on
+        # straights; turn targets have much higher weight.
+        difference = (offsets - targets) / np.maximum(upper - lower, 1.0)
+        energy += 5.0 * float(np.mean(target_weight * difference**2))
+        offset_gradient += (
+            10 * target_weight * difference / np.maximum(upper - lower, 1.0) / count
+        )
         offset_gradient[unconstrained != offsets] = 0
         control_gradient = np.zeros(len(controls), dtype=float)
         for j in range(4):

@@ -160,7 +160,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
         self._candidate_race_button.setEnabled(False)
         self._candidate_race_button.setToolTip(
-            "Preview a smooth geometry-only RACE path within TRK outer walls; "
+            "Preview a corner-apex RACE path on asphalt, concrete, or paint; "
             "car performance and speeds are not optimized."
         )
         self._lp_tab = LpTabBuilder(self).build()
@@ -2707,7 +2707,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 return
         margin, accepted = QtWidgets.QInputDialog.getDouble(
             self, "Candidate Race Line",
-            "Centerline clearance from each outer wall (feet):",
+            "Car center clearance from pavement edge (feet):",
             5.0, 0.0, 100.0, 1,
         )
         if not accepted:

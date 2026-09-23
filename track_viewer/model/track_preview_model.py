@@ -286,6 +286,7 @@ class TrackPreviewModel(QtCore.QObject):
             dlats = optimize_race_line(
                 self.trk, self.centerline, [p.dlong for p in unique],
                 margin_feet=margin_feet,
+                reference_dlats=[p.dlat for p in unique],
             )
             if has_terminal:
                 dlats.append(dlats[0])
@@ -310,7 +311,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add("RACE")
         return True, (
             f"Generated a {len(records)}-record candidate race path with "
-            f"{margin_feet:g} ft center clearance from the outer walls. "
+            f"{margin_feet:g} ft center clearance from the paved edge. "
             "Existing speeds and lateral-speed fields were retained. "
             "This is a geometry preview, not a game-ready LP; review and "
             "recalculate its other fields before saving RACE.LP."
