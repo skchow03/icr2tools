@@ -107,7 +107,7 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
 
 def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
                   corner_width_pct=75, apex_position_pct=60):
-    """Plan outside/inside/outside targets around sustained signed turns."""
+    """Plan linked turn entries, apexes and exits around the whole lap."""
     n = len(centers)
     spacing = float(np.median(np.linalg.norm(
         np.roll(centers, -1, axis=0) - centers, axis=1
@@ -130,9 +130,7 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         gaps = (signs == 0) & (np.roll(signs, 1) == np.roll(signs, -1))
         signs[gaps] = np.roll(signs, 1)[gaps]
 
-    baseline = (lower + upper) * 0.5
-    weighted_target = 0.0001 * baseline
-    target_weight = np.full(n, 0.0001)
+    corners = []
     starts = [i for i in range(n) if signs[i] and signs[i] != signs[(i - 1) % n]]
     for start in starts:
         sign = signs[start]
@@ -151,25 +149,71 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         apex_at = int(round(0.4 * peak_at + 0.6 * desired_apex))
         apex_at = max(0, min(length - 1, apex_at))
         lead = min(max(6, 2 * look), max(6, length // 2), n // 6)
-        entry, apex, exit_at = -lead, apex_at, length - 1 + lead
-        for position in range(entry, exit_at + 1):
-            i = (start + position) % n
-            if position <= apex:
-                t = (position - entry) / max(1, apex - entry)
-                blend = t * t * (3 - 2 * t)
-            else:
-                t = (position - apex) / max(1, exit_at - apex)
-                blend = 1 - t * t * (3 - 2 * t)
-            width = upper[i] - lower[i]
-            half_use = corner_width_pct / 200 * width
-            midpoint = (lower[i] + upper[i]) * 0.5
-            inside = midpoint + sign * half_use
-            outside = midpoint - sign * half_use
-            desired = outside * (1 - blend) + inside * blend
-            weight = 1.0 + 2.0 * blend
-            weighted_target[i] += weight * desired
-            target_weight[i] += weight
-    return weighted_target / target_weight, target_weight
+        corners.append((start, start + length - 1, start + apex_at,
+                        int(sign), lead, float(np.sum(
+                            np.abs(curvature[window]) * distance[window]))))
+
+    if not corners:
+        return (lower + upper) * 0.5, np.full(n, 0.0001)
+    return _linked_corner_targets(corners, lower, upper, corner_width_pct)
+
+
+def _linked_corner_targets(corners, lower, upper, corner_width_pct):
+    """Join each apex to its neighbours with one transition per straight.
+
+    Corners are (start, end, apex, signed direction, lead, turn severity).
+    Coordinates can cross the lap seam; anchors are interpolated periodically.
+    """
+    n = len(lower)
+    use = corner_width_pct / 200.0
+    anchors = []
+    for i, (start, end, apex, sign, lead, severity) in enumerate(corners):
+        anchors.append((apex % n, 0.5 + sign * use))
+        next_start, _, _, next_sign, next_lead, next_severity = corners[
+            (i + 1) % len(corners)
+        ]
+        if i == len(corners) - 1:
+            next_start += n
+        gap = next_start - end - 1
+        outgoing = 0.5 - sign * use
+        incoming = 0.5 - next_sign * use
+        if gap <= lead + next_lead:
+            # A short gap has room for one handoff, not two independent
+            # outside targets. Bias it toward the entry of the next turn.
+            position = end + (gap + 1) // 2
+            fraction = ((severity * outgoing + 1.2 * next_severity * incoming)
+                        / (severity + 1.2 * next_severity))
+            anchors.append((position % n, fraction))
+        else:
+            anchors.append(((end + lead) % n, outgoing))
+            anchors.append(((next_start - next_lead) % n, incoming))
+
+    # Duplicate anchors can occur at the seam or in a zero-length gap.
+    # Combine them once before interpolating to avoid division by zero.
+    grouped = {}
+    for position, fraction in anchors:
+        grouped.setdefault(position, []).append(fraction)
+    anchors = sorted((position, float(np.mean(values)))
+                     for position, values in grouped.items())
+    positions = np.array([anchor[0] for anchor in anchors], dtype=int)
+    fractions = np.array([anchor[1] for anchor in anchors])
+    next_positions = np.r_[positions[1:], positions[0] + n]
+    next_fractions = np.r_[fractions[1:], fractions[0]]
+    fraction = np.empty(n)
+    for start, end, first, last in zip(positions, next_positions,
+                                       fractions, next_fractions):
+        indices = np.arange(start, end)
+        t = (indices - start) / (end - start)
+        smooth = t * t * (3 - 2 * t)
+        fraction[indices % n] = first + smooth * (last - first)
+
+    target_weight = np.ones(n)
+    for _, _, apex, _, lead, _ in corners:
+        for step in range(-lead, lead + 1):
+            index = (apex + step) % n
+            target_weight[index] = max(target_weight[index],
+                                       1 + 2 * (1 - abs(step) / (lead + 1)))
+    return lower + fraction * (upper - lower), target_weight
 
 
 def _energy_and_gradient(points: np.ndarray) -> tuple[float, np.ndarray]:
