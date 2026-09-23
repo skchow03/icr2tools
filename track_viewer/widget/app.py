@@ -157,6 +157,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._export_all_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
+        self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
+        self._candidate_race_button.setEnabled(False)
+        self._candidate_race_button.setToolTip(
+            "Preview a smooth geometry-only RACE path within TRK outer walls; "
+            "car performance and speeds are not optimized."
+        )
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._pit_tab = PitTabBuilder(self).build()
@@ -353,6 +359,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             self._handle_export_all_lp_csv
         )
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
+        self._candidate_race_button.clicked.connect(self._handle_candidate_race_line)
         self._trk_gaps_action.triggered.connect(
             lambda: self.controller.run_trk_gaps(self)
         )
@@ -2688,6 +2695,36 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_candidate_race_line(self) -> None:
+        if self.preview_api.lp_line_dirty("RACE"):
+            choice = QtWidgets.QMessageBox.question(
+                self, "Candidate Race Line",
+                "Replace the unsaved RACE.LP edits with a new candidate path?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            if choice != QtWidgets.QMessageBox.Yes:
+                return
+        margin, accepted = QtWidgets.QInputDialog.getDouble(
+            self, "Candidate Race Line",
+            "Centerline clearance from each outer wall (feet):",
+            5.0, 0.0, 100.0, 1,
+        )
+        if not accepted:
+            return
+        success, message = self.preview_api.generate_candidate_race_line(margin)
+        if not success:
+            QtWidgets.QMessageBox.warning(self, "Candidate Race Line", message)
+            return
+        self._set_active_lp_line_in_ui("RACE")
+        checkbox = self._lp_checkboxes.get("RACE")
+        if checkbox is not None and not checkbox.isChecked():
+            checkbox.setChecked(True)
+        self._update_lp_records_table("RACE")
+        self._update_lp_dirty_indicator("RACE")
+        self.visualization_widget.update()
+        QtWidgets.QMessageBox.information(self, "Candidate Race Line", message)
+
     def _update_save_lp_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()
         enabled = (
@@ -2745,6 +2782,11 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             and self.preview_api.trk is not None
         )
         self._generate_lp_button.setEnabled(enabled)
+        self._candidate_race_button.setEnabled(
+            self.preview_api.trk is not None
+            and "RACE" in self.preview_api.available_lp_files()
+            and bool(self.preview_api.ai_line_records("RACE"))
+        )
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.preview_api.set_tv_mode_count(mode_count)

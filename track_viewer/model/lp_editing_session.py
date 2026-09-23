@@ -344,6 +344,12 @@ class LPEditingSession:
             return True, message, {LPChange.DATA}
         return False, message, set()
 
+    def generate_candidate_race_line(
+        self, margin_feet: float
+    ) -> tuple[bool, str, set[LPChange]]:
+        success, message = self._model.generate_candidate_race_line(margin_feet)
+        return success, message, {LPChange.DATA} if success else set()
+
     def select_record_at_point(
         self,
         point: tuple[float, float],

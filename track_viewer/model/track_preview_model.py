@@ -20,6 +20,7 @@ from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
+from track_viewer.ai.racing_line_optimizer import optimize_race_line
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -270,6 +271,50 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation += 1
         self._dirty_lp_files.add(lp_name)
         return True, f"Generated {lp_name} LP line with {record_count} records."
+
+    def generate_candidate_race_line(self, margin_feet: float) -> tuple[bool, str]:
+        """Replace the in-memory race path while retaining its speed profile."""
+        if self.trk is None or not self.centerline or "RACE" not in self.available_lp_files:
+            return False, "Load a track folder containing RACE.LP first."
+        existing = self.get_ai_line_records_immediate("RACE")
+        if len(existing) < 9:
+            return False, "RACE.LP needs at least eight path samples."
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(existing[-1].dlong - track_length) < 1.0
+        unique = existing[:-1] if has_terminal else existing
+        try:
+            dlats = optimize_race_line(
+                self.trk, self.centerline, [p.dlong for p in unique],
+                margin_feet=margin_feet,
+            )
+            if has_terminal:
+                dlats.append(dlats[0])
+            records = []
+            for old, dlat in zip(existing, dlats):
+                x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+                records.append(LpPoint(
+                    x=x, y=y, dlong=old.dlong, dlat=dlat,
+                    speed_raw=old.speed_raw, speed_mph=old.speed_mph,
+                    lateral_speed=old.lateral_speed,
+                ))
+        except (ValueError, IndexError, TypeError, ArithmeticError) as exc:
+            return False, f"Could not generate a candidate line: {exc}"
+        if len(records) != len(existing):
+            return False, "The generated path did not match the LP record count."
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        self._ai_lines["RACE"] = records
+        self._manual_lp_overrides.add("RACE")
+        self._pending_ai_line_loads.discard("RACE")
+        self._ai_line_cache_generation += 1
+        self._dirty_lp_files.add("RACE")
+        return True, (
+            f"Generated a {len(records)}-record candidate race path with "
+            f"{margin_feet:g} ft center clearance from the outer walls. "
+            "Existing speeds and lateral-speed fields were retained. "
+            "This is a geometry preview, not a game-ready LP; review and "
+            "recalculate its other fields before saving RACE.LP."
+        )
 
     def closest_boundary_elevation_at(self, x: float, y: float) -> int | None:
         """Return the nearest boundary elevation to a world-space XY coordinate."""
