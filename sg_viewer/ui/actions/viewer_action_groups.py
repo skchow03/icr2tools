@@ -232,9 +232,9 @@ def build_viewer_menu_bar(window: QtWidgets.QMainWindow, groups: ViewerActionGro
     view_menu = window.menuBar().addMenu("View")
     for act in (groups.view.open_background_action, groups.view.background_settings_action, groups.view.view_options_action): view_menu.addAction(act)
     view_menu.addSeparator()
-    for act in (groups.view.set_project_working_folder_action, groups.view.clear_project_working_folder_action): view_menu.addAction(act)
+    view_menu.addAction(groups.view.set_project_working_folder_action)
     view_menu.addSeparator()
-    for act in (groups.view.show_section_dlongs_action, groups.view.studio_chatter_action, groups.view.show_radii_action, groups.view.show_axes_action, groups.view.show_crosshair_action, groups.view.show_background_image_action): view_menu.addAction(act)
+    for act in (groups.view.studio_chatter_action, groups.view.show_radii_action, groups.view.show_axes_action, groups.view.show_crosshair_action, groups.view.show_background_image_action): view_menu.addAction(act)
 
     tools_menu = window.menuBar().addMenu("Tools")
     section_menu = tools_menu.addMenu("Section Editing")
@@ -258,7 +258,7 @@ def build_viewer_menu_bar(window: QtWidgets.QMainWindow, groups: ViewerActionGro
     mrk_menu.addSeparator()
     for act in (groups.mrk.mrk_textures_action, groups.mrk.mrk_generate_file_action): mrk_menu.addAction(act)
     tools_menu.addSeparator()
-    for act in (groups.tsd.show_palette_colors_action, groups.tso.show_unique_tso_filenames_action, groups.track3d.three_d_tools_action): tools_menu.addAction(act)
+    for act in (groups.tsd.show_palette_colors_action, groups.tso.show_unique_tso_filenames_action): tools_menu.addAction(act)
     tools_menu.addSeparator(); tools_menu.addAction(groups.track3d.run_integrity_checks_action)
     tools_menu.addSeparator(); tools_menu.addAction(groups.track3d.calibrate_background_action); tools_menu.addAction(groups.tso.launch_tso_generator_action)
 

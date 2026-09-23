@@ -894,6 +894,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._run_full_integrity_check_button = QtWidgets.QPushButton(
             "Run Full Integrity Check…"
         )
+        self._scale_track_button = QtWidgets.QPushButton("Scale Track to Length…")
+        self._rotate_track_button = QtWidgets.QPushButton("Rotate Track…")
+        self._reverse_track_button = QtWidgets.QPushButton("Reverse Track")
         self._background_image_path_label = QtWidgets.QLabel("No image selected")
         self._background_image_path_label.setObjectName("backgroundImagePathLabel")
         self._background_image_path_label.setWordWrap(True)
@@ -2049,6 +2052,18 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._run_full_integrity_check_button
 
     @property
+    def scale_track_button(self) -> QtWidgets.QPushButton:
+        return self._scale_track_button
+
+    @property
+    def rotate_track_button(self) -> QtWidgets.QPushButton:
+        return self._rotate_track_button
+
+    @property
+    def reverse_track_button(self) -> QtWidgets.QPushButton:
+        return self._reverse_track_button
+
+    @property
     def load_background_image_button(self) -> QtWidgets.QPushButton:
         return self._load_background_image_button
 
@@ -2223,6 +2238,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "font-size: 17px; font-weight: 600; color: palette(mid);"
         )
         full_track.addRow("Loop Status", self._geometry_loop_status_label)
+        track_transform_buttons = QtWidgets.QWidget()
+        track_transform_layout = QtWidgets.QHBoxLayout(track_transform_buttons)
+        track_transform_layout.setContentsMargins(0, 0, 0, 0)
+        track_transform_layout.setSpacing(6)
+        track_transform_layout.addWidget(self._scale_track_button)
+        track_transform_layout.addWidget(self._rotate_track_button)
+        track_transform_layout.addWidget(self._reverse_track_button)
+        full_track.addRow(track_transform_buttons)
         full_track.addRow(self._run_full_integrity_check_button)
 
         background = group("Background Image")
