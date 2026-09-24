@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
+from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.model.lp_editing_session import LPChange, LPEditingSession
 from track_viewer.model.pit_models import PitParameters
@@ -209,6 +210,7 @@ class TrackPreviewApi:
         apex_position_pct: int = 60, max_speed_mph: float = 230.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
+        car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str]:
         return self._coordinator.generate_candidate_race_line(
             lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
@@ -216,7 +218,11 @@ class TrackPreviewApi:
             apex_position_pct=apex_position_pct, max_speed_mph=max_speed_mph,
             pit_speed_start_dlong=pit_speed_start_dlong,
             pit_speed_end_dlong=pit_speed_end_dlong,
+            car_performance=car_performance,
         )
+
+    def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
+        return self._coordinator.lp_lap_statistics(lp_name)
 
     def copy_lp_speeds_from_replay(
         self,

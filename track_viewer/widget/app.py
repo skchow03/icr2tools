@@ -10,6 +10,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
 from track_viewer.model.camera_models import CameraViewListing
+from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.model.replay_models import ReplayLapInfo
@@ -159,6 +160,11 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._generate_lp_button.setEnabled(False)
         self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
         self._candidate_race_button.setEnabled(False)
+        self._lp_lap_stats_button = QtWidgets.QPushButton("Lap Time / Avg Speed")
+        self._lp_lap_stats_button.setEnabled(False)
+        self._lp_lap_stats_button.setToolTip(
+            "Estimate lap time and average speed from the selected LP's current speeds."
+        )
         self._candidate_race_button.setToolTip(
             "Generate a candidate path and 1995 CART speed profile for the "
             "currently selected LP line."
@@ -170,6 +176,11 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "corner_width_pct": 75,
             "apex_position_pct": 60,
             "max_speed_mph": 230.0,
+            "acceleration_pct": 100.0,
+            "braking_pct": 100.0,
+            "cornering_pct": 100.0,
+            "aero_pct": 100.0,
+            "safety_pct": 96.0,
         }
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
@@ -368,6 +379,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
         self._candidate_race_button.clicked.connect(self._handle_candidate_race_line)
+        self._lp_lap_stats_button.clicked.connect(self._handle_lp_lap_statistics)
         self._trk_gaps_action.triggered.connect(
             lambda: self.controller.run_trk_gaps(self)
         )
@@ -2782,6 +2794,27 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
 
         form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP"))
         form.addRow("Maximum speed", max_speed)
+
+        performance_box = QtWidgets.QGroupBox("Car performance", dialog)
+        performance_form = QtWidgets.QFormLayout(performance_box)
+        performance_controls = {}
+        for key, label, tip in (
+            ("acceleration_pct", "Acceleration", "Longitudinal acceleration relative to the 1995 CART baseline."),
+            ("braking_pct", "Braking", "Maximum braking ability relative to the baseline."),
+            ("cornering_pct", "Cornering grip", "Overall lateral grip relative to the baseline."),
+            ("aero_pct", "Aero effect", "Scales the speed-dependent downforce contribution to cornering grip."),
+            ("safety_pct", "Driver limit", "Percentage of the modeled maximum performance the generated line may use."),
+        ):
+            spin = QtWidgets.QDoubleSpinBox(dialog)
+            spin.setRange(10.0, 200.0 if key != "safety_pct" else 100.0)
+            spin.setDecimals(1)
+            spin.setSingleStep(5.0 if key != "safety_pct" else 1.0)
+            spin.setSuffix(" %")
+            spin.setValue(options[key])
+            spin.setToolTip(tip)
+            performance_controls[key] = spin
+            performance_form.addRow(label, spin)
+        form.addRow(performance_box)
         form.addRow("Pit side at split", pit_side)
         form.addRow("Pavement clearance", margin)
         form.addRow("Corner lookahead", lookahead)
@@ -2817,8 +2850,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             corner_width_pct=width.value(),
             apex_position_pct=apex.value(),
             max_speed_mph=max_speed.value(),
+            **{key: spin.value() for key, spin in performance_controls.items()},
         )
         call_options = dict(options)
+        call_options["car_performance"] = CarPerformance(
+            acceleration_pct=call_options.pop("acceleration_pct"),
+            braking_pct=call_options.pop("braking_pct"),
+            cornering_pct=call_options.pop("cornering_pct"),
+            aero_pct=call_options.pop("aero_pct"),
+            safety_pct=call_options.pop("safety_pct"),
+        )
         if lp_name == "PIT" and getattr(self, "_pit_editors", None):
             params = self._pit_editors[self._active_pit_lane_index()].parameters()
             call_options.update(
@@ -2839,6 +2880,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._update_lp_dirty_indicator(lp_name)
         self.visualization_widget.update()
         QtWidgets.QMessageBox.information(self, "Candidate Race Line", message)
+
+    def _handle_lp_lap_statistics(self) -> None:
+        lp_name = self.preview_api.active_lp_line()
+        success, message, _lap_seconds, _average_mph = (
+            self.preview_api.lp_lap_statistics(lp_name)
+        )
+        if success:
+            QtWidgets.QMessageBox.information(self, "LP Lap Statistics", message)
+        else:
+            QtWidgets.QMessageBox.warning(self, "LP Lap Statistics", message)
 
     def _update_save_lp_button_state(self, lp_name: str | None = None) -> None:
         name = lp_name or self.preview_api.active_lp_line()
@@ -2898,6 +2949,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         self._generate_lp_button.setEnabled(enabled)
         self._candidate_race_button.setEnabled(
+            enabled and bool(self.preview_api.ai_line_records(name))
+        )
+        self._lp_lap_stats_button.setEnabled(
             enabled and bool(self.preview_api.ai_line_records(name))
         )
 
