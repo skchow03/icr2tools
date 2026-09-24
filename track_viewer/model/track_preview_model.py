@@ -274,16 +274,22 @@ class TrackPreviewModel(QtCore.QObject):
         return True, f"Generated {lp_name} LP line with {record_count} records."
 
     def generate_candidate_race_line(
-        self, margin_feet: float, *, pit_side: str = "auto",
+        self, lp_name: str, margin_feet: float, *, pit_side: str = "auto",
         lookahead_feet: float = 60.0, corner_width_pct: int = 75,
-        apex_position_pct: int = 60,
+        apex_position_pct: int = 60, max_speed_mph: float = 230.0,
+        pit_speed_start_dlong: float | None = None,
+        pit_speed_end_dlong: float | None = None,
     ) -> tuple[bool, str]:
-        """Replace the in-memory race path while retaining its speed profile."""
-        if self.trk is None or not self.centerline or "RACE" not in self.available_lp_files:
-            return False, "Load a track folder containing RACE.LP first."
-        existing = self.get_ai_line_records_immediate("RACE")
+        """Replace the selected in-memory LP path and regenerate its speeds."""
+        if not lp_name or lp_name == "center-line":
+            return False, "Select an LP line first."
+        if self.trk is None or not self.centerline or lp_name not in self.available_lp_files:
+            return False, f"Load a track folder containing {lp_name}.LP first."
+        if max_speed_mph <= 0:
+            return False, "Maximum speed must be greater than zero."
+        existing = self.get_ai_line_records_immediate(lp_name)
         if len(existing) < 9:
-            return False, "RACE.LP needs at least eight path samples."
+            return False, f"{lp_name}.LP needs at least eight path samples."
         track_length = float(self.trk.trklength)
         has_terminal = abs(existing[-1].dlong - track_length) < 1.0
         unique = existing[:-1] if has_terminal else existing
@@ -303,6 +309,20 @@ class TrackPreviewModel(QtCore.QObject):
                 x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
                 path_xy_feet.append((x / 6000.0, y / 6000.0))
             speeds = speed_profile_mph(path_xy_feet)
+            speeds = np.minimum(speeds, max_speed_mph)
+
+            if lp_name == "PIT" and pit_speed_start_dlong is not None and pit_speed_end_dlong is not None:
+                start = float(pit_speed_start_dlong) % track_length
+                end = float(pit_speed_end_dlong) % track_length
+                for index, point in enumerate(unique):
+                    dlong = float(point.dlong) % track_length
+                    in_zone = (
+                        start <= dlong <= end if start <= end
+                        else dlong >= start or dlong <= end
+                    )
+                    if in_zone:
+                        speeds[index] = min(79.0, max_speed_mph)
+
             if has_terminal:
                 dlats = unique_dlats + [unique_dlats[0]]
                 speed_values = speeds.tolist() + [float(speeds[0])]
@@ -324,19 +344,25 @@ class TrackPreviewModel(QtCore.QObject):
             return False, "The generated path did not match the LP record count."
         if self._ai_lines is None:
             self._ai_lines = {}
-        self._ai_lines["RACE"] = records
-        self._manual_lp_overrides.add("RACE")
-        self._pending_ai_line_loads.discard("RACE")
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._pending_ai_line_loads.discard(lp_name)
         self._ai_line_cache_generation += 1
-        self._dirty_lp_files.add("RACE")
+        self._dirty_lp_files.add(lp_name)
+        pit_note = (
+            " PIT speed-limit zone capped at 79 mph."
+            if lp_name == "PIT" and pit_speed_start_dlong is not None
+            and pit_speed_end_dlong is not None else ""
+        )
         return True, (
-            f"Generated a {len(records)}-record candidate race path with "
+            f"Generated a {len(records)}-record candidate {lp_name} path with "
             f"{margin_feet:g} ft center clearance from the paved edge. "
             f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
-            f"corner width: {corner_width_pct}%; apex: {apex_position_pct}%. "
-            "Speeds were regenerated with the 1995 CART acceleration, braking, "
-            "and speed-dependent lateral-grip model. Lateral-speed fields "
-            "were retained; review/recalculate them before saving RACE.LP."
+            f"corner width: {corner_width_pct}%; apex: {apex_position_pct}%; "
+            f"maximum speed: {max_speed_mph:g} mph."
+            f"{pit_note} Speeds use the 1995 CART performance model. "
+            f"Lateral-speed fields were retained; review/recalculate them before "
+            f"saving {lp_name}.LP."
         )
 
     def closest_boundary_elevation_at(self, x: float, y: float) -> int | None:
