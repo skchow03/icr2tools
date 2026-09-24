@@ -4,6 +4,7 @@ from __future__ import annotations
 from dataclasses import replace
 from enum import Enum, auto
 from icr2_core.lp.loader import papy_speed_to_mph
+from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.model.track_preview_model import TrackPreviewModel
 
@@ -350,6 +351,7 @@ class LPEditingSession:
         apex_position_pct: int = 60, max_speed_mph: float = 230.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
+        car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str, set[LPChange]]:
         success, message = self._model.generate_candidate_race_line(
             lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
@@ -357,6 +359,7 @@ class LPEditingSession:
             apex_position_pct=apex_position_pct, max_speed_mph=max_speed_mph,
             pit_speed_start_dlong=pit_speed_start_dlong,
             pit_speed_end_dlong=pit_speed_end_dlong,
+            car_performance=car_performance,
         )
         return success, message, {LPChange.DATA} if success else set()
 
