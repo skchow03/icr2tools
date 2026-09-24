@@ -18,6 +18,18 @@ from track_viewer.ai.indycar_speed_model import (
 
 
 class IndyCarSpeedModelTest(unittest.TestCase):
+    def test_car_performance_defaults_and_factors(self):
+        performance = CarPerformance()
+        self.assertEqual(performance.acceleration_factor, 1.0)
+        self.assertEqual(performance.braking_factor, 1.0)
+        self.assertEqual(performance.cornering_factor, 1.0)
+        self.assertEqual(performance.aero_factor, 1.0)
+        self.assertEqual(performance.safety_factor, 0.96)
+
+        tuned = CarPerformance(acceleration_pct=80.0, braking_pct=-10.0)
+        self.assertEqual(tuned.acceleration_factor, 0.8)
+        self.assertEqual(tuned.braking_factor, 0.0)
+
     def test_corner_speed_increases_with_radius(self):
         radii = [50, 100, 200, 400, 800]
         speeds = [_corner_speed_mph(1.0 / radius) for radius in radii]
