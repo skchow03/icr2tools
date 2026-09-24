@@ -174,20 +174,28 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
     planned = _linked_corner_targets(corners, lower, upper, corner_width_pct,
                                      sharpnesses)
     if return_exit_signs:
-        return (*planned, _exit_turn_signs(corners, n))
+        # Guard a physical stretch after the bend rather than the whole
+        # lookahead window, which can include the next corner's setup.
+        exit_reach = max(3, round(40.0 / max(spacing, 1.0)))
+        return (*planned, _exit_turn_signs(corners, n, exit_reach, spacing))
     return planned
 
 
-def _exit_turn_signs(corners, n):
-    """Guard exits and following straights until the next corner's entry."""
+def _exit_turn_signs(corners, n, exit_reach=None, spacing=1.0):
+    """Guard exits and empty straights until the next corner's setup."""
     signs = np.zeros(n)
-    for i, (_, _, apex, sign, _, _) in enumerate(corners):
+    for i, (_, end, apex, sign, lead, _) in enumerate(corners):
         next_start, _, _, _, next_lead, _ = corners[
             (i + 1) % len(corners)
         ]
         if i == len(corners) - 1:
             next_start += n
-        finish = next_start - next_lead
+        # A nearby turn needs an earlier steering handoff. On an actual
+        # straight, keep the same steering direction until its next entry.
+        if exit_reach is not None and (next_start - end) * spacing < 250.0:
+            finish = min(end + min(lead, exit_reach), next_start - next_lead)
+        else:
+            finish = next_start - next_lead
         for position in range(apex, max(apex, finish) + 1):
             signs[position % n] = sign
     return signs
@@ -325,12 +333,15 @@ def _between_record_constraints(trk, centerline, dlongs, reference_dlats,
     return constraints
 
 
-def _enforce_between_record_constraints(offsets, lower, upper, constraints):
-    """Project LP offsets until their XY chords clear the sampled walls."""
-    if not constraints:
+def _enforce_between_record_constraints(offsets, lower, upper, constraints,
+                                        centers=None, normals=None,
+                                        exit_signs=None):
+    """Project wall and exit-steering limits together on the LP records."""
+    if not constraints and exit_signs is None:
         return offsets
     offsets = offsets.copy()
-    for _ in range(300):
+    guarded = np.flatnonzero(exit_signs) if exit_signs is not None else []
+    for _ in range(1000):
         worst = 0.0
         for i, j, a, b, constant, lo, hi, _ in constraints:
             value = a * offsets[i] + b * offsets[j] + constant
@@ -340,6 +351,43 @@ def _enforce_between_record_constraints(offsets, lower, upper, constraints):
                 scale = correction / (a * a + b * b)
                 offsets[i] = np.clip(offsets[i] + a * scale, lower[i], upper[i])
                 offsets[j] = np.clip(offsets[j] + b * scale, lower[j], upper[j])
+        if len(guarded):
+            points = centers + normals * offsets[:, None]
+            for index in guarded:
+                prev, following = (index - 1) % len(offsets), (index + 1) % len(offsets)
+                incoming = points[index] - points[prev]
+                outgoing = points[following] - points[index]
+                length_product = (np.linalg.norm(incoming)
+                                  * np.linalg.norm(outgoing))
+                if length_product < 1e-8:
+                    raise ValueError("Candidate line has coincident LP points.")
+                sign = exit_signs[index]
+                turn = sign * (incoming[0] * outgoing[1]
+                               - incoming[1] * outgoing[0])
+                wrong_way = max(0.0, -turn / length_product)
+                worst = max(worst, wrong_way)
+                if wrong_way <= 1e-7:
+                    continue
+                # The signed cross product is locally linear in each of the
+                # three offsets. Project onto its zero-curvature boundary.
+                da = sign * np.array((outgoing[1], -outgoing[0]))
+                db = sign * np.array((-incoming[1], incoming[0]))
+                record_indices = (prev, index, following)
+                derivatives = np.array((
+                    -np.dot(da, normals[prev]),
+                    np.dot(da - db, normals[index]),
+                    np.dot(db, normals[following]),
+                ))
+                divisor = float(np.dot(derivatives, derivatives))
+                if divisor < 1e-12:
+                    continue
+                step = -turn / divisor
+                for record, derivative in zip(record_indices, derivatives):
+                    offsets[record] = np.clip(
+                        offsets[record] + step * derivative,
+                        lower[record], upper[record],
+                    )
+                    points[record] = centers[record] + normals[record] * offsets[record]
         if worst < 1e-5:
             break
     for i, j, a, b, constant, lo, hi, point in constraints:
@@ -348,6 +396,25 @@ def _enforce_between_record_constraints(offsets, lower, upper, constraints):
             raise ValueError(
                 f"LP path cannot clear a wall near DLONG {point:.0f}; "
                 "use a denser LP grid or inspect the split."
+            )
+    if len(guarded):
+        points = centers + normals * offsets[:, None]
+        incoming = points - np.roll(points, 1, axis=0)
+        outgoing = np.roll(points, -1, axis=0) - points
+        signed_turn = exit_signs * (
+            incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0]
+        )
+        length_product = np.maximum(
+            np.linalg.norm(incoming, axis=1) * np.linalg.norm(outgoing, axis=1),
+            1e-8,
+        )
+        turns = signed_turn[guarded] / length_product[guarded]
+        if np.min(turns) < -1e-5:
+            bad_index = guarded[int(np.argmin(turns))]
+            raise ValueError(
+                f"Cannot unwind the corner near LP record {bad_index} without "
+                "opposite steering inside the paved corridor; inspect the apex "
+                f"and next turn (reversal {float(np.min(turns)):.4g})."
             )
     return offsets
 
@@ -551,6 +618,6 @@ def optimize_race_line(
     if not np.all(np.isfinite(offsets)):
         raise ValueError("Optimizer produced nonfinite DLAT values.")
     offsets = _enforce_between_record_constraints(
-        offsets, lower, upper, between_records
+        offsets, lower, upper, between_records, centers, normals, exit_signs
     )
     return (offsets * DLAT_PER_FOOT).tolist()
