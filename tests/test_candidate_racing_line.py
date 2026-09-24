@@ -346,9 +346,28 @@ class CandidateRaceLineTest(unittest.TestCase):
         )
         neutral_feet = np.asarray(neutral)
         left_feet = np.asarray(left)
-        self.assertGreater(float(np.mean(left_feet)), float(np.mean(neutral_feet)))
+        # A 100% preference must be visually/materially distinct, not just
+        # numerically different by a tiny optimizer penalty.
+        self.assertGreater(
+            float(np.mean(left_feet - neutral_feet)), 5.0
+        )
+        self.assertGreater(float(np.percentile(left_feet, 25)), 10.0)
         self.assertTrue(np.all(left_feet <= 25.0 + 1e-6))
         self.assertTrue(np.all(left_feet >= -25.0 - 1e-6))
+
+    def test_left_and_right_preferences_create_distinct_passing_lanes(self):
+        left = self._generate(
+            lambda _angle: 300, width=30, margin=5,
+            side_preference="left", side_preference_pct=75,
+        )
+        right = self._generate(
+            lambda _angle: 300, width=30, margin=5,
+            side_preference="right", side_preference_pct=75,
+        )
+        self.assertGreater(float(np.mean(left - right)), 10.0)
+        self.assertTrue(np.all(np.abs(left) <= 25.0 + 1e-6))
+        self.assertTrue(np.all(np.abs(right) <= 25.0 + 1e-6))
+
 
 if __name__ == "__main__":
     unittest.main()
