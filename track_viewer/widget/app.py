@@ -22,6 +22,7 @@ from track_viewer.model.pit_models import (
 )
 from track_viewer.model.trk_sections_model import TrkSectionsModel
 from track_viewer.widget.track_map_preview_dialog import TrackMapPreviewDialog
+from track_viewer.widget.car_performance_dialog import CarPerformanceDialog
 from track_viewer.widget.lp_speed_graph import LpSpeedGraphWidget
 from track_viewer.widget.track_preview_widget import TrackPreviewWidget
 from track_viewer.common.version import __version__
@@ -843,11 +844,28 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         tools_menu.addAction(self._trk_to_sg_action)
         tools_menu.addAction(self._trk_to_csv_action)
         tools_menu.addAction(self._trk_map_preview_action)
+        tools_menu.addSeparator()
+        car_performance_action = QtWidgets.QAction("Car Performance Model...", self)
+        car_performance_action.triggered.connect(self._show_car_performance_dialog)
+        tools_menu.addAction(car_performance_action)
 
         help_menu = self.menuBar().addMenu("Help")
         about_action = QtWidgets.QAction("About", self)
         about_action.triggered.connect(self._show_about_dialog)
         help_menu.addAction(about_action)
+
+    def _show_car_performance_dialog(self) -> None:
+        dialog = CarPerformanceDialog(self)
+        if dialog.exec_() == QtWidgets.QDialog.Accepted:
+            # The per-generation maximum defaults to the model's maximum when
+            # the baseline is edited, while remaining user-adjustable afterward.
+            from track_viewer.ai import indycar_speed_model
+            self._candidate_race_options["max_speed_mph"] = (
+                indycar_speed_model.MAX_SPEED_MPH
+            )
+            self.statusBar().showMessage(
+                "Car performance model saved and reloaded.", 5000
+            )
 
     def _show_trk_data_window(self) -> None:
         if self._trk_data_window is None:
