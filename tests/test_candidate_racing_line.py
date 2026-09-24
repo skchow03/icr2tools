@@ -250,6 +250,19 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertEqual(signs[407], 1)
         self.assertEqual(signs[409], 0)  # next turn may start its setup
 
+    def test_impossible_exit_steering_still_returns_wall_safe_line(self):
+        centers = np.column_stack((np.arange(8, dtype=float), np.zeros(8)))
+        normals = np.tile([0.0, 1.0], (8, 1))
+        fixed = np.array([0., 0., 0., -1., 0., 0., 0., 0.])
+        signs = np.zeros(8)
+        signs[2] = 1  # the pinned path must turn the other way here
+        wall = [(2, 3, 0.5, 0.5, 0., -0.5, -0.5, 123.)]
+        result = optimizer._enforce_between_record_constraints(
+            fixed, fixed, fixed, wall, centers, normals, signs
+        )
+        self.assertTrue(np.array_equal(result, fixed))
+        self.assertAlmostEqual((result[2] + result[3]) / 2, -0.5)
+
     def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
         self.track.sects[0].num_bounds = 3
         self.track.sects[0].ground_fsects = 1
