@@ -336,11 +336,18 @@ def _between_record_constraints(trk, centerline, dlongs, reference_dlats,
 def _enforce_between_record_constraints(offsets, lower, upper, constraints,
                                         centers=None, normals=None,
                                         exit_signs=None):
-    """Project wall and exit-steering limits together on the LP records."""
+    """Keep the LP path wall-safe, and improve exit steering where feasible."""
     if not constraints and exit_signs is None:
         return offsets
     offsets = offsets.copy()
     guarded = np.flatnonzero(exit_signs) if exit_signs is not None else []
+    # Save a wall-safe candidate before trying the optional steering rule.
+    # The latter may be incompatible with the paved corridor on some tracks.
+    wall_safe = (_enforce_between_record_constraints(
+        offsets, lower, upper, constraints
+    ) if len(guarded) else None)
+    if wall_safe is not None:
+        offsets = wall_safe.copy()
     for _ in range(1000):
         worst = 0.0
         for i, j, a, b, constant, lo, hi, _ in constraints:
@@ -390,32 +397,50 @@ def _enforce_between_record_constraints(offsets, lower, upper, constraints,
                     points[record] = centers[record] + normals[record] * offsets[record]
         if worst < 1e-5:
             break
+    wall_violation = False
     for i, j, a, b, constant, lo, hi, point in constraints:
         value = a * offsets[i] + b * offsets[j] + constant
         if value < lo - 1e-4 or value > hi + 1e-4:
-            raise ValueError(
-                f"LP path cannot clear a wall near DLONG {point:.0f}; "
-                "use a denser LP grid or inspect the split."
-            )
+            if wall_safe is None:
+                raise ValueError(
+                    f"LP path cannot clear a wall near DLONG {point:.0f}; "
+                    "use a denser LP grid or inspect the split."
+                )
+            wall_violation = True
+            break
     if len(guarded):
-        points = centers + normals * offsets[:, None]
-        incoming = points - np.roll(points, 1, axis=0)
-        outgoing = np.roll(points, -1, axis=0) - points
-        signed_turn = exit_signs * (
-            incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0]
-        )
-        length_product = np.maximum(
-            np.linalg.norm(incoming, axis=1) * np.linalg.norm(outgoing, axis=1),
-            1e-8,
-        )
-        turns = signed_turn[guarded] / length_product[guarded]
-        if np.min(turns) < -1e-5:
-            bad_index = guarded[int(np.argmin(turns))]
-            raise ValueError(
-                f"Cannot unwind the corner near LP record {bad_index} without "
-                "opposite steering inside the paved corridor; inspect the apex "
-                f"and next turn (reversal {float(np.min(turns)):.4g})."
+        if wall_violation:
+            # The steering projection can disturb between-record clearance.
+            # Restore it before considering the relaxed steering result.
+            try:
+                offsets = _enforce_between_record_constraints(
+                    offsets, lower, upper, constraints
+                )
+            except ValueError:
+                return wall_safe
+
+        def reversals(candidate):
+            points = centers + normals * candidate[:, None]
+            incoming = points - np.roll(points, 1, axis=0)
+            outgoing = np.roll(points, -1, axis=0) - points
+            signed_turn = exit_signs * (
+                incoming[:, 0] * outgoing[:, 1]
+                - incoming[:, 1] * outgoing[:, 0]
             )
+            length_product = np.maximum(
+                np.linalg.norm(incoming, axis=1)
+                * np.linalg.norm(outgoing, axis=1), 1e-8
+            )
+            return np.maximum(0, -signed_turn[guarded] / length_product[guarded])
+
+        turns = reversals(offsets)
+        if np.max(turns) > 1e-5:
+            # A no-countersteer exit can be geometrically impossible while
+            # remaining between the walls. Keep whichever wall-safe candidate
+            # has the smaller worst reversal; never discard the whole line.
+            original_turns = reversals(wall_safe)
+            if np.max(original_turns) < np.max(turns) - 1e-5:
+                return wall_safe
     return offsets
 
 
