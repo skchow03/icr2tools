@@ -20,6 +20,40 @@ G_FPS2 = 32.174
 DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[1] / "config" / "car_performance.json"
 
 
+@dataclass(frozen=True)
+class CarPerformance:
+    """User-tunable multipliers around the period-informed 1995 CART baseline."""
+
+    acceleration_pct: float = 100.0
+    braking_pct: float = 100.0
+    cornering_pct: float = 100.0
+    aero_pct: float = 100.0
+    safety_pct: float = 96.0
+
+    def factor(self, value: float) -> float:
+        return max(0.0, float(value)) / 100.0
+
+    @property
+    def acceleration_factor(self) -> float:
+        return self.factor(self.acceleration_pct)
+
+    @property
+    def braking_factor(self) -> float:
+        return self.factor(self.braking_pct)
+
+    @property
+    def cornering_factor(self) -> float:
+        return self.factor(self.cornering_pct)
+
+    @property
+    def aero_factor(self) -> float:
+        return self.factor(self.aero_pct)
+
+    @property
+    def safety_factor(self) -> float:
+        return self.factor(self.safety_pct)
+
+
 def load_performance_model(path: Path | None = None) -> dict:
     path = path or DEFAULT_MODEL_PATH
     with path.open("r", encoding="utf-8") as handle:
