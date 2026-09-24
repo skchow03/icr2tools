@@ -221,7 +221,15 @@ class CandidateRaceLineTest(unittest.TestCase):
             incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0],
             np.sum(incoming * outgoing, axis=1),
         )
-        self.assertGreaterEqual(np.min(heading_change[140:180]), -0.001)
+        _, _, guarded_signs = optimizer._apex_targets(
+            centers, np.full(len(centers), -9.0),
+            np.full(len(centers), 9.0), 40, 90, 65,
+            return_exit_signs=True,
+        )
+        self.assertGreaterEqual(np.min(
+            heading_change[guarded_signs != 0] * guarded_signs[guarded_signs != 0]
+        ), -1e-5)
+        self.assertGreaterEqual(np.min(heading_change[140:190]), -0.001)
         self.assertTrue(np.all(np.abs(offsets) <= 9.00001))
 
     def test_opposite_corner_allows_steering_transition_between_turns(self):
@@ -232,6 +240,15 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertEqual(signs[30], 1)
         self.assertEqual(signs[40], 0)  # release before the next entry
         self.assertEqual(signs[70], -1)
+
+    def test_long_straight_keeps_exit_direction_until_next_setup(self):
+        corners = [(20, 70, 45, 1, 12, 1.0),
+                   (420, 470, 445, -1, 12, 1.0)]
+        signs = optimizer._exit_turn_signs(corners, 800, exit_reach=20,
+                                           spacing=1.0)
+        self.assertEqual(signs[200], 1)  # well beyond the exit window
+        self.assertEqual(signs[407], 1)
+        self.assertEqual(signs[409], 0)  # next turn may start its setup
 
     def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
         self.track.sects[0].num_bounds = 3
