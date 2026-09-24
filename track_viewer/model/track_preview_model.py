@@ -21,6 +21,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.ai.racing_line_optimizer import optimize_race_line
+from track_viewer.ai.indycar_speed_model import speed_profile_mph
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -296,14 +297,25 @@ class TrackPreviewModel(QtCore.QObject):
                 corner_width_pct=corner_width_pct,
                 apex_position_pct=apex_position_pct,
             )
+            unique_dlats = dlats
+            path_xy_feet = []
+            for old, dlat in zip(unique, unique_dlats):
+                x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+                path_xy_feet.append((x / 6000.0, y / 6000.0))
+            speeds = speed_profile_mph(path_xy_feet)
             if has_terminal:
-                dlats.append(dlats[0])
+                dlats = unique_dlats + [unique_dlats[0]]
+                speed_values = speeds.tolist() + [float(speeds[0])]
+            else:
+                dlats = unique_dlats
+                speed_values = speeds.tolist()
             records = []
-            for old, dlat in zip(existing, dlats):
+            for old, dlat, speed_mph in zip(existing, dlats, speed_values):
                 x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
                 records.append(LpPoint(
                     x=x, y=y, dlong=old.dlong, dlat=dlat,
-                    speed_raw=old.speed_raw, speed_mph=old.speed_mph,
+                    speed_raw=int(round(speed_mph * 5280 / 9)),
+                    speed_mph=float(speed_mph),
                     lateral_speed=old.lateral_speed,
                 ))
         except (ValueError, IndexError, TypeError, ArithmeticError) as exc:
@@ -322,9 +334,9 @@ class TrackPreviewModel(QtCore.QObject):
             f"{margin_feet:g} ft center clearance from the paved edge. "
             f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
             f"corner width: {corner_width_pct}%; apex: {apex_position_pct}%. "
-            "Existing speeds and lateral-speed fields were retained. "
-            "This is a geometry preview, not a game-ready LP; review and "
-            "recalculate its other fields before saving RACE.LP."
+            "Speeds were regenerated with the 1995 CART acceleration, braking, "
+            "and speed-dependent lateral-grip model. Lateral-speed fields "
+            "were retained; review/recalculate them before saving RACE.LP."
         )
 
     def closest_boundary_elevation_at(self, x: float, y: float) -> int | None:
