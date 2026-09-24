@@ -159,7 +159,9 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         peak_at = plateau[np.argmin(np.abs(plateau - desired_apex))]
         apex_at = int(round(0.4 * peak_at + 0.6 * desired_apex))
         apex_at = max(0, min(length - 1, apex_at))
-        lead = min(max(6, 2 * look), max(6, length // 2), n // 6)
+        # Start the setup farther upstream so the heading can build gradually
+        # instead of making most of the turn immediately before the apex.
+        lead = min(max(6, 3 * look), max(6, length // 2), n // 6)
         corners.append((start, start + length - 1, start + apex_at,
                         int(sign), lead, float(np.sum(
                             np.abs(curvature[window]) * distance[window]))))
@@ -182,9 +184,8 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
     use = corner_width_pct / 200.0
     anchors = []
     for i, (start, end, apex, sign, lead, severity) in enumerate(corners):
-        # Tight turns use more of the available paved width at the apex.
-        # Keep the width control effective even at low values. Tight turns
-        # progressively borrow more width at the apex than at entry or exit.
+        # Tight turns borrow more width at the apex than at entry or exit,
+        # while the width control remains effective even at low values.
         sharpness = sharpnesses[i] if sharpnesses is not None else 0.0
         tightness = np.clip((sharpness - 0.008) / 0.02, 0, 1)
         apex_use = use + (0.5 - use) * tightness * (corner_width_pct / 100)
@@ -224,7 +225,10 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
                                        fractions, next_fractions):
         indices = np.arange(start, end)
         t = (indices - start) / (end - start)
-        smooth = t * t * (3 - 2 * t)
+        # Zero lateral slope AND second derivative at each anchor. The old
+        # cubic easing had nonzero lateral curvature at the apex, which could
+        # cancel the road's curvature and make the path look straight there.
+        smooth = t**3 * (10 + t * (-15 + 6 * t))
         fraction[indices % n] = first + smooth * (last - first)
 
     target_weight = np.ones(n)
@@ -328,8 +332,9 @@ def _enforce_between_record_constraints(offsets, lower, upper, constraints):
     return offsets
 
 
-def _energy_and_gradient(points: np.ndarray) -> tuple[float, np.ndarray]:
-    """Approximate integral of curvature squared, with a periodic gradient."""
+def _energy_and_gradient(points: np.ndarray,
+                         jerk_spacing: float | None = None) -> tuple[float, np.ndarray]:
+    """Penalize bending and abrupt curvature changes over a closed lap."""
     prev = np.roll(points, 1, axis=0)
     following = np.roll(points, -1, axis=0)
     a = following - 2 * points + prev
@@ -349,6 +354,18 @@ def _energy_and_gradient(points: np.ndarray) -> tuple[float, np.ndarray]:
         -1.5 * (bend_sq / spacing**4 + np.roll(bend_sq / spacing**4, -1))
     )[:, None] * edge / length[:, None]
     gradient += np.roll(edge_gradient, 1, axis=0) - edge_gradient
+    # The third difference tracks changes in the curvature vector. This
+    # discourages a sudden rotation followed by a nearly straight apex.
+    third = (np.roll(points, -2, axis=0) - 3 * np.roll(points, -1, axis=0)
+             + 3 * points - np.roll(points, 1, axis=0))
+    nominal_spacing = max(float(jerk_spacing if jerk_spacing is not None
+                                else np.median(length)), 1.0)
+    jerk_scale = 25.0 / nominal_spacing**5
+    energy += jerk_scale * float(np.sum(third * third))
+    gradient += 2 * jerk_scale * (
+        np.roll(third, 2, axis=0) - 3 * np.roll(third, 1, axis=0)
+        + 3 * third - np.roll(third, -1, axis=0)
+    )
     return energy, gradient
 
 
@@ -396,6 +413,9 @@ def optimize_race_line(
 
     centers = np.asarray(centers, dtype=float)
     normals = np.asarray(normals, dtype=float)
+    jerk_spacing = float(np.median(np.linalg.norm(
+        np.roll(centers, -1, axis=0) - centers, axis=1
+    )))
     between_records = _between_record_constraints(
         trk, centerline, dlongs, reference_dlats, margin_feet, pit_side,
         centers, normals,
@@ -427,7 +447,7 @@ def optimize_race_line(
         unconstrained = np.sum(values[indices] * weights, axis=1)
         offsets = np.clip(unconstrained, lower, upper)
         energy, point_gradient = _energy_and_gradient(
-            centers + normals * offsets[:, None]
+            centers + normals * offsets[:, None], jerk_spacing
         )
         offset_gradient = np.sum(point_gradient * normals, axis=1)
         # Apex targets prevent the smoothest path from simply following the
@@ -438,6 +458,20 @@ def optimize_race_line(
         offset_gradient += (
             10 * target_weight * difference / np.maximum(upper - lower, 1.0) / count
         )
+        # Include chord/wall clearance in the optimizer, so the final hard
+        # projection is a small safety correction rather than a new kink.
+        if between_records:
+            wall_energy = 0.0
+            wall_gradient = np.zeros(count)
+            for i, j, a, b, constant, lo, hi, _ in between_records:
+                value = a * offsets[i] + b * offsets[j] + constant
+                violation = value - min(max(value, lo), hi)
+                wall_energy += violation**2
+                wall_gradient[i] += 2 * violation * a
+                wall_gradient[j] += 2 * violation * b
+            scale = 20.0 / len(between_records)
+            energy += scale * wall_energy
+            offset_gradient += scale * wall_gradient
         offset_gradient[unconstrained != offsets] = 0
         control_gradient = np.zeros(len(controls), dtype=float)
         for j in range(4):
