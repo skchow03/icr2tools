@@ -116,7 +116,8 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
 
 
 def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
-                  corner_width_pct=75, apex_position_pct=60):
+                  corner_width_pct=75, apex_position_pct=60,
+                  return_exit_signs=False):
     """Plan linked turn entries, apexes and exits around the whole lap."""
     n = len(centers)
     spacing = float(np.median(np.linalg.norm(
@@ -168,9 +169,28 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         sharpnesses.append(float(np.max(magnitudes)))
 
     if not corners:
-        return (lower + upper) * 0.5, np.full(n, 0.0001)
-    return _linked_corner_targets(corners, lower, upper, corner_width_pct,
-                                  sharpnesses)
+        baseline = ((lower + upper) * 0.5, np.full(n, 0.0001))
+        return (*baseline, np.zeros(n)) if return_exit_signs else baseline
+    planned = _linked_corner_targets(corners, lower, upper, corner_width_pct,
+                                     sharpnesses)
+    if return_exit_signs:
+        return (*planned, _exit_turn_signs(corners, n))
+    return planned
+
+
+def _exit_turn_signs(corners, n):
+    """Guard exits and following straights until the next corner's entry."""
+    signs = np.zeros(n)
+    for i, (_, _, apex, sign, _, _) in enumerate(corners):
+        next_start, _, _, _, next_lead, _ = corners[
+            (i + 1) % len(corners)
+        ]
+        if i == len(corners) - 1:
+            next_start += n
+        finish = next_start - next_lead
+        for position in range(apex, max(apex, finish) + 1):
+            signs[position % n] = sign
+    return signs
 
 
 def _linked_corner_targets(corners, lower, upper, corner_width_pct,
@@ -420,9 +440,9 @@ def optimize_race_line(
         trk, centerline, dlongs, reference_dlats, margin_feet, pit_side,
         centers, normals,
     )
-    targets, target_weight = _apex_targets(
+    targets, target_weight, exit_signs = _apex_targets(
         centers, lower, upper, lookahead_feet, corner_width_pct,
-        apex_position_pct,
+        apex_position_pct, return_exit_signs=True,
     )
     # A few smooth control values govern many LP records. Directly optimizing
     # every record is ill-conditioned: microscopic alternating DLAT changes
@@ -450,6 +470,25 @@ def optimize_race_line(
             centers + normals * offsets[:, None], jerk_spacing
         )
         offset_gradient = np.sum(point_gradient * normals, axis=1)
+        if np.any(exit_signs):
+            points = centers + normals * offsets[:, None]
+            second = (np.roll(points, -1, axis=0) - 2 * points
+                      + np.roll(points, 1, axis=0))
+            # Signed curvature proxy: positive means the same steering
+            # direction as the corner. Penalize a reversal on its exit.
+            signed_bend = (exit_signs * np.sum(second * normals, axis=1)
+                           / max(jerk_spacing, 1.0)**2)
+            wrong_way = np.minimum(signed_bend + 0.0003, 0.0)
+            wrong_way[exit_signs == 0] = 0
+            penalty = 500.0 / (0.02**2 * count)
+            energy += penalty * float(np.sum(wrong_way**2))
+            bend_gradient = (2 * penalty * wrong_way * exit_signs)[:, None] \
+                * normals / max(jerk_spacing, 1.0)**2
+            point_penalty_gradient = (
+                np.roll(bend_gradient, 1, axis=0) - 2 * bend_gradient
+                + np.roll(bend_gradient, -1, axis=0)
+            )
+            offset_gradient += np.sum(point_penalty_gradient * normals, axis=1)
         # Apex targets prevent the smoothest path from simply following the
         # outside edge through a whole bend. Small baseline weight applies on
         # straights; turn targets have much higher weight.
