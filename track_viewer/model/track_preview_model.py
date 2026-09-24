@@ -22,7 +22,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.ai.racing_line_optimizer import optimize_race_line
-from track_viewer.ai.indycar_speed_model import speed_profile_mph
+from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -280,6 +280,7 @@ class TrackPreviewModel(QtCore.QObject):
         apex_position_pct: int = 60, max_speed_mph: float = 230.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
+        car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
         if not lp_name or lp_name == "center-line":
@@ -309,7 +310,7 @@ class TrackPreviewModel(QtCore.QObject):
             for old, dlat in zip(unique, unique_dlats):
                 x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
                 path_xy_feet.append((x / 6000.0, y / 6000.0))
-            speeds = speed_profile_mph(path_xy_feet)
+            speeds = speed_profile_mph(path_xy_feet, car_performance)
             speeds = np.minimum(speeds, max_speed_mph)
 
             if lp_name == "PIT" and pit_speed_start_dlong is not None and pit_speed_end_dlong is not None:
@@ -365,6 +366,41 @@ class TrackPreviewModel(QtCore.QObject):
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
         )
+
+    def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
+        """Estimate lap time and average speed from the current LP speed profile."""
+        if self.trk is None or not self.centerline:
+            return False, "Load a track first.", 0.0, 0.0
+        if not lp_name or lp_name == "center-line" or lp_name not in self.available_lp_files:
+            return False, "Select an LP line first.", 0.0, 0.0
+        records = self.get_ai_line_records_immediate(lp_name)
+        if len(records) < 3:
+            return False, f"{lp_name}.LP does not contain enough records.", 0.0, 0.0
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(records[-1].dlong - track_length) < 1.0
+        points = records[:-1] if has_terminal else records
+        if len(points) < 3:
+            return False, f"{lp_name}.LP does not contain enough unique records.", 0.0, 0.0
+        xy = np.array([(p.x / 6000.0, p.y / 6000.0) for p in points], dtype=float)
+        distances_ft = np.linalg.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
+        speeds_mph = np.array([max(0.0, float(p.speed_mph)) for p in points])
+        next_speeds = np.roll(speeds_mph, -1)
+        # Integrate each segment using mean endpoint speed. This uses the actual
+        # LP path distance rather than nominal centerline length.
+        segment_mph = (speeds_mph + next_speeds) * 0.5
+        if np.any(segment_mph <= 0.01):
+            return False, f"{lp_name}.LP contains zero/invalid speeds.", 0.0, 0.0
+        hours = np.sum((distances_ft / 5280.0) / segment_mph)
+        distance_miles = float(np.sum(distances_ft) / 5280.0)
+        if hours <= 0.0:
+            return False, "Could not calculate lap time.", 0.0, 0.0
+        lap_seconds = float(hours * 3600.0)
+        average_mph = distance_miles / float(hours)
+        return True, (
+            f"{lp_name}.LP estimated lap: {lap_seconds:.3f} s; "
+            f"average speed: {average_mph:.2f} mph; "
+            f"LP distance: {distance_miles:.3f} mi."
+        ), lap_seconds, average_mph
 
     def closest_boundary_elevation_at(self, x: float, y: float) -> int | None:
         """Return the nearest boundary elevation to a world-space XY coordinate."""
