@@ -378,6 +378,8 @@ class PreviewCoordinator:
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
         car_performance: CarPerformance | None = None,
+        side_preference: str = "none",
+        side_preference_pct: int = 0,
     ) -> tuple[bool, str]:
         success, message, changes = self._lp_session.generate_candidate_race_line(
             lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
@@ -386,6 +388,8 @@ class PreviewCoordinator:
             pit_speed_start_dlong=pit_speed_start_dlong,
             pit_speed_end_dlong=pit_speed_end_dlong,
             car_performance=car_performance,
+            side_preference=side_preference,
+            side_preference_pct=side_preference_pct,
         )
         self._apply_lp_changes(changes)
         return success, message
