@@ -98,7 +98,7 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
         if (pit_side == "auto" and previous is None and len(ranked) > 1
                 and abs(score(ranked[0]) - score(ranked[1])) < 1e-8):
             raise ValueError(
-                "Existing RACE line cannot distinguish sides of a wall; "
+                "Existing LP line cannot distinguish sides of a wall; "
                 "choose the pit side explicitly."
             )
         chosen = ranked[0]

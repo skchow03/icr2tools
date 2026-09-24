@@ -160,8 +160,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
         self._candidate_race_button.setEnabled(False)
         self._candidate_race_button.setToolTip(
-            "Preview a corner-apex RACE path on asphalt, concrete, or paint; "
-            "car performance and speeds are not optimized."
+            "Generate a candidate path and 1995 CART speed profile for the "
+            "currently selected LP line."
         )
         self._candidate_race_options = {
             "margin_feet": 5.0,
@@ -169,6 +169,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "lookahead_feet": 60.0,
             "corner_width_pct": 75,
             "apex_position_pct": 60,
+            "max_speed_mph": 230.0,
         }
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
@@ -2703,10 +2704,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.warning(self, title, message)
 
     def _handle_candidate_race_line(self) -> None:
-        if self.preview_api.lp_line_dirty("RACE"):
+        lp_name = self.preview_api.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self, "Candidate Race Line", "Select an LP line first."
+            )
+            return
+        if self.preview_api.lp_line_dirty(lp_name):
             choice = QtWidgets.QMessageBox.question(
                 self, "Candidate Race Line",
-                "Replace the unsaved RACE.LP edits with a new candidate path?",
+                f"Replace the unsaved {lp_name}.LP edits with a new candidate path?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
                 QtWidgets.QMessageBox.Cancel,
             )
@@ -2714,13 +2721,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 return
         options = self._candidate_race_options
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle("Candidate Race Line")
+        dialog.setWindowTitle(f"Candidate Race Line — {lp_name}.LP")
         form = QtWidgets.QFormLayout()
 
         pit_side = QtWidgets.QComboBox(dialog)
-        pit_side.addItem("Auto (follow existing RACE)", "auto")
-        pit_side.addItem("Pit on left; race to the right", "left")
-        pit_side.addItem("Pit on right; race to the left", "right")
+        pit_side.addItem(f"Auto (follow existing {lp_name})", "auto")
+        pit_side.addItem("Pit on left; candidate to the right", "left")
+        pit_side.addItem("Pit on right; candidate to the left", "right")
         pit_side.setCurrentIndex(max(0, pit_side.findData(options["pit_side"])))
         has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
         pit_side.setEnabled(has_split)
@@ -2753,8 +2760,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         width.setValue(options["corner_width_pct"])
         width.setToolTip(
             "0% aims at the middle of the paved corridor; 100% aims at "
-            "opposite edges after clearance. Tight turns use more of the "
-            "available width at the apex than at entry and exit."
+            "opposite edges after clearance."
         )
 
         apex = QtWidgets.QSpinBox(dialog)
@@ -2764,15 +2770,35 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         apex.setValue(options["apex_position_pct"])
         apex.setToolTip("Higher values aim for a later apex within each detected bend.")
 
+        max_speed = QtWidgets.QDoubleSpinBox(dialog)
+        max_speed.setRange(1.0, 300.0)
+        max_speed.setDecimals(1)
+        max_speed.setSingleStep(5.0)
+        max_speed.setSuffix(" mph")
+        max_speed.setValue(options["max_speed_mph"])
+        max_speed.setToolTip(
+            "Hard maximum for this LP speed profile, useful for pace/caution lines."
+        )
+
+        form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP"))
+        form.addRow("Maximum speed", max_speed)
         form.addRow("Pit side at split", pit_side)
         form.addRow("Pavement clearance", margin)
         form.addRow("Corner lookahead", lookahead)
         form.addRow("Use of paved width", width)
         form.addRow("Apex timing", apex)
-        if not has_split:
+        if lp_name == "PIT":
+            note = QtWidgets.QLabel(
+                "Inside the track.txt pit speed-limit DLONG zone, PIT.LP will "
+                "be capped at 79 mph (or the lower Maximum speed above)."
+            )
+            note.setWordWrap(True)
+            form.addRow(note)
+        elif not has_split:
             note = QtWidgets.QLabel("This TRK has no sections with extra boundaries.")
             note.setWordWrap(True)
             form.addRow(note)
+
         buttons = QtWidgets.QDialogButtonBox(
             QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
         )
@@ -2783,23 +2809,34 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         layout.addWidget(buttons)
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
+
         options.update(
             margin_feet=margin.value(),
             pit_side=pit_side.currentData() if has_split else "auto",
             lookahead_feet=lookahead.value(),
             corner_width_pct=width.value(),
             apex_position_pct=apex.value(),
+            max_speed_mph=max_speed.value(),
         )
-        success, message = self.preview_api.generate_candidate_race_line(**options)
+        call_options = dict(options)
+        if lp_name == "PIT" and getattr(self, "_pit_editors", None):
+            params = self._pit_editors[self._active_pit_lane_index()].parameters()
+            call_options.update(
+                pit_speed_start_dlong=params.pit_speed_limit_start_dlong,
+                pit_speed_end_dlong=params.pit_speed_limit_end_dlong,
+            )
+        success, message = self.preview_api.generate_candidate_race_line(
+            lp_name, **call_options
+        )
         if not success:
             QtWidgets.QMessageBox.warning(self, "Candidate Race Line", message)
             return
-        self._set_active_lp_line_in_ui("RACE")
-        checkbox = self._lp_checkboxes.get("RACE")
+        self._set_active_lp_line_in_ui(lp_name)
+        checkbox = self._lp_checkboxes.get(lp_name)
         if checkbox is not None and not checkbox.isChecked():
             checkbox.setChecked(True)
-        self._update_lp_records_table("RACE")
-        self._update_lp_dirty_indicator("RACE")
+        self._update_lp_records_table(lp_name)
+        self._update_lp_dirty_indicator(lp_name)
         self.visualization_widget.update()
         QtWidgets.QMessageBox.information(self, "Candidate Race Line", message)
 
@@ -2861,9 +2898,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         self._generate_lp_button.setEnabled(enabled)
         self._candidate_race_button.setEnabled(
-            self.preview_api.trk is not None
-            and "RACE" in self.preview_api.available_lp_files()
-            and bool(self.preview_api.ai_line_records("RACE"))
+            enabled and bool(self.preview_api.ai_line_records(name))
         )
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:

@@ -371,14 +371,18 @@ class PreviewCoordinator:
         return success, message
 
     def generate_candidate_race_line(
-        self, margin_feet: float, *, pit_side: str = "auto",
+        self, lp_name: str, margin_feet: float, *, pit_side: str = "auto",
         lookahead_feet: float = 60.0, corner_width_pct: int = 75,
-        apex_position_pct: int = 60,
+        apex_position_pct: int = 60, max_speed_mph: float = 230.0,
+        pit_speed_start_dlong: float | None = None,
+        pit_speed_end_dlong: float | None = None,
     ) -> tuple[bool, str]:
         success, message, changes = self._lp_session.generate_candidate_race_line(
-            margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
+            lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
             corner_width_pct=corner_width_pct,
-            apex_position_pct=apex_position_pct,
+            apex_position_pct=apex_position_pct, max_speed_mph=max_speed_mph,
+            pit_speed_start_dlong=pit_speed_start_dlong,
+            pit_speed_end_dlong=pit_speed_end_dlong,
         )
         self._apply_lp_changes(changes)
         return success, message
