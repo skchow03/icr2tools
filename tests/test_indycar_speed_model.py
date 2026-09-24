@@ -1,7 +1,10 @@
 """Tests for the compact 1995 CART speed-envelope model."""
 
+import json
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 
@@ -9,6 +12,7 @@ from track_viewer.ai.indycar_speed_model import (
     MAX_SPEED_MPH,
     CarPerformance,
     _corner_speed_mph,
+    load_performance_model,
     speed_profile_mph,
 )
 
@@ -69,6 +73,21 @@ class IndyCarSpeedModelTest(unittest.TestCase):
             points, CarPerformance(acceleration_pct=70.0, braking_pct=70.0)
         )
         self.assertLess(float(np.mean(slower)), float(np.mean(baseline)))
+
+    def test_performance_model_json_loads_and_validates(self):
+        data = {
+            "max_speed_mph": 200,
+            "lateral_g": [[0, 1.0], [200, 3.0]],
+            "acceleration_g": [[0, 0.8], [200, 0.0]],
+            "braking_g": [[0, 1.0], [200, 3.0]],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "model.json"
+            path.write_text(json.dumps(data), encoding="utf-8")
+            loaded = load_performance_model(path)
+        self.assertEqual(loaded["max_speed_mph"], 200.0)
+        self.assertEqual(loaded["lateral_g"].shape, (2, 2))
+
 
 
 if __name__ == "__main__":
