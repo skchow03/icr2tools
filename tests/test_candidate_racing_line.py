@@ -334,26 +334,21 @@ class CandidateRaceLineTest(unittest.TestCase):
             self._generate(lambda _angle: 100, width=4, margin=5)
 
 
-    def test_side_preference_stays_inside_clearance_corridor(self):
-        # A passing-line bias must move the path without weakening hard walls.
-        dlongs = self.dlongs
-        neutral = optimize_race_line(
-            self.trk, self.centerline, dlongs, margin_feet=5.0,
-            reference_dlats=self.reference_dlats,
+
+    def test_side_preference_moves_line_but_respects_margin(self):
+        neutral = self._generate_with_options(
+            lambda _angle: 300, width=30, margin=5,
+            side_preference="none", side_preference_pct=0,
         )
-        left = optimize_race_line(
-            self.trk, self.centerline, dlongs, margin_feet=5.0,
-            reference_dlats=self.reference_dlats,
+        left = self._generate_with_options(
+            lambda _angle: 300, width=30, margin=5,
             side_preference="left", side_preference_pct=100,
         )
-        lower, upper = _paved_corridor(
-            self.trk, dlongs, self.reference_dlats, 5.0, "auto"
-        )
-        left_feet = np.asarray(left) / DLAT_PER_FOOT
-        neutral_feet = np.asarray(neutral) / DLAT_PER_FOOT
+        neutral_feet = np.asarray(neutral) / 6000.0
+        left_feet = np.asarray(left) / 6000.0
         self.assertGreater(float(np.mean(left_feet)), float(np.mean(neutral_feet)))
-        self.assertTrue(np.all(left_feet >= lower - 1e-6))
-        self.assertTrue(np.all(left_feet <= upper + 1e-6))
+        self.assertTrue(np.all(left_feet <= 25.0 + 1e-6))
+        self.assertTrue(np.all(left_feet >= -25.0 - 1e-6))
 
 if __name__ == "__main__":
     unittest.main()
