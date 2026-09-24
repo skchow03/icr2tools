@@ -9,12 +9,46 @@ backward braking passes around the closed lap.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
+
 import numpy as np
 
 MPH_TO_FPS = 5280.0 / 3600.0
 G_FPS2 = 32.174
 MAX_SPEED_MPH = 230.0
 SAFETY_FACTOR = 0.96
+
+@dataclass(frozen=True)
+class CarPerformance:
+    """User-tunable multipliers around the period-informed 1995 CART baseline."""
+    acceleration_pct: float = 100.0
+    braking_pct: float = 100.0
+    cornering_pct: float = 100.0
+    aero_pct: float = 100.0
+    safety_pct: float = 96.0
+
+    def factor(self, value: float) -> float:
+        return max(0.0, float(value)) / 100.0
+
+    @property
+    def acceleration_factor(self) -> float:
+        return self.factor(self.acceleration_pct)
+
+    @property
+    def braking_factor(self) -> float:
+        return self.factor(self.braking_pct)
+
+    @property
+    def cornering_factor(self) -> float:
+        return self.factor(self.cornering_pct)
+
+    @property
+    def aero_factor(self) -> float:
+        return self.factor(self.aero_pct)
+
+    @property
+    def safety_factor(self) -> float:
+        return self.factor(self.safety_pct)
 
 # Period-informed engineering envelopes used by the candidate-line generator.
 # Intermediate values are modeled, not direct measurements.
@@ -55,8 +89,9 @@ def _curvature(points: np.ndarray) -> np.ndarray:
     return (np.roll(k, 1) + 2.0 * k + np.roll(k, -1)) * 0.25
 
 
-def _corner_speed_mph(curvature: float) -> float:
+def _corner_speed_mph(curvature: float, performance: CarPerformance | None = None) -> float:
     """Solve v^2*|k|/g <= available lateral g at v."""
+    performance = performance or CarPerformance()
     k = abs(float(curvature))
     if k < 1e-7:
         return MAX_SPEED_MPH
@@ -65,7 +100,13 @@ def _corner_speed_mph(curvature: float) -> float:
         mph = (lo + hi) * 0.5
         fps = mph * MPH_TO_FPS
         required_g = fps * fps * k / G_FPS2
-        available_g = SAFETY_FACTOR * _interp(_LATERAL_G, mph)
+        base_g = _interp(_LATERAL_G, mph)
+        # Separate mechanical grip from the speed-dependent aero contribution.
+        mechanical_g = _LATERAL_G[0, 1]
+        aero_g = max(0.0, base_g - mechanical_g)
+        available_g = performance.safety_factor * performance.cornering_factor * (
+            mechanical_g + aero_g * performance.aero_factor
+        )
         if required_g <= available_g:
             lo = mph
         else:
@@ -73,8 +114,9 @@ def _corner_speed_mph(curvature: float) -> float:
     return lo
 
 
-def speed_profile_mph(points_xy_feet) -> np.ndarray:
+def speed_profile_mph(points_xy_feet, performance: CarPerformance | None = None) -> np.ndarray:
     """Return a closed-lap 1995 CART speed profile for path sample points."""
+    performance = performance or CarPerformance()
     points = np.asarray(points_xy_feet, dtype=float)
     if len(points) < 3 or points.ndim != 2 or points.shape[1] != 2:
         raise ValueError("Speed profile needs at least three XY path points.")
@@ -85,7 +127,7 @@ def speed_profile_mph(points_xy_feet) -> np.ndarray:
     if np.any(segment < 1e-6):
         raise ValueError("Speed profile path contains duplicate adjacent points.")
 
-    limits = np.array([_corner_speed_mph(k) for k in _curvature(points)])
+    limits = np.array([_corner_speed_mph(k, performance) for k in _curvature(points)])
     speed = limits.copy()
 
     # Closed laps have no natural start. Repeated sweeps propagate constraints
@@ -97,7 +139,7 @@ def speed_profile_mph(points_xy_feet) -> np.ndarray:
         for i in range(len(points)):
             j = (i + 1) % len(points)
             v = speed[i] * MPH_TO_FPS
-            a = SAFETY_FACTOR * _interp(_ACCEL_G, speed[i]) * G_FPS2
+            a = performance.safety_factor * performance.acceleration_factor * _interp(_ACCEL_G, speed[i]) * G_FPS2
             reachable = math.sqrt(max(0.0, v * v + 2.0 * a * segment[i])) / MPH_TO_FPS
             new = min(speed[j], limits[j], reachable)
             if new < speed[j] - 1e-7:
@@ -110,7 +152,7 @@ def speed_profile_mph(points_xy_feet) -> np.ndarray:
             i = (j - 1) % len(points)
             downstream = speed[j] * MPH_TO_FPS
             guess = speed[i]
-            brake_g = SAFETY_FACTOR * _interp(_BRAKE_G, guess)
+            brake_g = performance.safety_factor * performance.braking_factor * _interp(_BRAKE_G, guess)
             allowed = math.sqrt(max(
                 0.0, downstream * downstream
                 + 2.0 * brake_g * G_FPS2 * segment[i]
