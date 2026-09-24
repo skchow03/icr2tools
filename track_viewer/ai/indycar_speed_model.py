@@ -8,66 +8,58 @@ backward braking passes around the closed lap.
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
 MPH_TO_FPS = 5280.0 / 3600.0
 G_FPS2 = 32.174
-MAX_SPEED_MPH = 230.0
-SAFETY_FACTOR = 0.96
+DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[1] / "config" / "car_performance.json"
 
-@dataclass(frozen=True)
-class CarPerformance:
-    """User-tunable multipliers around the period-informed 1995 CART baseline."""
-    acceleration_pct: float = 100.0
-    braking_pct: float = 100.0
-    cornering_pct: float = 100.0
-    aero_pct: float = 100.0
-    safety_pct: float = 96.0
 
-    def factor(self, value: float) -> float:
-        return max(0.0, float(value)) / 100.0
+def load_performance_model(path: Path | None = None) -> dict:
+    path = path or DEFAULT_MODEL_PATH
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    required = ("max_speed_mph", "lateral_g", "acceleration_g", "braking_g")
+    missing = [key for key in required if key not in data]
+    if missing:
+        raise ValueError("Car performance model is missing: " + ", ".join(missing))
+    result = dict(data)
+    for key in ("lateral_g", "acceleration_g", "braking_g"):
+        table = np.asarray(result[key], dtype=float)
+        if table.ndim != 2 or table.shape[1] != 2 or len(table) < 2:
+            raise ValueError(f"{key} must contain at least two [mph, g] rows.")
+        if np.any(~np.isfinite(table)) or np.any(np.diff(table[:, 0]) <= 0):
+            raise ValueError(f"{key} speeds must be finite and strictly increasing.")
+        if np.any(table[:, 1] < 0):
+            raise ValueError(f"{key} g values cannot be negative.")
+        result[key] = table
+    result["max_speed_mph"] = float(result["max_speed_mph"])
+    if result["max_speed_mph"] <= 0:
+        raise ValueError("max_speed_mph must be greater than zero.")
+    return result
 
-    @property
-    def acceleration_factor(self) -> float:
-        return self.factor(self.acceleration_pct)
 
-    @property
-    def braking_factor(self) -> float:
-        return self.factor(self.braking_pct)
+_MODEL = load_performance_model()
+MAX_SPEED_MPH = _MODEL["max_speed_mph"]
+_LATERAL_G = _MODEL["lateral_g"]
+_ACCEL_G = _MODEL["acceleration_g"]
+_BRAKE_G = _MODEL["braking_g"]
 
-    @property
-    def cornering_factor(self) -> float:
-        return self.factor(self.cornering_pct)
 
-    @property
-    def aero_factor(self) -> float:
-        return self.factor(self.aero_pct)
-
-    @property
-    def safety_factor(self) -> float:
-        return self.factor(self.safety_pct)
-
-# Period-informed engineering envelopes used by the candidate-line generator.
-# Intermediate values are modeled, not direct measurements.
-_LATERAL_G = np.array([
-    (0.0, 1.60), (40.0, 1.70), (60.0, 1.90), (80.0, 2.10),
-    (100.0, 2.35), (120.0, 2.65), (140.0, 3.00), (160.0, 3.35),
-    (180.0, 3.70), (200.0, 3.95), (220.0, 4.00), (230.0, 4.00),
-])
-_ACCEL_G = np.array([
-    (0.0, 0.75), (40.0, 0.90), (60.0, 1.05), (80.0, 1.05),
-    (100.0, 0.95), (120.0, 0.75), (140.0, 0.58), (160.0, 0.43),
-    (180.0, 0.30), (190.0, 0.20), (200.0, 0.12), (220.0, 0.04),
-    (230.0, 0.0),
-])
-_BRAKE_G = np.array([
-    (0.0, 1.40), (40.0, 1.50), (60.0, 1.60), (80.0, 1.80),
-    (100.0, 2.00), (120.0, 2.30), (140.0, 2.60), (160.0, 2.90),
-    (180.0, 3.20), (200.0, 3.40), (220.0, 3.50), (230.0, 3.50),
-])
+def reload_performance_model(path: Path | None = None) -> dict:
+    """Reload the editable baseline without restarting Track Viewer."""
+    global _MODEL, MAX_SPEED_MPH, _LATERAL_G, _ACCEL_G, _BRAKE_G
+    _MODEL = load_performance_model(path)
+    MAX_SPEED_MPH = _MODEL["max_speed_mph"]
+    _LATERAL_G = _MODEL["lateral_g"]
+    _ACCEL_G = _MODEL["acceleration_g"]
+    _BRAKE_G = _MODEL["braking_g"]
+    return _MODEL
 
 
 def _interp(table: np.ndarray, mph: float) -> float:
