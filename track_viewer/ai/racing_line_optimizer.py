@@ -452,10 +452,22 @@ def optimize_race_line(
     )
     side_target = None
     if side_preference != "none" and side_preference_pct > 0:
+        # Treat the preference as the desired lane position, not merely a
+        # low-weight optimization hint. 0% is the normal racing-line target;
+        # 100% is the nearest legal edge after the user's clearance margin.
         preference = side_preference_pct / 100.0
         preferred_edge = upper if side_preference == "left" else lower
-        side_target = ((1.0 - preference) * ((lower + upper) * 0.5)
-                       + preference * preferred_edge)
+        side_target = targets + preference * (preferred_edge - targets)
+        # Keep a little room for the spline/constraint projection. The hard
+        # lower/upper corridor remains the final authority.
+        side_target = np.clip(side_target, lower, upper)
+        targets = side_target
+        # A passing line should deliberately hold its lane even through
+        # corners, rather than allowing apex weights to pull it back onto the
+        # same RACE trajectory. Increase target authority with preference.
+        target_weight = np.maximum(
+            target_weight, 1.0 + 19.0 * preference
+        )
 
     # A few smooth control values govern many LP records. Directly optimizing
     # every record is ill-conditioned: microscopic alternating DLAT changes
@@ -510,13 +522,6 @@ def optimize_race_line(
         offset_gradient += (
             10 * target_weight * difference / np.maximum(upper - lower, 1.0) / count
         )
-        if side_target is not None:
-            side_difference = ((offsets - side_target)
-                               / np.maximum(upper - lower, 1.0))
-            side_weight = 3.0 * (side_preference_pct / 100.0)
-            energy += side_weight * float(np.mean(side_difference**2))
-            offset_gradient += (2.0 * side_weight * side_difference
-                                / np.maximum(upper - lower, 1.0) / count)
         # Include chord/wall clearance in the optimizer, so the final hard
         # projection is a small safety correction rather than a new kink.
         if between_records:
