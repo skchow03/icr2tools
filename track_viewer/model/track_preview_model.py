@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 from typing import List, Tuple
 
+import numpy as np
 from PyQt5 import QtCore
 
 from icr2_core.lp.csv2lp import load_csv as load_lp_csv
