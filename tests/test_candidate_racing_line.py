@@ -26,7 +26,7 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.dlongs = [i * 2500 for i in range(400)]
         self.track = _Track()
 
-    def _generate(self, radius, width=20, margin=5):
+    def _generate(self, radius, width=20, margin=5, **options):
         def xyz(_trk, dlong, dlat, _cline):
             angle = 2 * math.pi * dlong / 1_000_000
             r = radius(angle) + dlat / 6000
@@ -43,7 +43,7 @@ class CandidateRaceLineTest(unittest.TestCase):
              patch.object(optimizer, "getgrounddlat", side_effect=ground), \
              patch.object(optimizer, "getxyz", side_effect=xyz):
             return np.array(optimizer.optimize_race_line(
-                self.track, [], self.dlongs, margin_feet=margin
+                self.track, [], self.dlongs, margin_feet=margin, **options
             )) / 6000
 
     def test_constant_radius_moves_outward_to_margin_and_closes(self):
@@ -336,16 +336,16 @@ class CandidateRaceLineTest(unittest.TestCase):
 
 
     def test_side_preference_moves_line_but_respects_margin(self):
-        neutral = self._generate_with_options(
+        neutral = self._generate(
             lambda _angle: 300, width=30, margin=5,
             side_preference="none", side_preference_pct=0,
         )
-        left = self._generate_with_options(
+        left = self._generate(
             lambda _angle: 300, width=30, margin=5,
             side_preference="left", side_preference_pct=100,
         )
-        neutral_feet = np.asarray(neutral) / 6000.0
-        left_feet = np.asarray(left) / 6000.0
+        neutral_feet = np.asarray(neutral)
+        left_feet = np.asarray(left)
         self.assertGreater(float(np.mean(left_feet)), float(np.mean(neutral_feet)))
         self.assertTrue(np.all(left_feet <= 25.0 + 1e-6))
         self.assertTrue(np.all(left_feet >= -25.0 - 1e-6))
