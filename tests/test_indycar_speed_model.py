@@ -7,6 +7,7 @@ import numpy as np
 
 from track_viewer.ai.indycar_speed_model import (
     MAX_SPEED_MPH,
+    CarPerformance,
     _corner_speed_mph,
     speed_profile_mph,
 )
@@ -42,6 +43,32 @@ class IndyCarSpeedModelTest(unittest.TestCase):
         # The end of the first straight must already be slowing for the bend.
         self.assertGreater(speeds[60], speeds[115])
         self.assertGreater(speeds[60], speeds[125])
+
+    def test_tuning_changes_corner_speed(self):
+        baseline = _corner_speed_mph(1.0 / 250.0)
+        more_grip = _corner_speed_mph(
+            1.0 / 250.0, CarPerformance(cornering_pct=120.0)
+        )
+        less_aero = _corner_speed_mph(
+            1.0 / 250.0, CarPerformance(aero_pct=50.0)
+        )
+        self.assertGreater(more_grip, baseline)
+        self.assertLess(less_aero, baseline)
+
+    def test_acceleration_and_braking_tuning_change_profile(self):
+        radius = 55.0
+        top = np.column_stack((np.linspace(-250, 250, 120), np.full(120, radius)))
+        a = np.linspace(math.pi / 2, -math.pi / 2, 80, endpoint=False)[1:]
+        right = np.column_stack((250 + radius * np.cos(a), radius * np.sin(a)))
+        bottom = np.column_stack((np.linspace(250, -250, 120), np.full(120, -radius)))[1:]
+        a = np.linspace(-math.pi / 2, math.pi / 2, 80, endpoint=False)[1:]
+        left = np.column_stack((-250 + radius * np.cos(a), radius * np.sin(a)))
+        points = np.concatenate((top, right, bottom, left))
+        baseline = speed_profile_mph(points)
+        slower = speed_profile_mph(
+            points, CarPerformance(acceleration_pct=70.0, braking_pct=70.0)
+        )
+        self.assertLess(float(np.mean(slower)), float(np.mean(baseline)))
 
 
 if __name__ == "__main__":
