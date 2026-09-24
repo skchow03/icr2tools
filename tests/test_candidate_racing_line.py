@@ -183,6 +183,56 @@ class CandidateRaceLineTest(unittest.TestCase):
         approach_bend = abs(target[37] - 2 * target[38] + target[39])
         self.assertLess(near_apex_bend, approach_bend * 0.2)
 
+    def test_exit_unwinds_without_a_countersteer_to_reach_outside(self):
+        radius = 45.0
+        straight = np.column_stack((np.linspace(0, 160, 81),
+                                    np.full(81, -radius)))
+        a = np.linspace(-math.pi / 2, math.pi / 2, 61)[1:]
+        turn = np.column_stack((160 + radius * np.cos(a), radius * np.sin(a)))
+        back = np.column_stack((np.linspace(160, 0, 81)[1:],
+                                np.full(80, radius)))
+        a = np.linspace(math.pi / 2, 3 * math.pi / 2, 61)[1:-1]
+        other = np.column_stack((radius * np.cos(a), radius * np.sin(a)))
+        centers = np.concatenate((straight, turn, back, other))
+        tangent = np.roll(centers, -1, axis=0) - np.roll(centers, 1, axis=0)
+        tangent /= np.linalg.norm(tangent, axis=1)[:, None]
+        normals = np.column_stack((-tangent[:, 1], tangent[:, 0]))
+
+        def xyz(_trk, dlong, dlat, _cline):
+            i = int(round(dlong / 65536)) % len(centers)
+            point = centers[i] + normals[i] * dlat / 6000
+            return point[0] * 6000, point[1] * 6000, 0
+
+        with patch.object(optimizer, "dlong2sect", return_value=(0, 0)), \
+             patch.object(optimizer, "getbounddlat",
+                          side_effect=lambda _t, _s, _f, i: (-15 if i == 0 else 15) * 6000), \
+             patch.object(optimizer, "getgrounddlat",
+                          side_effect=lambda _t, _s, _f, i: [-15, -12, 12][i] * 6000), \
+             patch.object(optimizer, "getxyz", side_effect=xyz):
+            offsets = np.array(optimizer.optimize_race_line(
+                self.track, [], [i * 65536 for i in range(len(centers))],
+                margin_feet=3, reference_dlats=[0] * len(centers),
+                lookahead_feet=40, corner_width_pct=90, apex_position_pct=65,
+            )) / 6000
+        points = centers + normals * offsets[:, None]
+        incoming = points - np.roll(points, 1, axis=0)
+        outgoing = np.roll(points, -1, axis=0) - points
+        heading_change = np.arctan2(
+            incoming[:, 0] * outgoing[:, 1] - incoming[:, 1] * outgoing[:, 0],
+            np.sum(incoming * outgoing, axis=1),
+        )
+        self.assertGreaterEqual(np.min(heading_change[140:180]), -0.001)
+        self.assertTrue(np.all(np.abs(offsets) <= 9.00001))
+
+    def test_opposite_corner_allows_steering_transition_between_turns(self):
+        corners = [(10, 40, 25, 1, 12, 1.0),
+                   (48, 78, 63, -1, 12, 1.0),
+                   (160, 190, 175, 1, 12, 1.0)]
+        signs = optimizer._exit_turn_signs(corners, 220)
+        self.assertEqual(signs[30], 1)
+        self.assertEqual(signs[40], 0)  # release before the next entry
+        self.assertEqual(signs[70], -1)
+
     def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
         self.track.sects[0].num_bounds = 3
         self.track.sects[0].ground_fsects = 1
