@@ -13,6 +13,7 @@ from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.trk2csv import convert_trk_to_csv
 from icr2_core.trk.trk2sg import trk_to_sg
 from icr2_core.trk.trk_utils import get_cline_pos, getxyz, sect2xy
+from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.ai_line_service import LpPoint
 from track_viewer.common.preview_constants import LP_COLORS, LP_FILE_NAMES
 from track_viewer.controllers.camera_controller import CameraController
@@ -376,6 +377,7 @@ class PreviewCoordinator:
         apex_position_pct: int = 60, max_speed_mph: float = 230.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
+        car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str]:
         success, message, changes = self._lp_session.generate_candidate_race_line(
             lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
@@ -383,9 +385,13 @@ class PreviewCoordinator:
             apex_position_pct=apex_position_pct, max_speed_mph=max_speed_mph,
             pit_speed_start_dlong=pit_speed_start_dlong,
             pit_speed_end_dlong=pit_speed_end_dlong,
+            car_performance=car_performance,
         )
         self._apply_lp_changes(changes)
         return success, message
+
+    def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
+        return self._model.lp_lap_statistics(lp_name)
 
     def copy_lp_speeds_from_replay(
         self,
