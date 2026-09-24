@@ -181,6 +181,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "cornering_pct": 100.0,
             "aero_pct": 100.0,
             "safety_pct": 96.0,
+            "side_preference": "none",
+            "side_preference_pct": 0,
         }
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
@@ -2793,6 +2795,30 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
 
         form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP"))
+        side_preference = QtWidgets.QComboBox(dialog)
+        side_preference.addItem("None (normal racing line)", "none")
+        side_preference.addItem("Prefer left", "left")
+        side_preference.addItem("Prefer right", "right")
+        side_preference.setCurrentIndex(max(
+            0, side_preference.findData(options["side_preference"])
+        ))
+        side_amount = QtWidgets.QSpinBox(dialog)
+        side_amount.setRange(0, 100)
+        side_amount.setSingleStep(5)
+        side_amount.setSuffix(" %")
+        side_amount.setValue(options["side_preference_pct"])
+        side_amount.setToolTip(
+            "How strongly the generated line prefers the selected side. "
+            "100% targets the nearest permitted edge, but pavement clearance "
+            "and wall constraints always remain enforced."
+        )
+        side_preference.setToolTip(
+            "Useful for PASS1/PASS2: bias the whole candidate line toward one "
+            "side while retaining the configured wall/pavement clearance."
+        )
+
+        form.addRow("Passing-line side", side_preference)
+        form.addRow("Side preference", side_amount)
         form.addRow("Maximum speed", max_speed)
 
         performance_box = QtWidgets.QGroupBox("Car performance", dialog)
@@ -2850,6 +2876,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             corner_width_pct=width.value(),
             apex_position_pct=apex.value(),
             max_speed_mph=max_speed.value(),
+            side_preference=side_preference.currentData(),
+            side_preference_pct=side_amount.value(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
         call_options = dict(options)

@@ -400,6 +400,8 @@ def optimize_race_line(
     lookahead_feet: float = 60.0,
     corner_width_pct: int = 75,
     apex_position_pct: int = 60,
+    side_preference: str = "none",
+    side_preference_pct: int = 0,
     iterations: int = 160,
 ) -> list[float]:
     """Return DLATs at unique LP DLONGs within the continuous paved corridor.
@@ -417,6 +419,10 @@ def optimize_race_line(
         raise ValueError("Corner width must be between 0 and 100 percent.")
     if not 40 <= apex_position_pct <= 80:
         raise ValueError("Apex position must be between 40 and 80 percent.")
+    if side_preference not in {"none", "left", "right"}:
+        raise ValueError("Side preference must be None, Left, or Right.")
+    if not 0 <= side_preference_pct <= 100:
+        raise ValueError("Side preference must be between 0 and 100 percent.")
 
     if reference_dlats is not None and len(reference_dlats) != len(dlongs):
         raise ValueError("Reference RACE DLAT count does not match the LP grid.")
@@ -444,6 +450,13 @@ def optimize_race_line(
         centers, lower, upper, lookahead_feet, corner_width_pct,
         apex_position_pct, return_exit_signs=True,
     )
+    side_target = None
+    if side_preference != "none" and side_preference_pct > 0:
+        preference = side_preference_pct / 100.0
+        preferred_edge = upper if side_preference == "left" else lower
+        side_target = ((1.0 - preference) * ((lower + upper) * 0.5)
+                       + preference * preferred_edge)
+
     # A few smooth control values govern many LP records. Directly optimizing
     # every record is ill-conditioned: microscopic alternating DLAT changes
     # dominate the discrete curvature gradient.
@@ -497,6 +510,13 @@ def optimize_race_line(
         offset_gradient += (
             10 * target_weight * difference / np.maximum(upper - lower, 1.0) / count
         )
+        if side_target is not None:
+            side_difference = ((offsets - side_target)
+                               / np.maximum(upper - lower, 1.0))
+            side_weight = 3.0 * (side_preference_pct / 100.0)
+            energy += side_weight * float(np.mean(side_difference**2))
+            offset_gradient += (2.0 * side_weight * side_difference
+                                / np.maximum(upper - lower, 1.0) / count)
         # Include chord/wall clearance in the optimizer, so the final hard
         # projection is a small safety correction rather than a new kink.
         if between_records:

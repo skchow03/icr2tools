@@ -281,6 +281,8 @@ class TrackPreviewModel(QtCore.QObject):
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
         car_performance: CarPerformance | None = None,
+        side_preference: str = "none",
+        side_preference_pct: int = 0,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
         if not lp_name or lp_name == "center-line":
@@ -304,6 +306,8 @@ class TrackPreviewModel(QtCore.QObject):
                 lookahead_feet=lookahead_feet,
                 corner_width_pct=corner_width_pct,
                 apex_position_pct=apex_position_pct,
+                side_preference=side_preference,
+                side_preference_pct=side_preference_pct,
             )
             unique_dlats = dlats
             path_xy_feet = []
