@@ -84,7 +84,7 @@ class CandidateRaceLineTest(unittest.TestCase):
             lookahead_feet=15,
         )
         self.assertLess(target[70], -4)  # outside just before right turn
-        self.assertGreater(target[115], 6)  # inside at right-turn apex
+        self.assertGreater(target[115], 9.2)  # near the usable inside edge
         self.assertLess(target[151], -3)  # outside after the turn
         self.assertGreater(weight[115], weight[30])
 
@@ -129,7 +129,7 @@ class CandidateRaceLineTest(unittest.TestCase):
                 lookahead_feet=15,
             )) / 6000
         self.assertLess(path[70], -4)
-        self.assertGreater(path[115], 6)
+        self.assertGreater(path[115], 8)
         self.assertLess(path[151], -4)
         self.assertTrue(np.all(np.abs(path) <= 9.00001))
 
@@ -146,7 +146,7 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertGreater(target[40], 7)
         self.assertLess(target[88], -7)
         self.assertLess(abs(target[64]), 2)  # one shared S-bend handoff
-        self.assertEqual(weight[40], 3)
+        self.assertEqual(weight[40], 10)
 
         # One smooth move across the long straight prepares for the next
         # outside entry; the other straight stays on the same side.
@@ -180,14 +180,93 @@ class CandidateRaceLineTest(unittest.TestCase):
              patch.object(optimizer, "getbounddlat",
                           side_effect=lambda _t, _s, _f, i: [-20, 0, 20][i] * 6000), \
              patch.object(optimizer, "getgrounddlat", return_value=-20 * 6000):
-            auto = optimizer._paved_corridor(self.track, self.dlongs, None, 2)
+            auto = optimizer._paved_corridor(
+                self.track, self.dlongs, [-10 * 6000] * len(self.dlongs), 2
+            )
             pit_left = optimizer._paved_corridor(self.track, self.dlongs, None, 2,
                                                   "left")
             pit_right = optimizer._paved_corridor(self.track, self.dlongs, None, 2,
                                                    "right")
-        self.assertEqual((auto[0][0], auto[1][0]), (-18, 18))
+        self.assertEqual((auto[0][0], auto[1][0]), (-18, -2))
         self.assertEqual((pit_left[0][0], pit_left[1][0]), (-18, -2))
         self.assertEqual((pit_right[0][0], pit_right[1][0]), (2, 18))
+
+    def test_curved_pit_wall_stays_between_segments_and_at_section_edge(self):
+        class Section:
+            def __init__(self, start):
+                self.start_dlong = start
+                self.num_bounds = 3
+                self.ground_fsects = 1
+                self.ground_type = [40]  # paved across the internal wall
+
+        track = _Track()
+        track.sects = [Section(0), Section(450_000)]
+        track.trklength = 1_000_000
+        dlongs = [i * 100_000 for i in range(10)]
+
+        def section_at(_trk, dlong):
+            if dlong < 450_000:
+                return 0, dlong / 450_000
+            return 1, (dlong - 450_000) / 550_000
+
+        def boundary(_trk, section, fraction, index):
+            if index == 1:
+                return (6 * fraction if section == 0 else 6 * (1 - fraction)) * 6000
+            return (-20 if index == 0 else 20) * 6000
+
+        def xyz(_trk, dlong, dlat, _cline):
+            angle = 2 * math.pi * dlong / track.trklength
+            radius = 80 - dlat / 6000  # positive DLAT is inside this turn
+            return radius * math.cos(angle) * 6000, radius * math.sin(angle) * 6000, 0
+
+        with patch.object(optimizer, "dlong2sect", side_effect=section_at), \
+             patch.object(optimizer, "getbounddlat", side_effect=boundary), \
+             patch.object(optimizer, "getgrounddlat", return_value=-20 * 6000), \
+             patch.object(optimizer, "getxyz", side_effect=xyz):
+            lo, hi = optimizer._paved_corridor(
+                track, dlongs, [-10 * 6000] * len(dlongs), 2, "left"
+            )
+            centers = np.array([xyz(track, x, 0, [])[0:2] for x in dlongs]) / 6000
+            normals = np.array([
+                (np.array(xyz(track, x, 6000, [])[0:2]) / 6000 - center)
+                for x, center in zip(dlongs, centers)
+            ])
+            checks = optimizer._between_record_constraints(
+                track, [], dlongs, [-10 * 6000] * len(dlongs), 2,
+                "left", centers, normals,
+            )
+            # At the sample points this path is legal, but its chords cut
+            # inside the curved wall, including near the section boundary.
+            self.assertTrue(any(a * hi[i] + b * hi[j] + c > upper
+                                for i, j, a, b, c, lower, upper, _ in checks))
+            corrected = optimizer._enforce_between_record_constraints(
+                hi, lo, hi, checks
+            )
+            self.assertTrue(np.all(corrected >= lo - 1e-5))
+            self.assertTrue(all(lower - 1e-4 <= a * corrected[i] +
+                                b * corrected[j] + c <= upper + 1e-4
+                                for i, j, a, b, c, lower, upper, _ in checks))
+            generated = np.array(optimizer.optimize_race_line(
+                track, [], dlongs, margin_feet=2,
+                reference_dlats=[-10 * 6000] * len(dlongs),
+                pit_side="left", lookahead_feet=15,
+            )) / 6000
+            self.assertTrue(np.all(generated >= lo - 1e-4))
+            self.assertTrue(np.all(generated <= hi + 1e-4))
+            self.assertTrue(all(lower - 1e-4 <= a * generated[i] +
+                                b * generated[j] + c <= upper + 1e-4
+                                for i, j, a, b, c, lower, upper, _ in checks))
+
+    def test_auto_split_requires_an_unambiguous_existing_line(self):
+        self.track.sects[0].num_bounds = 3
+        self.track.sects[0].ground_fsects = 1
+        self.track.sects[0].ground_type = [40]
+        with patch.object(optimizer, "dlong2sect", return_value=(0, 0)), \
+             patch.object(optimizer, "getbounddlat",
+                          side_effect=lambda _t, _s, _f, i: [-20, 0, 20][i] * 6000), \
+             patch.object(optimizer, "getgrounddlat", return_value=-20 * 6000):
+            with self.assertRaisesRegex(ValueError, "choose the pit side"):
+                optimizer._paved_corridor(self.track, self.dlongs, None, 2)
 
     def test_rejects_unusable_width(self):
         with self.assertRaisesRegex(ValueError, "No paved corridor wide enough"):

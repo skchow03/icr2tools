@@ -58,15 +58,18 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
             if split and pit_side != "auto" else None
         candidates = []
         for raw_lo, raw_hi in _paved_intervals(trk, section_id, fraction):
-            if split_edge is not None:
-                if pit_side == "left":
-                    raw_hi = min(raw_hi, split_edge)
-                else:
-                    raw_lo = max(raw_lo, split_edge)
-            lo = raw_lo / DLAT_PER_FOOT + margin_feet
-            hi = raw_hi / DLAT_PER_FOOT - margin_feet
-            if hi > lo:
-                candidates.append((lo, hi))
+            # Ground can be paved on BOTH sides of a pit wall. A boundary is
+            # impassable even if the surface type does not change there.
+            for wall_lo, wall_hi in zip(bounds, bounds[1:]):
+                if split_edge is not None and (
+                    (pit_side == "left" and wall_lo >= split_edge) or
+                    (pit_side == "right" and wall_hi <= split_edge)
+                ):
+                    continue
+                lo = max(raw_lo, wall_lo) / DLAT_PER_FOOT + margin_feet
+                hi = min(raw_hi, wall_hi) / DLAT_PER_FOOT - margin_feet
+                if hi > lo:
+                    candidates.append((lo, hi))
         if not candidates:
             if split_edge is not None:
                 raise ValueError(
@@ -91,7 +94,14 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
                 lo - previous_center, 0, previous_center - hi
             )
 
-        chosen = min(candidates, key=score)
+        ranked = sorted(candidates, key=score)
+        if (pit_side == "auto" and previous is None and len(ranked) > 1
+                and abs(score(ranked[0]) - score(ranked[1])) < 1e-8):
+            raise ValueError(
+                "Existing RACE line cannot distinguish sides of a wall; "
+                "choose the pit side explicitly."
+            )
+        chosen = ranked[0]
         if previous is not None and min(chosen[1], previous[1]) < max(chosen[0], previous[0]):
             raise ValueError(
                 f"Paved corridor is discontinuous at DLONG {dlong:.0f}; "
@@ -131,6 +141,7 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         signs[gaps] = np.roll(signs, 1)[gaps]
 
     corners = []
+    sharpnesses = []
     starts = [i for i in range(n) if signs[i] and signs[i] != signs[(i - 1) % n]]
     for start in starts:
         sign = signs[start]
@@ -152,13 +163,16 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
         corners.append((start, start + length - 1, start + apex_at,
                         int(sign), lead, float(np.sum(
                             np.abs(curvature[window]) * distance[window]))))
+        sharpnesses.append(float(np.max(magnitudes)))
 
     if not corners:
         return (lower + upper) * 0.5, np.full(n, 0.0001)
-    return _linked_corner_targets(corners, lower, upper, corner_width_pct)
+    return _linked_corner_targets(corners, lower, upper, corner_width_pct,
+                                  sharpnesses)
 
 
-def _linked_corner_targets(corners, lower, upper, corner_width_pct):
+def _linked_corner_targets(corners, lower, upper, corner_width_pct,
+                           sharpnesses=None):
     """Join each apex to its neighbours with one transition per straight.
 
     Corners are (start, end, apex, signed direction, lead, turn severity).
@@ -168,7 +182,13 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct):
     use = corner_width_pct / 200.0
     anchors = []
     for i, (start, end, apex, sign, lead, severity) in enumerate(corners):
-        anchors.append((apex % n, 0.5 + sign * use))
+        # Tight turns use more of the available paved width at the apex.
+        # Keep the width control effective even at low values. Tight turns
+        # progressively borrow more width at the apex than at entry or exit.
+        sharpness = sharpnesses[i] if sharpnesses is not None else 0.0
+        tightness = np.clip((sharpness - 0.008) / 0.02, 0, 1)
+        apex_use = use + (0.5 - use) * tightness * (corner_width_pct / 100)
+        anchors.append((apex % n, 0.5 + sign * apex_use))
         next_start, _, _, next_sign, next_lead, next_severity = corners[
             (i + 1) % len(corners)
         ]
@@ -212,8 +232,100 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct):
         for step in range(-lead, lead + 1):
             index = (apex + step) % n
             target_weight[index] = max(target_weight[index],
-                                       1 + 2 * (1 - abs(step) / (lead + 1)))
+                                       1 + 9 * (1 - abs(step) / (lead + 1)))
     return lower + fraction * (upper - lower), target_weight
+
+
+def _between_record_constraints(trk, centerline, dlongs, reference_dlats,
+                                margin_feet, pit_side, centers, normals):
+    """Constrain the drawn XY chord between each pair of LP records.
+
+    Check quarter points and both sides of every TRK section transition.
+    Bounds within a section vary linearly in DLAT, while chords in curved
+    sections need extra checks because they cut inside the centerline arc.
+    """
+    lap = float(getattr(trk, "trklength", 0) or 0)
+    if lap <= dlongs[-1]:
+        return []
+    originals = np.asarray(dlongs, dtype=float)
+    extra = []
+    for i, start in enumerate(originals):
+        end = originals[i + 1] if i + 1 < len(originals) else originals[0] + lap
+        for t in (0.25, 0.5, 0.75):
+            extra.append((start + t * (end - start)) % lap)
+    if hasattr(trk.sects[0], "start_dlong"):
+        for section in trk.sects:
+            boundary = float(section.start_dlong)
+            if not 0 <= boundary < lap:
+                continue
+            before = float(originals[np.searchsorted(originals, boundary) - 1]) \
+                if boundary > originals[0] else float(originals[-1] - lap)
+            epsilon = min(0.001, (boundary - before) * 0.25)
+            if epsilon > 0:
+                extra.append(boundary - epsilon if boundary >= epsilon
+                             else lap + boundary - epsilon)
+            if boundary not in originals and boundary > 0:
+                extra.append(boundary)
+    extra = sorted(set(x for x in extra if x not in originals and x < lap))
+    if not extra:
+        return []
+    base_reference = (np.asarray(reference_dlats, dtype=float) / DLAT_PER_FOOT
+                      if reference_dlats is not None else np.zeros(len(originals)))
+    extended_x = np.r_[originals[-1] - lap, originals, originals[0] + lap]
+    extended_y = np.r_[base_reference[-1], base_reference, base_reference[0]]
+    all_points = sorted(set(dlongs) | set(extra))
+    all_refs = np.interp(all_points, extended_x, extended_y) * DLAT_PER_FOOT
+    lo, hi = _paved_corridor(trk, all_points, all_refs.tolist(),
+                             margin_feet, pit_side)
+    at = {point: index for index, point in enumerate(all_points)}
+    constraints = []
+    for point in extra:
+        position = point if point >= originals[0] else point + lap
+        i = int(np.searchsorted(originals, position, side="right") - 1)
+        j = (i + 1) % len(originals)
+        end = originals[j] if j > i else originals[j] + lap
+        t = (position - originals[i]) / (end - originals[i])
+        x, y, _ = getxyz(trk, point, 0, centerline)
+        nx, ny, _ = getxyz(trk, point, DLAT_PER_FOOT, centerline)
+        center = np.array((x, y)) / DLAT_PER_FOOT
+        normal = (np.array((nx, ny)) - (x, y)) / DLAT_PER_FOOT
+        normal_size = float(np.dot(normal, normal))
+        if normal_size < 1e-8:
+            raise ValueError(f"Invalid track normal near DLONG {point:.0f}.")
+        a = (1 - t) * float(np.dot(normals[i], normal)) / normal_size
+        b = t * float(np.dot(normals[j], normal)) / normal_size
+        chord_center = (1 - t) * centers[i] + t * centers[j]
+        constant = float(np.dot(chord_center - center, normal)) / normal_size
+        constraints.append((i, j, a, b, constant,
+                            lo[at[point]], hi[at[point]], point))
+    return constraints
+
+
+def _enforce_between_record_constraints(offsets, lower, upper, constraints):
+    """Project LP offsets until their XY chords clear the sampled walls."""
+    if not constraints:
+        return offsets
+    offsets = offsets.copy()
+    for _ in range(300):
+        worst = 0.0
+        for i, j, a, b, constant, lo, hi, _ in constraints:
+            value = a * offsets[i] + b * offsets[j] + constant
+            correction = min(max(value, lo), hi) - value
+            worst = max(worst, abs(correction))
+            if correction:
+                scale = correction / (a * a + b * b)
+                offsets[i] = np.clip(offsets[i] + a * scale, lower[i], upper[i])
+                offsets[j] = np.clip(offsets[j] + b * scale, lower[j], upper[j])
+        if worst < 1e-5:
+            break
+    for i, j, a, b, constant, lo, hi, point in constraints:
+        value = a * offsets[i] + b * offsets[j] + constant
+        if value < lo - 1e-4 or value > hi + 1e-4:
+            raise ValueError(
+                f"LP path cannot clear a wall near DLONG {point:.0f}; "
+                "use a denser LP grid or inspect the split."
+            )
+    return offsets
 
 
 def _energy_and_gradient(points: np.ndarray) -> tuple[float, np.ndarray]:
@@ -284,6 +396,10 @@ def optimize_race_line(
 
     centers = np.asarray(centers, dtype=float)
     normals = np.asarray(normals, dtype=float)
+    between_records = _between_record_constraints(
+        trk, centerline, dlongs, reference_dlats, margin_feet, pit_side,
+        centers, normals,
+    )
     targets, target_weight = _apex_targets(
         centers, lower, upper, lookahead_feet, corner_width_pct,
         apex_position_pct,
@@ -361,4 +477,7 @@ def optimize_race_line(
 
     if not np.all(np.isfinite(offsets)):
         raise ValueError("Optimizer produced nonfinite DLAT values.")
+    offsets = _enforce_between_record_constraints(
+        offsets, lower, upper, between_records
+    )
     return (offsets * DLAT_PER_FOOT).tolist()

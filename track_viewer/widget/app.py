@@ -2753,7 +2753,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         width.setValue(options["corner_width_pct"])
         width.setToolTip(
             "0% aims at the middle of the paved corridor; 100% aims at "
-            "opposite edges at entry and apex, after clearance."
+            "opposite edges after clearance. Tight turns use more of the "
+            "available width at the apex than at entry and exit."
         )
 
         apex = QtWidgets.QSpinBox(dialog)
