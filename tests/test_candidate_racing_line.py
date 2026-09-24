@@ -172,6 +172,17 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertGreater(target[35], 7)
         self.assertGreater(target[80], 7)
 
+    def test_apex_transition_begins_early_without_flattening_road_curvature(self):
+        lower, upper = np.full(200, -10.0), np.full(200, 10.0)
+        target, _ = optimizer._linked_corner_targets(
+            [(20, 80, 55, 1, 18, 1.0)], lower, upper, 75
+        )
+        self.assertGreater(target[5], -7.49)  # starts upstream of turn index 20
+        self.assertAlmostEqual(target[55], 7.5)
+        near_apex_bend = abs(target[54] - 2 * target[55] + target[56])
+        approach_bend = abs(target[37] - 2 * target[38] + target[39])
+        self.assertLess(near_apex_bend, approach_bend * 0.2)
+
     def test_explicit_pit_side_clips_continuous_pavement_at_extra_wall(self):
         self.track.sects[0].num_bounds = 3
         self.track.sects[0].ground_fsects = 1
