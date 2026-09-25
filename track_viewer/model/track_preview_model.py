@@ -26,6 +26,7 @@ from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
+from track_viewer.ai.trk_banking import build_trk_banking_profile
 from track_viewer.ai.lap_time_format import format_lap_time
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -304,6 +305,7 @@ class TrackPreviewModel(QtCore.QObject):
         has_terminal = abs(existing[-1].dlong - track_length) < 1.0
         unique = existing[:-1] if has_terminal else existing
         try:
+            bank_profile = build_trk_banking_profile(self.trk, [p.dlong for p in unique])
             dlats = optimize_race_line(
                 self.trk, self.centerline, [p.dlong for p in unique],
                 margin_feet=margin_feet,
@@ -321,7 +323,9 @@ class TrackPreviewModel(QtCore.QObject):
                     x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
                     xy.append((x / 6000.0, y / 6000.0))
                 candidate_speeds = np.minimum(
-                    speed_profile_mph(xy, car_performance), max_speed_mph
+                    speed_profile_mph(xy, car_performance,
+                        banking_degrees=bank_profile.at_dlats(candidate_dlats)),
+                    max_speed_mph
                 )
                 xy_array = np.asarray(xy, dtype=float)
                 distances = np.linalg.norm(
@@ -759,6 +763,7 @@ class TrackPreviewModel(QtCore.QObject):
         self._pending_ai_line_loads.discard(lp_name)
         self._ai_line_cache_generation += 1
         self._dirty_lp_files.add(lp_name)
+        peak_banking = float(np.max(np.abs(bank_profile.at_dlats(unique_dlats))))
         pit_note = (
             " PIT speed-limit zone capped at 79 mph."
             if lp_name == "PIT" and pit_speed_start_dlong is not None
@@ -779,7 +784,8 @@ class TrackPreviewModel(QtCore.QObject):
             ) + 
             f"maximum speed: {max_speed_mph:g} mph."
             f"{search_summary}"
-            f"{pit_note} Speeds use the 1995 CART performance model. "
+            f"{pit_note} Speeds use the 1995 CART performance model with "
+            f".TRK cross-section banking (peak {peak_banking:.1f} deg). "
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
         )
@@ -839,7 +845,9 @@ class TrackPreviewModel(QtCore.QObject):
         for old, dlat in zip(unique, dlats):
             x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
             xy.append((x / 6000.0, y / 6000.0))
-        speeds = np.minimum(speed_profile_mph(xy, car_performance), max_speed_mph)
+        banking = build_trk_banking_profile(self.trk, dlongs).at_dlats(dlats)
+        speeds = np.minimum(speed_profile_mph(xy, car_performance,
+            banking_degrees=banking), max_speed_mph)
         arr = np.asarray(xy, dtype=float)
         ds = np.linalg.norm(np.roll(arr, -1, axis=0) - arr, axis=1)
         segment_mph = np.maximum((speeds + np.roll(speeds, -1)) * 0.5, 0.01)
@@ -878,7 +886,8 @@ class TrackPreviewModel(QtCore.QObject):
             f"max adjustment {seam_adjustment:.2f} ft\n"
             f"Estimated lap: {format_lap_time(lap_seconds)}\n"
             f"Average speed: {avg_mph:.2f} mph\n"
-            f"LP distance: {distance_miles:.3f} mi\n\n"
+            f"LP distance: {distance_miles:.3f} mi\n"
+            f"TRK banking: enabled (peak {np.max(np.abs(banking)):.1f} deg)\n\n"
             "Method: receding-horizon world-space arc casting. Pathfinder "
             "casts true XY straight/circular trajectories, projects them back "
             "onto the local centerline to measure actual DLONG progress, rejects "
@@ -969,13 +978,16 @@ class TrackPreviewModel(QtCore.QObject):
         unique = existing[:-1] if has_terminal else existing
         dlongs = [p.dlong for p in unique]
         seed = [p.dlat for p in unique]
+        bank_profile = build_trk_banking_profile(self.trk, dlongs)
 
         def evaluate(candidate_dlats):
             xy = []
             for old, dlat in zip(unique, candidate_dlats):
                 x, y, _ = getxyz(self.trk, old.dlong, float(dlat), self.centerline)
                 xy.append((x / 6000.0, y / 6000.0))
-            speeds = np.minimum(speed_profile_mph(xy, car_performance), max_speed_mph)
+            speeds = np.minimum(speed_profile_mph(xy, car_performance,
+                banking_degrees=bank_profile.at_dlats(candidate_dlats)),
+                max_speed_mph)
             arr = np.asarray(xy, dtype=float)
             ds = np.linalg.norm(np.roll(arr, -1, axis=0) - arr, axis=1)
             segment_mph = (speeds + np.roll(speeds, -1)) * 0.5
@@ -1024,6 +1036,8 @@ class TrackPreviewModel(QtCore.QObject):
             f"{format_lap_time(best_time)} ({best_time - baseline_time:+.3f} s). "
             f"Tested {trials} direct path variations, found {sensitive_regions} "
             f"sensitive regions, and accepted {accepted} changes. "
+            f"TRK banking enabled (peak "
+            f"{np.max(np.abs(bank_profile.at_dlats(dlats))):.1f} deg). "
             "This search used the precomputed legal track envelope and did not "
             "call the geometric racing-line optimizer. Lateral-speed values were "
             "retained; recalculate them if needed."
