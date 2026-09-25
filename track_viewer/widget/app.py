@@ -2790,8 +2790,17 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         opts = self._candidate_race_options
         try:
             if model == "pathfinder":
+                performance = CarPerformance(
+                    acceleration_pct=opts["acceleration_pct"],
+                    braking_pct=opts["braking_pct"],
+                    cornering_pct=opts["cornering_pct"],
+                    aero_pct=opts["aero_pct"],
+                    safety_pct=opts["safety_pct"],
+                )
                 success, message = self.preview_api.generate_pathfinder_line(
                     lp_name, margin_feet=opts["margin_feet"],
+                    max_speed_mph=opts["max_speed_mph"],
+                    car_performance=performance,
                     progress_callback=update_progress,
                 )
             elif model == "geometric":
