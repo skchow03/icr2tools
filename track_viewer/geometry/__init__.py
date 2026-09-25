@@ -12,6 +12,7 @@ from typing import Dict, List, Tuple
 
 from icr2_core.lp.loader import load_lp_file
 from icr2_core.trk.trk_utils import getxyz
+from track_viewer.common.lp_file_utils import resolve_lp_path
 
 
 Point = Tuple[float, float]
@@ -187,8 +188,8 @@ def load_ai_line(
     if trk is None or not cline:
         return []
 
-    lp_path = track_folder / f"{lp_name}.LP"
-    if not lp_path.exists():
+    lp_path = resolve_lp_path(track_folder, lp_name)
+    if lp_path is None:
         return []
 
     length_arg = int(track_length) if track_length is not None else None
