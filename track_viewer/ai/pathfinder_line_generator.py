@@ -198,35 +198,104 @@ def _advance_to_target_dlong(
     track_length: float,
     dlat_sign: float,
 ) -> State | None:
-    """Commit the selected arc only until the next LP station is reached."""
-    remaining = max(target_dlong - state.dlong, 0.5)
-    max_travel = max(25.0, remaining * 2.5 + 10.0)
-    current = state
-    best = state
-    best_error = abs(state.dlong - target_dlong)
+    """Commit one arc continuously to the requested LP station.
+
+    The earlier implementation returned the nearest coarse 2 ft sample. More
+    importantly, if that sample could not be reached it snapped the state to
+    the centerline. Those resets showed up as the large triangular jumps in
+    the generated LP. This version requires a legal bracket around the target
+    DLONG and refines the crossing by bisection so the committed state really
+    belongs to this LP station.
+    """
+    if target_dlong <= state.dlong + 1.0e-6:
+        return state
+
+    remaining = target_dlong - state.dlong
+    max_travel = max(30.0, remaining * 2.75 + 12.0)
+    previous = state
     travelled = 0.0
 
-    while travelled < max_travel:
+    while travelled < max_travel - 1.0e-9:
         step = min(2.0, max_travel - travelled)
         nxt = _advance_checked(
-            current, curvature, step, center, dlongs, lower, upper,
+            previous, curvature, step, center, dlongs, lower, upper,
             track_length, dlat_sign, sample_feet=step,
         )
         if nxt is None:
-            break
-        current = nxt
+            return None
+
+        if nxt.dlong >= target_dlong:
+            # Refine the arc distance from previous -> nxt until its projected
+            # DLONG is essentially the requested LP station.
+            lo_dist = 0.0
+            hi_dist = step
+            best = nxt
+            best_error = abs(nxt.dlong - target_dlong)
+            for _ in range(12):
+                mid_dist = 0.5 * (lo_dist + hi_dist)
+                mid = _advance_checked(
+                    previous, curvature, mid_dist,
+                    center, dlongs, lower, upper,
+                    track_length, dlat_sign,
+                    sample_feet=max(mid_dist, 0.05),
+                )
+                if mid is None:
+                    hi_dist = mid_dist
+                    continue
+                error = abs(mid.dlong - target_dlong)
+                if error < best_error:
+                    best = mid
+                    best_error = error
+                if mid.dlong < target_dlong:
+                    lo_dist = mid_dist
+                else:
+                    hi_dist = mid_dist
+            return best
+
+        previous = nxt
         travelled += step
-        error = abs(current.dlong - target_dlong)
-        if error < best_error:
-            best = current
-            best_error = error
-        if current.dlong >= target_dlong:
-            break
 
-    if best is state and target_dlong - state.dlong > 2.0:
-        return None
-    return best
+    return None
 
+
+def _fallback_station_state(
+    state: State,
+    target_index: int,
+    target_dlong: float,
+    center: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    dlat_sign: float,
+) -> State:
+    """Advance to the next station without a lateral teleport.
+
+    This is only a last-resort recovery if no tested arc can reach the next LP
+    station. It preserves the previous lateral offset as much as the legal
+    corridor permits instead of snapping to DLAT=0.
+    """
+    n = len(center)
+    j = target_index % n
+    prev_j = (j - 1) % n
+    next_j = (j + 1) % n
+
+    # Preserve the existing offset; only clip if the corridor itself narrows.
+    dlat = float(np.clip(state.dlat, lower[j], upper[j]))
+
+    # Use a centered tangent for a stable local normal at this LP station.
+    tx = float(center[next_j, 0] - center[prev_j, 0])
+    ty = float(center[next_j, 1] - center[prev_j, 1])
+    tlen = max(math.hypot(tx, ty), 1.0e-9)
+    tx /= tlen
+    ty /= tlen
+    nx = -ty * dlat_sign
+    ny = tx * dlat_sign
+    x = float(center[j, 0]) + nx * dlat
+    y = float(center[j, 1]) + ny * dlat
+
+    return State(
+        x, y, state.heading, state.curvature, j,
+        float(target_dlong), dlat,
+    )
 
 def generate_pathfinder(
     dlongs,
