@@ -71,6 +71,10 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
                 self.lpCurveEdited.emit(edited)
         controller.curve_edit_enabled = bool(enabled)
         controller.curve_influence_feet = float(influence_feet)
+        if enabled:
+            # A click that misses an LP record must not fall through into map
+            # panning, including when a pan began before this mode was enabled.
+            controller.cancel_view_pan()
         self.setCursor(
             QtCore.Qt.CrossCursor if enabled else QtCore.Qt.ArrowCursor
         )
@@ -89,15 +93,21 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         super().resizeEvent(event)
 
     def wheelEvent(self, event: QtGui.QWheelEvent) -> None:  # noqa: D401 - Qt signature
+        if self._coordinator.mouse_controller.curve_edit_enabled:
+            event.accept()
+            return
         if self._input_router.handle_wheel(event, self.size()):
             event.accept()
             return
         super().wheelEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.LeftButton and self._coordinator.mouse_controller.begin_curve_drag(
-            event.pos(), self.size()
-        ):
+        controller = self._coordinator.mouse_controller
+        if controller.curve_edit_enabled:
+            if event.button() == QtCore.Qt.LeftButton:
+                controller.begin_curve_drag(event.pos(), self.size())
+            # Do not forward missed clicks to the normal pan/camera/flag
+            # handlers. While editing, the track transform is locked.
             event.accept()
             return
         if self._input_router.handle_mouse_press(event, self.size()):
@@ -106,8 +116,10 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if self._coordinator.mouse_controller.curve_drag_active:
-            self._coordinator.mouse_controller.update_curve_drag(event.pos(), self.size())
+        controller = self._coordinator.mouse_controller
+        if controller.curve_edit_enabled:
+            if controller.curve_drag_active:
+                controller.update_curve_drag(event.pos(), self.size())
             event.accept()
             return
         handled = self._input_router.handle_mouse_move(event, self.size())
@@ -117,10 +129,12 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
-        if event.button() == QtCore.Qt.LeftButton and self._coordinator.mouse_controller.curve_drag_active:
-            edited = self._coordinator.mouse_controller.end_curve_drag()
-            if edited:
-                self.lpCurveEdited.emit(edited)
+        controller = self._coordinator.mouse_controller
+        if controller.curve_edit_enabled:
+            if event.button() == QtCore.Qt.LeftButton and controller.curve_drag_active:
+                edited = controller.end_curve_drag()
+                if edited:
+                    self.lpCurveEdited.emit(edited)
             event.accept()
             return
         if self._input_router.handle_mouse_release(event, self.size()):

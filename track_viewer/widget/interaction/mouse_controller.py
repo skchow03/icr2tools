@@ -165,7 +165,17 @@ class TrackPreviewMouseController:
     def curve_drag_active(self) -> bool:
         return self._curve_drag is not None
 
+    def cancel_view_pan(self) -> None:
+        """Discard any pan left active when switching to curve-edit mode."""
+        self._state.is_panning = False
+        self._state.last_mouse_pos = None
+        self._state.left_press_pos = None
+        self._state.dragged_during_press = False
+        self._clear_lp_hover_update()
+
     def handle_wheel(self, event: QtGui.QWheelEvent, size: QtCore.QSize) -> bool:
+        if self.curve_edit_enabled:
+            return True
         if self._state.current_scale is None:
             self._state.current_scale = self._state.fit_scale or 1.0
         delta = event.angleDelta().y()
@@ -191,6 +201,10 @@ class TrackPreviewMouseController:
         return True
 
     def handle_mouse_press(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
+        if self.curve_edit_enabled:
+            if event.button() == QtCore.Qt.LeftButton:
+                self.begin_curve_drag(event.pos(), size)
+            return True
         if event.button() == QtCore.Qt.RightButton and self._model.surface_mesh:
             if self._camera_edit.handle_camera_drag_press(event.pos(), size):
                 return True
@@ -218,6 +232,10 @@ class TrackPreviewMouseController:
         return False
 
     def handle_mouse_move(self, event: QtGui.QMouseEvent, size: QtCore.QSize) -> bool:
+        if self.curve_edit_enabled:
+            if self.curve_drag_active:
+                self.update_curve_drag(event.pos(), size)
+            return True
         if self._state.dragging_weather_compass is not None:
             self._update_weather_compass_heading(event.pos(), size)
             return True
@@ -259,6 +277,10 @@ class TrackPreviewMouseController:
     def handle_mouse_release(
         self, event: QtGui.QMouseEvent, size: QtCore.QSize
     ) -> bool:
+        if self.curve_edit_enabled:
+            if event.button() == QtCore.Qt.LeftButton:
+                self.end_curve_drag()
+            return True
         if event.button() == QtCore.Qt.LeftButton:
             if self._state.dragging_weather_compass is not None:
                 self._state.dragging_weather_compass = None
