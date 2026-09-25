@@ -201,7 +201,12 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
     Coordinates can cross the lap seam; anchors are interpolated periodically.
     """
     n = len(lower)
-    use = corner_width_pct / 200.0
+    # Width is intentionally progressive: moderate settings should still use
+    # most of the available road. The old linear mapping made 75% leave 12.5%
+    # of the usable corridor unused at every apex, which is several feet on a
+    # normal road course and produces visibly over-wide/slower lines.
+    width_fraction = corner_width_pct / 100.0
+    use = 0.5 * (1.0 - (1.0 - width_fraction) ** 2)
     anchors = []
     for i, (start, end, apex, sign, lead, severity) in enumerate(corners):
         # Tight turns borrow more width at the apex than at entry or exit,
@@ -252,11 +257,24 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
         fraction[indices % n] = first + smooth * (last - first)
 
     target_weight = np.ones(n)
-    for _, _, apex, _, lead, _ in corners:
+    for _, _, apex, _, lead, severity in corners:
+        # Make the actual clipping point authoritative while allowing the
+        # approach/exit to remain smooth. The previous broad, modest weight
+        # let bend-energy optimization pull the whole path several feet away
+        # from the apex target.
+        tightness = np.clip((severity - 0.10) / 0.45, 0.0, 1.0)
+        apex_strength = 24.0 + 24.0 * tightness
+        shoulder = max(3, lead // 2)
         for step in range(-lead, lead + 1):
             index = (apex + step) % n
-            target_weight[index] = max(target_weight[index],
-                                       1 + 9 * (1 - abs(step) / (lead + 1)))
+            distance = abs(step)
+            if distance <= shoulder:
+                shape = 1.0 - 0.75 * (distance / (shoulder + 1)) ** 2
+                weight = 1.0 + apex_strength * shape
+            else:
+                tail = 1.0 - (distance - shoulder) / max(lead - shoulder + 1, 1)
+                weight = 1.0 + 5.0 * max(0.0, tail)
+            target_weight[index] = max(target_weight[index], weight)
     return lower + fraction * (upper - lower), target_weight
 
 
