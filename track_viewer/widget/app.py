@@ -162,10 +162,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
         self._candidate_race_button.setEnabled(False)
         self._racing_line_model = QtWidgets.QComboBox()
+        self._racing_line_model.addItem("Pathfinder", "pathfinder")
         self._racing_line_model.addItem("Geometric", "geometric")
         self._racing_line_model.addItem("Minimum Time", "minimum_time")
         self._racing_line_model.setToolTip(
-            "Geometric uses path shape only. Minimum Time uses the car-performance model."
+            "Pathfinder constructs a line from straight/arc primitives. "
+            "Geometric optimizes path shape. Minimum Time uses the car-performance model."
         )
         self._minimum_time_button = QtWidgets.QPushButton("Optimize Line")
         self._minimum_time_button.setEnabled(False)
@@ -2763,7 +2765,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
     def _handle_minimum_time_optimize(self) -> None:
         lp_name = self.preview_api.active_lp_line()
         model = self._racing_line_model.currentData()
-        title = "Geometric Optimize" if model == "geometric" else "Minimum-Time Optimize"
+        if model == "pathfinder":
+            title = "Pathfinder"
+        elif model == "geometric":
+            title = "Geometric Optimize"
+        else:
+            title = "Minimum-Time Optimize"
         progress = QtWidgets.QProgressDialog(
             f"Starting {title.lower()}...", None, 0, 100, self
         )
@@ -2782,7 +2789,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
 
         opts = self._candidate_race_options
         try:
-            if model == "geometric":
+            if model == "pathfinder":
+                success, message = self.preview_api.generate_pathfinder_line(
+                    lp_name, margin_feet=opts["margin_feet"],
+                    progress_callback=update_progress,
+                )
+            elif model == "geometric":
                 success, message = self.preview_api.optimize_geometric_line(
                     lp_name, margin_feet=opts["margin_feet"],
                     progress_callback=update_progress,
