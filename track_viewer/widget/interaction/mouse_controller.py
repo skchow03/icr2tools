@@ -4,6 +4,11 @@ from __future__ import annotations
 import math
 
 from PyQt5 import QtCore, QtGui
+import numpy as np
+
+from icr2_core.trk.trk_utils import getxyz
+from track_viewer.ai.lp_curve_drag import smooth_lateral_drag
+from track_viewer.ai.racing_line_optimizer import build_legal_dlat_envelope
 
 from track_viewer import rendering
 from track_viewer.common.weather_compass import (
@@ -54,6 +59,111 @@ class TrackPreviewMouseController:
         self._pending_lp_hover_point: QtCore.QPointF | None = None
         self._pending_lp_hover_size: QtCore.QSize | None = None
         self._lp_hover_dirty = False
+        self.curve_edit_enabled = False
+        self.curve_influence_feet = 180.0
+        self._curve_drag = None
+        self._curve_drag_changed = False
+
+    def begin_curve_drag(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
+        """Capture an LP record under the cursor, without enabling map panning."""
+        if not self.curve_edit_enabled or self._model.trk is None:
+            return False
+        name = self._lp_session.active_lp_line
+        if not name or name == "center-line":
+            return False
+        records = self._model.ai_line_records(name)
+        if not records or not self._model.centerline:
+            return False
+        length = float(self._model.trk.trklength)
+        terminal = len(records) > 1 and abs(records[-1].dlong - length) < 1.0
+        unique = records[:-1] if terminal else records
+        transform = self._state.current_transform(self._model.bounds, size)
+        if transform is None:
+            return False
+        scale, offset = transform
+        # Compare actual screen-space record positions; this remains reliable
+        # at switchbacks where nearby DLONGs may be far apart in world space.
+        coords = np.array([
+            (p.x * scale + offset[0], size.height() - (p.y * scale + offset[1]))
+            for p in unique
+        ], dtype=float)
+        d2 = np.sum((coords - [point.x(), point.y()]) ** 2, axis=1)
+        idx = int(np.argmin(d2))
+        if d2[idx] > 14.0 ** 2:
+            return False
+        dlongs = [float(p.dlong) for p in unique]
+        initial = np.array([float(p.dlat) for p in unique], dtype=float)
+        try:
+            lower, upper = build_legal_dlat_envelope(
+                self._model.trk, self._model.centerline, dlongs, initial,
+                margin_feet=0.0, pit_side="auto",
+            )
+            anchor = unique[idx]
+            left_x, left_y, _ = getxyz(
+                self._model.trk, anchor.dlong, anchor.dlat + 6000.0,
+                self._model.centerline,
+            )
+        except (ValueError, IndexError, ArithmeticError):
+            return False
+        dx = left_x - anchor.x
+        dy = left_y - anchor.y
+        norm = math.hypot(dx, dy)
+        if norm <= 1e-9:
+            return False
+        self._curve_drag = {
+            "name": name,
+            "index": idx,
+            "start": (float(anchor.x), float(anchor.y)),
+            "normal": (dx / norm, dy / norm),
+            "initial": initial,
+            "dlongs": np.asarray(dlongs, dtype=float),
+            "lower": lower,
+            "upper": upper,
+            "track_length": length,
+        }
+        self._curve_drag_changed = False
+        changes = self._lp_session.set_selected_lp_record(name, idx)
+        self._callbacks.lp_record_selected(name, idx)
+        if changes:
+            self._callbacks.state_changed(PreviewIntent.SELECTION_CHANGED)
+        self._clear_lp_hover_update()
+        return True
+
+    def update_curve_drag(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
+        """Preview a periodic smooth lateral move using the original drag shape."""
+        info = self._curve_drag
+        if info is None:
+            return False
+        coords = self._state.map_to_track(point, self._model.bounds, size)
+        if coords is None:
+            return True
+        x, y = coords
+        start_x, start_y = info["start"]
+        nx, ny = info["normal"]
+        desired = ((x - start_x) * nx + (y - start_y) * ny)
+        values = smooth_lateral_drag(
+            info["initial"], info["dlongs"], info["index"], desired,
+            self.curve_influence_feet, info["track_length"],
+            info["lower"], info["upper"],
+        )
+        if self._model.set_lp_curve_offsets(info["name"], values):
+            self._curve_drag_changed = True
+            self._callbacks.state_changed(PreviewIntent.OVERLAY_CHANGED)
+        return True
+
+    def end_curve_drag(self) -> str | None:
+        """Return the edited LP name so the window can refresh its tables."""
+        info = self._curve_drag
+        self._curve_drag = None
+        if info is not None and self._curve_drag_changed:
+            self._curve_drag_changed = False
+            return info["name"]
+        self._curve_drag_changed = False
+        return None
+
+    @property
+    def curve_drag_active(self) -> bool:
+        return self._curve_drag is not None
 
     def handle_wheel(self, event: QtGui.QWheelEvent, size: QtCore.QSize) -> bool:
         if self._state.current_scale is None:
