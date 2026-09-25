@@ -105,7 +105,16 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         controller = self._coordinator.mouse_controller
         if controller.curve_edit_enabled:
             if event.button() == QtCore.Qt.LeftButton:
-                controller.begin_curve_drag(event.pos(), self.size())
+                if controller.begin_curve_drag(event.pos(), self.size()):
+                    QtWidgets.QToolTip.hideText()
+                    self.setCursor(QtCore.Qt.ClosedHandCursor)
+                elif controller.curve_drag_error:
+                    # Show the reason rather than silently doing nothing when
+                    # the click misses, a line is hidden, or the TRK corridor
+                    # cannot be computed.
+                    QtWidgets.QToolTip.showText(
+                        event.globalPos(), controller.curve_drag_error, self
+                    )
             # Do not forward missed clicks to the normal pan/camera/flag
             # handlers. While editing, the track transform is locked.
             event.accept()
@@ -133,6 +142,7 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         if controller.curve_edit_enabled:
             if event.button() == QtCore.Qt.LeftButton and controller.curve_drag_active:
                 edited = controller.end_curve_drag()
+                self.setCursor(QtCore.Qt.CrossCursor)
                 if edited:
                     self.lpCurveEdited.emit(edited)
             event.accept()
