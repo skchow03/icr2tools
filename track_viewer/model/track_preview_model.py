@@ -545,60 +545,59 @@ class TrackPreviewModel(QtCore.QObject):
                             f"Optimizing corner {corner_index + 1}"
                         )
 
-                # Direct local shape search: perturb smooth windows of the
-                # already-optimized DLAT path rather than forcing every useful
-                # change through width/apex parameters. Evaluate the full lap
-                # after each perturbation and keep only improvements.
-                shape_trials = 0
-                shape_changes = 0
-                shape_best = global_best
-                base_dlats = np.asarray(shape_best[1], dtype=float)
-                n_points = len(base_dlats)
-                # Sample control centers around the lap. A raised-cosine window
-                # gives zero displacement at its ends, avoiding splice kinks.
-                control_step = max(12, n_points // 28)
-                half_window = max(10, control_step)
-                for center_idx in range(0, n_points, control_step):
-                    candidate_best = shape_best
-                    for shift_feet in (-3.0, -1.5, 1.5, 3.0):
-                        trial_dlats = np.asarray(shape_best[1], dtype=float).copy()
-                        for offset in range(-half_window, half_window + 1):
-                            idx = (center_idx + offset) % n_points
-                            phase = abs(offset) / float(half_window + 1)
-                            weight = 0.5 * (1.0 + np.cos(np.pi * phase))
-                            trial_dlats[idx] += shift_feet * 6000.0 * weight
-                        # Reject direct perturbations that leave the legal
-                        # corridor by asking the geometry optimizer to project
-                        # and smooth this candidate with a short polish pass.
-                        polished = optimize_race_line(
+                # Cheap targeted refinement: revisit only corners that
+                # already proved useful in the broad pass. This avoids another
+                # full-track coordinate-descent pass while giving accepted
+                # corners a small chance to settle between coarse steps.
+                refinement_trials = 0
+                refinement_changes = 0
+                for corner_index in list(sorted(local_overrides))[:12]:
+                    current = local_overrides[corner_index]
+                    corner_best = global_best
+                    corner_best_override = current
+                    for apex_delta, width_delta in (
+                        (-3, 0), (3, 0), (0, -4), (0, 4),
+                    ):
+                        trial_setting = {
+                            "apex_position_pct": int(np.clip(
+                                current["apex_position_pct"] + apex_delta, 40, 80
+                            )),
+                            "corner_width_pct": int(np.clip(
+                                current["corner_width_pct"] + width_delta, 0, 100
+                            )),
+                        }
+                        if trial_setting == current:
+                            continue
+                        override = dict(local_overrides)
+                        override[corner_index] = trial_setting
+                        trial = optimize_race_line(
                             self.trk, self.centerline, [p.dlong for p in unique],
                             margin_feet=margin_feet,
-                            reference_dlats=trial_dlats.tolist(),
-                            pit_side=pit_side, lookahead_feet=shape_best[5],
-                            corner_width_pct=shape_best[4],
-                            apex_position_pct=shape_best[3],
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side, lookahead_feet=global_best[5],
+                            corner_width_pct=global_best[4],
+                            apex_position_pct=global_best[3],
                             side_preference=side_preference,
                             side_preference_pct=side_preference_pct,
-                            local_overrides=local_overrides,
-                            iterations=35,
+                            local_overrides=override,
                         )
-                        lap_seconds, candidate_speeds = evaluate_candidate(polished)
-                        shape_trials += 1
-                        if lap_seconds < candidate_best[0] - 0.001:
-                            candidate_best = (
-                                lap_seconds, polished, candidate_speeds,
-                                shape_best[3], shape_best[4], shape_best[5],
+                        lap_seconds, candidate_speeds = evaluate_candidate(trial)
+                        refinement_trials += 1
+                        if lap_seconds < corner_best[0] - 0.001:
+                            corner_best = (
+                                lap_seconds, trial, candidate_speeds,
+                                global_best[3], global_best[4], global_best[5],
                             )
-                    if candidate_best[0] < shape_best[0] - 0.001:
-                        shape_best = candidate_best
-                        shape_changes += 1
+                            corner_best_override = trial_setting
+                    if corner_best[0] < global_best[0] - 0.001:
+                        local_overrides[corner_index] = corner_best_override
+                        global_best = corner_best
+                        refinement_changes += 1
                     if progress_callback:
                         progress_callback(
                             29, 30,
-                            f"Shape optimization {center_idx // control_step + 1}/"
-                            f"{(n_points + control_step - 1) // control_step}"
+                            f"Refining accepted corner {corner_index + 1}"
                         )
-                global_best = shape_best
 
                 if local_overrides:
                     scored.append(global_best)
@@ -614,15 +613,15 @@ class TrackPreviewModel(QtCore.QObject):
                         f" Local corner optimization tested {local_trials} variations, "
                         f"accepted {accepted_changes} changes, and kept "
                         f"{len(local_overrides)} overrides: "
-                        f"{settings}. Direct shape optimization tested {shape_trials} "
-                        f"smooth perturbations and kept {shape_changes} changes."
+                        f"{settings}. Targeted refinement tested {refinement_trials} "
+                        f"variations and kept {refinement_changes} changes."
                     )
                 else:
                     local_summary = (
                         f" Local corner optimization tested {local_trials} variations; "
-                        f"none improved the global solution. Direct shape optimization "
-                        f"tested {shape_trials} smooth perturbations and kept "
-                        f"{shape_changes} changes."
+                        f"none improved the global solution. Targeted refinement "
+                        f"tested {refinement_trials} variations and kept "
+                        f"{refinement_changes} changes."
                     )
             else:
                 local_summary = ""
