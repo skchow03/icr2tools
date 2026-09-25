@@ -309,13 +309,102 @@ class TrackPreviewModel(QtCore.QObject):
                 side_preference=side_preference,
                 side_preference_pct=side_preference_pct,
             )
-            unique_dlats = dlats
-            path_xy_feet = []
-            for old, dlat in zip(unique, unique_dlats):
-                x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
-                path_xy_feet.append((x / 6000.0, y / 6000.0))
-            speeds = speed_profile_mph(path_xy_feet, car_performance)
-            speeds = np.minimum(speeds, max_speed_mph)
+            def evaluate_candidate(candidate_dlats):
+                xy = []
+                for old, dlat in zip(unique, candidate_dlats):
+                    x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+                    xy.append((x / 6000.0, y / 6000.0))
+                candidate_speeds = np.minimum(
+                    speed_profile_mph(xy, car_performance), max_speed_mph
+                )
+                xy_array = np.asarray(xy, dtype=float)
+                distances = np.linalg.norm(
+                    np.roll(xy_array, -1, axis=0) - xy_array, axis=1
+                )
+                segment_mph = (
+                    candidate_speeds + np.roll(candidate_speeds, -1)
+                ) * 0.5
+                if np.any(segment_mph <= 0.01):
+                    return float("inf"), candidate_speeds
+                seconds = float(np.sum(
+                    (distances / 5280.0) / segment_mph
+                ) * 3600.0)
+                return seconds, candidate_speeds
+
+            # The geometric solution is the seed. Compare nearby complete-lap
+            # solutions using the actual car model rather than assuming the
+            # geometric target is fastest. Vary apex timing and road usage
+            # together because they strongly interact in linked corners.
+            candidates = [(dlats, apex_position_pct, corner_width_pct)]
+            seen = {(apex_position_pct, corner_width_pct)}
+            for apex_delta in (-10, -5, 0, 5, 10):
+                for width_delta in (-15, -8, 8, 15):
+                    trial_apex = int(np.clip(
+                        apex_position_pct + apex_delta, 40, 80
+                    ))
+                    trial_width = int(np.clip(
+                        corner_width_pct + width_delta, 0, 100
+                    ))
+                    key = (trial_apex, trial_width)
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    trial = optimize_race_line(
+                        self.trk, self.centerline, [p.dlong for p in unique],
+                        margin_feet=margin_feet,
+                        reference_dlats=[p.dlat for p in unique],
+                        pit_side=pit_side,
+                        lookahead_feet=lookahead_feet,
+                        corner_width_pct=trial_width,
+                        apex_position_pct=trial_apex,
+                        side_preference=side_preference,
+                        side_preference_pct=side_preference_pct,
+                    )
+                    candidates.append((trial, trial_apex, trial_width))
+
+            scored = []
+            for candidate_dlats, candidate_apex, candidate_width in candidates:
+                lap_seconds, candidate_speeds = evaluate_candidate(candidate_dlats)
+                scored.append((
+                    lap_seconds, candidate_dlats, candidate_speeds,
+                    candidate_apex, candidate_width,
+                ))
+            scored.sort(key=lambda item: item[0])
+
+            # One refinement round around the best coarse candidate. This is
+            # deliberately small/deterministic so generation remains usable
+            # interactively while still doing a real lap-time search.
+            best = scored[0]
+            refine_seen = set(seen)
+            for apex_delta in (-3, 3):
+                for width_delta in (-4, 4):
+                    trial_apex = int(np.clip(best[3] + apex_delta, 40, 80))
+                    trial_width = int(np.clip(best[4] + width_delta, 0, 100))
+                    key = (trial_apex, trial_width)
+                    if key in refine_seen:
+                        continue
+                    refine_seen.add(key)
+                    trial = optimize_race_line(
+                        self.trk, self.centerline, [p.dlong for p in unique],
+                        margin_feet=margin_feet,
+                        reference_dlats=[p.dlat for p in unique],
+                        pit_side=pit_side,
+                        lookahead_feet=lookahead_feet,
+                        corner_width_pct=trial_width,
+                        apex_position_pct=trial_apex,
+                        side_preference=side_preference,
+                        side_preference_pct=side_preference_pct,
+                    )
+                    lap_seconds, candidate_speeds = evaluate_candidate(trial)
+                    scored.append((
+                        lap_seconds, trial, candidate_speeds,
+                        trial_apex, trial_width,
+                    ))
+                    if lap_seconds < best[0]:
+                        best = scored[-1]
+
+            best = min(scored, key=lambda item: item[0])
+            best_lap_seconds, unique_dlats, speeds, chosen_apex, chosen_width = best
 
             if lp_name == "PIT" and pit_speed_start_dlong is not None and pit_speed_end_dlong is not None:
                 start = float(pit_speed_start_dlong) % track_length
@@ -364,7 +453,9 @@ class TrackPreviewModel(QtCore.QObject):
             f"Generated a {len(records)}-record candidate {lp_name} path with "
             f"{margin_feet:g} ft center clearance from the paved edge. "
             f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
-            f"corner width: {corner_width_pct}%; apex: {apex_position_pct}%; "
+            f"requested corner width/apex: {corner_width_pct}%/{apex_position_pct}%; "
+            f"lap-time search selected: {chosen_width}%/{chosen_apex}% "
+            f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
             f"maximum speed: {max_speed_mph:g} mph."
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
