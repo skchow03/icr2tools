@@ -116,7 +116,8 @@ class TrackPreviewMouseController:
         initial = np.asarray([float(p.dlat) for p in unique], dtype=float)
         try:
             lower, upper = build_legal_dlat_envelope(
-                self._model.trk, self._model.centerline, dlongs, initial,
+                self._model.trk, self._model.centerline, dlongs,
+                initial.tolist(),  # _paved_corridor tests reference truthiness.
                 margin_feet=0.0, pit_side="auto",
             )
             anchor = unique[idx]
