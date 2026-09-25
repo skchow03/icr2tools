@@ -7,7 +7,7 @@ from PyQt5 import QtCore, QtGui
 import numpy as np
 
 from icr2_core.trk.trk_utils import getxyz
-from track_viewer.ai.lp_curve_drag import smooth_lateral_drag
+from track_viewer.ai.lp_curve_drag import nearest_lp_line_anchor, smooth_lateral_drag
 from track_viewer.ai.racing_line_optimizer import build_legal_dlat_envelope
 
 from track_viewer import rendering
@@ -63,36 +63,57 @@ class TrackPreviewMouseController:
         self.curve_influence_feet = 180.0
         self._curve_drag = None
         self._curve_drag_changed = False
+        self.curve_drag_error: str | None = None
 
     def begin_curve_drag(self, point: QtCore.QPointF, size: QtCore.QSize) -> bool:
-        """Capture an LP record under the cursor, without enabling map panning."""
-        if not self.curve_edit_enabled or self._model.trk is None:
+        """Pick the visible LP *polyline*, then capture a lateral drag anchor."""
+        self.curve_drag_error = None
+        if not self.curve_edit_enabled:
+            return False
+        if self._model.trk is None:
+            self.curve_drag_error = "Load a track before editing an LP."
             return False
         name = self._lp_session.active_lp_line
         if not name or name == "center-line":
+            self.curve_drag_error = "Select an LP line (not the centerline)."
+            return False
+        if name not in self._model.visible_lp_files:
+            self.curve_drag_error = (
+                f"Make {name}.LP visible before dragging its line."
+            )
             return False
         records = self._model.ai_line_records(name)
-        if not records or not self._model.centerline:
+        if len(records) < 3 or not self._model.centerline:
+            self.curve_drag_error = f"{name}.LP is not loaded."
             return False
+
         length = float(self._model.trk.trklength)
-        terminal = len(records) > 1 and abs(records[-1].dlong - length) < 1.0
+        terminal = abs(records[-1].dlong - length) < 1.0
         unique = records[:-1] if terminal else records
         transform = self._state.current_transform(self._model.bounds, size)
-        if transform is None:
+        cursor_track = self._state.map_to_track(point, self._model.bounds, size)
+        if transform is None or cursor_track is None:
+            self.curve_drag_error = "The track viewport is not ready."
             return False
         scale, offset = transform
-        # Compare actual screen-space record positions; this remains reliable
-        # at switchbacks where nearby DLONGs may be far apart in world space.
-        coords = np.array([
+        # Match the preview renderer's world-to-screen transform. Pick the
+        # nearest segment, not just its endpoints; sparse LPs at high zoom
+        # have visible stretches with no record inside the old 14 px radius.
+        screen_xy = np.asarray([
             (p.x * scale + offset[0], size.height() - (p.y * scale + offset[1]))
             for p in unique
         ], dtype=float)
-        d2 = np.sum((coords - [point.x(), point.y()]) ** 2, axis=1)
-        idx = int(np.argmin(d2))
-        if d2[idx] > 14.0 ** 2:
+        idx = nearest_lp_line_anchor(
+            screen_xy, (point.x(), point.y()), tolerance_px=16.0
+        )
+        if idx is None:
+            self.curve_drag_error = (
+                "Click within 16 pixels of the active LP line to drag it."
+            )
             return False
+
         dlongs = [float(p.dlong) for p in unique]
-        initial = np.array([float(p.dlat) for p in unique], dtype=float)
+        initial = np.asarray([float(p.dlat) for p in unique], dtype=float)
         try:
             lower, upper = build_legal_dlat_envelope(
                 self._model.trk, self._model.centerline, dlongs, initial,
@@ -103,17 +124,22 @@ class TrackPreviewMouseController:
                 self._model.trk, anchor.dlong, anchor.dlat + 6000.0,
                 self._model.centerline,
             )
-        except (ValueError, IndexError, ArithmeticError):
+        except (ValueError, IndexError, ArithmeticError, TypeError) as exc:
+            # The old code silently swallowed corridor errors and made it
+            # indistinguishable from a missed click.
+            self.curve_drag_error = f"Cannot edit this LP: {exc}"
             return False
-        dx = left_x - anchor.x
-        dy = left_y - anchor.y
+        dx, dy = left_x - anchor.x, left_y - anchor.y
         norm = math.hypot(dx, dy)
         if norm <= 1e-9:
+            self.curve_drag_error = "The lateral direction is undefined here."
             return False
         self._curve_drag = {
             "name": name,
             "index": idx,
-            "start": (float(anchor.x), float(anchor.y)),
+            # Measure movement from the actual clicked screen position so
+            # clicking between two LP records never produces an initial jump.
+            "cursor_start": cursor_track,
             "normal": (dx / norm, dy / norm),
             "initial": initial,
             "dlongs": np.asarray(dlongs, dtype=float),
@@ -138,7 +164,7 @@ class TrackPreviewMouseController:
         if coords is None:
             return True
         x, y = coords
-        start_x, start_y = info["start"]
+        start_x, start_y = info["cursor_start"]
         nx, ny = info["normal"]
         desired = ((x - start_x) * nx + (y - start_y) * ny)
         values = smooth_lateral_drag(
