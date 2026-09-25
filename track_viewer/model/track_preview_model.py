@@ -283,6 +283,7 @@ class TrackPreviewModel(QtCore.QObject):
         car_performance: CarPerformance | None = None,
         side_preference: str = "none",
         side_preference_pct: int = 0,
+        compare_candidates: bool = False,
         progress_callback=None,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
@@ -339,33 +340,41 @@ class TrackPreviewModel(QtCore.QObject):
             if progress_callback:
                 progress_callback(1, 26, "Evaluating baseline")
             candidates = [(dlats, apex_position_pct, corner_width_pct)]
-            seen = {(apex_position_pct, corner_width_pct)}
-            for apex_delta in (-10, -5, 0, 5, 10):
-                for width_delta in (-15, -8, 8, 15):
-                    trial_apex = int(np.clip(
-                        apex_position_pct + apex_delta, 40, 80
-                    ))
-                    trial_width = int(np.clip(
-                        corner_width_pct + width_delta, 0, 100
-                    ))
-                    key = (trial_apex, trial_width)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    trial = optimize_race_line(
-                        self.trk, self.centerline, [p.dlong for p in unique],
-                        margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
-                        pit_side=pit_side,
-                        lookahead_feet=lookahead_feet,
-                        corner_width_pct=trial_width,
-                        apex_position_pct=trial_apex,
-                        side_preference=side_preference,
-                        side_preference_pct=side_preference_pct,
-                    )
-                    candidates.append((trial, trial_apex, trial_width))
-                    if progress_callback:
-                        progress_callback(
+            if not compare_candidates:
+                baseline_seconds, baseline_speeds = evaluate_candidate(dlats)
+                scored = [(
+                    baseline_seconds, dlats, baseline_speeds,
+                    apex_position_pct, corner_width_pct,
+                )]
+                best = scored[0]
+            else:
+                seen = {(apex_position_pct, corner_width_pct)}
+                for apex_delta in (-10, -5, 0, 5, 10):
+                    for width_delta in (-15, -8, 8, 15):
+                        trial_apex = int(np.clip(
+                            apex_position_pct + apex_delta, 40, 80
+                        ))
+                        trial_width = int(np.clip(
+                            corner_width_pct + width_delta, 0, 100
+                        ))
+                        key = (trial_apex, trial_width)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        trial = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side,
+                            lookahead_feet=lookahead_feet,
+                            corner_width_pct=trial_width,
+                            apex_position_pct=trial_apex,
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
+                        )
+                        candidates.append((trial, trial_apex, trial_width))
+                        if progress_callback:
+                            progress_callback(
                             len(candidates), 26,
                             f"Generating candidate {len(candidates)} of 26"
                         )
@@ -376,7 +385,7 @@ class TrackPreviewModel(QtCore.QObject):
                     progress_callback(
                         min(20 + score_index, 25), 26,
                         f"Scoring candidate {score_index} of {len(candidates)}"
-                    )
+                        )
                 lap_seconds, candidate_speeds = evaluate_candidate(candidate_dlats)
                 scored.append((
                     lap_seconds, candidate_dlats, candidate_speeds,
@@ -389,30 +398,30 @@ class TrackPreviewModel(QtCore.QObject):
             # interactively while still doing a real lap-time search.
             best = scored[0]
             refine_seen = set(seen)
-            for apex_delta in (-3, 3):
-                for width_delta in (-4, 4):
-                    trial_apex = int(np.clip(best[3] + apex_delta, 40, 80))
-                    trial_width = int(np.clip(best[4] + width_delta, 0, 100))
-                    key = (trial_apex, trial_width)
-                    if key in refine_seen:
-                        continue
+                for apex_delta in (-3, 3):
+                    for width_delta in (-4, 4):
+                        trial_apex = int(np.clip(best[3] + apex_delta, 40, 80))
+                        trial_width = int(np.clip(best[4] + width_delta, 0, 100))
+                        key = (trial_apex, trial_width)
+                        if key in refine_seen:
+                            continue
                     refine_seen.add(key)
-                    trial = optimize_race_line(
-                        self.trk, self.centerline, [p.dlong for p in unique],
-                        margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
-                        pit_side=pit_side,
-                        lookahead_feet=lookahead_feet,
-                        corner_width_pct=trial_width,
-                        apex_position_pct=trial_apex,
-                        side_preference=side_preference,
-                        side_preference_pct=side_preference_pct,
-                    )
+                        trial = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side,
+                            lookahead_feet=lookahead_feet,
+                            corner_width_pct=trial_width,
+                            apex_position_pct=trial_apex,
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
+                        )
                     lap_seconds, candidate_speeds = evaluate_candidate(trial)
                     scored.append((
                         lap_seconds, trial, candidate_speeds,
                         trial_apex, trial_width,
-                    ))
+                        ))
                     if lap_seconds < best[0]:
                         best = scored[-1]
 
@@ -429,7 +438,7 @@ class TrackPreviewModel(QtCore.QObject):
                     in_zone = (
                         start <= dlong <= end if start <= end
                         else dlong >= start or dlong <= end
-                    )
+                        )
                     if in_zone:
                         speeds[index] = min(79.0, max_speed_mph)
 
@@ -469,8 +478,12 @@ class TrackPreviewModel(QtCore.QObject):
             f"{margin_feet:g} ft center clearance from the paved edge. "
             f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
             f"requested corner width/apex: {corner_width_pct}%/{apex_position_pct}%; "
-            f"lap-time search selected: {chosen_width}%/{chosen_apex}% "
-            f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
+            + (
+                f"lap-time search selected: {chosen_width}%/{chosen_apex}% "
+                f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
+                if compare_candidates else
+                f"single-line mode ({best_lap_seconds:.3f} s modeled); "
+            ) + 
             f"maximum speed: {max_speed_mph:g} mph."
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
