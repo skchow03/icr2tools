@@ -238,6 +238,9 @@ class TrackPreviewApi:
     def optimize_minimum_time_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
         return self._coordinator.optimize_minimum_time_line(lp_name, margin_feet, **kwargs)
 
+    def recalculate_lp_speed_profile(self, lp_name: str, **kwargs):
+        return self._coordinator.recalculate_lp_speed_profile(lp_name, **kwargs)
+
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         return self._coordinator.lp_lap_statistics(lp_name)
 
