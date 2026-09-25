@@ -64,7 +64,7 @@ def _project_local(
     # Arc samples are close together. Restricting projection to the local
     # sequence of track segments prevents a nearby switchback from being
     # mistaken for a huge leap forward.
-    for seg_abs in range(last_seg_abs - 3, last_seg_abs + 10):
+    for seg_abs in range(last_seg_abs - 2, last_seg_abs + 9):
         j = seg_abs % n
         lap = seg_abs // n
         p0 = center[j]
@@ -169,7 +169,7 @@ def _cast_clearance(
     track_length: float,
     dlat_sign: float,
     *,
-    sample_feet: float = 16.0,
+    sample_feet: float = 24.0,
 ) -> tuple[float, State]:
     """Cast one constant-radius arc until it becomes illegal or reaches horizon."""
     travelled = 0.0
@@ -239,16 +239,16 @@ def generate_pathfinder(
     dlat_sign,
     *,
     progress_callback=None,
-    beam_width=24,
-    horizon_feet=1200.0,
-    branch_feet=140.0,
+    beam_width=16,
+    horizon_feet=1000.0,
+    branch_feet=120.0,
 ):
     """Build a line by receding-horizon world-space arc casting.
 
     At each LP interval Pathfinder:
       1. casts many true circular arcs far forward in XY;
       2. retains the best first arcs as a beam;
-      3. from a point 140 ft down each surviving first arc, casts all possible
+      3. from a point 120 ft down each surviving first arc, casts all possible
          continuation arcs;
       4. selects the first arc whose two-stage future reaches furthest around
          the actual track;
@@ -269,8 +269,8 @@ def generate_pathfinder(
     # True world-space curvatures (1/ft), represented here by useful radii.
     # The very large radii are important: they allow early, extremely shallow
     # setup arcs that would look almost straight over a short distance.
-    radii = (3500.0, 2200.0, 1400.0, 950.0, 700.0, 520.0, 400.0,
-             310.0, 240.0, 185.0, 140.0, 105.0, 80.0, 60.0, 45.0)
+    radii = (3200.0, 1800.0, 1100.0, 750.0, 520.0, 360.0,
+             250.0, 175.0, 120.0, 85.0, 60.0, 42.0)
     positive = [1.0 / r for r in radii]
     curvatures = np.asarray([-k for k in reversed(positive)] + [0.0] + positive)
 
