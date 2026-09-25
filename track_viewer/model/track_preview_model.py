@@ -784,6 +784,8 @@ class TrackPreviewModel(QtCore.QObject):
     def generate_pathfinder_line(
         self, lp_name: str, margin_feet: float = 5.0, *,
         progress_callback=None,
+        max_speed_mph: float = 230.0,
+        car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str]:
         """Construct a new LP path using straight/arc beam search."""
         if not lp_name or lp_name == "center-line":
@@ -803,13 +805,25 @@ class TrackPreviewModel(QtCore.QObject):
         dlats, tested, intervals = generate_pathfinder(
             dlongs, lower, upper, seed, progress_callback=progress_callback
         )
-        records = []
+        xy = []
         for old, dlat in zip(unique, dlats):
+            x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+            xy.append((x / 6000.0, y / 6000.0))
+        speeds = np.minimum(speed_profile_mph(xy, car_performance), max_speed_mph)
+        arr = np.asarray(xy, dtype=float)
+        ds = np.linalg.norm(np.roll(arr, -1, axis=0) - arr, axis=1)
+        segment_mph = np.maximum((speeds + np.roll(speeds, -1)) * 0.5, 0.01)
+        lap_seconds = float(np.sum((ds / 5280.0) / segment_mph) * 3600.0)
+        distance_miles = float(np.sum(ds) / 5280.0)
+        avg_mph = distance_miles / max(lap_seconds / 3600.0, 1e-9)
+
+        records = []
+        for old, dlat, speed in zip(unique, dlats, speeds):
             x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
             records.append(LpPoint(
                 x=x, y=y, dlong=old.dlong, dlat=float(dlat),
-                speed_raw=old.speed_raw, speed_mph=old.speed_mph,
-                lateral_speed=old.lateral_speed,
+                speed_raw=int(round(float(speed) * 5280.0 / 9.0)),
+                speed_mph=float(speed), lateral_speed=old.lateral_speed,
             ))
         if has_terminal:
             first = records[0]
@@ -826,13 +840,17 @@ class TrackPreviewModel(QtCore.QObject):
             "MODEL: Pathfinder\n"
             f"LP: {lp_name}\n"
             f"Planning intervals: {intervals}\n"
-            f"Arc/straight states tested: {tested}\n\n"
+            f"Arc/straight states tested: {tested}\n"
+            f"Estimated lap: {lap_seconds:.3f} s\n"
+            f"Average speed: {avg_mph:.2f} mph\n"
+            f"LP distance: {distance_miles:.3f} mi\n\n"
             "Method: beam search over straight and constant-curvature arc "
             "primitives. The model constructs the path from track clearance, "
             "forward progress, steering magnitude/change, and lateral wandering. "
             "No vehicle physics, lap-time simulation, apex %, width %, or "
             "corner classification was used. Existing speed and lateral-speed "
-            "values were retained."
+            "lateral-speed values were retained; Pathfinder speeds were recalculated "
+            "with the same car-performance speed model used by the other generators."
         )
 
     def optimize_geometric_line(

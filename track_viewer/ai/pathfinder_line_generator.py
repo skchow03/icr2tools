@@ -15,7 +15,7 @@ class State:
     path: tuple
 
 
-def generate_pathfinder(dlongs, lower, upper, seed, *, progress_callback=None, beam_width=28):
+def generate_pathfinder(dlongs, lower, upper, seed, *, progress_callback=None, beam_width=48):
     """Construct DLAT from scratch with a receding-horizon straight/arc search.
 
     In (DLONG, DLAT) coordinates, constant curvature is approximated by a
@@ -32,7 +32,7 @@ def generate_pathfinder(dlongs, lower, upper, seed, *, progress_callback=None, b
     width = (hi - lo) / 6000.0
     center = (hi + lo) / 12000.0
     start_lat = float(np.clip(seed[0] / 6000.0, lo[0] / 6000.0, hi[0] / 6000.0))
-    step_records = max(2, n // 180)
+    step_records = max(2, n // 240)
     anchors = list(range(0, n, step_records))
     if anchors[-1] != n - 1:
         anchors.append(n - 1)
@@ -70,10 +70,10 @@ def generate_pathfinder(dlongs, lower, upper, seed, *, progress_callback=None, b
                 # Progress is common to survivors. Prefer the straightest arc,
                 # gentle steering changes and less needless lateral wandering.
                 # Tiny center preference breaks ties and helps avoid edge riding.
-                cost = (st.cost + 9.0 * steering + 28.0 * steering_change
-                        + 0.012 * lateral_motion
-                        + 0.0008 * abs(lat - target_center)
-                        - 0.02 * progress)
+                cost = (st.cost + 4.0 * steering + 14.0 * steering_change
+                        + 0.004 * lateral_motion
+                        + 0.0002 * abs(lat - target_center)
+                        - 0.08 * progress)
                 candidates.append(State(
                     idx, lat, slope, float(k), cost, st.path + (lat,)
                 ))
