@@ -327,7 +327,7 @@ def generate_pathfinder(
     """
     n = len(seed)
     if n < 8:
-        return list(seed), 0, 0
+        return list(seed), 0, 0, 0, 0
 
     center = np.asarray(center_xy, dtype=float)
     dl = np.asarray(dlongs, dtype=float) / 6000.0
