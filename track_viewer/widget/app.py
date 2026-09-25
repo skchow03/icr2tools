@@ -2912,9 +2912,30 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 pit_speed_start_dlong=params.pit_speed_limit_start_dlong,
                 pit_speed_end_dlong=params.pit_speed_limit_end_dlong,
             )
-        success, message = self.preview_api.generate_candidate_race_line(
-            lp_name, **call_options
+        progress = QtWidgets.QProgressDialog(
+            "Preparing candidate search...", None, 0, 26, self
         )
+        progress.setWindowTitle("Generating Candidate Race Line")
+        progress.setWindowModality(QtCore.Qt.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.setValue(0)
+        progress.show()
+        QtWidgets.QApplication.processEvents()
+
+        def update_progress(current, total, label):
+            progress.setMaximum(max(1, int(total)))
+            progress.setValue(min(int(current), int(total)))
+            progress.setLabelText(label)
+            QtWidgets.QApplication.processEvents()
+
+        try:
+            success, message = self.preview_api.generate_candidate_race_line(
+                lp_name, progress_callback=update_progress, **call_options
+            )
+        finally:
+            progress.close()
         if not success:
             QtWidgets.QMessageBox.warning(self, "Candidate Race Line", message)
             return
