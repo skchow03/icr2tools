@@ -297,6 +297,141 @@ def _fallback_station_state(
         float(target_dlong), dlat,
     )
 
+def _smooth_periodic_seam(
+    result_ft: np.ndarray,
+    dlongs_ft: np.ndarray,
+    lower_ft: np.ndarray,
+    upper_ft: np.ndarray,
+    track_length_ft: float,
+) -> tuple[np.ndarray, float, float]:
+    """Blend the start/finish seam into one periodic, smooth path.
+
+    Pathfinder plans forward from DLONG 0, so without a special closure pass
+    the final lateral position can differ from the initial one. The terminal
+    LP record then jumps back to record 0. Treat the end of the lap and the
+    beginning of the next lap as one unwrapped interval and bridge them with a
+    cubic Hermite curve that matches both lateral position and local slope at
+    anchors outside the seam.
+
+    The shortest legal bridge from a small set of increasing windows is used.
+    """
+    values = np.asarray(result_ft, dtype=float).copy()
+    dl = np.asarray(dlongs_ft, dtype=float)
+    lo = np.asarray(lower_ft, dtype=float)
+    hi = np.asarray(upper_ft, dtype=float)
+    n = len(values)
+    if n < 8 or track_length_ft <= 0.0:
+        return values, 0.0, 0.0
+
+    original = values.copy()
+
+    def slope(i0: int, i1: int) -> float:
+        ds = float(dl[i1] - dl[i0])
+        if ds <= 1.0e-6:
+            return 0.0
+        return float((values[i1] - values[i0]) / ds)
+
+    # Try a local seam repair first; grow only if the Hermite bridge would
+    # leave the legal corridor. This keeps the otherwise-good Pathfinder line
+    # untouched over almost the entire lap.
+    candidate_windows = (180.0, 260.0, 360.0, 500.0, 700.0)
+    chosen = None
+
+    for window in candidate_windows:
+        if window * 2.0 >= track_length_ft * 0.45:
+            break
+
+        right = int(np.searchsorted(dl, window, side="left"))
+        left = int(np.searchsorted(dl, track_length_ft - window, side="right") - 1)
+        right = max(2, min(right, n - 3))
+        left = max(right + 3, min(left, n - 3))
+        if left <= right:
+            continue
+
+        x0 = float(dl[left] - track_length_ft)
+        x1 = float(dl[right])
+        span = x1 - x0
+        if span <= 1.0:
+            continue
+
+        y0 = float(values[left])
+        y1 = float(values[right])
+
+        # Match the path slope just outside the blend interval. Limit only
+        # pathological derivatives so the bridge cannot explode numerically.
+        m0 = slope(left - 1, left)
+        m1 = slope(right, right + 1)
+        m0 = float(np.clip(m0, -0.20, 0.20))
+        m1 = float(np.clip(m1, -0.20, 0.20))
+
+        indices = list(range(left, n)) + list(range(0, right + 1))
+        bridge = []
+        legal = True
+
+        for j in indices:
+            x = float(dl[j] - track_length_ft) if j >= left else float(dl[j])
+            t = np.clip((x - x0) / span, 0.0, 1.0)
+            h00 = 2.0 * t**3 - 3.0 * t**2 + 1.0
+            h10 = t**3 - 2.0 * t**2 + t
+            h01 = -2.0 * t**3 + 3.0 * t**2
+            h11 = t**3 - t**2
+            y = (
+                h00 * y0
+                + h10 * span * m0
+                + h01 * y1
+                + h11 * span * m1
+            )
+            if y < lo[j] - 1.0e-6 or y > hi[j] + 1.0e-6:
+                legal = False
+                break
+            bridge.append((j, float(y)))
+
+        if legal:
+            chosen = (window, bridge)
+            break
+
+    if chosen is None:
+        # Extremely constrained start/finish areas can defeat a Hermite bridge.
+        # Use the widest attempted interval and clip only as a last resort.
+        window = min(700.0, track_length_ft * 0.20)
+        right = int(np.searchsorted(dl, window, side="left"))
+        left = int(np.searchsorted(dl, track_length_ft - window, side="right") - 1)
+        right = max(2, min(right, n - 3))
+        left = max(right + 3, min(left, n - 3))
+
+        x0 = float(dl[left] - track_length_ft)
+        x1 = float(dl[right])
+        span = max(x1 - x0, 1.0)
+        y0 = float(values[left])
+        y1 = float(values[right])
+        m0 = float(np.clip(slope(left - 1, left), -0.12, 0.12))
+        m1 = float(np.clip(slope(right, right + 1), -0.12, 0.12))
+
+        bridge = []
+        for j in list(range(left, n)) + list(range(0, right + 1)):
+            x = float(dl[j] - track_length_ft) if j >= left else float(dl[j])
+            t = np.clip((x - x0) / span, 0.0, 1.0)
+            h00 = 2.0 * t**3 - 3.0 * t**2 + 1.0
+            h10 = t**3 - 2.0 * t**2 + t
+            h01 = -2.0 * t**3 + 3.0 * t**2
+            h11 = t**3 - t**2
+            y = (
+                h00 * y0
+                + h10 * span * m0
+                + h01 * y1
+                + h11 * span * m1
+            )
+            bridge.append((j, float(np.clip(y, lo[j], hi[j]))))
+        chosen = (window, bridge)
+
+    window, bridge = chosen
+    for j, y in bridge:
+        values[j] = y
+
+    max_adjustment = float(np.max(np.abs(values - original))) if n else 0.0
+    return values, float(window), max_adjustment
+
+
 def generate_pathfinder(
     dlongs,
     lower,
@@ -327,7 +462,7 @@ def generate_pathfinder(
     """
     n = len(seed)
     if n < 8:
-        return list(seed), 0, 0, 0, 0
+        return list(seed), 0, 0, 0, 0, 0.0, 0.0
 
     center = np.asarray(center_xy, dtype=float)
     dl = np.asarray(dlongs, dtype=float) / 6000.0
@@ -475,4 +610,16 @@ def generate_pathfinder(
                 f"Pathfinder world-space arc search: LP {i}/{n - 1}",
             )
 
-    return (np.asarray(result) * 6000.0).tolist(), tested, n - 1, commit_retries, continuity_recoveries
+    result_array = np.asarray(result, dtype=float)
+    result_array, seam_window, seam_adjustment = _smooth_periodic_seam(
+        result_array, dl, lo, hi, track_length,
+    )
+    return (
+        (result_array * 6000.0).tolist(),
+        tested,
+        n - 1,
+        commit_retries,
+        continuity_recoveries,
+        seam_window,
+        seam_adjustment,
+    )
