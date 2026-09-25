@@ -23,9 +23,11 @@ class CarPerformanceDialog(QtWidgets.QDialog):
 
         layout = QtWidgets.QVBoxLayout(self)
         note = QtWidgets.QLabel(
-            "These are the baseline values used by Candidate Race Line. "
-            "Speeds are mph and performance values are g. The percentage "
-            "controls in the candidate-line dialog are applied on top of these values."
+            "These are the baseline values used by Pathfinder, Minimum Time, "
+            "Corner & Apex, and manual LP speed generation. Speeds are mph and "
+            "performance values are g. The percentage controls in the generation "
+            "dialogs are applied on top of these values. The default model "
+            "supports speeds up to 245 mph; high-speed values are estimates."
         )
         note.setWordWrap(True)
         layout.addWidget(note)

@@ -18,6 +18,28 @@ from track_viewer.ai.indycar_speed_model import (
 
 
 class IndyCarSpeedModelTest(unittest.TestCase):
+    def test_default_245_mph_model_has_complete_high_speed_tables(self):
+        model = load_performance_model()
+        self.assertEqual(MAX_SPEED_MPH, 245.0)
+        self.assertEqual(model["max_speed_mph"], 245.0)
+        for name in ("lateral_g", "acceleration_g", "braking_g"):
+            with self.subTest(name=name):
+                self.assertEqual(model[name][-1, 0], 245.0)
+        # Simply raising the hard cap would leave zero acceleration at
+        # 230 mph and prevent accelerating on the long oval straights.
+        acceleration = model["acceleration_g"]
+        self.assertGreater(float(np.interp(230.0, acceleration[:, 0], acceleration[:, 1])), 0.0)
+        self.assertGreater(float(np.interp(240.0, acceleration[:, 0], acceleration[:, 1])), 0.0)
+        self.assertEqual(acceleration[-1, 1], 0.0)
+
+    def test_large_radius_oval_can_reach_model_top_speed(self):
+        angle = np.linspace(0, 2 * math.pi, 180, endpoint=False)
+        radius = 8000.0
+        points = np.column_stack((radius * np.cos(angle), radius * np.sin(angle)))
+        speeds = speed_profile_mph(points)
+        self.assertAlmostEqual(float(np.mean(speeds)), 245.0, places=3)
+        self.assertLessEqual(float(np.max(speeds)), 245.0)
+
     def test_car_performance_defaults_and_factors(self):
         performance = CarPerformance()
         self.assertEqual(performance.acceleration_factor, 1.0)

@@ -249,7 +249,7 @@ class TrackPreviewModel(QtCore.QObject):
         lp_name: str,
         *,
         car_performance: CarPerformance | None = None,
-        max_speed_mph: float = 230.0,
+        max_speed_mph: float = 245.0,
     ) -> tuple[bool, str]:
         """Apply the existing bank-aware physics model to an edited LP path."""
         if self.trk is None or not self.centerline:
@@ -377,7 +377,7 @@ class TrackPreviewModel(QtCore.QObject):
     def generate_candidate_race_line(
         self, lp_name: str, margin_feet: float, *, pit_side: str = "auto",
         lookahead_feet: float = 60.0, corner_width_pct: int = 75,
-        apex_position_pct: int = 60, max_speed_mph: float = 230.0,
+        apex_position_pct: int = 60, max_speed_mph: float = 245.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
         car_performance: CarPerformance | None = None,
@@ -888,7 +888,7 @@ class TrackPreviewModel(QtCore.QObject):
     def generate_pathfinder_line(
         self, lp_name: str, margin_feet: float = 5.0, *,
         progress_callback=None,
-        max_speed_mph: float = 230.0,
+        max_speed_mph: float = 245.0,
         car_performance: CarPerformance | None = None,
     ) -> tuple[bool, str]:
         """Construct a new LP path using straight/arc beam search."""
@@ -1058,7 +1058,7 @@ class TrackPreviewModel(QtCore.QObject):
 
     def optimize_minimum_time_line(
         self, lp_name: str, margin_feet: float = 5.0, *,
-        max_speed_mph: float = 230.0,
+        max_speed_mph: float = 245.0,
         car_performance: CarPerformance | None = None,
         progress_callback=None,
     ) -> tuple[bool, str]:
