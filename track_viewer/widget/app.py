@@ -187,7 +187,37 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference_pct": 0,
             "compare_candidates": False,
         }
+        self._lp_curve_edit_button = QtWidgets.QPushButton("Smooth Drag LP")
+        self._lp_curve_edit_button.setCheckable(True)
+        self._lp_curve_edit_button.setEnabled(False)
+        self._lp_curve_edit_button.setToolTip(
+            "Click an LP record on the track map and drag it sideways. "
+            "Nearby records follow with a smooth, periodic falloff."
+        )
+        self._lp_curve_influence = QtWidgets.QDoubleSpinBox()
+        self._lp_curve_influence.setRange(20.0, 1000.0)
+        self._lp_curve_influence.setSingleStep(20.0)
+        self._lp_curve_influence.setDecimals(0)
+        self._lp_curve_influence.setSuffix(" ft")
+        self._lp_curve_influence.setValue(180.0)
+        self._lp_curve_influence.setToolTip(
+            "Distance forward and backward along the lap influenced by dragging."
+        )
+        self._lp_curve_influence.setFixedWidth(86)
+        self._lp_speed_recalc_button = QtWidgets.QPushButton("Generate LP Speeds")
+        self._lp_speed_recalc_button.setEnabled(False)
+        self._lp_speed_recalc_button.setToolTip(
+            "Calculate an updated bank-aware vehicle speed profile from "
+            "the current manually edited LP line."
+        )
         self._lp_tab = LpTabBuilder(self).build()
+        self._lp_curve_edit_button.toggled.connect(self._set_lp_curve_drag_mode)
+        self._lp_curve_influence.valueChanged.connect(
+            lambda _: self._sync_lp_curve_drag_mode()
+        )
+        self._lp_speed_recalc_button.clicked.connect(
+            self._handle_generate_lp_speeds
+        )
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._pit_tab = PitTabBuilder(self).build()
         self._track_tab = TrackTxtTabBuilder(self).build()
@@ -290,6 +320,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self.visualization_widget.aiLineLoaded.connect(self._handle_ai_line_loaded)
         self.visualization_widget.lpRecordSelected.connect(
             self._handle_lp_record_clicked
+        )
+        self.visualization_widget.lpCurveEdited.connect(
+            self._handle_lp_curve_drag_finished
         )
         self.visualization_widget.diagramClicked.connect(
             self._handle_lp_shortcut_activation
@@ -3069,6 +3102,101 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             message = f"MODEL: Corner & Apex\nLP: {lp_name}\n\n{message}"
         self._show_optimization_results(title, message)
 
+    def _sync_lp_curve_drag_mode(self) -> None:
+        self.visualization_widget.configure_lp_curve_edit(
+            self._lp_curve_edit_button.isChecked(),
+            self._lp_curve_influence.value(),
+        )
+
+    def _set_lp_curve_drag_mode(self, enabled: bool) -> None:
+        if enabled:
+            # Disable hover-driven selection while the drag brush is active;
+            # the clicked anchor becomes the selected LP record instead.
+            self._set_lp_shortcut_active(False)
+        self._sync_lp_curve_drag_mode()
+
+    def _handle_lp_curve_drag_finished(self, lp_name: str) -> None:
+        if lp_name != self.preview_api.active_lp_line():
+            return
+        selected = self.preview_api.selected_lp_record()
+        index = selected[1] if selected and selected[0] == lp_name else None
+        records = self.preview_api.ai_line_records(lp_name)
+        self._lp_records_model.set_records(records, lp_name)
+        if index is not None and index < self._lp_records_model.rowCount():
+            self._select_lp_record_row(index)
+        self._handle_lp_data_changed(lp_name)
+        self.visualization_widget.update()
+
+    def _handle_generate_lp_speeds(self) -> None:
+        lp_name = self.preview_api.active_lp_line()
+        if not lp_name or lp_name == "center-line":
+            QtWidgets.QMessageBox.warning(
+                self, "Generate LP Speeds", "Select an LP line first.",
+            )
+            return
+        options = self._candidate_race_options
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(f"Generate LP Speeds — {lp_name}.LP")
+        form = QtWidgets.QFormLayout(dialog)
+        form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP"))
+        note = QtWidgets.QLabel(
+            "Generate speeds from the LP's current geometry using the "
+            "bank-aware 1995 CART model. No curve positions will change.",
+            dialog,
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        max_speed = QtWidgets.QDoubleSpinBox(dialog)
+        max_speed.setRange(1.0, 300.0)
+        max_speed.setDecimals(1)
+        max_speed.setSuffix(" mph")
+        max_speed.setValue(options["max_speed_mph"])
+        form.addRow("Maximum speed", max_speed)
+        inputs = {}
+        for key, label in (
+            ("acceleration_pct", "Acceleration"),
+            ("braking_pct", "Braking"),
+            ("cornering_pct", "Cornering grip"),
+            ("aero_pct", "Aero effect"),
+            ("safety_pct", "Driver limit"),
+        ):
+            spin = QtWidgets.QDoubleSpinBox(dialog)
+            spin.setRange(10.0, 100.0 if key == "safety_pct" else 200.0)
+            spin.setDecimals(1)
+            spin.setSingleStep(1.0 if key == "safety_pct" else 5.0)
+            spin.setSuffix(" %")
+            spin.setValue(options[key])
+            inputs[key] = spin
+            form.addRow(label, spin)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
+        )
+        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Generate Speeds")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        form.addRow(buttons)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+        options["max_speed_mph"] = max_speed.value()
+        options.update({key: spin.value() for key, spin in inputs.items()})
+        performance = CarPerformance(
+            acceleration_pct=options["acceleration_pct"],
+            braking_pct=options["braking_pct"],
+            cornering_pct=options["cornering_pct"],
+            aero_pct=options["aero_pct"],
+            safety_pct=options["safety_pct"],
+        )
+        success, message = self.preview_api.recalculate_lp_speed_profile(
+            lp_name, car_performance=performance,
+            max_speed_mph=options["max_speed_mph"],
+        )
+        if not success:
+            QtWidgets.QMessageBox.warning(self, "Generate LP Speeds", message)
+            return
+        self._handle_lp_curve_drag_finished(lp_name)
+        self._show_optimization_results("Generate LP Speeds", message)
+
     def _handle_lp_lap_statistics(self) -> None:
         lp_name = self.preview_api.active_lp_line()
         success, message, _lap_seconds, _average_mph = (
@@ -3138,6 +3266,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._generate_lp_button.setEnabled(enabled)
         has_lp_records = enabled and bool(self.preview_api.ai_line_records(name))
         self._optimized_line_button.setEnabled(has_lp_records)
+        self._lp_curve_edit_button.setEnabled(has_lp_records)
+        self._lp_speed_recalc_button.setEnabled(has_lp_records)
+        if not has_lp_records and self._lp_curve_edit_button.isChecked():
+            self._lp_curve_edit_button.setChecked(False)
         self._lp_lap_stats_button.setEnabled(has_lp_records)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
