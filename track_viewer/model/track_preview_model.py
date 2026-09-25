@@ -500,6 +500,55 @@ class TrackPreviewModel(QtCore.QObject):
                     separations.extend(diff.tolist())
                 avg_separation = float(np.mean(separations))
                 max_separation = float(np.max(separations))
+
+                # Diagnose where the winning geometry actually differs from
+                # the requested baseline. Group adjacent LP records into
+                # regions so a single corner appears once rather than as a
+                # long list of individual samples.
+                winner_diff = np.abs(
+                    np.asarray(best[1], dtype=float) / 6000.0 - baseline_offsets
+                )
+                significant = winner_diff >= max(2.0, 0.35 * float(np.max(winner_diff)))
+                regions = []
+                start_index = None
+                for idx, is_significant in enumerate(significant):
+                    if is_significant and start_index is None:
+                        start_index = idx
+                    elif not is_significant and start_index is not None:
+                        regions.append((start_index, idx - 1))
+                        start_index = None
+                if start_index is not None:
+                    regions.append((start_index, len(significant) - 1))
+
+                region_details = []
+                for start_idx, end_idx in regions:
+                    local = winner_diff[start_idx:end_idx + 1]
+                    peak_rel = int(np.argmax(local))
+                    peak_idx = start_idx + peak_rel
+                    region_details.append((
+                        float(local[peak_rel]), start_idx, end_idx, peak_idx
+                    ))
+                region_details.sort(reverse=True)
+                difference_summary = ""
+                if region_details:
+                    descriptions = []
+                    for peak_ft, start_idx, end_idx, peak_idx in region_details[:5]:
+                        start_dlong = float(unique[start_idx].dlong)
+                        end_dlong = float(unique[end_idx].dlong)
+                        peak_dlong = float(unique[peak_idx].dlong)
+                        descriptions.append(
+                            f"DLONG {start_dlong:.0f}-{end_dlong:.0f} "
+                            f"(peak {peak_ft:.2f} ft at {peak_dlong:.0f})"
+                        )
+                    difference_summary = (
+                        " Winner-vs-baseline largest difference regions: "
+                        + "; ".join(descriptions) + "."
+                    )
+                else:
+                    difference_summary = (
+                        " Winner stayed within 2 ft of the baseline everywhere."
+                    )
+
                 top_summary = ", ".join(
                     f"{item[0]:.3f}s ({item[4]}% width/{item[3]}% apex/"
                     f"{item[5]:g} ft lookahead)"
@@ -511,7 +560,8 @@ class TrackPreviewModel(QtCore.QObject):
                     f"({best_lap_seconds - baseline_seconds:+.3f}s), slowest "
                     f"{slowest_seconds:.3f}s. Relative to baseline, candidates "
                     f"averaged {avg_separation:.2f} ft lateral separation and "
-                    f"reached {max_separation:.2f} ft maximum. Top 3: {top_summary}."
+                    f"reached {max_separation:.2f} ft maximum."
+                    f"{difference_summary} Top 3: {top_summary}."
                 )
                 if progress_callback:
                     progress_callback(30, 30, "Finalizing fastest candidate")
