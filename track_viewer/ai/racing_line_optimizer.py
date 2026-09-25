@@ -419,6 +419,20 @@ def _energy_and_gradient(points: np.ndarray,
     return energy, gradient
 
 
+def build_legal_dlat_envelope(
+    trk, centerline, dlongs, reference_dlats, margin_feet=5.0, pit_side="auto"
+):
+    """Precompute the legal LP-record corridor for direct path optimizers.
+
+    Returns DLAT-unit lower/upper arrays. This intentionally contains no
+    apex, width, lookahead, or bend-energy preferences.
+    """
+    lower, upper = _paved_corridor(
+        trk, dlongs, reference_dlats, margin_feet, pit_side
+    )
+    return lower * DLAT_PER_FOOT, upper * DLAT_PER_FOOT
+
+
 def optimize_race_line(
     trk,
     centerline,
