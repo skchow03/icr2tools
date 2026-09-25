@@ -477,6 +477,94 @@ class TrackPreviewModel(QtCore.QObject):
                     ))
                 scored.sort(key=lambda item: item[0])
 
+                # Local coordinate-descent pass: after finding the best global
+                # settings, allow individual detected corners to choose nearby
+                # width/apex settings. Each trial is still scored by complete
+                # lap time, so exit speed and linked-corner effects count.
+                global_best = scored[0]
+                local_overrides = {}
+                local_trials = 0
+                # Discover corner count using the same detector indirectly by
+                # probing overrides. Cap the pass to keep interactive runtime
+                # bounded on tracks with many bends.
+                max_local_corners = 24
+                for corner_index in range(max_local_corners):
+                    corner_best = global_best
+                    corner_best_override = None
+                    found_effect = False
+                    for apex_delta, width_delta in (
+                        (-8, 0), (8, 0), (0, -10), (0, 10),
+                        (-5, 8), (5, 8),
+                    ):
+                        override = dict(local_overrides)
+                        override[corner_index] = {
+                            "apex_position_pct": int(np.clip(
+                                global_best[3] + apex_delta, 40, 80
+                            )),
+                            "corner_width_pct": int(np.clip(
+                                global_best[4] + width_delta, 0, 100
+                            )),
+                        }
+                        trial = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side, lookahead_feet=global_best[5],
+                            corner_width_pct=global_best[4],
+                            apex_position_pct=global_best[3],
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
+                            local_overrides=override,
+                        )
+                        lap_seconds, candidate_speeds = evaluate_candidate(trial)
+                        local_trials += 1
+                        # If this index is beyond the detector's corner list,
+                        # the geometry is identical; use that to stop probing.
+                        delta = np.max(np.abs(
+                            np.asarray(trial) - np.asarray(global_best[1])
+                        ))
+                        if delta > 1e-6:
+                            found_effect = True
+                        if lap_seconds < corner_best[0] - 0.001:
+                            corner_best = (
+                                lap_seconds, trial, candidate_speeds,
+                                global_best[3], global_best[4], global_best[5],
+                            )
+                            corner_best_override = override[corner_index]
+                    if not found_effect:
+                        break
+                    if corner_best_override is not None:
+                        local_overrides[corner_index] = corner_best_override
+                        global_best = corner_best
+                    if progress_callback:
+                        progress_callback(
+                            29, 30,
+                            f"Optimizing corner {corner_index + 1}"
+                        )
+
+                if local_overrides:
+                    scored.append(global_best)
+                    scored.sort(key=lambda item: item[0])
+                local_summary = ""
+                if local_overrides:
+                    settings = ", ".join(
+                        f"C{index + 1}={value['corner_width_pct']}%/"
+                        f"{value['apex_position_pct']}%"
+                        for index, value in sorted(local_overrides.items())
+                    )
+                    local_summary = (
+                        f" Local corner optimization tested {local_trials} "
+                        f"variations and kept {len(local_overrides)} overrides: "
+                        f"{settings}."
+                    )
+                else:
+                    local_summary = (
+                        f" Local corner optimization tested {local_trials} "
+                        "variations; none improved the global solution."
+                    )
+            else:
+                local_summary = ""
+
             best = scored[0]
             (
                 best_lap_seconds, unique_dlats, speeds,
@@ -561,7 +649,7 @@ class TrackPreviewModel(QtCore.QObject):
                     f"{slowest_seconds:.3f}s. Relative to baseline, candidates "
                     f"averaged {avg_separation:.2f} ft lateral separation and "
                     f"reached {max_separation:.2f} ft maximum."
-                    f"{difference_summary} Top 3: {top_summary}."
+                    f"{difference_summary}{local_summary} Top 3: {top_summary}."
                 )
                 if progress_callback:
                     progress_callback(30, 30, "Finalizing fastest candidate")

@@ -117,7 +117,7 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
 
 def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
                   corner_width_pct=75, apex_position_pct=60,
-                  return_exit_signs=False):
+                  return_exit_signs=False, local_overrides=None):
     """Plan linked turn entries, apexes and exits around the whole lap."""
     n = len(centers)
     spacing = float(np.median(np.linalg.norm(
@@ -156,7 +156,9 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
             continue
         magnitudes = np.abs(curvature[window])
         plateau = np.flatnonzero(magnitudes >= 0.9 * np.max(magnitudes))
-        desired_apex = apex_position_pct / 100 * length
+        local = (local_overrides or {}).get(len(corners), {})
+        local_apex_pct = local.get("apex_position_pct", apex_position_pct)
+        desired_apex = local_apex_pct / 100 * length
         peak_at = plateau[np.argmin(np.abs(plateau - desired_apex))]
         apex_at = int(round(0.4 * peak_at + 0.6 * desired_apex))
         apex_at = max(0, min(length - 1, apex_at))
@@ -171,8 +173,10 @@ def _apex_targets(centers, lower, upper, lookahead_feet=60.0,
     if not corners:
         baseline = ((lower + upper) * 0.5, np.full(n, 0.0001))
         return (*baseline, np.zeros(n)) if return_exit_signs else baseline
-    planned = _linked_corner_targets(corners, lower, upper, corner_width_pct,
-                                     sharpnesses)
+    planned = _linked_corner_targets(
+        corners, lower, upper, corner_width_pct, sharpnesses,
+        local_overrides=local_overrides,
+    )
     if return_exit_signs:
         return (*planned, _exit_turn_signs(corners, n))
     return planned
@@ -194,7 +198,7 @@ def _exit_turn_signs(corners, n):
 
 
 def _linked_corner_targets(corners, lower, upper, corner_width_pct,
-                           sharpnesses=None):
+                           sharpnesses=None, local_overrides=None):
     """Join each apex to its neighbours with one transition per straight.
 
     Corners are (start, end, apex, signed direction, lead, turn severity).
@@ -209,11 +213,15 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
     use = 0.5 * (1.0 - (1.0 - width_fraction) ** 2)
     anchors = []
     for i, (start, end, apex, sign, lead, severity) in enumerate(corners):
+        local = (local_overrides or {}).get(i, {})
+        local_width_pct = local.get("corner_width_pct", corner_width_pct)
+        local_width_fraction = local_width_pct / 100.0
+        local_use = 0.5 * (1.0 - (1.0 - local_width_fraction) ** 2)
         # Tight turns borrow more width at the apex than at entry or exit,
         # while the width control remains effective even at low values.
         sharpness = sharpnesses[i] if sharpnesses is not None else 0.0
         tightness = np.clip((sharpness - 0.008) / 0.02, 0, 1)
-        apex_use = use + (0.5 - use) * tightness * (corner_width_pct / 100)
+        apex_use = local_use + (0.5 - local_use) * tightness * (local_width_pct / 100)
         anchors.append((apex % n, 0.5 + sign * apex_use))
         next_start, _, _, next_sign, next_lead, next_severity = corners[
             (i + 1) % len(corners)
@@ -221,8 +229,12 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
         if i == len(corners) - 1:
             next_start += n
         gap = next_start - end - 1
-        outgoing = 0.5 - sign * use
-        incoming = 0.5 - next_sign * use
+        outgoing = 0.5 - sign * local_use
+        next_local = (local_overrides or {}).get((i + 1) % len(corners), {})
+        next_width_pct = next_local.get("corner_width_pct", corner_width_pct)
+        next_fraction = next_width_pct / 100.0
+        next_use = 0.5 * (1.0 - (1.0 - next_fraction) ** 2)
+        incoming = 0.5 - next_sign * next_use
         if gap <= lead + next_lead:
             # A short gap has room for one handoff, not two independent
             # outside targets. Bias it toward the entry of the next turn.
@@ -421,6 +433,7 @@ def optimize_race_line(
     side_preference: str = "none",
     side_preference_pct: int = 0,
     iterations: int = 160,
+    local_overrides: dict | None = None,
 ) -> list[float]:
     """Return DLATs at unique LP DLONGs within the continuous paved corridor.
 
@@ -467,6 +480,7 @@ def optimize_race_line(
     targets, target_weight, exit_signs = _apex_targets(
         centers, lower, upper, lookahead_feet, corner_width_pct,
         apex_position_pct, return_exit_signs=True,
+        local_overrides=local_overrides,
     )
     side_target = None
     if side_preference != "none" and side_preference_pct > 0:
