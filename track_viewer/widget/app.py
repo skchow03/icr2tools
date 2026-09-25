@@ -3076,12 +3076,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             and self.preview_api.trk is not None
         )
         self._generate_lp_button.setEnabled(enabled)
-        self._candidate_race_button.setEnabled(
-            enabled and bool(self.preview_api.ai_line_records(name))
-        )
-        self._lp_lap_stats_button.setEnabled(
-            enabled and bool(self.preview_api.ai_line_records(name))
-        )
+        has_lp_records = enabled and bool(self.preview_api.ai_line_records(name))
+        self._candidate_race_button.setEnabled(has_lp_records)
+        self._minimum_time_button.setEnabled(has_lp_records)
+        self._lp_lap_stats_button.setEnabled(has_lp_records)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
         self.preview_api.set_tv_mode_count(mode_count)
