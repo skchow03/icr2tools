@@ -1,8 +1,8 @@
 """Adaptive direct minimum-lap-time optimizer.
 
-This module deliberately knows nothing about corner/apex/width parameters.
-It manipulates the LP's lateral path directly inside a precomputed legal
-DLAT envelope and scores complete modeled lap time.
+The search is independent of apex/width/lookahead heuristics. It uses compact
+cubic spline-like basis functions so it can move turn-in, clipping point and
+exit independently instead of dragging a broad cosine window across a corner.
 """
 
 from __future__ import annotations
@@ -11,109 +11,121 @@ import numpy as np
 DLAT_PER_FOOT = 6000.0
 
 
-def _window(n, center, half_width):
-    idx = (np.arange(-half_width, half_width + 1) + center) % n
-    phase = np.abs(np.arange(-half_width, half_width + 1)) / float(half_width + 1)
-    weight = 0.5 * (1.0 + np.cos(np.pi * phase))
-    return idx, weight
-
-
 def _project(candidate, lower, upper):
-    """Cheap hard projection into the already-selected legal corridor."""
     return np.clip(np.asarray(candidate, dtype=float), lower, upper)
+
+
+def _cubic_basis(n, center, spacing):
+    """Compact C2 cubic B-spline basis centred on one path control."""
+    radius = max(4, int(spacing * 2))
+    offsets = np.arange(-radius, radius + 1)
+    x = np.abs(offsets) / max(float(spacing), 1.0)
+    weight = np.zeros_like(x, dtype=float)
+    inner = x < 1.0
+    outer = (x >= 1.0) & (x < 2.0)
+    weight[inner] = 2.0 / 3.0 - x[inner] ** 2 + 0.5 * x[inner] ** 3
+    weight[outer] = (2.0 - x[outer]) ** 3 / 6.0
+    # Normalize peak to one so "shift feet" has intuitive meaning.
+    weight /= max(float(np.max(weight)), 1e-12)
+    return (center + offsets) % n, weight
 
 
 def optimize_minimum_time(
     seed_dlats, lower_dlats, upper_dlats, evaluate, *,
-    progress_callback=None, coarse_controls=32,
+    progress_callback=None, coarse_controls=48,
 ):
     current = _project(seed_dlats, lower_dlats, upper_dlats)
     lower = np.asarray(lower_dlats, dtype=float)
     upper = np.asarray(upper_dlats, dtype=float)
     best_time, best_speeds = evaluate(current)
-    baseline_time = best_time
     n = len(current)
     if n < 16:
         return current.tolist(), best_speeds, best_time, 0, 0, 0
 
-    controls = max(16, min(int(coarse_controls), n // 6))
+    controls = max(24, min(int(coarse_controls), n // 5))
     centers = np.linspace(0, n, controls, endpoint=False, dtype=int)
-    half = max(5, int(round(n / controls)))
+    spacing = max(3, int(round(n / controls)))
     trials = accepted = 0
     opportunities = []
 
-    def try_mode(base, center, shift_ft, mode="single"):
+    def move(base, center, shift_ft, local_spacing=spacing):
         candidate = np.asarray(base, dtype=float).copy()
-        idx, weight = _window(n, center, half)
+        idx, weight = _cubic_basis(n, int(center), max(3, int(local_spacing)))
         candidate[idx] += shift_ft * DLAT_PER_FOOT * weight
-        if mode == "paired":
-            # Coordinated entry/exit shape: opposite displacement downstream.
-            other = (center + half) % n
-            idx2, weight2 = _window(n, other, max(4, half // 2))
-            candidate[idx2] -= 0.65 * shift_ft * DLAT_PER_FOOT * weight2
         return _project(candidate, lower, upper)
 
-    # Broad discovery. Test larger direct changes without invoking the old
-    # geometric optimizer. Keep useful changes immediately (pattern search).
+    # Coarse direct spline-control search. These controls have substantially
+    # shorter influence than the old raised-cosine windows.
     for ordinal, center in enumerate(centers, 1):
         before = best_time
         local_best = (best_time, current, best_speeds)
-        for shift in (-4.0, 4.0):
-            for mode in ("single", "paired"):
-                candidate = try_mode(current, int(center), shift, mode)
-                lap_time, speeds = evaluate(candidate)
-                trials += 1
-                if lap_time < local_best[0] - 0.001:
-                    local_best = (lap_time, candidate, speeds)
+        for shift in (-3.0, 3.0):
+            candidate = move(current, center, shift)
+            lap_time, speeds = evaluate(candidate)
+            trials += 1
+            if lap_time < local_best[0] - 0.001:
+                local_best = (lap_time, candidate, speeds)
         if local_best[0] < best_time - 0.001:
             best_time, current, best_speeds = local_best
             accepted += 1
             opportunities.append((before - best_time, int(center)))
         if progress_callback:
             progress_callback(
-                ordinal, controls + 24,
-                f"Direct minimum-time search {ordinal}/{controls}",
+                ordinal, controls + 32,
+                f"Spline minimum-time search {ordinal}/{controls}",
             )
 
-    # Rank the regions where the line actually affected lap time, then add
-    # finer controls around those regions instead of densifying long straights.
+    # Densify only around regions that demonstrated lap-time sensitivity.
+    # Offset controls are critical: they let the optimizer move curvature
+    # longitudinally, e.g. later turn-in/shorter apex dwell, rather than only
+    # moving an existing broad arc sideways.
     opportunities.sort(reverse=True)
+    fine_spacing = max(3, spacing // 2)
     focus = []
-    quarter = max(2, half // 2)
-    for _, center in opportunities[:8]:
-        focus.extend(((center - quarter) % n, center, (center + quarter) % n))
-    # Preserve order while removing duplicate nearby integer controls.
-    focus = list(dict.fromkeys(int(x) for x in focus))[:24]
+    for _, center in opportunities[:10]:
+        focus.extend((
+            (center - spacing) % n,
+            (center - fine_spacing) % n,
+            center,
+            (center + fine_spacing) % n,
+            (center + spacing) % n,
+        ))
+    focus = list(dict.fromkeys(int(x) for x in focus))[:40]
 
     for ordinal, center in enumerate(focus, 1):
         local_best = (best_time, current, best_speeds)
-        for shift in (-2.0, 2.0):
-            candidate = try_mode(current, center, shift, "single")
+        for shift in (-1.5, 1.5):
+            candidate = move(current, center, shift, fine_spacing)
             lap_time, speeds = evaluate(candidate)
             trials += 1
-            if lap_time < local_best[0] - 0.0005:
+            if lap_time < local_best[0] - 0.0004:
                 local_best = (lap_time, candidate, speeds)
-        if local_best[0] < best_time - 0.0005:
+        if local_best[0] < best_time - 0.0004:
             best_time, current, best_speeds = local_best
             accepted += 1
         if progress_callback:
             progress_callback(
                 controls + ordinal, controls + max(1, len(focus)),
-                f"Adaptive refinement {ordinal}/{len(focus)}",
+                f"Local spline refinement {ordinal}/{len(focus)}",
             )
 
-    # One cheap settling pass at the controls that originally mattered.
+    # Final small controls only in the strongest original regions. This gives
+    # turn-in/apex/exit enough independence without adding global wiggle room.
+    micro_spacing = max(3, fine_spacing // 2)
     for _, center in opportunities[:8]:
-        local_best = (best_time, current, best_speeds)
-        for shift in (-0.75, 0.75):
-            candidate = try_mode(current, center, shift, "single")
-            lap_time, speeds = evaluate(candidate)
-            trials += 1
-            if lap_time < local_best[0] - 0.0002:
-                local_best = (lap_time, candidate, speeds)
-        if local_best[0] < best_time - 0.0002:
-            best_time, current, best_speeds = local_best
-            accepted += 1
+        for shifted_center in (
+            (center - fine_spacing) % n, center, (center + fine_spacing) % n
+        ):
+            local_best = (best_time, current, best_speeds)
+            for shift in (-0.6, 0.6):
+                candidate = move(current, shifted_center, shift, micro_spacing)
+                lap_time, speeds = evaluate(candidate)
+                trials += 1
+                if lap_time < local_best[0] - 0.00015:
+                    local_best = (lap_time, candidate, speeds)
+            if local_best[0] < best_time - 0.00015:
+                best_time, current, best_speeds = local_best
+                accepted += 1
 
     return (
         current.tolist(), best_speeds, best_time, trials, accepted,
