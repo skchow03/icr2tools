@@ -371,6 +371,10 @@ class LPEditingSession:
         )
         return success, message, {LPChange.DATA} if success else set()
 
+    def optimize_minimum_time_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
+        success, message = self._model.optimize_minimum_time_line(lp_name, margin_feet, **kwargs)
+        return success, message, {LPChange.DATA} if success else set()
+
     def select_record_at_point(
         self,
         point: tuple[float, float],
