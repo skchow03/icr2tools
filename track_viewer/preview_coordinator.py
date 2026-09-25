@@ -398,6 +398,11 @@ class PreviewCoordinator:
         self._apply_lp_changes(changes)
         return success, message
 
+    def optimize_minimum_time_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
+        success, message, changes = self._lp_session.optimize_minimum_time_line(lp_name, margin_feet, **kwargs)
+        self._apply_lp_changes(changes)
+        return success, message
+
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         return self._model.lp_lap_statistics(lp_name)
 

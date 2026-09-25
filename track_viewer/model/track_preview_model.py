@@ -22,6 +22,7 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.ai.racing_line_optimizer import optimize_race_line
+from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -776,6 +777,82 @@ class TrackPreviewModel(QtCore.QObject):
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
+        )
+
+    def optimize_minimum_time_line(
+        self, lp_name: str, margin_feet: float = 5.0, *,
+        max_speed_mph: float = 230.0,
+        car_performance: CarPerformance | None = None,
+        progress_callback=None,
+    ) -> tuple[bool, str]:
+        """Optimize the selected LP's lateral path directly for modeled lap time."""
+        if not lp_name or lp_name == "center-line":
+            return False, "Select an LP line first."
+        existing = self.get_ai_line_records_immediate(lp_name)
+        if len(existing) < 16:
+            return False, f"{lp_name}.LP needs at least 16 path samples."
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(existing[-1].dlong - track_length) < 1.0
+        unique = existing[:-1] if has_terminal else existing
+        dlongs = [p.dlong for p in unique]
+        seed = [p.dlat for p in unique]
+
+        def evaluate(candidate_dlats):
+            xy = []
+            for old, dlat in zip(unique, candidate_dlats):
+                x, y, _ = getxyz(self.trk, old.dlong, float(dlat), self.centerline)
+                xy.append((x / 6000.0, y / 6000.0))
+            speeds = np.minimum(speed_profile_mph(xy, car_performance), max_speed_mph)
+            arr = np.asarray(xy, dtype=float)
+            ds = np.linalg.norm(np.roll(arr, -1, axis=0) - arr, axis=1)
+            segment_mph = (speeds + np.roll(speeds, -1)) * 0.5
+            if np.any(segment_mph <= 0.01):
+                return float("inf"), speeds
+            seconds = float(np.sum((ds / 5280.0) / segment_mph) * 3600.0)
+            return seconds, speeds
+
+        # Use a short constrained geometry pass only as a legal projection.
+        # The minimum-time search itself manipulates DLAT controls directly.
+        def legalize(candidate_dlats):
+            return optimize_race_line(
+                self.trk, self.centerline, dlongs,
+                margin_feet=margin_feet,
+                reference_dlats=list(candidate_dlats),
+                corner_width_pct=100,
+                apex_position_pct=50,
+                iterations=12,
+            )
+
+        baseline_time, _ = evaluate(seed)
+        dlats, speeds, best_time, trials, accepted = optimize_minimum_time(
+            seed, evaluate, legalize, progress_callback=progress_callback,
+            coarse_controls=40,
+        )
+
+        records = []
+        for old, dlat, speed in zip(unique, dlats, speeds):
+            x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+            records.append(LpPoint(
+                x=x, y=y, dlong=old.dlong, dlat=float(dlat),
+                speed_raw=int(round(float(speed) * 5280.0 / 9.0)),
+                speed_mph=float(speed), lateral_speed=old.lateral_speed,
+            ))
+        if has_terminal:
+            first = records[0]
+            records.append(LpPoint(
+                x=first.x, y=first.y, dlong=track_length, dlat=first.dlat,
+                speed_raw=first.speed_raw, speed_mph=first.speed_mph,
+                lateral_speed=first.lateral_speed,
+            ))
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, (
+            f"Minimum-time optimized {lp_name}: {baseline_time:.3f} s -> "
+            f"{best_time:.3f} s ({best_time - baseline_time:+.3f} s). "
+            f"Tested {trials} direct path variations and accepted {accepted}. "
+            "Lateral-speed values were retained; recalculate them if needed."
         )
 
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
