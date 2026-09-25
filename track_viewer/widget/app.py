@@ -161,11 +161,14 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._generate_lp_button.setEnabled(False)
         self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
         self._candidate_race_button.setEnabled(False)
-        self._minimum_time_button = QtWidgets.QPushButton("Minimum-Time Optimize")
-        self._minimum_time_button.setEnabled(False)
-        self._minimum_time_button.setToolTip(
-            "Optimize the selected LP path directly for modeled minimum lap time."
+        self._racing_line_model = QtWidgets.QComboBox()
+        self._racing_line_model.addItem("Geometric", "geometric")
+        self._racing_line_model.addItem("Minimum Time", "minimum_time")
+        self._racing_line_model.setToolTip(
+            "Geometric uses path shape only. Minimum Time uses the car-performance model."
         )
+        self._minimum_time_button = QtWidgets.QPushButton("Optimize Line")
+        self._minimum_time_button.setEnabled(False)
         self._minimum_time_button.clicked.connect(self._handle_minimum_time_optimize)
         self._lp_lap_stats_button = QtWidgets.QPushButton("Lap Time / Avg Speed")
         self._lp_lap_stats_button.setEnabled(False)
@@ -2742,12 +2745,29 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _show_optimization_results(self, title: str, message: str) -> None:
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.resize(620, 360)
+        layout = QtWidgets.QVBoxLayout(dialog)
+        output = QtWidgets.QPlainTextEdit(dialog)
+        output.setReadOnly(True)
+        output.setPlainText(message)
+        output.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        layout.addWidget(output, 1)
+        buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        dialog.exec_()
+
     def _handle_minimum_time_optimize(self) -> None:
         lp_name = self.preview_api.active_lp_line()
+        model = self._racing_line_model.currentData()
+        title = "Geometric Optimize" if model == "geometric" else "Minimum-Time Optimize"
         progress = QtWidgets.QProgressDialog(
-            "Starting minimum-time optimization...", None, 0, 52, self
+            f"Starting {title.lower()}...", None, 0, 100, self
         )
-        progress.setWindowTitle("Minimum-Time Optimize")
+        progress.setWindowTitle(title)
         progress.setWindowModality(QtCore.Qt.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
@@ -2761,27 +2781,32 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             QtWidgets.QApplication.processEvents()
 
         opts = self._candidate_race_options
-        performance = CarPerformance(
-            acceleration_pct=opts["acceleration_pct"],
-            braking_pct=opts["braking_pct"],
-            cornering_pct=opts["cornering_pct"],
-            aero_pct=opts["aero_pct"],
-            safety_pct=opts["safety_pct"],
-        )
         try:
-            success, message = self.preview_api.optimize_minimum_time_line(
-                lp_name,
-                margin_feet=opts["margin_feet"],
-                max_speed_mph=opts["max_speed_mph"],
-                car_performance=performance,
-                progress_callback=update_progress,
-            )
+            if model == "geometric":
+                success, message = self.preview_api.optimize_geometric_line(
+                    lp_name, margin_feet=opts["margin_feet"],
+                    progress_callback=update_progress,
+                )
+            else:
+                performance = CarPerformance(
+                    acceleration_pct=opts["acceleration_pct"],
+                    braking_pct=opts["braking_pct"],
+                    cornering_pct=opts["cornering_pct"],
+                    aero_pct=opts["aero_pct"],
+                    safety_pct=opts["safety_pct"],
+                )
+                success, message = self.preview_api.optimize_minimum_time_line(
+                    lp_name, margin_feet=opts["margin_feet"],
+                    max_speed_mph=opts["max_speed_mph"],
+                    car_performance=performance,
+                    progress_callback=update_progress,
+                )
         finally:
             progress.close()
         if success:
-            QtWidgets.QMessageBox.information(self, "Minimum-Time Optimize", message)
+            self._show_optimization_results(title, message)
         else:
-            QtWidgets.QMessageBox.warning(self, "Minimum-Time Optimize", message)
+            QtWidgets.QMessageBox.warning(self, title, message)
 
     def _handle_candidate_race_line(self) -> None:
         lp_name = self.preview_api.active_lp_line()
