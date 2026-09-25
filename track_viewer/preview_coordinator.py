@@ -380,6 +380,7 @@ class PreviewCoordinator:
         car_performance: CarPerformance | None = None,
         side_preference: str = "none",
         side_preference_pct: int = 0,
+        progress_callback=None,
     ) -> tuple[bool, str]:
         success, message, changes = self._lp_session.generate_candidate_race_line(
             lp_name, margin_feet, pit_side=pit_side, lookahead_feet=lookahead_feet,
@@ -390,6 +391,7 @@ class PreviewCoordinator:
             car_performance=car_performance,
             side_preference=side_preference,
             side_preference_pct=side_preference_pct,
+            progress_callback=progress_callback,
         )
         self._apply_lp_changes(changes)
         return success, message
