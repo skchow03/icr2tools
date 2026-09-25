@@ -870,6 +870,7 @@ class TrackPreviewModel(QtCore.QObject):
             f"Arc/straight states tested: {tested}\n"
             f"Rejected non-continuous first arcs: {commit_retries}\n"
             f"Continuity recoveries: {continuity_recoveries}\n"
+            f"Configured clearance: {margin_feet:.1f} ft\n"
             f"Start/finish seam blend: ±{seam_window:.0f} ft; "
             f"max adjustment {seam_adjustment:.2f} ft\n"
             f"Estimated lap: {lap_seconds:.3f} s\n"

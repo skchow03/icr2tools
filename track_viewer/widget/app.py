@@ -197,6 +197,25 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference_pct": 0,
             "compare_candidates": False,
         }
+        self._racing_line_clearance = QtWidgets.QDoubleSpinBox()
+        self._racing_line_clearance.setRange(0.0, 50.0)
+        self._racing_line_clearance.setDecimals(1)
+        self._racing_line_clearance.setSingleStep(0.5)
+        self._racing_line_clearance.setSuffix(" ft")
+        self._racing_line_clearance.setValue(
+            self._candidate_race_options["margin_feet"]
+        )
+        self._racing_line_clearance.setFixedWidth(78)
+        self._racing_line_clearance.setToolTip(
+            "Minimum clearance between the generated line's car center and "
+            "the legal pavement/wall edge. Increase this to keep Pathfinder "
+            "farther from walls; decrease it to allow more edge use."
+        )
+        self._racing_line_clearance.valueChanged.connect(
+            lambda value: self._candidate_race_options.__setitem__(
+                "margin_feet", float(value)
+            )
+        )
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._pit_tab = PitTabBuilder(self).build()
@@ -3003,6 +3022,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             compare_candidates=compare_candidates.isChecked(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
+        self._racing_line_clearance.setValue(options["margin_feet"])
         call_options = dict(options)
         call_options["car_performance"] = CarPerformance(
             acceleration_pct=call_options.pop("acceleration_pct"),
