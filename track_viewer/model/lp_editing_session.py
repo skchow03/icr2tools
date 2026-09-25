@@ -354,6 +354,7 @@ class LPEditingSession:
         car_performance: CarPerformance | None = None,
         side_preference: str = "none",
         side_preference_pct: int = 0,
+        compare_candidates: bool = False,
         progress_callback=None,
     ) -> tuple[bool, str, set[LPChange]]:
         success, message = self._model.generate_candidate_race_line(
@@ -365,6 +366,7 @@ class LPEditingSession:
             car_performance=car_performance,
             side_preference=side_preference,
             side_preference_pct=side_preference_pct,
+            compare_candidates=compare_candidates,
             progress_callback=progress_callback,
         )
         return success, message, {LPChange.DATA} if success else set()
