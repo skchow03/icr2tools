@@ -374,7 +374,7 @@ class PreviewCoordinator:
     def generate_candidate_race_line(
         self, lp_name: str, margin_feet: float, *, pit_side: str = "auto",
         lookahead_feet: float = 60.0, corner_width_pct: int = 75,
-        apex_position_pct: int = 60, max_speed_mph: float = 230.0,
+        apex_position_pct: int = 60, max_speed_mph: float = 245.0,
         pit_speed_start_dlong: float | None = None,
         pit_speed_end_dlong: float | None = None,
         car_performance: CarPerformance | None = None,
