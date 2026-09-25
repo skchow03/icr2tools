@@ -2745,7 +2745,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         output = QtWidgets.QPlainTextEdit(dialog)
         output.setReadOnly(True)
         output.setPlainText(message)
-        output.setLineWrapMode(QtWidgets.QPlainTextEdit.NoWrap)
+        output.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
         layout.addWidget(output, 1)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
         buttons.rejected.connect(dialog.reject)
