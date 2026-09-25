@@ -159,27 +159,17 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._export_all_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
-        self._candidate_race_button = QtWidgets.QPushButton("Candidate Race Line")
-        self._candidate_race_button.setEnabled(False)
-        self._racing_line_model = QtWidgets.QComboBox()
-        self._racing_line_model.addItem("Pathfinder", "pathfinder")
-        self._racing_line_model.addItem("Geometric", "geometric")
-        self._racing_line_model.addItem("Minimum Time", "minimum_time")
-        self._racing_line_model.setToolTip(
-            "Pathfinder constructs a line from straight/arc primitives. "
-            "Geometric optimizes path shape. Minimum Time uses the car-performance model."
+        self._optimized_line_button = QtWidgets.QPushButton("Generate Optimized Line")
+        self._optimized_line_button.setEnabled(False)
+        self._optimized_line_button.setToolTip(
+            "Choose Pathfinder, Minimum Time, or Corner & Apex and configure "
+            "its settings in one dialog."
         )
-        self._minimum_time_button = QtWidgets.QPushButton("Optimize Line")
-        self._minimum_time_button.setEnabled(False)
-        self._minimum_time_button.clicked.connect(self._handle_minimum_time_optimize)
+        self._optimized_line_model = "pathfinder"
         self._lp_lap_stats_button = QtWidgets.QPushButton("Lap Time / Avg Speed")
         self._lp_lap_stats_button.setEnabled(False)
         self._lp_lap_stats_button.setToolTip(
             "Estimate lap time and average speed from the selected LP's current speeds."
-        )
-        self._candidate_race_button.setToolTip(
-            "Generate a candidate path and 1995 CART speed profile for the "
-            "currently selected LP line."
         )
         self._candidate_race_options = {
             "margin_feet": 5.0,
@@ -197,25 +187,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference_pct": 0,
             "compare_candidates": False,
         }
-        self._racing_line_clearance = QtWidgets.QDoubleSpinBox()
-        self._racing_line_clearance.setRange(0.0, 50.0)
-        self._racing_line_clearance.setDecimals(1)
-        self._racing_line_clearance.setSingleStep(0.5)
-        self._racing_line_clearance.setSuffix(" ft")
-        self._racing_line_clearance.setValue(
-            self._candidate_race_options["margin_feet"]
-        )
-        self._racing_line_clearance.setFixedWidth(78)
-        self._racing_line_clearance.setToolTip(
-            "Minimum clearance between the generated line's car center and "
-            "the legal pavement/wall edge. Increase this to keep Pathfinder "
-            "farther from walls; decrease it to allow more edge use."
-        )
-        self._racing_line_clearance.valueChanged.connect(
-            lambda value: self._candidate_race_options.__setitem__(
-                "margin_feet", float(value)
-            )
-        )
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
         self._pit_tab = PitTabBuilder(self).build()
@@ -412,7 +383,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             self._handle_export_all_lp_csv
         )
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
-        self._candidate_race_button.clicked.connect(self._handle_candidate_race_line)
+        self._optimized_line_button.clicked.connect(self._handle_generate_optimized_line)
         self._lp_lap_stats_button.clicked.connect(self._handle_lp_lap_statistics)
         self._trk_gaps_action.triggered.connect(
             lambda: self.controller.run_trk_gaps(self)
@@ -2781,139 +2752,46 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         layout.addWidget(buttons)
         dialog.exec_()
 
-    def _handle_minimum_time_optimize(self) -> None:
-        lp_name = self.preview_api.active_lp_line()
-        model = self._racing_line_model.currentData()
-        if model == "pathfinder":
-            title = "Pathfinder"
-        elif model == "geometric":
-            title = "Geometric Optimize"
-        else:
-            title = "Minimum-Time Optimize"
-        progress = QtWidgets.QProgressDialog(
-            f"Starting {title.lower()}...", None, 0, 100, self
-        )
-        progress.setWindowTitle(title)
-        progress.setWindowModality(QtCore.Qt.WindowModal)
-        progress.setMinimumDuration(0)
-        progress.setAutoClose(False)
-        progress.show()
-        QtWidgets.QApplication.processEvents()
-
-        def update_progress(current, total, label):
-            progress.setMaximum(max(1, int(total)))
-            progress.setValue(min(int(current), int(total)))
-            progress.setLabelText(label)
-            QtWidgets.QApplication.processEvents()
-
-        opts = self._candidate_race_options
-        try:
-            if model == "pathfinder":
-                performance = CarPerformance(
-                    acceleration_pct=opts["acceleration_pct"],
-                    braking_pct=opts["braking_pct"],
-                    cornering_pct=opts["cornering_pct"],
-                    aero_pct=opts["aero_pct"],
-                    safety_pct=opts["safety_pct"],
-                )
-                success, message = self.preview_api.generate_pathfinder_line(
-                    lp_name, margin_feet=opts["margin_feet"],
-                    max_speed_mph=opts["max_speed_mph"],
-                    car_performance=performance,
-                    progress_callback=update_progress,
-                )
-            elif model == "geometric":
-                success, message = self.preview_api.optimize_geometric_line(
-                    lp_name, margin_feet=opts["margin_feet"],
-                    progress_callback=update_progress,
-                )
-            else:
-                performance = CarPerformance(
-                    acceleration_pct=opts["acceleration_pct"],
-                    braking_pct=opts["braking_pct"],
-                    cornering_pct=opts["cornering_pct"],
-                    aero_pct=opts["aero_pct"],
-                    safety_pct=opts["safety_pct"],
-                )
-                success, message = self.preview_api.optimize_minimum_time_line(
-                    lp_name, margin_feet=opts["margin_feet"],
-                    max_speed_mph=opts["max_speed_mph"],
-                    car_performance=performance,
-                    progress_callback=update_progress,
-                )
-        finally:
-            progress.close()
-        if success:
-            self._show_optimization_results(title, message)
-        else:
-            QtWidgets.QMessageBox.warning(self, title, message)
-
-    def _handle_candidate_race_line(self) -> None:
+    def _handle_generate_optimized_line(self) -> None:
+        """Configure and run one of the three supported racing-line models."""
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             QtWidgets.QMessageBox.warning(
-                self, "Candidate Race Line", "Select an LP line first."
+                self, "Generate Optimized Line", "Select an LP line first."
             )
             return
-        if self.preview_api.lp_line_dirty(lp_name):
-            choice = QtWidgets.QMessageBox.question(
-                self, "Candidate Race Line",
-                f"Replace the unsaved {lp_name}.LP edits with a new candidate path?",
-                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
-                QtWidgets.QMessageBox.Cancel,
-            )
-            if choice != QtWidgets.QMessageBox.Yes:
-                return
+
         options = self._candidate_race_options
         dialog = QtWidgets.QDialog(self)
-        dialog.setWindowTitle(f"Candidate Race Line — {lp_name}.LP")
+        dialog.setWindowTitle(f"Generate Optimized Line — {lp_name}.LP")
+        dialog.resize(570, 570)
+        layout = QtWidgets.QVBoxLayout(dialog)
         form = QtWidgets.QFormLayout()
+        layout.addLayout(form)
 
-        pit_side = QtWidgets.QComboBox(dialog)
-        pit_side.addItem(f"Auto (follow existing {lp_name})", "auto")
-        pit_side.addItem("Pit on left; candidate to the right", "left")
-        pit_side.addItem("Pit on right; candidate to the left", "right")
-        pit_side.setCurrentIndex(max(0, pit_side.findData(options["pit_side"])))
-        has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
-        pit_side.setEnabled(has_split)
-        pit_side.setToolTip(
-            "Used only where a TRK section has more than two boundaries. "
-            "Other extra walls can also trigger it; inspect the preview."
+        form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP", dialog))
+        model = QtWidgets.QComboBox(dialog)
+        model.addItem("Pathfinder (world-space arcs)", "pathfinder")
+        model.addItem("Minimum Time (vehicle model)", "minimum_time")
+        model.addItem("Corner & Apex (rule-based)", "corner_apex")
+        model.setCurrentIndex(max(0, model.findData(self._optimized_line_model)))
+        form.addRow("Line model", model)
+
+        description = QtWidgets.QLabel(dialog)
+        description.setWordWrap(True)
+        form.addRow(description)
+
+        clearance = QtWidgets.QDoubleSpinBox(dialog)
+        clearance.setRange(0.0, 50.0)
+        clearance.setDecimals(1)
+        clearance.setSingleStep(0.5)
+        clearance.setSuffix(" ft")
+        clearance.setValue(options["margin_feet"])
+        clearance.setToolTip(
+            "Minimum clearance from the line's center to the legal pavement "
+            "or wall boundary. Increase this to keep the line farther from walls."
         )
-
-        margin = QtWidgets.QDoubleSpinBox(dialog)
-        margin.setRange(0.0, 100.0)
-        margin.setDecimals(1)
-        margin.setSuffix(" ft")
-        margin.setValue(options["margin_feet"])
-        margin.setToolTip("Clearance from the car center to the paved edge.")
-
-        lookahead = QtWidgets.QDoubleSpinBox(dialog)
-        lookahead.setRange(10.0, 500.0)
-        lookahead.setSingleStep(10.0)
-        lookahead.setSuffix(" ft")
-        lookahead.setValue(options["lookahead_feet"])
-        lookahead.setToolTip(
-            "Distance on each side used to recognize a bend; larger values "
-            "smooth minor kinks and begin the transition earlier."
-        )
-
-        width = QtWidgets.QSpinBox(dialog)
-        width.setRange(0, 100)
-        width.setSingleStep(5)
-        width.setSuffix(" %")
-        width.setValue(options["corner_width_pct"])
-        width.setToolTip(
-            "0% aims at the middle of the paved corridor; 100% aims at "
-            "opposite edges after clearance."
-        )
-
-        apex = QtWidgets.QSpinBox(dialog)
-        apex.setRange(40, 80)
-        apex.setSingleStep(5)
-        apex.setSuffix(" % of corner")
-        apex.setValue(options["apex_position_pct"])
-        apex.setToolTip("Higher values aim for a later apex within each detected bend.")
+        form.addRow("Pavement clearance", clearance)
 
         max_speed = QtWidgets.QDoubleSpinBox(dialog)
         max_speed.setRange(1.0, 300.0)
@@ -2921,11 +2799,74 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         max_speed.setSingleStep(5.0)
         max_speed.setSuffix(" mph")
         max_speed.setValue(options["max_speed_mph"])
-        max_speed.setToolTip(
-            "Hard maximum for this LP speed profile, useful for pace/caution lines."
-        )
+        max_speed.setToolTip("Maximum speed for the generated LP speed profile.")
+        form.addRow("Maximum speed", max_speed)
 
-        form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP"))
+        performance_box = QtWidgets.QGroupBox("Car performance", dialog)
+        performance_form = QtWidgets.QFormLayout(performance_box)
+        performance_controls = {}
+        for key, label, tip in (
+            ("acceleration_pct", "Acceleration",
+             "Longitudinal acceleration relative to the 1995 CART baseline."),
+            ("braking_pct", "Braking",
+             "Maximum braking ability relative to the baseline."),
+            ("cornering_pct", "Cornering grip",
+             "Overall lateral grip relative to the baseline."),
+            ("aero_pct", "Aero effect",
+             "Scales the speed-dependent downforce contribution."),
+            ("safety_pct", "Driver limit",
+             "Percentage of the modeled maximum performance to use."),
+        ):
+            spin = QtWidgets.QDoubleSpinBox(dialog)
+            spin.setRange(10.0, 100.0 if key == "safety_pct" else 200.0)
+            spin.setDecimals(1)
+            spin.setSingleStep(1.0 if key == "safety_pct" else 5.0)
+            spin.setSuffix(" %")
+            spin.setValue(options[key])
+            spin.setToolTip(tip)
+            performance_controls[key] = spin
+            performance_form.addRow(label, spin)
+        form.addRow(performance_box)
+
+        # Only the rule-based model has apex, width, and passing-side
+        # heuristics. Hide the entire group for Pathfinder/Minimum Time.
+        corner_box = QtWidgets.QGroupBox("Corner & Apex settings", dialog)
+        corner_form = QtWidgets.QFormLayout(corner_box)
+        has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
+
+        pit_side = QtWidgets.QComboBox(dialog)
+        pit_side.addItem(f"Auto (follow existing {lp_name})", "auto")
+        pit_side.addItem("Pit on left; generate to the right", "left")
+        pit_side.addItem("Pit on right; generate to the left", "right")
+        pit_side.setCurrentIndex(max(0, pit_side.findData(options["pit_side"])))
+        pit_side.setEnabled(has_split)
+        pit_side.setToolTip("Used at TRK sections with multiple paved corridors.")
+        corner_form.addRow("Pit side at split", pit_side)
+
+        lookahead = QtWidgets.QDoubleSpinBox(dialog)
+        lookahead.setRange(10.0, 500.0)
+        lookahead.setSingleStep(10.0)
+        lookahead.setSuffix(" ft")
+        lookahead.setValue(options["lookahead_feet"])
+        lookahead.setToolTip("Distance on either side used to detect each corner.")
+        corner_form.addRow("Corner lookahead", lookahead)
+
+        width = QtWidgets.QSpinBox(dialog)
+        width.setRange(0, 100)
+        width.setSingleStep(5)
+        width.setSuffix(" %")
+        width.setValue(options["corner_width_pct"])
+        width.setToolTip("How much paved width the rule-based corner path uses.")
+        corner_form.addRow("Use of paved width", width)
+
+        apex = QtWidgets.QSpinBox(dialog)
+        apex.setRange(40, 80)
+        apex.setSingleStep(5)
+        apex.setSuffix(" % of corner")
+        apex.setValue(options["apex_position_pct"])
+        apex.setToolTip("Higher values position the apex later within a corner.")
+        corner_form.addRow("Apex timing", apex)
+
         side_preference = QtWidgets.QComboBox(dialog)
         side_preference.addItem("None (normal racing line)", "none")
         side_preference.addItem("Prefer left", "left")
@@ -2933,85 +2874,102 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         side_preference.setCurrentIndex(max(
             0, side_preference.findData(options["side_preference"])
         ))
+        side_preference.setToolTip("Bias PASS1/PASS2 toward a selected side.")
+        corner_form.addRow("Passing-line side", side_preference)
+
         side_amount = QtWidgets.QSpinBox(dialog)
         side_amount.setRange(0, 100)
         side_amount.setSingleStep(5)
         side_amount.setSuffix(" %")
         side_amount.setValue(options["side_preference_pct"])
-        side_amount.setToolTip(
-            "How strongly the generated line prefers the selected side. "
-            "100% targets the nearest permitted edge, but pavement clearance "
-            "and wall constraints always remain enforced."
-        )
-        side_preference.setToolTip(
-            "Useful for PASS1/PASS2: bias the whole candidate line toward one "
-            "side while retaining the configured wall/pavement clearance."
-        )
-
-        form.addRow("Passing-line side", side_preference)
-        form.addRow("Side preference", side_amount)
-        form.addRow("Maximum speed", max_speed)
-
-        performance_box = QtWidgets.QGroupBox("Car performance", dialog)
-        performance_form = QtWidgets.QFormLayout(performance_box)
-        performance_controls = {}
-        for key, label, tip in (
-            ("acceleration_pct", "Acceleration", "Longitudinal acceleration relative to the 1995 CART baseline."),
-            ("braking_pct", "Braking", "Maximum braking ability relative to the baseline."),
-            ("cornering_pct", "Cornering grip", "Overall lateral grip relative to the baseline."),
-            ("aero_pct", "Aero effect", "Scales the speed-dependent downforce contribution to cornering grip."),
-            ("safety_pct", "Driver limit", "Percentage of the modeled maximum performance the generated line may use."),
-        ):
-            spin = QtWidgets.QDoubleSpinBox(dialog)
-            spin.setRange(10.0, 200.0 if key != "safety_pct" else 100.0)
-            spin.setDecimals(1)
-            spin.setSingleStep(5.0 if key != "safety_pct" else 1.0)
-            spin.setSuffix(" %")
-            spin.setValue(options[key])
-            spin.setToolTip(tip)
-            performance_controls[key] = spin
-            performance_form.addRow(label, spin)
-        form.addRow(performance_box)
-        form.addRow("Pit side at split", pit_side)
-        form.addRow("Pavement clearance", margin)
-        form.addRow("Corner lookahead", lookahead)
-        form.addRow("Use of paved width", width)
-        form.addRow("Apex timing", apex)
+        side_amount.setToolTip("Strength of the selected passing-line preference.")
+        corner_form.addRow("Side preference", side_amount)
 
         compare_candidates = QtWidgets.QCheckBox(
-            "Optimize by comparing multiple candidates", dialog
+            "Compare multiple apex/width candidates for lower modeled lap time",
+            dialog,
         )
         compare_candidates.setChecked(options.get("compare_candidates", False))
         compare_candidates.setToolTip(
-            "Slower but searches nearby apex/width combinations with the car "
-            "performance model and keeps the lowest modeled lap time."
+            "Search nearby corner/apex configurations using the car-performance "
+            "model; this is slower than generating a single rule-based line."
         )
-        form.addRow("Lap-time optimization", compare_candidates)
+        corner_form.addRow(compare_candidates)
+        form.addRow(corner_box)
+
+        pit_note = None
         if lp_name == "PIT":
-            note = QtWidgets.QLabel(
-                "Inside the track.txt pit speed-limit DLONG zone, PIT.LP will "
-                "be capped at 79 mph (or the lower Maximum speed above)."
+            pit_note = QtWidgets.QLabel(
+                "For Corner & Apex only, the track.txt pit speed-limit zone "
+                "will be capped at 79 mph or the selected lower maximum speed.",
+                dialog,
             )
-            note.setWordWrap(True)
-            form.addRow(note)
-        elif not has_split:
-            note = QtWidgets.QLabel("This TRK has no sections with extra boundaries.")
-            note.setWordWrap(True)
-            form.addRow(note)
+            pit_note.setWordWrap(True)
+            form.addRow(pit_note)
+
+        descriptions = {
+            "pathfinder": (
+                "Cast true straight/circular trajectories in world space, "
+                "select the longest legal paths, and close the lap seam. "
+                "Car performance is applied afterward to calculate speeds."
+            ),
+            "minimum_time": (
+                "Improve the selected LP's existing geometry by directly "
+                "minimizing modeled lap time with the car-performance model."
+            ),
+            "corner_apex": (
+                "Build a new line by detecting corners and choosing turn-in, "
+                "apex position, and track-width usage. Optionally compare "
+                "multiple candidates using modeled lap time."
+            ),
+        }
+
+        def update_model_fields(_index=None):
+            selection = model.currentData()
+            description.setText(descriptions[selection])
+            corner_box.setVisible(selection == "corner_apex")
+            if pit_note is not None:
+                pit_note.setVisible(selection == "corner_apex")
+            performance_box.setTitle(
+                "Car performance (used in optimization)"
+                if selection == "minimum_time"
+                else "Car performance (speed calculation after path generation)"
+            )
+            dialog.adjustSize()
+
+        model.currentIndexChanged.connect(update_model_fields)
+        update_model_fields()
 
         buttons = QtWidgets.QDialogButtonBox(
-            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=dialog,
         )
+        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Generate")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
-        layout = QtWidgets.QVBoxLayout(dialog)
-        layout.addLayout(form)
         layout.addWidget(buttons)
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
 
+        selection = model.currentData()
+        titles = {
+            "pathfinder": "Pathfinder",
+            "minimum_time": "Minimum Time",
+            "corner_apex": "Corner & Apex",
+        }
+        title = titles[selection]
+        if self.preview_api.lp_line_dirty(lp_name):
+            choice = QtWidgets.QMessageBox.question(
+                self, "Replace Unsaved LP Edits",
+                f"Replace the unsaved {lp_name}.LP edits with a new {title} line?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
+                QtWidgets.QMessageBox.Cancel,
+            )
+            if choice != QtWidgets.QMessageBox.Yes:
+                return
+
         options.update(
-            margin_feet=margin.value(),
+            margin_feet=clearance.value(),
             pit_side=pit_side.currentData() if has_split else "auto",
             lookahead_feet=lookahead.value(),
             corner_width_pct=width.value(),
@@ -3022,27 +2980,19 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             compare_candidates=compare_candidates.isChecked(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
-        self._racing_line_clearance.setValue(options["margin_feet"])
-        call_options = dict(options)
-        call_options["car_performance"] = CarPerformance(
-            acceleration_pct=call_options.pop("acceleration_pct"),
-            braking_pct=call_options.pop("braking_pct"),
-            cornering_pct=call_options.pop("cornering_pct"),
-            aero_pct=call_options.pop("aero_pct"),
-            safety_pct=call_options.pop("safety_pct"),
+        self._optimized_line_model = selection
+        performance = CarPerformance(
+            acceleration_pct=options["acceleration_pct"],
+            braking_pct=options["braking_pct"],
+            cornering_pct=options["cornering_pct"],
+            aero_pct=options["aero_pct"],
+            safety_pct=options["safety_pct"],
         )
-        if lp_name == "PIT" and getattr(self, "_pit_editors", None):
-            params = self._pit_editors[self._active_pit_lane_index()].parameters()
-            call_options.update(
-                pit_speed_start_dlong=params.pit_speed_limit_start_dlong,
-                pit_speed_end_dlong=params.pit_speed_limit_end_dlong,
-            )
-        progress_max = 30 if call_options["compare_candidates"] else 1
+
         progress = QtWidgets.QProgressDialog(
-            "Preparing candidate search..." if call_options["compare_candidates"]
-            else "Generating racing line...", None, 0, progress_max, self
+            f"Generating {title} line...", None, 0, 100, self
         )
-        progress.setWindowTitle("Generating Candidate Race Line")
+        progress.setWindowTitle(f"Generate Optimized Line — {title}")
         progress.setWindowModality(QtCore.Qt.WindowModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
@@ -3058,13 +3008,47 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             QtWidgets.QApplication.processEvents()
 
         try:
-            success, message = self.preview_api.generate_candidate_race_line(
-                lp_name, progress_callback=update_progress, **call_options
-            )
+            if selection == "pathfinder":
+                success, message = self.preview_api.generate_pathfinder_line(
+                    lp_name, margin_feet=options["margin_feet"],
+                    max_speed_mph=options["max_speed_mph"],
+                    car_performance=performance,
+                    progress_callback=update_progress,
+                )
+            elif selection == "minimum_time":
+                success, message = self.preview_api.optimize_minimum_time_line(
+                    lp_name, margin_feet=options["margin_feet"],
+                    max_speed_mph=options["max_speed_mph"],
+                    car_performance=performance,
+                    progress_callback=update_progress,
+                )
+            else:
+                pit_options = {}
+                if lp_name == "PIT" and getattr(self, "_pit_editors", None):
+                    params = self._pit_editors[self._active_pit_lane_index()].parameters()
+                    pit_options = {
+                        "pit_speed_start_dlong": params.pit_speed_limit_start_dlong,
+                        "pit_speed_end_dlong": params.pit_speed_limit_end_dlong,
+                    }
+                success, message = self.preview_api.generate_candidate_race_line(
+                    lp_name, margin_feet=options["margin_feet"],
+                    pit_side=options["pit_side"],
+                    lookahead_feet=options["lookahead_feet"],
+                    corner_width_pct=options["corner_width_pct"],
+                    apex_position_pct=options["apex_position_pct"],
+                    max_speed_mph=options["max_speed_mph"],
+                    car_performance=performance,
+                    side_preference=options["side_preference"],
+                    side_preference_pct=options["side_preference_pct"],
+                    compare_candidates=options["compare_candidates"],
+                    progress_callback=update_progress,
+                    **pit_options,
+                )
         finally:
             progress.close()
+
         if not success:
-            QtWidgets.QMessageBox.warning(self, "Candidate Race Line", message)
+            QtWidgets.QMessageBox.warning(self, title, message)
             return
         self._set_active_lp_line_in_ui(lp_name)
         checkbox = self._lp_checkboxes.get(lp_name)
@@ -3073,7 +3057,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._update_lp_records_table(lp_name)
         self._update_lp_dirty_indicator(lp_name)
         self.visualization_widget.update()
-        QtWidgets.QMessageBox.information(self, "Candidate Race Line", message)
+        if selection == "corner_apex":
+            message = f"MODEL: Corner & Apex\nLP: {lp_name}\n\n{message}"
+        self._show_optimization_results(title, message)
 
     def _handle_lp_lap_statistics(self) -> None:
         lp_name = self.preview_api.active_lp_line()
@@ -3143,8 +3129,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         self._generate_lp_button.setEnabled(enabled)
         has_lp_records = enabled and bool(self.preview_api.ai_line_records(name))
-        self._candidate_race_button.setEnabled(has_lp_records)
-        self._minimum_time_button.setEnabled(has_lp_records)
+        self._optimized_line_button.setEnabled(has_lp_records)
         self._lp_lap_stats_button.setEnabled(has_lp_records)
 
     def _handle_tv_mode_selection_changed(self, mode_count: int) -> None:
