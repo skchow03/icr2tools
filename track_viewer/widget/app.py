@@ -184,6 +184,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "safety_pct": 96.0,
             "side_preference": "none",
             "side_preference_pct": 0,
+            "compare_candidates": False,
         }
         self._lp_tab = LpTabBuilder(self).build()
         self.preview_api.set_lp_dlat_step(self._lp_dlat_step.value())
@@ -2864,6 +2865,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Corner lookahead", lookahead)
         form.addRow("Use of paved width", width)
         form.addRow("Apex timing", apex)
+
+        compare_candidates = QtWidgets.QCheckBox(
+            "Optimize by comparing multiple candidates", dialog
+        )
+        compare_candidates.setChecked(options.get("compare_candidates", False))
+        compare_candidates.setToolTip(
+            "Slower but searches nearby apex/width combinations with the car "
+            "performance model and keeps the lowest modeled lap time."
+        )
+        form.addRow("Lap-time optimization", compare_candidates)
         if lp_name == "PIT":
             note = QtWidgets.QLabel(
                 "Inside the track.txt pit speed-limit DLONG zone, PIT.LP will "
@@ -2896,6 +2907,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             max_speed_mph=max_speed.value(),
             side_preference=side_preference.currentData(),
             side_preference_pct=side_amount.value(),
+            compare_candidates=compare_candidates.isChecked(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
         call_options = dict(options)
@@ -2912,8 +2924,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 pit_speed_start_dlong=params.pit_speed_limit_start_dlong,
                 pit_speed_end_dlong=params.pit_speed_limit_end_dlong,
             )
+        progress_max = 26 if call_options["compare_candidates"] else 1
         progress = QtWidgets.QProgressDialog(
-            "Preparing candidate search...", None, 0, 26, self
+            "Preparing candidate search..." if call_options["compare_candidates"]
+            else "Generating racing line...", None, 0, progress_max, self
         )
         progress.setWindowTitle("Generating Candidate Race Line")
         progress.setWindowModality(QtCore.Qt.WindowModal)

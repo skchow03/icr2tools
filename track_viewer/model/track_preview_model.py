@@ -283,6 +283,7 @@ class TrackPreviewModel(QtCore.QObject):
         car_performance: CarPerformance | None = None,
         side_preference: str = "none",
         side_preference_pct: int = 0,
+        compare_candidates: bool = False,
         progress_callback=None,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
@@ -332,95 +333,103 @@ class TrackPreviewModel(QtCore.QObject):
                 ) * 3600.0)
                 return seconds, candidate_speeds
 
-            # The geometric solution is the seed. Compare nearby complete-lap
-            # solutions using the actual car model rather than assuming the
-            # geometric target is fastest. Vary apex timing and road usage
-            # together because they strongly interact in linked corners.
-            if progress_callback:
-                progress_callback(1, 26, "Evaluating baseline")
+            # The geometric solution is the seed. Optional comparison mode
+            # explores nearby complete-lap solutions with the car model.
             candidates = [(dlats, apex_position_pct, corner_width_pct)]
-            seen = {(apex_position_pct, corner_width_pct)}
-            for apex_delta in (-10, -5, 0, 5, 10):
-                for width_delta in (-15, -8, 8, 15):
-                    trial_apex = int(np.clip(
-                        apex_position_pct + apex_delta, 40, 80
-                    ))
-                    trial_width = int(np.clip(
-                        corner_width_pct + width_delta, 0, 100
-                    ))
-                    key = (trial_apex, trial_width)
-                    if key in seen:
-                        continue
-                    seen.add(key)
-                    trial = optimize_race_line(
-                        self.trk, self.centerline, [p.dlong for p in unique],
-                        margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
-                        pit_side=pit_side,
-                        lookahead_feet=lookahead_feet,
-                        corner_width_pct=trial_width,
-                        apex_position_pct=trial_apex,
-                        side_preference=side_preference,
-                        side_preference_pct=side_preference_pct,
-                    )
-                    candidates.append((trial, trial_apex, trial_width))
-                    if progress_callback:
-                        progress_callback(
-                            len(candidates), 26,
-                            f"Generating candidate {len(candidates)} of 26"
+            if compare_candidates:
+                if progress_callback:
+                    progress_callback(1, 26, "Evaluating baseline")
+                seen = {(apex_position_pct, corner_width_pct)}
+                for apex_delta in (-10, -5, 0, 5, 10):
+                    for width_delta in (-15, -8, 8, 15):
+                        trial_apex = int(np.clip(apex_position_pct + apex_delta, 40, 80))
+                        trial_width = int(np.clip(corner_width_pct + width_delta, 0, 100))
+                        key = (trial_apex, trial_width)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        trial = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side, lookahead_feet=lookahead_feet,
+                            corner_width_pct=trial_width,
+                            apex_position_pct=trial_apex,
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
                         )
+                        candidates.append((trial, trial_apex, trial_width))
+                        if progress_callback:
+                            progress_callback(len(candidates), 26,
+                                f"Generating candidate {len(candidates)} of 26")
 
             scored = []
             for score_index, (candidate_dlats, candidate_apex, candidate_width) in enumerate(candidates, 1):
-                if progress_callback:
-                    progress_callback(
-                        min(20 + score_index, 25), 26,
-                        f"Scoring candidate {score_index} of {len(candidates)}"
-                    )
+                if compare_candidates and progress_callback:
+                    progress_callback(min(20 + score_index, 25), 26,
+                        f"Scoring candidate {score_index} of {len(candidates)}")
                 lap_seconds, candidate_speeds = evaluate_candidate(candidate_dlats)
-                scored.append((
-                    lap_seconds, candidate_dlats, candidate_speeds,
-                    candidate_apex, candidate_width,
-                ))
+                scored.append((lap_seconds, candidate_dlats, candidate_speeds,
+                               candidate_apex, candidate_width))
             scored.sort(key=lambda item: item[0])
 
-            # One refinement round around the best coarse candidate. This is
-            # deliberately small/deterministic so generation remains usable
-            # interactively while still doing a real lap-time search.
+            if compare_candidates:
+                best = scored[0]
+                refine_seen = {(item[3], item[4]) for item in scored}
+                for apex_delta in (-3, 3):
+                    for width_delta in (-4, 4):
+                        trial_apex = int(np.clip(best[3] + apex_delta, 40, 80))
+                        trial_width = int(np.clip(best[4] + width_delta, 0, 100))
+                        key = (trial_apex, trial_width)
+                        if key in refine_seen:
+                            continue
+                        refine_seen.add(key)
+                        trial = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=[p.dlat for p in unique],
+                            pit_side=pit_side, lookahead_feet=lookahead_feet,
+                            corner_width_pct=trial_width,
+                            apex_position_pct=trial_apex,
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
+                        )
+                        lap_seconds, candidate_speeds = evaluate_candidate(trial)
+                        scored.append((lap_seconds, trial, candidate_speeds,
+                                       trial_apex, trial_width))
+                scored.sort(key=lambda item: item[0])
+
             best = scored[0]
-            refine_seen = set(seen)
-            for apex_delta in (-3, 3):
-                for width_delta in (-4, 4):
-                    trial_apex = int(np.clip(best[3] + apex_delta, 40, 80))
-                    trial_width = int(np.clip(best[4] + width_delta, 0, 100))
-                    key = (trial_apex, trial_width)
-                    if key in refine_seen:
-                        continue
-                    refine_seen.add(key)
-                    trial = optimize_race_line(
-                        self.trk, self.centerline, [p.dlong for p in unique],
-                        margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
-                        pit_side=pit_side,
-                        lookahead_feet=lookahead_feet,
-                        corner_width_pct=trial_width,
-                        apex_position_pct=trial_apex,
-                        side_preference=side_preference,
-                        side_preference_pct=side_preference_pct,
-                    )
-                    lap_seconds, candidate_speeds = evaluate_candidate(trial)
-                    scored.append((
-                        lap_seconds, trial, candidate_speeds,
-                        trial_apex, trial_width,
-                    ))
-                    if lap_seconds < best[0]:
-                        best = scored[-1]
-
-            best = min(scored, key=lambda item: item[0])
-            if progress_callback:
-                progress_callback(26, 26, "Finalizing fastest candidate")
             best_lap_seconds, unique_dlats, speeds, chosen_apex, chosen_width = best
-
+            if compare_candidates:
+                baseline = next(item for item in scored
+                    if item[3] == apex_position_pct and item[4] == corner_width_pct)
+                baseline_seconds = baseline[0]
+                slowest_seconds = max(item[0] for item in scored)
+                baseline_offsets = np.asarray(baseline[1], dtype=float) / 6000.0
+                separations = []
+                for item in scored:
+                    diff = np.abs(np.asarray(item[1], dtype=float) / 6000.0
+                                  - baseline_offsets)
+                    separations.extend(diff.tolist())
+                avg_separation = float(np.mean(separations))
+                max_separation = float(np.max(separations))
+                top_summary = ", ".join(
+                    f"{item[0]:.3f}s ({item[4]}% width/{item[3]}% apex)"
+                    for item in scored[:3]
+                )
+                search_summary = (
+                    f" Compared {len(scored)} candidates: baseline "
+                    f"{baseline_seconds:.3f}s, winner {best_lap_seconds:.3f}s "
+                    f"({best_lap_seconds - baseline_seconds:+.3f}s), slowest "
+                    f"{slowest_seconds:.3f}s. Relative to baseline, candidates "
+                    f"averaged {avg_separation:.2f} ft lateral separation and "
+                    f"reached {max_separation:.2f} ft maximum. Top 3: {top_summary}."
+                )
+                if progress_callback:
+                    progress_callback(26, 26, "Finalizing fastest candidate")
+            else:
+                search_summary = ""
             if lp_name == "PIT" and pit_speed_start_dlong is not None and pit_speed_end_dlong is not None:
                 start = float(pit_speed_start_dlong) % track_length
                 end = float(pit_speed_end_dlong) % track_length
@@ -429,7 +438,7 @@ class TrackPreviewModel(QtCore.QObject):
                     in_zone = (
                         start <= dlong <= end if start <= end
                         else dlong >= start or dlong <= end
-                    )
+                        )
                     if in_zone:
                         speeds[index] = min(79.0, max_speed_mph)
 
@@ -469,9 +478,14 @@ class TrackPreviewModel(QtCore.QObject):
             f"{margin_feet:g} ft center clearance from the paved edge. "
             f"Pit: {pit_side}; lookahead: {lookahead_feet:g} ft; "
             f"requested corner width/apex: {corner_width_pct}%/{apex_position_pct}%; "
-            f"lap-time search selected: {chosen_width}%/{chosen_apex}% "
-            f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
+            + (
+                f"lap-time search selected: {chosen_width}%/{chosen_apex}% "
+                f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
+                if compare_candidates else
+                f"single-line mode ({best_lap_seconds:.3f} s modeled); "
+            ) + 
             f"maximum speed: {max_speed_mph:g} mph."
+            f"{search_summary}"
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
