@@ -160,6 +160,7 @@ class LpTabBuilder:
         generation_tools_layout = QtWidgets.QHBoxLayout()
         generation_tools_layout.addWidget(window._generate_lp_button)
         generation_tools_layout.addWidget(window._candidate_race_button)
+        generation_tools_layout.addWidget(window._racing_line_model)
         generation_tools_layout.addWidget(window._minimum_time_button)
         generation_tools_layout.addWidget(window._lp_lap_stats_button)
         generation_tools_layout.addWidget(
