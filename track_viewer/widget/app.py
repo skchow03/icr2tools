@@ -2801,6 +2801,14 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         max_speed.setValue(options["max_speed_mph"])
         max_speed.setToolTip("Maximum speed for the generated LP speed profile.")
         form.addRow("Maximum speed", max_speed)
+        banking_note = QtWidgets.QLabel(
+            "Banking is read automatically from the .TRK cross-section "
+            "elevations and used in speed estimation for all three models. "
+            "Pathfinder still constructs its line without vehicle physics.",
+            dialog,
+        )
+        banking_note.setWordWrap(True)
+        form.addRow(banking_note)
 
         performance_box = QtWidgets.QGroupBox("Car performance", dialog)
         performance_form = QtWidgets.QFormLayout(performance_box)
