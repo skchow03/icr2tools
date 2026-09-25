@@ -485,6 +485,7 @@ class TrackPreviewModel(QtCore.QObject):
                 f"single-line mode ({best_lap_seconds:.3f} s modeled); "
             ) + 
             f"maximum speed: {max_speed_mph:g} mph."
+            f"{search_summary}"
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
