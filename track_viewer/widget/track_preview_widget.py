@@ -30,6 +30,7 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
     activeLpLineChanged = QtCore.pyqtSignal(str)
     aiLineLoaded = QtCore.pyqtSignal(str)
     lpRecordSelected = QtCore.pyqtSignal(str, int)
+    lpCurveEdited = QtCore.pyqtSignal(str)
     diagramClicked = QtCore.pyqtSignal()
     weatherCompassHeadingAdjustChanged = QtCore.pyqtSignal(str, int)
     weatherCompassWindDirectionChanged = QtCore.pyqtSignal(str, int)
@@ -62,6 +63,18 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         self._input_router = PreviewInputRouter(self._coordinator)
         self._input_router.handle_resize(self.size())
 
+    def configure_lp_curve_edit(self, enabled: bool, influence_feet: float = 180.0) -> None:
+        controller = self._coordinator.mouse_controller
+        if not enabled:
+            edited = controller.end_curve_drag()
+            if edited:
+                self.lpCurveEdited.emit(edited)
+        controller.curve_edit_enabled = bool(enabled)
+        controller.curve_influence_feet = float(influence_feet)
+        self.setCursor(
+            QtCore.Qt.CrossCursor if enabled else QtCore.Qt.ArrowCursor
+        )
+
     # ------------------------------------------------------------------
     # Qt events
     # ------------------------------------------------------------------
@@ -82,12 +95,21 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         super().wheelEvent(event)
 
     def mousePressEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton and self._coordinator.mouse_controller.begin_curve_drag(
+            event.pos(), self.size()
+        ):
+            event.accept()
+            return
         if self._input_router.handle_mouse_press(event, self.size()):
             event.accept()
             return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if self._coordinator.mouse_controller.curve_drag_active:
+            self._coordinator.mouse_controller.update_curve_drag(event.pos(), self.size())
+            event.accept()
+            return
         handled = self._input_router.handle_mouse_move(event, self.size())
         if handled:
             event.accept()
@@ -95,6 +117,12 @@ class TrackPreviewWidget(QtWidgets.QOpenGLWidget):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event: QtGui.QMouseEvent) -> None:  # noqa: D401 - Qt signature
+        if event.button() == QtCore.Qt.LeftButton and self._coordinator.mouse_controller.curve_drag_active:
+            edited = self._coordinator.mouse_controller.end_curve_drag()
+            if edited:
+                self.lpCurveEdited.emit(edited)
+            event.accept()
+            return
         if self._input_router.handle_mouse_release(event, self.size()):
             event.accept()
             return
