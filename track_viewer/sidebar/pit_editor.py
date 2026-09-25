@@ -73,7 +73,7 @@ class PitParametersEditor(QtWidgets.QFrame):
             if hasattr(input_widget, "valueChanged"):
                 input_widget.valueChanged.connect(self.parametersChanged.emit)
             self._inputs[field] = input_widget
-            index_item = QtWidgets.QTableWidgetItem(str(index))
+            index_item = QtWidgets.QTableWidgetItem(str(index + 1))
             index_item.setFlags(QtCore.Qt.ItemIsEnabled)
             table.setItem(index, 0, index_item)
 
