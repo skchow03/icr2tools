@@ -2924,7 +2924,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 pit_speed_start_dlong=params.pit_speed_limit_start_dlong,
                 pit_speed_end_dlong=params.pit_speed_limit_end_dlong,
             )
-        progress_max = 26 if call_options["compare_candidates"] else 1
+        progress_max = 30 if call_options["compare_candidates"] else 1
         progress = QtWidgets.QProgressDialog(
             "Preparing candidate search..." if call_options["compare_candidates"]
             else "Generating racing line...", None, 0, progress_max, self
