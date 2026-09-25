@@ -23,6 +23,7 @@ from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_legal_dlat_envelope
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
+from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -777,6 +778,68 @@ class TrackPreviewModel(QtCore.QObject):
             f"{pit_note} Speeds use the 1995 CART performance model. "
             f"Lateral-speed fields were retained; review/recalculate them before "
             f"saving {lp_name}.LP."
+        )
+
+    def optimize_geometric_line(
+        self, lp_name: str, margin_feet: float = 5.0, *,
+        progress_callback=None,
+    ) -> tuple[bool, str]:
+        """Optimize selected LP using path geometry only; no vehicle physics."""
+        if not lp_name or lp_name == "center-line":
+            return False, "Select an LP line first."
+        existing = self.get_ai_line_records_immediate(lp_name)
+        if len(existing) < 16:
+            return False, f"{lp_name}.LP needs at least 16 path samples."
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(existing[-1].dlong - track_length) < 1.0
+        unique = existing[:-1] if has_terminal else existing
+        dlongs = [p.dlong for p in unique]
+        seed = [p.dlat for p in unique]
+        lower, upper = build_legal_dlat_envelope(
+            self.trk, self.centerline, dlongs, seed,
+            margin_feet=margin_feet, pit_side="auto",
+        )
+
+        def build_xy(dlats):
+            result = []
+            for old, dlat in zip(unique, dlats):
+                x, y, _ = getxyz(self.trk, old.dlong, float(dlat), self.centerline)
+                result.append((x / 6000.0, y / 6000.0))
+            return result
+
+        dlats, before, after, trials, accepted = optimize_geometric(
+            seed, lower, upper, build_xy, progress_callback=progress_callback
+        )
+        records = []
+        for old, dlat in zip(unique, dlats):
+            x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+            records.append(LpPoint(
+                x=x, y=y, dlong=old.dlong, dlat=float(dlat),
+                speed_raw=old.speed_raw, speed_mph=old.speed_mph,
+                lateral_speed=old.lateral_speed,
+            ))
+        if has_terminal:
+            first = records[0]
+            records.append(LpPoint(
+                x=first.x, y=first.y, dlong=track_length, dlat=first.dlat,
+                speed_raw=first.speed_raw, speed_mph=first.speed_mph,
+                lateral_speed=first.lateral_speed,
+            ))
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+        improvement = 100.0 * (before - after) / max(abs(before), 1e-12)
+        return True, (
+            "MODEL: Geometric Optimize\n"
+            f"LP: {lp_name}\n"
+            f"Path variations tested: {trials}\n"
+            f"Accepted changes: {accepted}\n"
+            f"Geometry objective: {before:.8g} -> {after:.8g} "
+            f"({improvement:.2f}% lower)\n\n"
+            "Objective: low/coherent curvature, smooth curvature change, and "
+            "limited unnecessary path length. No vehicle physics or lap-time "
+            "simulation was used. Existing speed and lateral-speed values were retained."
         )
 
     def optimize_minimum_time_line(
