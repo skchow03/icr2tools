@@ -165,6 +165,13 @@ class LpTabBuilder:
             window._recalculate_lateral_speed_button
         )
         left_layout.addLayout(generation_tools_layout)
+        curve_tools_layout = QtWidgets.QHBoxLayout()
+        curve_tools_layout.addWidget(window._lp_curve_edit_button)
+        curve_tools_layout.addWidget(QtWidgets.QLabel("Influence"))
+        curve_tools_layout.addWidget(window._lp_curve_influence)
+        curve_tools_layout.addWidget(window._lp_speed_recalc_button)
+        curve_tools_layout.addStretch(1)
+        left_layout.addLayout(curve_tools_layout)
         io_label = QtWidgets.QLabel("Input/Output")
         io_label.setStyleSheet("font-weight: bold")
         left_layout.addWidget(io_label)

@@ -28,6 +28,7 @@ from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
 from track_viewer.ai.lap_time_format import format_lap_time
+from track_viewer.ai.lp_curve_drag import smooth_lateral_drag
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -209,6 +210,100 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation += 1
         self._dirty_lp_files.add(lp_name)
         return True
+
+    def set_lp_curve_offsets(self, lp_name: str, new_dlats) -> bool:
+        """Apply a drag frame to all unique LP stations in one cache update."""
+        if lp_name not in self.available_lp_files or self.trk is None:
+            return False
+        records = self.get_ai_line_records_immediate(lp_name)
+        if not records:
+            return False
+        length = float(self.trk.trklength)
+        terminal = len(records) > 1 and abs(records[-1].dlong - length) < 1.0
+        unique = records[:-1] if terminal else records
+        values = np.asarray(new_dlats, dtype=float)
+        if len(values) != len(unique) or not np.all(np.isfinite(values)):
+            return False
+        changed = False
+        for record, dlat in zip(unique, values):
+            if abs(record.dlat - float(dlat)) < 0.001:
+                continue
+            record.dlat = float(dlat)
+            x, y, _ = getxyz(
+                self.trk, float(record.dlong), record.dlat, self.centerline,
+            )
+            record.x, record.y = x, y
+            changed = True
+        if not changed:
+            return False
+        if terminal:
+            records[-1].dlat = unique[0].dlat
+            records[-1].x, records[-1].y = unique[0].x, unique[0].y
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+        return True
+
+    def recalculate_lp_speed_profile(
+        self,
+        lp_name: str,
+        *,
+        car_performance: CarPerformance | None = None,
+        max_speed_mph: float = 230.0,
+    ) -> tuple[bool, str]:
+        """Apply the existing bank-aware physics model to an edited LP path."""
+        if self.trk is None or not self.centerline:
+            return False, "Load a track first."
+        if lp_name not in self.available_lp_files:
+            return False, "Select an editable LP line."
+        if not 0.0 < max_speed_mph <= 300.0:
+            return False, "Maximum speed must be between 0 and 300 mph."
+        records = self.get_ai_line_records_immediate(lp_name)
+        length = float(self.trk.trklength)
+        terminal = len(records) > 1 and abs(records[-1].dlong - length) < 1.0
+        unique = records[:-1] if terminal else records
+        if len(unique) < 3:
+            return False, "The LP needs at least three unique path records."
+        try:
+            xy = np.asarray(
+                [(float(p.x) / 6000.0, float(p.y) / 6000.0) for p in unique],
+                dtype=float,
+            )
+            banking = build_trk_banking_profile(
+                self.trk, [p.dlong for p in unique],
+            ).at_dlats([p.dlat for p in unique])
+            speeds = np.minimum(
+                speed_profile_mph(
+                    xy, car_performance, banking_degrees=banking,
+                ),
+                max_speed_mph,
+            )
+        except (ValueError, ArithmeticError, IndexError) as exc:
+            return False, f"Unable to calculate LP speeds: {exc}"
+        segment = np.linalg.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
+        avg_speed = np.maximum((speeds + np.roll(speeds, -1)) * 0.5, 1e-9)
+        duration = float(np.sum((segment / 5280.0) / avg_speed) * 3600.0)
+        distance = float(np.sum(segment) / 5280.0)
+        for p, mph in zip(unique, speeds):
+            p.speed_mph = float(mph)
+            p.speed_raw = int(round(float(mph) * 5280.0 / 9.0))
+        if terminal:
+            records[-1].speed_mph = unique[0].speed_mph
+            records[-1].speed_raw = unique[0].speed_raw
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, (
+            f"LP: {lp_name}\n"
+            f"Estimated lap: {format_lap_time(duration)}\n"
+            f"Average speed: {distance * 3600.0 / max(duration, 1e-9):.2f} mph\n"
+            f"LP distance: {distance:.3f} mi\n"
+            f"Peak sampled TRK banking: {np.max(np.abs(banking)):.1f} deg\n\n"
+            "Applied the bank-aware 1995 CART speed profile to the current "
+            "LP geometry; the line's positions were not changed. "
+            "Existing lateral-speed values were retained; recalculate them "
+            "separately before saving if the line was edited."
+        )
 
     def generate_lp_line(
         self,

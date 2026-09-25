@@ -413,6 +413,14 @@ class PreviewCoordinator:
         self._apply_lp_changes(changes)
         return success, message
 
+    def recalculate_lp_speed_profile(self, lp_name: str, **kwargs):
+        success, message = self._model.recalculate_lp_speed_profile(
+            lp_name, **kwargs,
+        )
+        if success:
+            self._apply_lp_changes({LPChange.DATA})
+        return success, message
+
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         return self._model.lp_lap_statistics(lp_name)
 
