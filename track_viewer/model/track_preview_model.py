@@ -283,6 +283,7 @@ class TrackPreviewModel(QtCore.QObject):
         car_performance: CarPerformance | None = None,
         side_preference: str = "none",
         side_preference_pct: int = 0,
+        progress_callback=None,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
         if not lp_name or lp_name == "center-line":
@@ -335,6 +336,8 @@ class TrackPreviewModel(QtCore.QObject):
             # solutions using the actual car model rather than assuming the
             # geometric target is fastest. Vary apex timing and road usage
             # together because they strongly interact in linked corners.
+            if progress_callback:
+                progress_callback(1, 26, "Evaluating baseline")
             candidates = [(dlats, apex_position_pct, corner_width_pct)]
             seen = {(apex_position_pct, corner_width_pct)}
             for apex_delta in (-10, -5, 0, 5, 10):
@@ -361,9 +364,19 @@ class TrackPreviewModel(QtCore.QObject):
                         side_preference_pct=side_preference_pct,
                     )
                     candidates.append((trial, trial_apex, trial_width))
+                    if progress_callback:
+                        progress_callback(
+                            len(candidates), 26,
+                            f"Generating candidate {len(candidates)} of 26"
+                        )
 
             scored = []
-            for candidate_dlats, candidate_apex, candidate_width in candidates:
+            for score_index, (candidate_dlats, candidate_apex, candidate_width) in enumerate(candidates, 1):
+                if progress_callback:
+                    progress_callback(
+                        min(20 + score_index, 25), 26,
+                        f"Scoring candidate {score_index} of {len(candidates)}"
+                    )
                 lap_seconds, candidate_speeds = evaluate_candidate(candidate_dlats)
                 scored.append((
                     lap_seconds, candidate_dlats, candidate_speeds,
@@ -404,6 +417,8 @@ class TrackPreviewModel(QtCore.QObject):
                         best = scored[-1]
 
             best = min(scored, key=lambda item: item[0])
+            if progress_callback:
+                progress_callback(26, 26, "Finalizing fastest candidate")
             best_lap_seconds, unique_dlats, speeds, chosen_apex, chosen_width = best
 
             if lp_name == "PIT" and pit_speed_start_dlong is not None and pit_speed_end_dlong is not None:
