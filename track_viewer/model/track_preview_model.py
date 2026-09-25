@@ -802,8 +802,32 @@ class TrackPreviewModel(QtCore.QObject):
             self.trk, self.centerline, dlongs, seed,
             margin_feet=margin_feet, pit_side="auto",
         )
+        center_xy = []
+        for old in unique:
+            cx, cy, _ = getxyz(self.trk, old.dlong, 0.0, self.centerline)
+            center_xy.append((cx / 6000.0, cy / 6000.0))
+
+        # Determine whether positive ICR2 DLAT points to the geometric left or
+        # right of increasing DLONG. Pathfinder needs this only to convert a
+        # world-space centerline projection back into signed DLAT.
+        c0 = np.asarray(center_xy[0], dtype=float)
+        tangent = np.asarray(center_xy[1], dtype=float) - np.asarray(center_xy[-1], dtype=float)
+        tangent_norm = max(float(np.linalg.norm(tangent)), 1.0e-12)
+        tangent /= tangent_norm
+        px, py, _ = getxyz(
+            self.trk, unique[0].dlong, 6000.0, self.centerline
+        )
+        positive_offset = np.asarray((px / 6000.0, py / 6000.0), dtype=float) - c0
+        cross = tangent[0] * positive_offset[1] - tangent[1] * positive_offset[0]
+        dlat_sign = 1.0 if cross >= 0.0 else -1.0
+
         dlats, tested, intervals = generate_pathfinder(
-            dlongs, lower, upper, seed, progress_callback=progress_callback
+            dlongs, lower, upper, seed,
+            center_xy=center_xy,
+            start_xy=None,
+            track_length_feet=track_length / 6000.0,
+            dlat_sign=dlat_sign,
+            progress_callback=progress_callback,
         )
         xy = []
         for old, dlat in zip(unique, dlats):
@@ -844,13 +868,15 @@ class TrackPreviewModel(QtCore.QObject):
             f"Estimated lap: {lap_seconds:.3f} s\n"
             f"Average speed: {avg_mph:.2f} mph\n"
             f"LP distance: {distance_miles:.3f} mi\n\n"
-            "Method: beam search over straight and constant-curvature arc "
-            "primitives. The model constructs the path from track clearance, "
-            "forward progress, steering magnitude/change, and lateral wandering. "
-            "No vehicle physics, lap-time simulation, apex %, width %, or "
-            "corner classification was used. Existing speed and lateral-speed "
-            "lateral-speed values were retained; Pathfinder speeds were recalculated "
-            "with the same car-performance speed model used by the other generators."
+            "Method: receding-horizon world-space arc casting. Pathfinder "
+            "casts true XY straight/circular trajectories, projects them back "
+            "onto the local centerline to measure actual DLONG progress, rejects "
+            "arcs that leave the legal corridor, tests a second-stage continuation "
+            "beam, commits one LP interval, then replans. No vehicle physics, "
+            "lap-time simulation, apex %, width %, or corner classification is "
+            "used to choose the path. Speeds are calculated only after the path "
+            "is complete using the same car-performance model as the other generators. "
+            "Lateral-speed values are retained."
         )
 
     def optimize_geometric_line(
