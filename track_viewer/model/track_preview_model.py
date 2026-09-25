@@ -224,12 +224,18 @@ class TrackPreviewModel(QtCore.QObject):
         values = np.asarray(new_dlats, dtype=float)
         if len(values) != len(unique) or not np.all(np.isfinite(values)):
             return False
+        changed = False
         for record, dlat in zip(unique, values):
+            if abs(record.dlat - float(dlat)) < 0.001:
+                continue
             record.dlat = float(dlat)
             x, y, _ = getxyz(
                 self.trk, float(record.dlong), record.dlat, self.centerline,
             )
             record.x, record.y = x, y
+            changed = True
+        if not changed:
+            return False
         if terminal:
             records[-1].dlat = unique[0].dlat
             records[-1].x, records[-1].y = unique[0].x, unique[0].y
@@ -288,11 +294,11 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         self._ai_line_cache_generation += 1
         return True, (
-            f"LP: {lp_name}\\n"
-            f"Estimated lap: {format_lap_time(duration)}\\n"
-            f"Average speed: {distance * 3600.0 / max(duration, 1e-9):.2f} mph\\n"
-            f"LP distance: {distance:.3f} mi\\n"
-            f"Peak sampled TRK banking: {np.max(np.abs(banking)):.1f} deg\\n\\n"
+            f"LP: {lp_name}\n"
+            f"Estimated lap: {format_lap_time(duration)}\n"
+            f"Average speed: {distance * 3600.0 / max(duration, 1e-9):.2f} mph\n"
+            f"LP distance: {distance:.3f} mi\n"
+            f"Peak sampled TRK banking: {np.max(np.abs(banking)):.1f} deg\n\n"
             "Applied the bank-aware 1995 CART speed profile to the current "
             "LP geometry; the line's positions were not changed. "
             "Existing lateral-speed values were retained; recalculate them "
