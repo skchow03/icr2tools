@@ -5,67 +5,17 @@ from dataclasses import dataclass
 from typing import Sequence
 
 PIT_PARAMETER_DEFINITIONS: list[tuple[str, str, str, bool]] = [
-    ("pitwall_dlat", "Pit wall DLAT", "DLAT position of the pitwall", True),
-    (
-        "pit_access_start_dlong",
-        "Pit access start DLONG",
-        "DLONG of the beginning of the pit access road",
-        True,
-    ),
-    (
-        "pit_access_end_dlong",
-        "Pit access end DLONG",
-        "DLONG of the end of pit access road",
-        True,
-    ),
-    (
-        "player_pit_stall_dlong",
-        "Player pit stall DLONG",
-        "DLONG of the back end of the first pit stall (player pit)",
-        True,
-    ),
-    (
-        "last_pit_stall_dlong",
-        "Last pit stall DLONG",
-        "DLONG of the back end of the final pit stall (15-30 feet before end of pit lane)",
-        True,
-    ),
-    (
-        "pit_stall_center_dlat",
-        "Pit stall center DLAT",
-        "DLAT of the middle of car when parked in pit stall",
-        True,
-    ),
-    (
-        "pit_to_race_transition_dlong",
-        "Pit to race transition DLONG",
-        "DLONG of the PIT to RACE transition point",
-        True,
-    ),
-    (
-        "pit_stall_count",
-        "Pit stall count",
-        "Number of pit stalls (number of cars this pits can hold)",
-        True,
-    ),
-    (
-        "unknown_dlong",
-        "Unknown (usually 40-80 ft behind player stall)",
-        "DLONG - Unknown - usually 40-80 ft behind player stall",
-        True,
-    ),
-    (
-        "pit_speed_limit_start_dlong",
-        "Pit speed limit start DLONG",
-        "DLONG of the pit speed limit start",
-        True,
-    ),
-    (
-        "pit_speed_limit_end_dlong",
-        "Pit speed limit end DLONG",
-        "DLONG of the pit speed limit end",
-        True,
-    ),
+    ("pitwall_dlat", "Pit wall DLAT", "DLAT of the pit wall separating the pit lane from the track. If two walls define the median, use the inner wall facing the pit lane.", True),
+    ("pit_access_start_dlong", "Pit lane start DLONG", "Pit lane entrance begins here, possibly before the physical pit wall. At this point, PIT.LP should still be within the PANIC lines.", True),
+    ("pit_access_end_dlong", "Pit lane end DLONG", "Position where the pit lane wall ends. PIT.LP should still be outside the PANIC lines: PIT.LP is exiting pit lane while PANIC is on the racing portion of the track.", True),
+    ("player_pit_stall_dlong", "Player pit stall DLONG", "Beginning of the player's pit stall, aligned with the back of the player's car.", True),
+    ("last_pit_stall_dlong", "Last pit stall DLONG", "Beginning of the final AI opponent's pit stall. The pace car occupies a stall after this one, so leave adequate room.", True),
+    ("pit_stall_center_dlat", "Pit stall center DLAT", "Lateral positioning of all cars in the pit lane.", True),
+    ("pit_to_race_transition_dlong", "PIT.LP to RACE.LP transition DLONG", "Usually farther down the road from the pit exit to ensure a smooth pit exit.", True),
+    ("pit_stall_count", "Pit stall count", "Number of pit stalls for the player and AI opponents. Do not include the pace car's stall.", True),
+    ("unknown_dlong", "Unknown", "This line is placed somewhere before the player's pit stall start; it may be before or after value 10 (pit lane start). Its exact purpose is unknown.", True),
+    ("pit_speed_limit_start_dlong", "Pit lane start", "Point where PIT.LP is now outside the PANIC zone. PANIC will have just transitioned from the outside pit lane entrance wall to the pit median.", True),
+    ("pit_speed_limit_end_dlong", "Pit speed limit end", "End of the pit speed limit, usually close to value 3 (pit lane end DLONG).", True),
 ]
 
 PIT_DLONG_LINE_INDICES: tuple[int, ...] = (1, 2, 3, 4, 6, 8, 9, 10)
