@@ -25,6 +25,9 @@ class PitParametersEditor(QtWidgets.QFrame):
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._inputs: dict[str, QtWidgets.QAbstractSpinBox] = {}
+        self._help_widget_rows: dict[QtCore.QObject, int] = {}
+        self._help_title: QtWidgets.QLabel | None = None
+        self._help_text: QtWidgets.QLabel | None = None
         self._pit_visibility_checkboxes: dict[int, QtWidgets.QCheckBox] = {}
         self._pit_stall_center_checkbox: QtWidgets.QCheckBox | None = None
         self._pit_wall_checkbox: QtWidgets.QCheckBox | None = None
@@ -51,6 +54,7 @@ class PitParametersEditor(QtWidgets.QFrame):
         )
         table.verticalHeader().setVisible(False)
         table.setAlternatingRowColors(True)
+        table.cellClicked.connect(self._show_parameter_help)
         table.setSelectionMode(QtWidgets.QAbstractItemView.NoSelection)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         table.setSizeAdjustPolicy(
@@ -69,7 +73,8 @@ class PitParametersEditor(QtWidgets.QFrame):
                 QtWidgets.QSizePolicy.Minimum, QtWidgets.QSizePolicy.Fixed
             )
             input_widget.setMinimumWidth(0)
-            input_widget.setToolTip(tooltip)
+            input_widget.installEventFilter(self)
+            self._help_widget_rows[input_widget] = index
             if hasattr(input_widget, "valueChanged"):
                 input_widget.valueChanged.connect(self.parametersChanged.emit)
             self._inputs[field] = input_widget
@@ -79,7 +84,8 @@ class PitParametersEditor(QtWidgets.QFrame):
 
             label_widget = QtWidgets.QLabel(label)
             label_widget.setWordWrap(True)
-            label_widget.setToolTip(tooltip)
+            label_widget.installEventFilter(self)
+            self._help_widget_rows[label_widget] = index
             color = PIT_DLONG_LINE_COLORS.get(index) or PIT_DLAT_LINE_COLORS.get(
                 index
             )
@@ -138,7 +144,43 @@ class PitParametersEditor(QtWidgets.QFrame):
             header_height + row_height + table.frameWidth() * 2
         )
         layout.addWidget(table)
+
+        # Display the selected parameter's guidance below the table.
+        help_frame = QtWidgets.QFrame()
+        help_frame.setFrameShape(QtWidgets.QFrame.StyledPanel)
+        help_layout = QtWidgets.QVBoxLayout(help_frame)
+        help_layout.setContentsMargins(10, 8, 10, 8)
+        help_layout.setSpacing(4)
+        self._help_title = QtWidgets.QLabel()
+        title_font = self._help_title.font()
+        title_font.setBold(True)
+        self._help_title.setFont(title_font)
+        self._help_text = QtWidgets.QLabel()
+        self._help_text.setWordWrap(True)
+        self._help_text.setTextInteractionFlags(QtCore.Qt.TextSelectableByMouse)
+        help_layout.addWidget(self._help_title)
+        help_layout.addWidget(self._help_text)
+        layout.addWidget(help_frame)
+        self._show_parameter_help(0)
         self.setLayout(layout)
+
+    def eventFilter(self, watched: QtCore.QObject, event: QtCore.QEvent) -> bool:
+        index = self._help_widget_rows.get(watched)
+        if index is not None and event.type() in (
+            QtCore.QEvent.FocusIn,
+            QtCore.QEvent.MouseButtonPress,
+        ):
+            self._show_parameter_help(index)
+        return super().eventFilter(watched, event)
+
+    def _show_parameter_help(self, index: int, _column: int = 0) -> None:
+        if not 0 <= index < len(PIT_PARAMETER_DEFINITIONS):
+            return
+        _field, label, description, _is_integer = PIT_PARAMETER_DEFINITIONS[index]
+        if self._help_title is not None:
+            self._help_title.setText(f"{index + 1}. {label}")
+        if self._help_text is not None:
+            self._help_text.setText(description)
 
     @staticmethod
     def _legend_style(color: str) -> str:
