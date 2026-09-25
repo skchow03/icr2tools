@@ -177,7 +177,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "lookahead_feet": 60.0,
             "corner_width_pct": 75,
             "apex_position_pct": 60,
-            "max_speed_mph": 230.0,
+            "max_speed_mph": 245.0,
             "acceleration_pct": 100.0,
             "braking_pct": 100.0,
             "cornering_pct": 100.0,
