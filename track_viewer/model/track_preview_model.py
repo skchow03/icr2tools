@@ -26,6 +26,7 @@ from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
+from track_viewer.ai.lap_time_format import format_lap_time
 from track_viewer.geometry import (
     CenterlineIndex,
     build_centerline_index,
@@ -702,15 +703,16 @@ class TrackPreviewModel(QtCore.QObject):
                     )
 
                 top_summary = ", ".join(
-                    f"{item[0]:.3f}s ({item[4]}% width/{item[3]}% apex/"
+                    f"{format_lap_time(item[0])} ({item[4]}% width/{item[3]}% apex/"
                     f"{item[5]:g} ft lookahead)"
                     for item in scored[:3]
                 )
                 search_summary = (
                     f" Compared {len(scored)} candidates: baseline "
-                    f"{baseline_seconds:.3f}s, winner {best_lap_seconds:.3f}s "
+                    f"{format_lap_time(baseline_seconds)}, winner "
+                    f"{format_lap_time(best_lap_seconds)} "
                     f"({best_lap_seconds - baseline_seconds:+.3f}s), slowest "
-                    f"{slowest_seconds:.3f}s. Relative to baseline, candidates "
+                    f"{format_lap_time(slowest_seconds)}. Relative to baseline, candidates "
                     f"averaged {avg_separation:.2f} ft lateral separation and "
                     f"reached {max_separation:.2f} ft maximum."
                     f"{difference_summary}{local_summary} Top 3: {top_summary}."
@@ -770,9 +772,10 @@ class TrackPreviewModel(QtCore.QObject):
             + (
                 f"lap-time search selected: {chosen_width}%/{chosen_apex}%/"
                 f"{chosen_lookahead:g} ft "
-                f"from {len(scored)} candidates ({best_lap_seconds:.3f} s modeled); "
+                f"from {len(scored)} candidates "
+                f"({format_lap_time(best_lap_seconds)} modeled); "
                 if compare_candidates else
-                f"single-line mode ({best_lap_seconds:.3f} s modeled); "
+                f"single-line mode ({format_lap_time(best_lap_seconds)} modeled); "
             ) + 
             f"maximum speed: {max_speed_mph:g} mph."
             f"{search_summary}"
@@ -873,7 +876,7 @@ class TrackPreviewModel(QtCore.QObject):
             f"Configured clearance: {margin_feet:.1f} ft\n"
             f"Start/finish seam blend: ±{seam_window:.0f} ft; "
             f"max adjustment {seam_adjustment:.2f} ft\n"
-            f"Estimated lap: {lap_seconds:.3f} s\n"
+            f"Estimated lap: {format_lap_time(lap_seconds)}\n"
             f"Average speed: {avg_mph:.2f} mph\n"
             f"LP distance: {distance_miles:.3f} mi\n\n"
             "Method: receding-horizon world-space arc casting. Pathfinder "
@@ -1017,8 +1020,8 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         self._ai_line_cache_generation += 1
         return True, (
-            f"Minimum-time optimized {lp_name}: {baseline_time:.3f} s -> "
-            f"{best_time:.3f} s ({best_time - baseline_time:+.3f} s). "
+            f"Minimum-time optimized {lp_name}: {format_lap_time(baseline_time)} -> "
+            f"{format_lap_time(best_time)} ({best_time - baseline_time:+.3f} s). "
             f"Tested {trials} direct path variations, found {sensitive_regions} "
             f"sensitive regions, and accepted {accepted} changes. "
             "This search used the precomputed legal track envelope and did not "
@@ -1056,7 +1059,7 @@ class TrackPreviewModel(QtCore.QObject):
         lap_seconds = float(hours * 3600.0)
         average_mph = distance_miles / float(hours)
         return True, (
-            f"{lp_name}.LP estimated lap: {lap_seconds:.3f} s; "
+            f"{lp_name}.LP estimated lap: {format_lap_time(lap_seconds)}; "
             f"average speed: {average_mph:.2f} mph; "
             f"LP distance: {distance_miles:.3f} mi."
         ), lap_seconds, average_mph
