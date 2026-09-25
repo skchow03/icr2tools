@@ -477,107 +477,26 @@ class TrackPreviewModel(QtCore.QObject):
                     ))
                 scored.sort(key=lambda item: item[0])
 
-                # Iterative local coordinate descent. Revisit corners after
-                # later changes, then refine around accepted local settings.
+                # One meaningful per-corner parameter pass. The previous
+                # repeated/fine passes were expensive for very small gains.
                 global_best = scored[0]
                 local_overrides = {}
                 local_trials = 0
                 accepted_changes = 0
-                completed_passes = 0
                 max_local_corners = 24
                 detected_corner_count = max_local_corners
 
-                for pass_index in range(3):
-                    pass_improvements = 0
-                    completed_passes += 1
-                    for corner_index in range(detected_corner_count):
-                        current = local_overrides.get(corner_index, {
-                            "apex_position_pct": global_best[3],
-                            "corner_width_pct": global_best[4],
-                        })
-                        # First pass searches broadly. Later passes refine
-                        # around the currently accepted local setting.
-                        if pass_index == 0:
-                            deltas = (
-                                (-8, 0), (8, 0), (0, -10), (0, 10),
-                                (-5, 8), (5, 8),
-                            )
-                        else:
-                            deltas = (
-                                (-3, 0), (3, 0), (0, -4), (0, 4),
-                                (-2, 3), (2, 3),
-                            )
-
-                        corner_best = global_best
-                        corner_best_override = current
-                        found_effect = False
-                        for apex_delta, width_delta in deltas:
-                            trial_setting = {
-                                "apex_position_pct": int(np.clip(
-                                    current["apex_position_pct"] + apex_delta, 40, 80
-                                )),
-                                "corner_width_pct": int(np.clip(
-                                    current["corner_width_pct"] + width_delta, 0, 100
-                                )),
-                            }
-                            if trial_setting == current:
-                                continue
-                            override = dict(local_overrides)
-                            override[corner_index] = trial_setting
-                            trial = optimize_race_line(
-                                self.trk, self.centerline, [p.dlong for p in unique],
-                                margin_feet=margin_feet,
-                                reference_dlats=[p.dlat for p in unique],
-                                pit_side=pit_side, lookahead_feet=global_best[5],
-                                corner_width_pct=global_best[4],
-                                apex_position_pct=global_best[3],
-                                side_preference=side_preference,
-                                side_preference_pct=side_preference_pct,
-                                local_overrides=override,
-                            )
-                            lap_seconds, candidate_speeds = evaluate_candidate(trial)
-                            local_trials += 1
-                            delta = np.max(np.abs(
-                                np.asarray(trial) - np.asarray(global_best[1])
-                            ))
-                            if delta > 1e-6:
-                                found_effect = True
-                            if lap_seconds < corner_best[0] - 0.001:
-                                corner_best = (
-                                    lap_seconds, trial, candidate_speeds,
-                                    global_best[3], global_best[4], global_best[5],
-                                )
-                                corner_best_override = trial_setting
-
-                        if pass_index == 0 and not found_effect:
-                            detected_corner_count = corner_index
-                            break
-                        if corner_best[0] < global_best[0] - 0.001:
-                            local_overrides[corner_index] = corner_best_override
-                            global_best = corner_best
-                            pass_improvements += 1
-                            accepted_changes += 1
-
-                        if progress_callback:
-                            progress_callback(
-                                29, 30,
-                                f"Local optimization pass {pass_index + 1}: "
-                                f"corner {corner_index + 1}/{detected_corner_count}"
-                            )
-
-                    # An entire pass without an accepted improvement means the
-                    # coordinate descent has converged at this resolution.
-                    if pass_improvements == 0:
-                        break
-
-                # One final fine refinement around every retained override.
-                fine_improvements = 0
-                for corner_index in sorted(local_overrides):
-                    current = local_overrides[corner_index]
+                for corner_index in range(max_local_corners):
+                    current = {
+                        "apex_position_pct": global_best[3],
+                        "corner_width_pct": global_best[4],
+                    }
                     corner_best = global_best
-                    corner_best_override = current
+                    corner_best_override = None
+                    found_effect = False
                     for apex_delta, width_delta in (
-                        (-1, 0), (1, 0), (0, -2), (0, 2),
+                        (-8, 0), (8, 0), (0, -10), (0, 10),
+                        (-5, 8), (5, 8),
                     ):
                         trial_setting = {
                             "apex_position_pct": int(np.clip(
@@ -587,8 +506,6 @@ class TrackPreviewModel(QtCore.QObject):
                                 current["corner_width_pct"] + width_delta, 0, 100
                             )),
                         }
-                        if trial_setting == current:
-                            continue
                         override = dict(local_overrides)
                         override[corner_index] = trial_setting
                         trial = optimize_race_line(
@@ -604,17 +521,84 @@ class TrackPreviewModel(QtCore.QObject):
                         )
                         lap_seconds, candidate_speeds = evaluate_candidate(trial)
                         local_trials += 1
-                        if lap_seconds < corner_best[0] - 0.0005:
+                        delta = np.max(np.abs(
+                            np.asarray(trial) - np.asarray(global_best[1])
+                        ))
+                        if delta > 1e-6:
+                            found_effect = True
+                        if lap_seconds < corner_best[0] - 0.001:
                             corner_best = (
                                 lap_seconds, trial, candidate_speeds,
                                 global_best[3], global_best[4], global_best[5],
                             )
                             corner_best_override = trial_setting
-                    if corner_best[0] < global_best[0] - 0.0005:
+                    if not found_effect:
+                        detected_corner_count = corner_index
+                        break
+                    if corner_best_override is not None:
                         local_overrides[corner_index] = corner_best_override
                         global_best = corner_best
-                        fine_improvements += 1
                         accepted_changes += 1
+                    if progress_callback:
+                        progress_callback(
+                            29, 30,
+                            f"Optimizing corner {corner_index + 1}"
+                        )
+
+                # Direct local shape search: perturb smooth windows of the
+                # already-optimized DLAT path rather than forcing every useful
+                # change through width/apex parameters. Evaluate the full lap
+                # after each perturbation and keep only improvements.
+                shape_trials = 0
+                shape_changes = 0
+                shape_best = global_best
+                base_dlats = np.asarray(shape_best[1], dtype=float)
+                n_points = len(base_dlats)
+                # Sample control centers around the lap. A raised-cosine window
+                # gives zero displacement at its ends, avoiding splice kinks.
+                control_step = max(12, n_points // 28)
+                half_window = max(10, control_step)
+                for center_idx in range(0, n_points, control_step):
+                    candidate_best = shape_best
+                    for shift_feet in (-3.0, -1.5, 1.5, 3.0):
+                        trial_dlats = np.asarray(shape_best[1], dtype=float).copy()
+                        for offset in range(-half_window, half_window + 1):
+                            idx = (center_idx + offset) % n_points
+                            phase = abs(offset) / float(half_window + 1)
+                            weight = 0.5 * (1.0 + np.cos(np.pi * phase))
+                            trial_dlats[idx] += shift_feet * 6000.0 * weight
+                        # Reject direct perturbations that leave the legal
+                        # corridor by asking the geometry optimizer to project
+                        # and smooth this candidate with a short polish pass.
+                        polished = optimize_race_line(
+                            self.trk, self.centerline, [p.dlong for p in unique],
+                            margin_feet=margin_feet,
+                            reference_dlats=trial_dlats.tolist(),
+                            pit_side=pit_side, lookahead_feet=shape_best[5],
+                            corner_width_pct=shape_best[4],
+                            apex_position_pct=shape_best[3],
+                            side_preference=side_preference,
+                            side_preference_pct=side_preference_pct,
+                            local_overrides=local_overrides,
+                            iterations=35,
+                        )
+                        lap_seconds, candidate_speeds = evaluate_candidate(polished)
+                        shape_trials += 1
+                        if lap_seconds < candidate_best[0] - 0.001:
+                            candidate_best = (
+                                lap_seconds, polished, candidate_speeds,
+                                shape_best[3], shape_best[4], shape_best[5],
+                            )
+                    if candidate_best[0] < shape_best[0] - 0.001:
+                        shape_best = candidate_best
+                        shape_changes += 1
+                    if progress_callback:
+                        progress_callback(
+                            29, 30,
+                            f"Shape optimization {center_idx // control_step + 1}/"
+                            f"{(n_points + control_step - 1) // control_step}"
+                        )
+                global_best = shape_best
 
                 if local_overrides:
                     scored.append(global_best)
@@ -627,16 +611,18 @@ class TrackPreviewModel(QtCore.QObject):
                         for index, value in sorted(local_overrides.items())
                     )
                     local_summary = (
-                        f" Local corner optimization ran {completed_passes} pass(es), "
-                        f"tested {local_trials} variations, accepted {accepted_changes} "
-                        f"changes ({fine_improvements} fine), and kept "
+                        f" Local corner optimization tested {local_trials} variations, "
+                        f"accepted {accepted_changes} changes, and kept "
                         f"{len(local_overrides)} overrides: "
-                        f"{settings}."
+                        f"{settings}. Direct shape optimization tested {shape_trials} "
+                        f"smooth perturbations and kept {shape_changes} changes."
                     )
                 else:
                     local_summary = (
-                        f" Local corner optimization ran {completed_passes} pass(es) and "
-                        f"tested {local_trials} variations; none improved the global solution."
+                        f" Local corner optimization tested {local_trials} variations; "
+                        f"none improved the global solution. Direct shape optimization "
+                        f"tested {shape_trials} smooth perturbations and kept "
+                        f"{shape_changes} changes."
                     )
             else:
                 local_summary = ""
