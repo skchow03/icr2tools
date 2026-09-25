@@ -21,7 +21,7 @@ from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
-from track_viewer.ai.racing_line_optimizer import optimize_race_line
+from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_legal_dlat_envelope
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.geometry import (
@@ -811,22 +811,20 @@ class TrackPreviewModel(QtCore.QObject):
             seconds = float(np.sum((ds / 5280.0) / segment_mph) * 3600.0)
             return seconds, speeds
 
-        # Use a short constrained geometry pass only as a legal projection.
-        # The minimum-time search itself manipulates DLAT controls directly.
-        def legalize(candidate_dlats):
-            return optimize_race_line(
-                self.trk, self.centerline, dlongs,
-                margin_feet=margin_feet,
-                reference_dlats=list(candidate_dlats),
-                corner_width_pct=100,
-                apex_position_pct=50,
-                iterations=12,
-            )
+        # Select the legal corridor once. From this point onward the
+        # minimum-time optimizer is independent of apex/width/lookahead and
+        # never calls the geometric racing-line optimizer.
+        lower_dlats, upper_dlats = build_legal_dlat_envelope(
+            self.trk, self.centerline, dlongs, seed,
+            margin_feet=margin_feet, pit_side="auto",
+        )
 
         baseline_time, _ = evaluate(seed)
-        dlats, speeds, best_time, trials, accepted = optimize_minimum_time(
-            seed, evaluate, legalize, progress_callback=progress_callback,
-            coarse_controls=40,
+        (
+            dlats, speeds, best_time, trials, accepted, sensitive_regions,
+        ) = optimize_minimum_time(
+            seed, lower_dlats, upper_dlats, evaluate,
+            progress_callback=progress_callback, coarse_controls=32,
         )
 
         records = []
@@ -851,8 +849,11 @@ class TrackPreviewModel(QtCore.QObject):
         return True, (
             f"Minimum-time optimized {lp_name}: {baseline_time:.3f} s -> "
             f"{best_time:.3f} s ({best_time - baseline_time:+.3f} s). "
-            f"Tested {trials} direct path variations and accepted {accepted}. "
-            "Lateral-speed values were retained; recalculate them if needed."
+            f"Tested {trials} direct path variations, found {sensitive_regions} "
+            f"sensitive regions, and accepted {accepted} changes. "
+            "This search used the precomputed legal track envelope and did not "
+            "call the geometric racing-line optimizer. Lateral-speed values were "
+            "retained; recalculate them if needed."
         )
 
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
