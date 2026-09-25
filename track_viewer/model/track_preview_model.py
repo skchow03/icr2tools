@@ -824,7 +824,7 @@ class TrackPreviewModel(QtCore.QObject):
             dlats, speeds, best_time, trials, accepted, sensitive_regions,
         ) = optimize_minimum_time(
             seed, lower_dlats, upper_dlats, evaluate,
-            progress_callback=progress_callback, coarse_controls=32,
+            progress_callback=progress_callback, coarse_controls=48,
         )
 
         records = []
