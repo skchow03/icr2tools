@@ -370,7 +370,11 @@ def generate_pathfinder(
     result = [start_dlat]
     tested = 0
 
+    continuity_recoveries = 0
+    commit_retries = 0
+
     for i in range(1, n):
+        target_dlong = float(dl[i])
         direct = []
         for k in curvatures:
             travelled, end_state = _cast_clearance(
@@ -378,28 +382,39 @@ def generate_pathfinder(
                 center, dl, lo, hi, track_length, dlat_sign,
             )
             tested += 1
-            direct.append((end_state.dlong, travelled, abs(k - current.curvature), float(k), end_state))
+            direct.append((
+                end_state.dlong, travelled,
+                abs(k - current.curvature), float(k), end_state,
+            ))
 
         # Keep a broad set of genuinely different first arcs. Direct reach is
         # the primary criterion; steering change is only a tie breaker.
         direct.sort(key=lambda item: (-item[0], -item[1], item[2]))
         first_beam = direct[:min(beam_width, len(direct))]
 
-        best_choice = None
-        best_key = None
+        scored_choices = []
         for direct_end_dlong, direct_distance, first_change, first_k, _ in first_beam:
+            # A path is not eligible to win unless its first arc can actually
+            # be committed continuously to the very next LP station.
+            committed = _advance_to_target_dlong(
+                current, first_k, target_dlong,
+                center, dl, lo, hi, track_length, dlat_sign,
+            )
+            if committed is None:
+                commit_retries += 1
+                continue
+
             branch_state = _advance_checked(
                 current, first_k, min(branch_feet, horizon_feet),
                 center, dl, lo, hi, track_length, dlat_sign,
                 sample_feet=12.0,
             )
             if branch_state is None:
-                # If this arc cannot reach the branch point, its direct
-                # collision distance is still a valid (usually weak) future.
-                key = (direct_end_dlong, direct_distance, -first_change, -abs(first_k))
-                if best_key is None or key > best_key:
-                    best_key = key
-                    best_choice = first_k
+                key = (
+                    direct_end_dlong, direct_distance,
+                    -first_change, -abs(first_k),
+                )
+                scored_choices.append((key, first_k, committed))
                 continue
 
             remaining = max(0.0, horizon_feet - branch_feet)
@@ -413,14 +428,17 @@ def generate_pathfinder(
                 )
                 tested += 1
                 change = abs(float(second_k) - first_k)
-                key2 = (end2.dlong, travelled2, -change, -abs(float(second_k)))
                 if (
                     end2.dlong > continuation_best
                     or (
                         abs(end2.dlong - continuation_best) < 1.0e-6
-                        and (travelled2 > continuation_distance
-                             or (abs(travelled2 - continuation_distance) < 1.0e-6
-                                 and change < continuation_change))
+                        and (
+                            travelled2 > continuation_distance
+                            or (
+                                abs(travelled2 - continuation_distance) < 1.0e-6
+                                and change < continuation_change
+                            )
+                        )
                     )
                 ):
                     continuation_best = end2.dlong
@@ -435,33 +453,19 @@ def generate_pathfinder(
                 -first_change,
                 -abs(first_k),
             )
-            if best_key is None or key > best_key:
-                best_key = key
-                best_choice = first_k
+            scored_choices.append((key, first_k, committed))
 
-        if best_choice is None:
-            best_choice = 0.0
-
-        target_dlong = float(dl[i])
-        committed = _advance_to_target_dlong(
-            current, best_choice, target_dlong,
-            center, dl, lo, hi, track_length, dlat_sign,
-        )
-        if committed is None:
-            # Best-effort recovery at this LP station. Rejoin the local
-            # centerline instead of abandoning generation.
-            j = i
-            p0 = center[j]
-            next_j = (j + 1) % n
-            p1 = center[next_j]
-            h = math.atan2(float(p1[1] - p0[1]), float(p1[0] - p0[0]))
-            lat = float(np.clip(0.0, lo[j], hi[j]))
-            current = State(
-                float(p0[0]), float(p0[1]), h, 0.0, j,
-                target_dlong, lat,
-            )
+        if scored_choices:
+            scored_choices.sort(key=lambda item: item[0], reverse=True)
+            _, _, current = scored_choices[0]
         else:
-            current = committed
+            # Do not teleport to the centerline. Preserve the previous lateral
+            # offset as far as the next station's legal corridor permits.
+            current = _fallback_station_state(
+                current, i, target_dlong,
+                center, lo, hi, dlat_sign,
+            )
+            continuity_recoveries += 1
 
         result.append(float(np.clip(current.dlat, lo[i], hi[i])))
 
@@ -471,4 +475,4 @@ def generate_pathfinder(
                 f"Pathfinder world-space arc search: LP {i}/{n - 1}",
             )
 
-    return (np.asarray(result) * 6000.0).tolist(), tested, n - 1
+    return (np.asarray(result) * 6000.0).tolist(), tested, n - 1, commit_retries, continuity_recoveries
