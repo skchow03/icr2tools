@@ -821,7 +821,7 @@ class TrackPreviewModel(QtCore.QObject):
         cross = tangent[0] * positive_offset[1] - tangent[1] * positive_offset[0]
         dlat_sign = 1.0 if cross >= 0.0 else -1.0
 
-        dlats, tested, intervals = generate_pathfinder(
+        dlats, tested, intervals, commit_retries, continuity_recoveries = generate_pathfinder(
             dlongs, lower, upper, seed,
             center_xy=center_xy,
             start_xy=None,
@@ -865,6 +865,8 @@ class TrackPreviewModel(QtCore.QObject):
             f"LP: {lp_name}\n"
             f"Planning intervals: {intervals}\n"
             f"Arc/straight states tested: {tested}\n"
+            f"Rejected non-continuous first arcs: {commit_retries}\n"
+            f"Continuity recoveries: {continuity_recoveries}\n"
             f"Estimated lap: {lap_seconds:.3f} s\n"
             f"Average speed: {avg_mph:.2f} mph\n"
             f"LP distance: {distance_miles:.3f} mi\n\n"

@@ -198,35 +198,104 @@ def _advance_to_target_dlong(
     track_length: float,
     dlat_sign: float,
 ) -> State | None:
-    """Commit the selected arc only until the next LP station is reached."""
-    remaining = max(target_dlong - state.dlong, 0.5)
-    max_travel = max(25.0, remaining * 2.5 + 10.0)
-    current = state
-    best = state
-    best_error = abs(state.dlong - target_dlong)
+    """Commit one arc continuously to the requested LP station.
+
+    The earlier implementation returned the nearest coarse 2 ft sample. More
+    importantly, if that sample could not be reached it snapped the state to
+    the centerline. Those resets showed up as the large triangular jumps in
+    the generated LP. This version requires a legal bracket around the target
+    DLONG and refines the crossing by bisection so the committed state really
+    belongs to this LP station.
+    """
+    if target_dlong <= state.dlong + 1.0e-6:
+        return state
+
+    remaining = target_dlong - state.dlong
+    max_travel = max(30.0, remaining * 2.75 + 12.0)
+    previous = state
     travelled = 0.0
 
-    while travelled < max_travel:
+    while travelled < max_travel - 1.0e-9:
         step = min(2.0, max_travel - travelled)
         nxt = _advance_checked(
-            current, curvature, step, center, dlongs, lower, upper,
+            previous, curvature, step, center, dlongs, lower, upper,
             track_length, dlat_sign, sample_feet=step,
         )
         if nxt is None:
-            break
-        current = nxt
+            return None
+
+        if nxt.dlong >= target_dlong:
+            # Refine the arc distance from previous -> nxt until its projected
+            # DLONG is essentially the requested LP station.
+            lo_dist = 0.0
+            hi_dist = step
+            best = nxt
+            best_error = abs(nxt.dlong - target_dlong)
+            for _ in range(12):
+                mid_dist = 0.5 * (lo_dist + hi_dist)
+                mid = _advance_checked(
+                    previous, curvature, mid_dist,
+                    center, dlongs, lower, upper,
+                    track_length, dlat_sign,
+                    sample_feet=max(mid_dist, 0.05),
+                )
+                if mid is None:
+                    hi_dist = mid_dist
+                    continue
+                error = abs(mid.dlong - target_dlong)
+                if error < best_error:
+                    best = mid
+                    best_error = error
+                if mid.dlong < target_dlong:
+                    lo_dist = mid_dist
+                else:
+                    hi_dist = mid_dist
+            return best
+
+        previous = nxt
         travelled += step
-        error = abs(current.dlong - target_dlong)
-        if error < best_error:
-            best = current
-            best_error = error
-        if current.dlong >= target_dlong:
-            break
 
-    if best is state and target_dlong - state.dlong > 2.0:
-        return None
-    return best
+    return None
 
+
+def _fallback_station_state(
+    state: State,
+    target_index: int,
+    target_dlong: float,
+    center: np.ndarray,
+    lower: np.ndarray,
+    upper: np.ndarray,
+    dlat_sign: float,
+) -> State:
+    """Advance to the next station without a lateral teleport.
+
+    This is only a last-resort recovery if no tested arc can reach the next LP
+    station. It preserves the previous lateral offset as much as the legal
+    corridor permits instead of snapping to DLAT=0.
+    """
+    n = len(center)
+    j = target_index % n
+    prev_j = (j - 1) % n
+    next_j = (j + 1) % n
+
+    # Preserve the existing offset; only clip if the corridor itself narrows.
+    dlat = float(np.clip(state.dlat, lower[j], upper[j]))
+
+    # Use a centered tangent for a stable local normal at this LP station.
+    tx = float(center[next_j, 0] - center[prev_j, 0])
+    ty = float(center[next_j, 1] - center[prev_j, 1])
+    tlen = max(math.hypot(tx, ty), 1.0e-9)
+    tx /= tlen
+    ty /= tlen
+    nx = -ty * dlat_sign
+    ny = tx * dlat_sign
+    x = float(center[j, 0]) + nx * dlat
+    y = float(center[j, 1]) + ny * dlat
+
+    return State(
+        x, y, state.heading, state.curvature, j,
+        float(target_dlong), dlat,
+    )
 
 def generate_pathfinder(
     dlongs,
@@ -258,7 +327,7 @@ def generate_pathfinder(
     """
     n = len(seed)
     if n < 8:
-        return list(seed), 0, 0
+        return list(seed), 0, 0, 0, 0
 
     center = np.asarray(center_xy, dtype=float)
     dl = np.asarray(dlongs, dtype=float) / 6000.0
@@ -301,7 +370,11 @@ def generate_pathfinder(
     result = [start_dlat]
     tested = 0
 
+    continuity_recoveries = 0
+    commit_retries = 0
+
     for i in range(1, n):
+        target_dlong = float(dl[i])
         direct = []
         for k in curvatures:
             travelled, end_state = _cast_clearance(
@@ -309,28 +382,39 @@ def generate_pathfinder(
                 center, dl, lo, hi, track_length, dlat_sign,
             )
             tested += 1
-            direct.append((end_state.dlong, travelled, abs(k - current.curvature), float(k), end_state))
+            direct.append((
+                end_state.dlong, travelled,
+                abs(k - current.curvature), float(k), end_state,
+            ))
 
         # Keep a broad set of genuinely different first arcs. Direct reach is
         # the primary criterion; steering change is only a tie breaker.
         direct.sort(key=lambda item: (-item[0], -item[1], item[2]))
         first_beam = direct[:min(beam_width, len(direct))]
 
-        best_choice = None
-        best_key = None
+        scored_choices = []
         for direct_end_dlong, direct_distance, first_change, first_k, _ in first_beam:
+            # A path is not eligible to win unless its first arc can actually
+            # be committed continuously to the very next LP station.
+            committed = _advance_to_target_dlong(
+                current, first_k, target_dlong,
+                center, dl, lo, hi, track_length, dlat_sign,
+            )
+            if committed is None:
+                commit_retries += 1
+                continue
+
             branch_state = _advance_checked(
                 current, first_k, min(branch_feet, horizon_feet),
                 center, dl, lo, hi, track_length, dlat_sign,
                 sample_feet=12.0,
             )
             if branch_state is None:
-                # If this arc cannot reach the branch point, its direct
-                # collision distance is still a valid (usually weak) future.
-                key = (direct_end_dlong, direct_distance, -first_change, -abs(first_k))
-                if best_key is None or key > best_key:
-                    best_key = key
-                    best_choice = first_k
+                key = (
+                    direct_end_dlong, direct_distance,
+                    -first_change, -abs(first_k),
+                )
+                scored_choices.append((key, first_k, committed))
                 continue
 
             remaining = max(0.0, horizon_feet - branch_feet)
@@ -344,14 +428,17 @@ def generate_pathfinder(
                 )
                 tested += 1
                 change = abs(float(second_k) - first_k)
-                key2 = (end2.dlong, travelled2, -change, -abs(float(second_k)))
                 if (
                     end2.dlong > continuation_best
                     or (
                         abs(end2.dlong - continuation_best) < 1.0e-6
-                        and (travelled2 > continuation_distance
-                             or (abs(travelled2 - continuation_distance) < 1.0e-6
-                                 and change < continuation_change))
+                        and (
+                            travelled2 > continuation_distance
+                            or (
+                                abs(travelled2 - continuation_distance) < 1.0e-6
+                                and change < continuation_change
+                            )
+                        )
                     )
                 ):
                     continuation_best = end2.dlong
@@ -366,33 +453,19 @@ def generate_pathfinder(
                 -first_change,
                 -abs(first_k),
             )
-            if best_key is None or key > best_key:
-                best_key = key
-                best_choice = first_k
+            scored_choices.append((key, first_k, committed))
 
-        if best_choice is None:
-            best_choice = 0.0
-
-        target_dlong = float(dl[i])
-        committed = _advance_to_target_dlong(
-            current, best_choice, target_dlong,
-            center, dl, lo, hi, track_length, dlat_sign,
-        )
-        if committed is None:
-            # Best-effort recovery at this LP station. Rejoin the local
-            # centerline instead of abandoning generation.
-            j = i
-            p0 = center[j]
-            next_j = (j + 1) % n
-            p1 = center[next_j]
-            h = math.atan2(float(p1[1] - p0[1]), float(p1[0] - p0[0]))
-            lat = float(np.clip(0.0, lo[j], hi[j]))
-            current = State(
-                float(p0[0]), float(p0[1]), h, 0.0, j,
-                target_dlong, lat,
-            )
+        if scored_choices:
+            scored_choices.sort(key=lambda item: item[0], reverse=True)
+            _, _, current = scored_choices[0]
         else:
-            current = committed
+            # Do not teleport to the centerline. Preserve the previous lateral
+            # offset as far as the next station's legal corridor permits.
+            current = _fallback_station_state(
+                current, i, target_dlong,
+                center, lo, hi, dlat_sign,
+            )
+            continuity_recoveries += 1
 
         result.append(float(np.clip(current.dlat, lo[i], hi[i])))
 
@@ -402,4 +475,4 @@ def generate_pathfinder(
                 f"Pathfinder world-space arc search: LP {i}/{n - 1}",
             )
 
-    return (np.asarray(result) * 6000.0).tolist(), tested, n - 1
+    return (np.asarray(result) * 6000.0).tolist(), tested, n - 1, commit_retries, continuity_recoveries
