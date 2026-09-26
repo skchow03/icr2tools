@@ -232,6 +232,9 @@ class TrackPreviewApi:
     def generate_pathfinder_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
         return self._coordinator.generate_pathfinder_line(lp_name, margin_feet, **kwargs)
 
+    def generate_physics_pathfinder_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
+        return self._coordinator.generate_physics_pathfinder_line(lp_name, margin_feet, **kwargs)
+
     def optimize_geometric_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
         return self._coordinator.optimize_geometric_line(lp_name, margin_feet, **kwargs)
 
