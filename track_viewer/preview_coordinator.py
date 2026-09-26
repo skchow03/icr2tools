@@ -431,6 +431,9 @@ class PreviewCoordinator:
             self._apply_lp_changes({LPChange.DATA})
         return success, message
 
+    def last_refinement_speed_audit(self):
+        return getattr(self._model, '_last_refinement_speed_audit', None)
+
     def generated_line_diagnostics(self, lp_name: str, margin_feet: float = 5.0):
         return self._model.generated_line_diagnostics(lp_name, margin_feet)
 
