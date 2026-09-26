@@ -25,7 +25,7 @@ G_FPS2 = 32.174
 # copy must live next to the EXE where users can edit it between launches.
 _BUNDLED_MODEL_PATH = Path(__file__).resolve().parents[1] / "config" / "car_performance.json"
 DEFAULT_MODEL_PATH = (
-    Path(sys.executable).resolve().parent / "config" / "car_performance.json"
+    Path(sys.executable).resolve().parent / "car_performance.json"
     if getattr(sys, "frozen", False)
     else _BUNDLED_MODEL_PATH
 )
@@ -35,8 +35,10 @@ def _ensure_default_model_file() -> None:
     """Create the external editable configuration on first frozen launch."""
     if not getattr(sys, "frozen", False) or DEFAULT_MODEL_PATH.exists():
         return
-    DEFAULT_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(_BUNDLED_MODEL_PATH, DEFAULT_MODEL_PATH)
+    # Migrate any edits made with the previous release, which used config/.
+    legacy_path = DEFAULT_MODEL_PATH.parent / "config" / "car_performance.json"
+    source = legacy_path if legacy_path.is_file() else _BUNDLED_MODEL_PATH
+    shutil.copyfile(source, DEFAULT_MODEL_PATH)
 
 
 @dataclass(frozen=True)
