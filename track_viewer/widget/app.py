@@ -162,8 +162,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._optimized_line_button = QtWidgets.QPushButton("Generate Optimized Line")
         self._optimized_line_button.setEnabled(False)
         self._optimized_line_button.setToolTip(
-            "Choose Pathfinder, Minimum Time, or Corner & Apex and configure "
-            "its settings in one dialog."
+            "Choose Pathfinder, Physics Pathfinder, Minimum Time, or Corner & Apex "
+            "and configure its settings in one dialog."
         )
         self._optimized_line_model = "pathfinder"
         self._lp_lap_stats_button = QtWidgets.QPushButton("Lap Time / Avg Speed")
@@ -2786,7 +2786,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         dialog.exec_()
 
     def _handle_generate_optimized_line(self) -> None:
-        """Configure and run one of the three supported racing-line models."""
+        """Configure and run one of the supported racing-line models."""
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
             QtWidgets.QMessageBox.warning(
@@ -2805,6 +2805,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP", dialog))
         model = QtWidgets.QComboBox(dialog)
         model.addItem("Pathfinder (world-space arcs)", "pathfinder")
+        model.addItem("Physics Pathfinder (experimental)", "physics_pathfinder")
         model.addItem("Minimum Time (vehicle model)", "minimum_time")
         model.addItem("Corner & Apex (rule-based)", "corner_apex")
         model.setCurrentIndex(max(0, model.findData(self._optimized_line_model)))
@@ -2836,8 +2837,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Maximum speed", max_speed)
         banking_note = QtWidgets.QLabel(
             "Banking is read automatically from the .TRK cross-section "
-            "elevations and used in speed estimation for all three models. "
-            "Pathfinder still constructs its line without vehicle physics.",
+            "elevations and used in speed estimation for all models. "
+            "Pathfinder still constructs its line without vehicle physics; "
+            "Physics Pathfinder uses the vehicle model during the path search.",
             dialog,
         )
         banking_note.setWordWrap(True)
@@ -2870,7 +2872,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow(performance_box)
 
         # Only the rule-based model has apex, width, and passing-side
-        # heuristics. Hide the entire group for Pathfinder/Minimum Time.
+        # heuristics. Hide the entire group for Pathfinder variants/Minimum Time.
         corner_box = QtWidgets.QGroupBox("Corner & Apex settings", dialog)
         corner_form = QtWidgets.QFormLayout(corner_box)
         has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
@@ -2954,6 +2956,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 "select the longest legal paths, and close the lap seam. "
                 "Car performance is applied afterward to calculate speeds."
             ),
+            "physics_pathfinder": (
+                "Search deeper sequences of true world-space arcs and rank "
+                "them with the CART cornering, acceleration, braking, aero, "
+                "banking, and driver-limit model. Only the first arc is "
+                "committed before replanning."
+            ),
             "minimum_time": (
                 "Improve the selected LP's existing geometry by directly "
                 "minimizing modeled lap time with the car-performance model."
@@ -2973,7 +2981,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 pit_note.setVisible(selection == "corner_apex")
             performance_box.setTitle(
                 "Car performance (used in optimization)"
-                if selection == "minimum_time"
+                if selection in {"minimum_time", "physics_pathfinder"}
                 else "Car performance (speed calculation after path generation)"
             )
             dialog.adjustSize()
@@ -2995,6 +3003,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         selection = model.currentData()
         titles = {
             "pathfinder": "Pathfinder",
+            "physics_pathfinder": "Physics Pathfinder",
             "minimum_time": "Minimum Time",
             "corner_apex": "Corner & Apex",
         }
@@ -3051,6 +3060,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         try:
             if selection == "pathfinder":
                 success, message = self.preview_api.generate_pathfinder_line(
+                    lp_name, margin_feet=options["margin_feet"],
+                    max_speed_mph=options["max_speed_mph"],
+                    car_performance=performance,
+                    progress_callback=update_progress,
+                )
+            elif selection == "physics_pathfinder":
+                success, message = self.preview_api.generate_physics_pathfinder_line(
                     lp_name, margin_feet=options["margin_feet"],
                     max_speed_mph=options["max_speed_mph"],
                     car_performance=performance,
