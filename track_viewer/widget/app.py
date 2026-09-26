@@ -190,6 +190,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference": "none",
             "side_preference_pct": 0,
             "compare_candidates": False,
+            "refinement_combined_grip": False,
         }
         self._lp_curve_edit_button = QtWidgets.QPushButton("Smooth Drag LP")
         self._lp_curve_edit_button.setCheckable(True)
@@ -2916,6 +2917,20 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         model.setCurrentIndex(max(0, model.findData(self._optimized_line_model)))
         form.addRow("Line model", model)
 
+        combined_objective = QtWidgets.QCheckBox(
+            "Optimize with combined lateral / longitudinal grip", dialog
+        )
+        combined_objective.setChecked(
+            options.get("refinement_combined_grip", False)
+        )
+        combined_objective.setToolTip(
+            "Pathfinder Refinement only: score every candidate with the "
+            "friction-ellipse speed model and save its corresponding speeds. "
+            "Off uses the original separate-grip objective. This may "
+            "increase optimization time."
+        )
+        form.addRow(combined_objective)
+
         description = QtWidgets.QLabel(dialog)
         description.setWordWrap(True)
         form.addRow(description)
@@ -3063,8 +3078,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             ),
             "pathfinder_refinement": (
                 "Generate a fresh geometric Pathfinder line, then refine the complete "
-                "lap using the CART performance model. Retain the original Pathfinder "
-                "line unless a smoother, faster lap is found."
+                "lap using the selected CART speed model. Optionally optimize with "
+                "combined lateral/longitudinal grip rather than only re-scoring the "
+                "finished geometry. Retain the Pathfinder baseline unless a faster "
+                "valid candidate is verified under the selected objective."
             ),
             "physics_pathfinder": (
                 "Search deeper sequences of true world-space arcs and rank "
@@ -3087,6 +3104,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             selection = model.currentData()
             description.setText(descriptions[selection])
             corner_box.setVisible(selection == "corner_apex")
+            combined_objective.setVisible(selection == "pathfinder_refinement")
             if pit_note is not None:
                 pit_note.setVisible(selection == "corner_apex")
             performance_box.setTitle(
@@ -3139,6 +3157,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             side_preference=side_preference.currentData(),
             side_preference_pct=side_amount.value(),
             compare_candidates=compare_candidates.isChecked(),
+            refinement_combined_grip=combined_objective.isChecked(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
         self._optimized_line_model = selection
@@ -3182,6 +3201,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                     lp_name, margin_feet=options["margin_feet"],
                     max_speed_mph=options["max_speed_mph"],
                     car_performance=performance,
+                    combined_grip_objective=options["refinement_combined_grip"],
                     progress_callback=update_progress,
                 )
             elif selection == "physics_pathfinder":
@@ -3262,6 +3282,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             report["diagnostics_error"] = str(exc)
             message += f"\n\nCommon diagnostics unavailable: {exc}"
         if selection == "pathfinder_refinement":
+            report["optimization_objective"] = (
+                "combined_grip" if options["refinement_combined_grip"]
+                else "separate_grip"
+            )
             audit = self.preview_api.last_refinement_speed_audit()
             if audit is not None:
                 report["speed_audit"] = audit

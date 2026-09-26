@@ -27,7 +27,9 @@ from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.pathfinder_refinement import refine_pathfinder
 from track_viewer.ai.speed_model_audit import audit_paths, format_audit
-from track_viewer.ai.combined_grip import compare_combined_grip, format_combined_grip_comparison
+from track_viewer.ai.combined_grip import (
+    combined_grip_profile, compare_combined_grip, format_combined_grip_comparison,
+)
 from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
@@ -1004,8 +1006,9 @@ class TrackPreviewModel(QtCore.QObject):
         progress_callback=None,
         max_speed_mph: float = 245.0,
         car_performance: CarPerformance | None = None,
+        combined_grip_objective: bool = False,
     ) -> tuple[bool, str]:
-        """Generate a fresh geometric Pathfinder, then refine its complete lap."""
+        """Generate Pathfinder, then refine against the selected speed objective."""
         if not lp_name or lp_name == "center-line":
             return False, "Select an LP line first."
         self._last_refinement_speed_audit = None
@@ -1055,10 +1058,16 @@ class TrackPreviewModel(QtCore.QObject):
 
         def evaluate(dlats):
             xy = xy_from_dlats(dlats)
-            speeds = np.minimum(speed_profile_mph(
-                xy, car_performance,
-                banking_degrees=bank_profile.at_dlats(dlats),
-            ), max_speed_mph)
+            banking = bank_profile.at_dlats(dlats)
+            if combined_grip_objective:
+                speeds = combined_grip_profile(
+                    xy, car_performance, banking_degrees=banking,
+                    max_speed_mph=max_speed_mph,
+                )
+            else:
+                speeds = np.minimum(speed_profile_mph(
+                    xy, car_performance, banking_degrees=banking,
+                ), max_speed_mph)
             ds = np.linalg.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
             segment_speed = (speeds + np.roll(speeds, -1)) * 0.5
             if np.any(segment_speed <= 0.01):
@@ -1121,8 +1130,13 @@ class TrackPreviewModel(QtCore.QObject):
         self._manual_lp_overrides.add(lp_name)
         self._dirty_lp_files.add(lp_name)
         self._ai_line_cache_generation += 1
+        objective_name = (
+            "Combined grip (friction ellipse)"
+            if combined_grip_objective else "Separate lateral and longitudinal grip"
+        )
         return True, (
             "MODEL: Pathfinder Refinement\n"
+            f"Optimization objective: {objective_name}\n"
             f"LP: {lp_name}\n"
             f"Geometric Pathfinder baseline: {format_lap_time(baseline_time)}\n"
             f"Refined lap: {format_lap_time(best_time)} "
@@ -1137,8 +1151,13 @@ class TrackPreviewModel(QtCore.QObject):
             "Method: fresh geometric Pathfinder baseline, followed by "
             "periodic spline refinement against complete modeled lap time. "
             "New curvature spikes are rejected, and the baseline is retained "
-            "unless a faster candidate is verified. Lateral speeds retained."            + "\n\n" + format_audit(audit)
-            + "\n\n" + format_combined_grip_comparison(combined)
+            "unless a faster candidate is verified. "
+            + ("Combined-grip speeds saved." if combined_grip_objective
+               else "Lateral speeds retained.")
+            + "\n\n" + format_audit(audit)
+            + "\n\n" + format_combined_grip_comparison(
+                combined, speeds_saved=combined_grip_objective,
+            )
         )
 
     def generate_physics_pathfinder_line(
