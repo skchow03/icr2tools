@@ -1007,6 +1007,7 @@ class TrackPreviewModel(QtCore.QObject):
         """Generate a fresh geometric Pathfinder, then refine its complete lap."""
         if not lp_name or lp_name == "center-line":
             return False, "Select an LP line first."
+        self._last_refinement_speed_audit = None
         existing = self.get_ai_line_records_immediate(lp_name)
         if len(existing) < 16:
             return False, f"{lp_name}.LP needs at least 16 path samples."
@@ -1066,7 +1067,7 @@ class TrackPreviewModel(QtCore.QObject):
             if progress_callback:
                 progress_callback(intervals + current, intervals + total, label)
 
-        baseline_time_check, baseline_speeds = evaluate(baseline_dlats)
+        _, baseline_speeds = evaluate(baseline_dlats)
         (dlats, speeds, baseline_time, best_time,
          trials, accepted, regions) = refine_pathfinder(
             baseline_dlats, lower, upper, xy_from_dlats, evaluate,
@@ -1109,22 +1110,22 @@ class TrackPreviewModel(QtCore.QObject):
         self._dirty_lp_files.add(lp_name)
         self._ai_line_cache_generation += 1
         return True, (
-            "MODEL: Pathfinder Refinement\\n"
-            f"LP: {lp_name}\\n"
-            f"Geometric Pathfinder baseline: {format_lap_time(baseline_time)}\\n"
+            "MODEL: Pathfinder Refinement\n"
+            f"LP: {lp_name}\n"
+            f"Geometric Pathfinder baseline: {format_lap_time(baseline_time)}\n"
             f"Refined lap: {format_lap_time(best_time)} "
-            f"({best_time - baseline_time:+.3f} s)\\n"
+            f"({best_time - baseline_time:+.3f} s)\n"
             f"Optimization trials: {trials}; accepted: {accepted}; "
-            f"sensitive regions: {regions}\\n"
+            f"sensitive regions: {regions}\n"
             f"Pathfinder arc states tested: {tested}; "
-            f"continuity recoveries: {recoveries}\\n"
-            f"Clearance: {margin_feet:.1f} ft\\n"
+            f"continuity recoveries: {recoveries}\n"
+            f"Clearance: {margin_feet:.1f} ft\n"
             f"LP distance: {distance_miles:.3f} mi; "
-            f"average speed: {avg_mph:.2f} mph\\n"
+            f"average speed: {avg_mph:.2f} mph\n"
             "Method: fresh geometric Pathfinder baseline, followed by "
             "periodic spline refinement against complete modeled lap time. "
             "New curvature spikes are rejected, and the baseline is retained "
-            "unless a faster candidate is verified. Lateral speeds retained."\n            + "\\n\\n" + format_audit(audit)
+            "unless a faster candidate is verified. Lateral speeds retained."\n            + "\n\n" + format_audit(audit)
         )
 
     def generate_physics_pathfinder_line(
