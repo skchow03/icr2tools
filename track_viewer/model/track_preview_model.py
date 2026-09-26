@@ -26,6 +26,7 @@ from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.pathfinder_refinement import refine_pathfinder
+from track_viewer.ai.speed_model_audit import audit_paths, format_audit
 from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
@@ -1065,6 +1066,7 @@ class TrackPreviewModel(QtCore.QObject):
             if progress_callback:
                 progress_callback(intervals + current, intervals + total, label)
 
+        baseline_time_check, baseline_speeds = evaluate(baseline_dlats)
         (dlats, speeds, baseline_time, best_time,
          trials, accepted, regions) = refine_pathfinder(
             baseline_dlats, lower, upper, xy_from_dlats, evaluate,
@@ -1089,6 +1091,19 @@ class TrackPreviewModel(QtCore.QObject):
                 speed_raw=first.speed_raw, speed_mph=first.speed_mph,
                 lateral_speed=first.lateral_speed,
             ))
+        # Retain the baseline from this same generation, not an unrelated
+        # previous LP. Audit coordinates use the exact final LP record XY.
+        baseline_xy = xy_from_dlats(baseline_dlats)
+        audit = audit_paths(
+            dlongs, baseline_xy, baseline_speeds,
+            np.asarray([(p.x / 6000.0, p.y / 6000.0) for p in records[:len(unique)]]),
+            np.asarray([p.speed_mph for p in records[:len(unique)]]),
+            performance=car_performance,
+            baseline_banking=bank_profile.at_dlats(baseline_dlats),
+            refined_banking=bank_profile.at_dlats(dlats),
+            max_speed_mph=max_speed_mph,
+        )
+        self._last_refinement_speed_audit = audit
         self._ai_lines[lp_name] = records
         self._manual_lp_overrides.add(lp_name)
         self._dirty_lp_files.add(lp_name)
@@ -1109,7 +1124,7 @@ class TrackPreviewModel(QtCore.QObject):
             "Method: fresh geometric Pathfinder baseline, followed by "
             "periodic spline refinement against complete modeled lap time. "
             "New curvature spikes are rejected, and the baseline is retained "
-            "unless a faster candidate is verified. Lateral speeds retained."
+            "unless a faster candidate is verified. Lateral speeds retained."\n            + "\\n\\n" + format_audit(audit)
         )
 
     def generate_physics_pathfinder_line(
