@@ -25,6 +25,7 @@ from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_lega
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
+from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
 from track_viewer.ai.lap_time_format import format_lap_time
@@ -992,6 +993,160 @@ class TrackPreviewModel(QtCore.QObject):
             "used to choose the path. Speeds are calculated only after the path "
             "is complete using the same car-performance model as the other generators. "
             "Lateral-speed values are retained."
+        )
+
+    def generate_physics_pathfinder_line(
+        self, lp_name: str, margin_feet: float = 5.0, *,
+        progress_callback=None,
+        max_speed_mph: float = 245.0,
+        car_performance: CarPerformance | None = None,
+    ) -> tuple[bool, str]:
+        """Construct a new LP using deeper physics-aware arc beam search."""
+        if not lp_name or lp_name == "center-line":
+            return False, "Select an LP line first."
+        existing = self.get_ai_line_records_immediate(lp_name)
+        if len(existing) < 16:
+            return False, f"{lp_name}.LP needs at least 16 path samples."
+
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(existing[-1].dlong - track_length) < 1.0
+        unique = existing[:-1] if has_terminal else existing
+        dlongs = [p.dlong for p in unique]
+        seed = [p.dlat for p in unique]
+        lower, upper = build_legal_dlat_envelope(
+            self.trk, self.centerline, dlongs, seed,
+            margin_feet=margin_feet, pit_side="auto",
+        )
+
+        center_xy = []
+        seed_xy = []
+        for old in unique:
+            cx, cy, _ = getxyz(self.trk, old.dlong, 0.0, self.centerline)
+            center_xy.append((cx / 6000.0, cy / 6000.0))
+            sx, sy, _ = getxyz(self.trk, old.dlong, old.dlat, self.centerline)
+            seed_xy.append((sx / 6000.0, sy / 6000.0))
+
+        c0 = np.asarray(center_xy[0], dtype=float)
+        tangent = (
+            np.asarray(center_xy[1], dtype=float)
+            - np.asarray(center_xy[-1], dtype=float)
+        )
+        tangent_norm = max(float(np.linalg.norm(tangent)), 1.0e-12)
+        tangent /= tangent_norm
+        px, py, _ = getxyz(
+            self.trk, unique[0].dlong, 6000.0, self.centerline
+        )
+        positive_offset = (
+            np.asarray((px / 6000.0, py / 6000.0), dtype=float) - c0
+        )
+        cross = (
+            tangent[0] * positive_offset[1]
+            - tangent[1] * positive_offset[0]
+        )
+        dlat_sign = 1.0 if cross >= 0.0 else -1.0
+
+        performance = car_performance or CarPerformance()
+        bank_profile = build_trk_banking_profile(self.trk, dlongs)
+        seed_banking = bank_profile.at_dlats(seed)
+        reference_speeds = np.asarray(
+            [max(0.0, float(p.speed_mph)) for p in unique], dtype=float
+        )
+        if np.count_nonzero(reference_speeds > 5.0) < max(3, len(unique) // 2):
+            reference_speeds = np.minimum(
+                speed_profile_mph(
+                    seed_xy, performance, banking_degrees=seed_banking
+                ),
+                max_speed_mph,
+            )
+        else:
+            reference_speeds = np.minimum(reference_speeds, max_speed_mph)
+
+        (
+            dlats, tested, intervals, rejected_physics,
+            continuity_recoveries, seam_window, seam_adjustment,
+        ) = generate_physics_pathfinder(
+            dlongs, lower, upper, seed,
+            center_xy=center_xy,
+            track_length_feet=track_length / 6000.0,
+            dlat_sign=dlat_sign,
+            reference_speeds_mph=reference_speeds,
+            banking_degrees=seed_banking,
+            performance=performance,
+            max_speed_mph=max_speed_mph,
+            progress_callback=progress_callback,
+        )
+
+        xy = []
+        for old, dlat in zip(unique, dlats):
+            x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+            xy.append((x / 6000.0, y / 6000.0))
+        banking = bank_profile.at_dlats(dlats)
+        speeds = np.minimum(
+            speed_profile_mph(
+                xy, performance, banking_degrees=banking
+            ),
+            max_speed_mph,
+        )
+
+        arr = np.asarray(xy, dtype=float)
+        ds = np.linalg.norm(np.roll(arr, -1, axis=0) - arr, axis=1)
+        segment_mph = np.maximum(
+            (speeds + np.roll(speeds, -1)) * 0.5, 0.01
+        )
+        lap_seconds = float(
+            np.sum((ds / 5280.0) / segment_mph) * 3600.0
+        )
+        distance_miles = float(np.sum(ds) / 5280.0)
+        avg_mph = distance_miles / max(lap_seconds / 3600.0, 1.0e-9)
+
+        records = []
+        for old, dlat, speed in zip(unique, dlats, speeds):
+            x, y, _ = getxyz(self.trk, old.dlong, dlat, self.centerline)
+            records.append(LpPoint(
+                x=x, y=y, dlong=old.dlong, dlat=float(dlat),
+                speed_raw=int(round(float(speed) * 5280.0 / 9.0)),
+                speed_mph=float(speed), lateral_speed=old.lateral_speed,
+            ))
+        if has_terminal:
+            first = records[0]
+            records.append(LpPoint(
+                x=first.x, y=first.y, dlong=track_length,
+                dlat=first.dlat, speed_raw=first.speed_raw,
+                speed_mph=first.speed_mph,
+                lateral_speed=first.lateral_speed,
+            ))
+
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+
+        return True, (
+            "MODEL: Physics Pathfinder (experimental)\n"
+            f"LP: {lp_name}\n"
+            f"Planning intervals: {intervals}\n"
+            f"Arc states tested: {tested}\n"
+            f"Physics-rejected sequences: {rejected_physics}\n"
+            f"Continuity recoveries: {continuity_recoveries}\n"
+            f"Configured clearance: {margin_feet:.1f} ft\n"
+            "Search horizon: 4 x 320 ft decisions + 220 ft terminal lookahead\n"
+            f"Start/finish seam blend: ±{seam_window:.0f} ft; "
+            f"max adjustment {seam_adjustment:.2f} ft\n"
+            f"Estimated lap: {format_lap_time(lap_seconds)}\n"
+            f"Average speed: {avg_mph:.2f} mph\n"
+            f"LP distance: {distance_miles:.3f} mi\n"
+            f"TRK banking: enabled (peak "
+            f"{np.max(np.abs(banking)):.1f} deg)\n\n"
+            "Method: deeper receding-horizon world-space arc beam search. "
+            "Each candidate sequence is checked against the legal corridor, "
+            "then scored using the 1995 CART cornering, acceleration, braking, "
+            "aero, driver-limit, and banking model. Search ranking is based on "
+            "predicted traversal time per unit of actual DLONG progress, with "
+            "a small steering-change regularizer. Only the first arc is "
+            "committed to the next LP station before replanning. Final LP "
+            "speeds are recalculated over the completed closed lap. "
+            "This is an experimental local planner, not a proof of globally "
+            "minimum lap time. Lateral-speed values are retained."
         )
 
     def optimize_geometric_line(
