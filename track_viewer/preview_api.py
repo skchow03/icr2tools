@@ -247,6 +247,9 @@ class TrackPreviewApi:
     def recalculate_lp_speed_profile(self, lp_name: str, **kwargs):
         return self._coordinator.recalculate_lp_speed_profile(lp_name, **kwargs)
 
+    def generated_line_diagnostics(self, lp_name: str, margin_feet: float = 5.0):
+        return self._coordinator.generated_line_diagnostics(lp_name, margin_feet)
+
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         return self._coordinator.lp_lap_statistics(lp_name)
 
