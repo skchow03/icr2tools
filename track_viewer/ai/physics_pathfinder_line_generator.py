@@ -26,6 +26,7 @@ from track_viewer.ai.pathfinder_line_generator import (
     State,
     _advance_checked,
     _advance_to_target_dlong,
+    _cast_clearance,
     _smooth_periodic_seam,
 )
 
@@ -40,6 +41,7 @@ class SearchNode:
     exit_speed_mph: float
     score_seconds: float
     steering_cost: float
+    bankings: tuple[float, ...]
 
 
 def _candidate_curvatures() -> np.ndarray:
@@ -180,7 +182,7 @@ def _score_node(
     projected_time = elapsed_seconds * float(horizon_feet) / progress
     # Small regularizer: physics/time dominates, but gratuitous curvature
     # reversals lose close ties and produce a more drivable final LP.
-    return projected_time + 0.018 * steering_cost
+    return projected_time + 0.055 * steering_cost
 
 
 def generate_physics_pathfinder(
@@ -197,19 +199,23 @@ def generate_physics_pathfinder(
     performance: CarPerformance | None = None,
     max_speed_mph: float = 245.0,
     progress_callback=None,
-    beam_width: int = 16,
-    horizon_feet: float = 1400.0,
-    decision_feet: float = 320.0,
-    depth: int = 4,
-    terminal_feet: float = 220.0,
+    beam_width: int = 24,
+    horizon_feet: float = 1260.0,
+    decision_feet: float = 180.0,
+    depth: int = 6,
+    terminal_feet: float = 180.0,
+    minimum_stage_feet: float = 30.0,
 ):
     """Generate a physics-aware line by deeper receding-horizon beam search.
 
-    Search nodes are sequences of true XY circular arcs. Candidates are
-    rejected when they leave the legal corridor or when the current speed
-    cannot physically satisfy the sequence's lateral/braking requirements.
-    Remaining nodes are ranked by predicted time per unit of actual DLONG
-    progress, with a small curvature-change regularizer.
+    Search nodes are sequences of true XY circular arcs. Each primitive is
+    cast only until it reaches the legal boundary or the decision horizon;
+    reaching the boundary is therefore a natural place to steer again rather
+    than a reason to discard the whole candidate. Candidates are rejected when
+    they cannot make useful forward progress or when the current speed cannot
+    physically satisfy the sequence's lateral/braking requirements. Remaining
+    nodes are ranked by predicted time per unit of actual DLONG progress, with
+    a steering-change regularizer.
 
     Only the first arc is committed to the next LP station, then the complete
     search is repeated.
@@ -283,7 +289,29 @@ def generate_physics_pathfinder(
 
                 for k in curvatures:
                     tested += 1
-                    next_state = _advance_checked(
+
+                    # The first arc must be continuously commit-able to the
+                    # next LP station. This prevents spending the beam budget
+                    # on paths that will inevitably trigger a recovery.
+                    if parent is None:
+                        first_commit = _advance_to_target_dlong(
+                            current,
+                            float(k),
+                            target_dlong,
+                            center,
+                            dl,
+                            lo,
+                            hi,
+                            track_length,
+                            dlat_sign,
+                        )
+                        if first_commit is None:
+                            continue
+
+                    # Unlike v1, do not require one curvature to remain legal
+                    # for the entire decision distance. Cast until the boundary
+                    # or horizon and let the next stage steer from there.
+                    travelled, next_state = _cast_clearance(
                         parent_state,
                         float(k),
                         float(decision_feet),
@@ -293,24 +321,25 @@ def generate_physics_pathfinder(
                         hi,
                         track_length,
                         dlat_sign,
-                        sample_feet=16.0,
+                        sample_feet=12.0,
                     )
-                    if next_state is None:
+                    stage_progress = float(next_state.dlong - parent_state.dlong)
+                    if (
+                        travelled < float(minimum_stage_feet)
+                        or stage_progress < max(8.0, 0.20 * travelled)
+                    ):
                         continue
 
                     seq_k = prior_curvatures + (float(k),)
-                    seq_d = prior_distances + (float(decision_feet),)
-                    banks = tuple(
-                        _periodic_interp(
-                            start_dlong
-                            + sum(seq_d[:j])
-                            + seq_d[j] * 0.5,
-                            dl,
-                            banking,
-                            track_length,
-                        )
-                        for j in range(len(seq_d))
+                    seq_d = prior_distances + (float(travelled),)
+                    stage_bank = _periodic_interp(
+                        0.5 * (parent_state.dlong + next_state.dlong),
+                        dl,
+                        banking,
+                        track_length,
                     )
+                    prior_banks = () if parent is None else parent.bankings
+                    banks = prior_banks + (stage_bank,)
                     estimate = _estimate_sequence(
                         seq_k,
                         seq_d,
@@ -344,6 +373,7 @@ def generate_physics_pathfinder(
                         exit_speed_mph=exit_speed,
                         score_seconds=score,
                         steering_cost=steering,
+                        bankings=banks,
                     ))
 
             if not expanded:
@@ -365,7 +395,7 @@ def generate_physics_pathfinder(
             best_terminal: SearchNode | None = None
             for k in curvatures:
                 tested += 1
-                end_state = _advance_checked(
+                travelled, end_state = _cast_clearance(
                     parent.state,
                     float(k),
                     float(terminal_feet),
@@ -375,24 +405,21 @@ def generate_physics_pathfinder(
                     hi,
                     track_length,
                     dlat_sign,
-                    sample_feet=16.0,
+                    sample_feet=12.0,
                 )
-                if end_state is None:
+                terminal_progress = float(end_state.dlong - parent.state.dlong)
+                if travelled < 20.0 or terminal_progress < max(6.0, 0.20 * travelled):
                     continue
 
                 seq_k = parent.curvatures + (float(k),)
-                seq_d = parent.distances + (float(terminal_feet),)
-                banks = tuple(
-                    _periodic_interp(
-                        start_dlong
-                        + sum(seq_d[:j])
-                        + seq_d[j] * 0.5,
-                        dl,
-                        banking,
-                        track_length,
-                    )
-                    for j in range(len(seq_d))
+                seq_d = parent.distances + (float(travelled),)
+                terminal_bank = _periodic_interp(
+                    0.5 * (parent.state.dlong + end_state.dlong),
+                    dl,
+                    banking,
+                    track_length,
                 )
+                banks = parent.bankings + (terminal_bank,)
                 estimate = _estimate_sequence(
                     seq_k,
                     seq_d,
@@ -426,6 +453,7 @@ def generate_physics_pathfinder(
                     exit_speed_mph=exit_speed,
                     score_seconds=score,
                     steering_cost=steering,
+                    bankings=banks,
                 )
                 if (
                     best_terminal is None

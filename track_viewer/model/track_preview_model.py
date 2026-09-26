@@ -1129,7 +1129,7 @@ class TrackPreviewModel(QtCore.QObject):
             f"Physics-rejected sequences: {rejected_physics}\n"
             f"Continuity recoveries: {continuity_recoveries}\n"
             f"Configured clearance: {margin_feet:.1f} ft\n"
-            "Search horizon: 4 x 320 ft decisions + 220 ft terminal lookahead\n"
+            "Search horizon: up to 6 x 180 ft adaptive arcs + 180 ft terminal lookahead\n"
             f"Start/finish seam blend: ±{seam_window:.0f} ft; "
             f"max adjustment {seam_adjustment:.2f} ft\n"
             f"Estimated lap: {format_lap_time(lap_seconds)}\n"
