@@ -3180,16 +3180,16 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             },
             "model_report": message,
         }
-        message += f"\\n\\nExecution time: {elapsed_seconds:.3f} s"
+        message += f"\n\nExecution time: {elapsed_seconds:.3f} s"
         try:
             stats = self.preview_api.generated_line_diagnostics(
                 lp_name, margin_feet=options["margin_feet"]
             )
             report["diagnostics"] = stats
-            message += "\\n\\n" + format_diagnostics(stats)
+            message += "\n\n" + format_diagnostics(stats)
         except (ValueError, TypeError, ArithmeticError) as exc:
             report["diagnostics_error"] = str(exc)
-            message += f"\\n\\nCommon diagnostics unavailable: {exc}"
+            message += f"\n\nCommon diagnostics unavailable: {exc}"
         self._show_optimization_results(title, message, report)
 
     def _sync_lp_curve_drag_mode(self) -> None:
