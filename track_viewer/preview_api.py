@@ -247,6 +247,9 @@ class TrackPreviewApi:
     def recalculate_lp_speed_profile(self, lp_name: str, **kwargs):
         return self._coordinator.recalculate_lp_speed_profile(lp_name, **kwargs)
 
+    def last_combined_grip_comparison(self):
+        return self._coordinator.last_combined_grip_comparison()
+
     def last_refinement_speed_audit(self):
         return self._coordinator.last_refinement_speed_audit()
 

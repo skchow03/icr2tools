@@ -27,6 +27,7 @@ from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
 from track_viewer.ai.pathfinder_refinement import refine_pathfinder
 from track_viewer.ai.speed_model_audit import audit_paths, format_audit
+from track_viewer.ai.combined_grip import compare_combined_grip, format_combined_grip_comparison
 from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
@@ -1008,6 +1009,7 @@ class TrackPreviewModel(QtCore.QObject):
         if not lp_name or lp_name == "center-line":
             return False, "Select an LP line first."
         self._last_refinement_speed_audit = None
+        self._last_combined_grip_comparison = None
         existing = self.get_ai_line_records_immediate(lp_name)
         if len(existing) < 16:
             return False, f"{lp_name}.LP needs at least 16 path samples."
@@ -1105,6 +1107,16 @@ class TrackPreviewModel(QtCore.QObject):
             max_speed_mph=max_speed_mph,
         )
         self._last_refinement_speed_audit = audit
+        combined = compare_combined_grip(
+            baseline_xy,
+            np.asarray([(p.x / 6000.0, p.y / 6000.0) for p in records[:len(unique)]]),
+            performance=car_performance,
+            baseline_banking=bank_profile.at_dlats(baseline_dlats),
+            refined_banking=bank_profile.at_dlats(dlats),
+            max_speed_mph=max_speed_mph,
+        )
+        self._last_combined_grip_comparison = combined
+
         self._ai_lines[lp_name] = records
         self._manual_lp_overrides.add(lp_name)
         self._dirty_lp_files.add(lp_name)
@@ -1126,6 +1138,7 @@ class TrackPreviewModel(QtCore.QObject):
             "periodic spline refinement against complete modeled lap time. "
             "New curvature spikes are rejected, and the baseline is retained "
             "unless a faster candidate is verified. Lateral speeds retained."            + "\n\n" + format_audit(audit)
+            + "\n\n" + format_combined_grip_comparison(combined)
         )
 
     def generate_physics_pathfinder_line(

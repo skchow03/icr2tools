@@ -3265,6 +3265,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             audit = self.preview_api.last_refinement_speed_audit()
             if audit is not None:
                 report["speed_audit"] = audit
+            combined = self.preview_api.last_combined_grip_comparison()
+            if combined is not None:
+                report["combined_grip_comparison"] = combined
         self._show_optimization_results(title, message, report)
 
     def _sync_lp_curve_drag_mode(self) -> None:
