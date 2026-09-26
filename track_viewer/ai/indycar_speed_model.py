@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import math
+import shutil
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -17,7 +19,24 @@ import numpy as np
 
 MPH_TO_FPS = 5280.0 / 3600.0
 G_FPS2 = 32.174
-DEFAULT_MODEL_PATH = Path(__file__).resolve().parents[1] / "config" / "car_performance.json"
+
+# In a PyInstaller one-file build, __file__ is inside the temporary extraction
+# directory. Keep that bundled JSON as a factory default only; the working
+# copy must live next to the EXE where users can edit it between launches.
+_BUNDLED_MODEL_PATH = Path(__file__).resolve().parents[1] / "config" / "car_performance.json"
+DEFAULT_MODEL_PATH = (
+    Path(sys.executable).resolve().parent / "config" / "car_performance.json"
+    if getattr(sys, "frozen", False)
+    else _BUNDLED_MODEL_PATH
+)
+
+
+def _ensure_default_model_file() -> None:
+    """Create the external editable configuration on first frozen launch."""
+    if not getattr(sys, "frozen", False) or DEFAULT_MODEL_PATH.exists():
+        return
+    DEFAULT_MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(_BUNDLED_MODEL_PATH, DEFAULT_MODEL_PATH)
 
 
 @dataclass(frozen=True)
@@ -55,7 +74,9 @@ class CarPerformance:
 
 
 def load_performance_model(path: Path | None = None) -> dict:
-    path = path or DEFAULT_MODEL_PATH
+    if path is None:
+        _ensure_default_model_file()
+        path = DEFAULT_MODEL_PATH
     with path.open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     required = ("max_speed_mph", "lateral_g", "acceleration_g", "braking_g")
