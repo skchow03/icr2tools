@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import math
+import csv
+import json
+import time
 from pathlib import Path
 from typing import Callable, Optional, Sequence
 
@@ -11,6 +14,7 @@ from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
 from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.ai.indycar_speed_model import CarPerformance
+from track_viewer.ai.line_diagnostics import format_diagnostics
 from track_viewer.sidebar.coordinate_sidebar import CoordinateSidebar
 from track_viewer.sidebar.coordinate_sidebar_vm import CoordinateSidebarViewModel
 from track_viewer.model.replay_models import ReplayLapInfo
@@ -2770,7 +2774,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
-    def _show_optimization_results(self, title: str, message: str) -> None:
+    def _show_optimization_results(self, title: str, message: str, report: dict | None = None) -> None:
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle(title)
         dialog.resize(620, 360)
@@ -2781,6 +2785,35 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         output.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
         layout.addWidget(output, 1)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
+        if report is not None:
+            json_button = buttons.addButton("Export JSON", QtWidgets.QDialogButtonBox.ActionRole)
+            csv_button = buttons.addButton("Export CSV", QtWidgets.QDialogButtonBox.ActionRole)
+
+            def export_report(extension):
+                filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                    dialog, "Export optimization report",
+                    f"{report['model'].lower().replace(' ', '_')}_{report['lp']}.{extension}",
+                    "JSON files (*.json)" if extension == "json" else "CSV files (*.csv)",
+                )
+                if not filename:
+                    return
+                try:
+                    if extension == "json":
+                        with open(filename, "w", encoding="utf-8") as handle:
+                            json.dump(report, handle, indent=2, allow_nan=False)
+                    else:
+                        # One row per run; nested common diagnostics are flattened.
+                        flat = {k: v for k, v in report.items() if k != "diagnostics"}
+                        flat.update(report.get("diagnostics") or {})
+                        with open(filename, "w", newline="", encoding="utf-8") as handle:
+                            writer = csv.DictWriter(handle, fieldnames=list(flat))
+                            writer.writeheader()
+                            writer.writerow(flat)
+                except (OSError, ValueError) as exc:
+                    QtWidgets.QMessageBox.warning(dialog, "Export failed", str(exc))
+
+            json_button.clicked.connect(lambda: export_report("json"))
+            csv_button.clicked.connect(lambda: export_report("csv"))
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
         dialog.exec_()
@@ -3064,6 +3097,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             progress.setLabelText(label)
             QtWidgets.QApplication.processEvents()
 
+        started_at = time.perf_counter()
         try:
             if selection == "pathfinder":
                 success, message = self.preview_api.generate_pathfinder_line(
@@ -3130,7 +3164,33 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self.visualization_widget.update()
         if selection == "corner_apex":
             message = f"MODEL: Corner & Apex\nLP: {lp_name}\n\n{message}"
-        self._show_optimization_results(title, message)
+        elapsed_seconds = time.perf_counter() - started_at
+        report = {
+            "model": title,
+            "lp": lp_name,
+            "execution_seconds": round(elapsed_seconds, 3),
+            "configuration": {
+                "clearance_ft": options["margin_feet"],
+                "max_speed_mph": options["max_speed_mph"],
+                "acceleration_pct": performance.acceleration_pct,
+                "braking_pct": performance.braking_pct,
+                "cornering_pct": performance.cornering_pct,
+                "aero_pct": performance.aero_pct,
+                "safety_pct": performance.safety_pct,
+            },
+            "model_report": message,
+        }
+        message += f"\\n\\nExecution time: {elapsed_seconds:.3f} s"
+        try:
+            stats = self.preview_api.generated_line_diagnostics(
+                lp_name, margin_feet=options["margin_feet"]
+            )
+            report["diagnostics"] = stats
+            message += "\\n\\n" + format_diagnostics(stats)
+        except (ValueError, TypeError, ArithmeticError) as exc:
+            report["diagnostics_error"] = str(exc)
+            message += f"\\n\\nCommon diagnostics unavailable: {exc}"
+        self._show_optimization_results(title, message, report)
 
     def _sync_lp_curve_drag_mode(self) -> None:
         self.visualization_widget.configure_lp_curve_edit(
