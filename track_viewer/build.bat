@@ -1,3 +1,4 @@
-pyinstaller --noconfirm --windowed --onefile main.py ^
+pyinstaller --noconfirm --clean --windowed --onefile main.py ^
   --name ICR2TrackViewer ^
-  --paths ..
+  --paths .. ^
+  --add-data "config\car_performance.json;track_viewer\config"
