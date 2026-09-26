@@ -1125,7 +1125,7 @@ class TrackPreviewModel(QtCore.QObject):
             "Method: fresh geometric Pathfinder baseline, followed by "
             "periodic spline refinement against complete modeled lap time. "
             "New curvature spikes are rejected, and the baseline is retained "
-            "unless a faster candidate is verified. Lateral speeds retained."\n            + "\n\n" + format_audit(audit)
+            "unless a faster candidate is verified. Lateral speeds retained."            + "\n\n" + format_audit(audit)
         )
 
     def generate_physics_pathfinder_line(
