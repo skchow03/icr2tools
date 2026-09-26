@@ -1155,7 +1155,9 @@ class TrackPreviewModel(QtCore.QObject):
             + ("Combined-grip speeds saved." if combined_grip_objective
                else "Lateral speeds retained.")
             + "\n\n" + format_audit(audit)
-            + "\n\n" + format_combined_grip_comparison(combined)
+            + "\n\n" + format_combined_grip_comparison(
+                combined, speeds_saved=combined_grip_objective,
+            )
         )
 
     def generate_physics_pathfinder_line(
