@@ -14,15 +14,19 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Publish an editable copy alongside the EXE without overwriting user edits.
-if not exist "dist\config" mkdir "dist\config"
-if not exist "dist\config\car_performance.json" (
-  copy /y "config\car_performance.json" "dist\config\car_performance.json" >nul
+rem Keep the editable JSON next to the EXE and any INI files. Preserve edits
+rem from an earlier build that placed the JSON in dist\config.
+if not exist "dist\car_performance.json" (
+  if exist "dist\config\car_performance.json" (
+    copy /y "dist\config\car_performance.json" "dist\car_performance.json" >nul
+  ) else (
+    copy /y "config\car_performance.json" "dist\car_performance.json" >nul
+  )
   if errorlevel 1 (
     echo Failed to copy the editable car performance configuration.
     exit /b 1
   )
 )
 
-echo Build complete. Edit dist\config\car_performance.json to customize the model.
+echo Build complete. Edit dist\car_performance.json to customize the model.
 endlocal
