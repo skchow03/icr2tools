@@ -431,6 +431,9 @@ class PreviewCoordinator:
             self._apply_lp_changes({LPChange.DATA})
         return success, message
 
+    def last_combined_grip_comparison(self):
+        return getattr(self._model, '_last_combined_grip_comparison', None)
+
     def last_refinement_speed_audit(self):
         return getattr(self._model, '_last_refinement_speed_audit', None)
 
