@@ -25,6 +25,7 @@ from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_lega
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
+from track_viewer.ai.pathfinder_refinement import refine_pathfinder
 from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_pathfinder
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
@@ -993,6 +994,121 @@ class TrackPreviewModel(QtCore.QObject):
             "used to choose the path. Speeds are calculated only after the path "
             "is complete using the same car-performance model as the other generators. "
             "Lateral-speed values are retained."
+        )
+
+    def generate_pathfinder_refinement_line(
+        self, lp_name: str, margin_feet: float = 5.0, *,
+        progress_callback=None,
+        max_speed_mph: float = 245.0,
+        car_performance: CarPerformance | None = None,
+    ) -> tuple[bool, str]:
+        """Generate a fresh geometric Pathfinder, then refine its complete lap."""
+        if not lp_name or lp_name == "center-line":
+            return False, "Select an LP line first."
+        existing = self.get_ai_line_records_immediate(lp_name)
+        if len(existing) < 16:
+            return False, f"{lp_name}.LP needs at least 16 path samples."
+        track_length = float(self.trk.trklength)
+        has_terminal = abs(existing[-1].dlong - track_length) < 1.0
+        unique = existing[:-1] if has_terminal else existing
+        dlongs = [p.dlong for p in unique]
+        seed = [p.dlat for p in unique]
+        lower, upper = build_legal_dlat_envelope(
+            self.trk, self.centerline, dlongs, seed,
+            margin_feet=margin_feet, pit_side="auto",
+        )
+        center_xy = []
+        for old in unique:
+            cx, cy, _ = getxyz(self.trk, old.dlong, 0.0, self.centerline)
+            center_xy.append((cx / 6000.0, cy / 6000.0))
+        c0 = np.asarray(center_xy[0], dtype=float)
+        tangent = np.asarray(center_xy[1], dtype=float) - np.asarray(center_xy[-1], dtype=float)
+        tangent /= max(float(np.linalg.norm(tangent)), 1.0e-12)
+        px, py, _ = getxyz(self.trk, unique[0].dlong, 6000.0, self.centerline)
+        offset = np.asarray((px / 6000.0, py / 6000.0)) - c0
+        dlat_sign = 1.0 if tangent[0] * offset[1] - tangent[1] * offset[0] >= 0 else -1.0
+
+        def path_progress(current, total, label):
+            if progress_callback:
+                progress_callback(current, total * 2, label)
+
+        (baseline_dlats, tested, intervals, retries, recoveries,
+         seam_window, seam_adjustment) = generate_pathfinder(
+            dlongs, lower, upper, seed, center_xy=center_xy, start_xy=None,
+            track_length_feet=track_length / 6000.0, dlat_sign=dlat_sign,
+            progress_callback=path_progress,
+        )
+        bank_profile = build_trk_banking_profile(self.trk, dlongs)
+
+        def xy_from_dlats(dlats):
+            return np.asarray([
+                tuple(v / 6000.0 for v in getxyz(
+                    self.trk, old.dlong, float(dlat), self.centerline
+                )[:2])
+                for old, dlat in zip(unique, dlats)
+            ], dtype=float)
+
+        def evaluate(dlats):
+            xy = xy_from_dlats(dlats)
+            speeds = np.minimum(speed_profile_mph(
+                xy, car_performance,
+                banking_degrees=bank_profile.at_dlats(dlats),
+            ), max_speed_mph)
+            ds = np.linalg.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
+            segment_speed = (speeds + np.roll(speeds, -1)) * 0.5
+            if np.any(segment_speed <= 0.01):
+                return float("inf"), speeds
+            return float(np.sum((ds / 5280.0) / segment_speed) * 3600.0), speeds
+
+        def refine_progress(current, total, label):
+            if progress_callback:
+                progress_callback(intervals + current, intervals + total, label)
+
+        (dlats, speeds, baseline_time, best_time,
+         trials, accepted, regions) = refine_pathfinder(
+            baseline_dlats, lower, upper, xy_from_dlats, evaluate,
+            progress_callback=refine_progress,
+        )
+        xy = xy_from_dlats(dlats)
+        ds = np.linalg.norm(np.roll(xy, -1, axis=0) - xy, axis=1)
+        distance_miles = float(np.sum(ds) / 5280.0)
+        avg_mph = distance_miles * 3600.0 / max(best_time, 1e-9)
+        records = []
+        for old, dlat, speed in zip(unique, dlats, speeds):
+            x, y, _ = getxyz(self.trk, old.dlong, float(dlat), self.centerline)
+            records.append(LpPoint(
+                x=x, y=y, dlong=old.dlong, dlat=float(dlat),
+                speed_raw=int(round(float(speed) * 5280.0 / 9.0)),
+                speed_mph=float(speed), lateral_speed=old.lateral_speed,
+            ))
+        if has_terminal:
+            first = records[0]
+            records.append(LpPoint(
+                x=first.x, y=first.y, dlong=track_length, dlat=first.dlat,
+                speed_raw=first.speed_raw, speed_mph=first.speed_mph,
+                lateral_speed=first.lateral_speed,
+            ))
+        self._ai_lines[lp_name] = records
+        self._manual_lp_overrides.add(lp_name)
+        self._dirty_lp_files.add(lp_name)
+        self._ai_line_cache_generation += 1
+        return True, (
+            "MODEL: Pathfinder Refinement\\n"
+            f"LP: {lp_name}\\n"
+            f"Geometric Pathfinder baseline: {format_lap_time(baseline_time)}\\n"
+            f"Refined lap: {format_lap_time(best_time)} "
+            f"({best_time - baseline_time:+.3f} s)\\n"
+            f"Optimization trials: {trials}; accepted: {accepted}; "
+            f"sensitive regions: {regions}\\n"
+            f"Pathfinder arc states tested: {tested}; "
+            f"continuity recoveries: {recoveries}\\n"
+            f"Clearance: {margin_feet:.1f} ft\\n"
+            f"LP distance: {distance_miles:.3f} mi; "
+            f"average speed: {avg_mph:.2f} mph\\n"
+            "Method: fresh geometric Pathfinder baseline, followed by "
+            "periodic spline refinement against complete modeled lap time. "
+            "New curvature spikes are rejected, and the baseline is retained "
+            "unless a faster candidate is verified. Lateral speeds retained."
         )
 
     def generate_physics_pathfinder_line(
