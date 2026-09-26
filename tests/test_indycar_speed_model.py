@@ -5,6 +5,9 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
+
+from track_viewer.ai import indycar_speed_model
 
 import numpy as np
 
@@ -107,6 +110,23 @@ class IndyCarSpeedModelTest(unittest.TestCase):
             points, CarPerformance(acceleration_pct=70.0, braking_pct=70.0)
         )
         self.assertLess(float(np.mean(slower)), float(np.mean(baseline)))
+
+    def test_frozen_build_creates_editable_config_without_overwriting_edits(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            user_config = root / "dist" / "config" / "car_performance.json"
+            original = Path(indycar_speed_model.__file__).resolve().parents[1] / "config" / "car_performance.json"
+            with (
+                mock.patch.object(indycar_speed_model.sys, "frozen", True, create=True),
+                mock.patch.object(indycar_speed_model, "DEFAULT_MODEL_PATH", user_config),
+                mock.patch.object(indycar_speed_model, "_BUNDLED_MODEL_PATH", original),
+            ):
+                self.assertEqual(load_performance_model()["max_speed_mph"], 245.0)
+                self.assertTrue(user_config.is_file())
+                contents = json.loads(user_config.read_text(encoding="utf-8"))
+                contents["max_speed_mph"] = 230
+                user_config.write_text(json.dumps(contents), encoding="utf-8")
+                self.assertEqual(load_performance_model()["max_speed_mph"], 230.0)
 
     def test_performance_model_json_loads_and_validates(self):
         data = {
