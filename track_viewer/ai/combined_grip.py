@@ -124,7 +124,7 @@ def compare_combined_grip(baseline_xy, refined_xy, *, performance=None,
     return results
 
 
-def format_combined_grip_comparison(result):
+def format_combined_grip_comparison(result, *, speeds_saved=False):
     baseline, refined = result["baseline"], result["refined"]
     return (
         "OPTIONAL COMBINED-GRIP RE-SCORE (unchanged LP geometry)\n"
@@ -136,5 +136,6 @@ def format_combined_grip_comparison(result):
         f"{refined['maximum_speed_mph']:.2f} mph\n"
         f"Refined minus baseline: {result['refined_minus_baseline_seconds']:+.3f} s\n"
         "Friction ellipse shares lateral and longitudinal grip. "
-        "These are comparative estimates only; saved LP speeds are unchanged."
+        + ("The optimized LP saves combined-grip speeds." if speeds_saved
+           else "These are comparative estimates; saved LP speeds are unchanged.")
     )
