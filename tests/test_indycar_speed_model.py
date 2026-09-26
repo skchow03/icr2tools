@@ -114,7 +114,7 @@ class IndyCarSpeedModelTest(unittest.TestCase):
     def test_frozen_build_creates_editable_config_without_overwriting_edits(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            user_config = root / "dist" / "config" / "car_performance.json"
+            user_config = root / "dist" / "car_performance.json"
             original = Path(indycar_speed_model.__file__).resolve().parents[1] / "config" / "car_performance.json"
             with (
                 mock.patch.object(indycar_speed_model.sys, "frozen", True, create=True),
@@ -126,6 +126,28 @@ class IndyCarSpeedModelTest(unittest.TestCase):
                 contents = json.loads(user_config.read_text(encoding="utf-8"))
                 contents["max_speed_mph"] = 230
                 user_config.write_text(json.dumps(contents), encoding="utf-8")
+                self.assertEqual(load_performance_model()["max_speed_mph"], 230.0)
+
+    def test_frozen_build_migrates_old_config_without_overwriting_root(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            user_config = root / "dist" / "car_performance.json"
+            legacy_config = root / "dist" / "config" / "car_performance.json"
+            original = Path(indycar_speed_model.__file__).resolve().parents[1] / "config" / "car_performance.json"
+            legacy_config.parent.mkdir(parents=True)
+            legacy_data = json.loads(original.read_text(encoding="utf-8"))
+            legacy_data["max_speed_mph"] = 220
+            legacy_config.write_text(json.dumps(legacy_data), encoding="utf-8")
+            with (
+                mock.patch.object(indycar_speed_model.sys, "frozen", True, create=True),
+                mock.patch.object(indycar_speed_model, "DEFAULT_MODEL_PATH", user_config),
+                mock.patch.object(indycar_speed_model, "_BUNDLED_MODEL_PATH", original),
+            ):
+                self.assertEqual(load_performance_model()["max_speed_mph"], 220.0)
+                self.assertTrue(user_config.exists())
+                root_data = json.loads(user_config.read_text(encoding="utf-8"))
+                root_data["max_speed_mph"] = 230
+                user_config.write_text(json.dumps(root_data), encoding="utf-8")
                 self.assertEqual(load_performance_model()["max_speed_mph"], 230.0)
 
     def test_performance_model_json_loads_and_validates(self):
