@@ -2777,13 +2777,59 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
     def _show_optimization_results(self, title: str, message: str, report: dict | None = None) -> None:
         dialog = QtWidgets.QDialog(self)
         dialog.setWindowTitle(title)
-        dialog.resize(620, 360)
+        dialog.resize(760, 590 if report and report.get('speed_audit') else 360)
         layout = QtWidgets.QVBoxLayout(dialog)
         output = QtWidgets.QPlainTextEdit(dialog)
         output.setReadOnly(True)
         output.setPlainText(message)
         output.setLineWrapMode(QtWidgets.QPlainTextEdit.WidgetWidth)
         layout.addWidget(output, 1)
+        if report and report.get("speed_audit"):
+            audit = report["speed_audit"]
+            traces = audit["traces"]
+            width, height = 690, 200
+            pixmap = QtGui.QPixmap(width, height)
+            pixmap.fill(QtGui.QColor("#ffffff"))
+            painter = QtGui.QPainter(pixmap)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            left, top, right, bottom = 52, 18, width - 18, height - 30
+            painter.setPen(QtGui.QPen(QtGui.QColor("#777777"), 1))
+            painter.drawLine(left, top, left, bottom)
+            painter.drawLine(left, bottom, right, bottom)
+            all_g = traces["baseline"]["lateral_g"] + traces["refined"]["lateral_g"]
+            y_max = max(1.0, max(all_g) * 1.1)
+            for value in range(int(y_max) + 1):
+                y = bottom - int(value / y_max * (bottom - top))
+                painter.drawText(3, y + 4, f"{value} g")
+                painter.setPen(QtGui.QPen(QtGui.QColor("#dddddd"), 1))
+                painter.drawLine(left, y, right, y)
+                painter.setPen(QtGui.QPen(QtGui.QColor("#777777"), 1))
+            dlongs = traces["refined"]["dlong"]
+            x_min, x_max = min(dlongs), max(dlongs)
+            x_span = max(1.0, x_max - x_min)
+            for name, color in (("baseline", "#2777bb"), ("refined", "#d34b3b")):
+                values = traces[name]["lateral_g"]
+                path = QtGui.QPainterPath()
+                for index, (station, value) in enumerate(zip(dlongs, values)):
+                    x = left + (station - x_min) / x_span * (right - left)
+                    y = bottom - value / y_max * (bottom - top)
+                    if index == 0:
+                        path.moveTo(x, y)
+                    else:
+                        path.lineTo(x, y)
+                painter.setPen(QtGui.QPen(QtGui.QColor(color), 1.7))
+                painter.drawPath(path)
+            peak = audit["peak_refined_dlong"]
+            peak_x = left + (peak - x_min) / x_span * (right - left)
+            painter.setPen(QtGui.QPen(QtGui.QColor("#a05000"), 1, QtCore.Qt.DashLine))
+            painter.drawLine(int(peak_x), top, int(peak_x), bottom)
+            painter.setPen(QtGui.QColor("#333333"))
+            painter.drawText(left, height - 6, "DLONG →")
+            painter.drawText(right - 270, 13, "Blue: Pathfinder    Red: Refinement")
+            painter.end()
+            graph_label = QtWidgets.QLabel(dialog)
+            graph_label.setPixmap(pixmap)
+            layout.addWidget(graph_label)
         buttons = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
         if report is not None:
             json_button = buttons.addButton("Export JSON", QtWidgets.QDialogButtonBox.ActionRole)
@@ -2812,6 +2858,31 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 except (OSError, ValueError) as exc:
                     QtWidgets.QMessageBox.warning(dialog, "Export failed", str(exc))
 
+            if report.get("speed_audit"):
+                audit_button = buttons.addButton("Export Audit CSV", QtWidgets.QDialogButtonBox.ActionRole)
+
+                def export_audit_csv():
+                    filename, _ = QtWidgets.QFileDialog.getSaveFileName(
+                        dialog, "Export speed model audit", "speed_model_audit.csv",
+                        "CSV files (*.csv)",
+                    )
+                    if not filename:
+                        return
+                    try:
+                        traces = report["speed_audit"]["traces"]
+                        names = ("baseline", "refined")
+                        fields = list(traces["baseline"])
+                        with open(filename, "w", newline="", encoding="utf-8") as handle:
+                            writer = csv.writer(handle)
+                            writer.writerow(["model"] + fields)
+                            for name in names:
+                                data = traces[name]
+                                for row in zip(*(data[field] for field in fields)):
+                                    writer.writerow([name] + list(row))
+                    except OSError as exc:
+                        QtWidgets.QMessageBox.warning(dialog, "Export failed", str(exc))
+
+                audit_button.clicked.connect(export_audit_csv)
             json_button.clicked.connect(lambda: export_report("json"))
             csv_button.clicked.connect(lambda: export_report("csv"))
         buttons.rejected.connect(dialog.reject)
@@ -3190,6 +3261,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         except (ValueError, TypeError, ArithmeticError) as exc:
             report["diagnostics_error"] = str(exc)
             message += f"\n\nCommon diagnostics unavailable: {exc}"
+        if selection == "pathfinder_refinement":
+            audit = self.preview_api.last_refinement_speed_audit()
+            if audit is not None:
+                report["speed_audit"] = audit
         self._show_optimization_results(title, message, report)
 
     def _sync_lp_curve_drag_mode(self) -> None:
