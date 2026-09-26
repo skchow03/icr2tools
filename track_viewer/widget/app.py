@@ -2805,6 +2805,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP", dialog))
         model = QtWidgets.QComboBox(dialog)
         model.addItem("Pathfinder (world-space arcs)", "pathfinder")
+        model.addItem("Pathfinder Refinement (physics)", "pathfinder_refinement")
         model.addItem("Physics Pathfinder (experimental)", "physics_pathfinder")
         model.addItem("Minimum Time (vehicle model)", "minimum_time")
         model.addItem("Corner & Apex (rule-based)", "corner_apex")
@@ -2956,6 +2957,11 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 "select the longest legal paths, and close the lap seam. "
                 "Car performance is applied afterward to calculate speeds."
             ),
+            "pathfinder_refinement": (
+                "Generate a fresh geometric Pathfinder line, then refine the complete "
+                "lap using the CART performance model. Retain the original Pathfinder "
+                "line unless a smoother, faster lap is found."
+            ),
             "physics_pathfinder": (
                 "Search deeper sequences of true world-space arcs and rank "
                 "them with the CART cornering, acceleration, braking, aero, "
@@ -2981,7 +2987,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                 pit_note.setVisible(selection == "corner_apex")
             performance_box.setTitle(
                 "Car performance (used in optimization)"
-                if selection in {"minimum_time", "physics_pathfinder"}
+                if selection in {"minimum_time", "physics_pathfinder", "pathfinder_refinement"}
                 else "Car performance (speed calculation after path generation)"
             )
             dialog.adjustSize()
@@ -3004,6 +3010,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         titles = {
             "pathfinder": "Pathfinder",
             "physics_pathfinder": "Physics Pathfinder",
+            "pathfinder_refinement": "Pathfinder Refinement",
             "minimum_time": "Minimum Time",
             "corner_apex": "Corner & Apex",
         }
@@ -3060,6 +3067,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         try:
             if selection == "pathfinder":
                 success, message = self.preview_api.generate_pathfinder_line(
+                    lp_name, margin_feet=options["margin_feet"],
+                    max_speed_mph=options["max_speed_mph"],
+                    car_performance=performance,
+                    progress_callback=update_progress,
+                )
+            elif selection == "pathfinder_refinement":
+                success, message = self.preview_api.generate_pathfinder_refinement_line(
                     lp_name, margin_feet=options["margin_feet"],
                     max_speed_mph=options["max_speed_mph"],
                     car_performance=performance,

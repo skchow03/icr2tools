@@ -375,6 +375,10 @@ class LPEditingSession:
         success, message = self._model.generate_pathfinder_line(lp_name, margin_feet, **kwargs)
         return success, message, {LPChange.DATA} if success else set()
 
+    def generate_pathfinder_refinement_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
+        success, message = self._model.generate_pathfinder_refinement_line(lp_name, margin_feet, **kwargs)
+        return success, message, {LPChange.DATA} if success else set()
+
     def generate_physics_pathfinder_line(self, lp_name: str, margin_feet: float = 5.0, **kwargs):
         success, message = self._model.generate_physics_pathfinder_line(lp_name, margin_feet, **kwargs)
         return success, message, {LPChange.DATA} if success else set()
