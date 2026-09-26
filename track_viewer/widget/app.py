@@ -2805,6 +2805,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Selected LP", QtWidgets.QLabel(f"{lp_name}.LP", dialog))
         model = QtWidgets.QComboBox(dialog)
         model.addItem("Pathfinder (world-space arcs)", "pathfinder")
+        model.addItem("Pathfinder Refinement (physics)", "pathfinder_refinement")
         model.addItem("Physics Pathfinder (experimental)", "physics_pathfinder")
         model.addItem("Minimum Time (vehicle model)", "minimum_time")
         model.addItem("Corner & Apex (rule-based)", "corner_apex")
