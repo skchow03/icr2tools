@@ -30,6 +30,7 @@ from track_viewer.ai.physics_pathfinder_line_generator import generate_physics_p
 from track_viewer.ai.indycar_speed_model import CarPerformance, speed_profile_mph
 from track_viewer.ai.trk_banking import build_trk_banking_profile
 from track_viewer.ai.lap_time_format import format_lap_time
+from track_viewer.ai.line_diagnostics import analyze_line
 from track_viewer.ai.lp_curve_drag import smooth_lateral_drag
 from track_viewer.geometry import (
     CenterlineIndex,
@@ -1408,6 +1409,21 @@ class TrackPreviewModel(QtCore.QObject):
             "call the geometric racing-line optimizer. Lateral-speed values were "
             "retained; recalculate them if needed."
         )
+
+    def generated_line_diagnostics(self, lp_name: str, margin_feet: float = 5.0):
+        """Common metrics for any generated LP, measured from final records."""
+        records = self.get_ai_line_records_immediate(lp_name)
+        if not records or self.trk is None:
+            raise ValueError("No loaded LP or track.")
+        track_length = float(self.trk.trklength)
+        unique = records[:-1] if abs(records[-1].dlong - track_length) < 1.0 else records
+        dlongs = [p.dlong for p in unique]
+        dlats = [p.dlat for p in unique]
+        lower, upper = build_legal_dlat_envelope(
+            self.trk, self.centerline, dlongs, dlats,
+            margin_feet=margin_feet, pit_side="auto",
+        )
+        return analyze_line(records, track_length=track_length, lower=lower, upper=upper)
 
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         """Estimate lap time and average speed from the current LP speed profile."""

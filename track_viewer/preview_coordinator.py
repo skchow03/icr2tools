@@ -431,6 +431,9 @@ class PreviewCoordinator:
             self._apply_lp_changes({LPChange.DATA})
         return success, message
 
+    def generated_line_diagnostics(self, lp_name: str, margin_feet: float = 5.0):
+        return self._model.generated_line_diagnostics(lp_name, margin_feet)
+
     def lp_lap_statistics(self, lp_name: str) -> tuple[bool, str, float, float]:
         return self._model.lp_lap_statistics(lp_name)
 
