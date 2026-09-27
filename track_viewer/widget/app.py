@@ -15,9 +15,7 @@ from icr2_core.lp.rpy import Rpy
 from icr2_core.trk.trk_utils import get_cline_pos
 from track_viewer.ai.ai_line_service import load_ai_line_records
 from track_viewer.pit.pit_lane_detector import detect_pit_lanes
-from track_viewer.widget.pit_detection_dialog import (
-    PitDetectionDialog, PitLaneSelectionDialog,
-)
+from track_viewer.widget.pit_detection_dialog import PitDetectionDialog
 from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.line_diagnostics import format_diagnostics
@@ -210,7 +208,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference": "none",
             "side_preference_pct": 0,
             "compare_candidates": False,
-            "generate_pit_line": False,
             "refinement_combined_grip": False,
         }
         self._lp_curve_edit_button = QtWidgets.QPushButton("Smooth Drag LP")
@@ -3263,25 +3260,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         corner_form.addRow(compare_candidates)
 
-        generate_pit_line = QtWidgets.QCheckBox(
-            "Generate PIT.LP through the detected pit lane", dialog
-        )
-        generate_pit_line.setChecked(options.get("generate_pit_line", False))
-        generate_pit_line.setToolTip(
-            "Generate an otherwise normal race line that enters the confirmed "
-            "pit branch. The track.txt pit speed-limit zone is set to 79 mph."
-        )
-        corner_form.addRow(generate_pit_line)
         form.addRow(corner_box)
-
-        pit_note = QtWidgets.QLabel(
-            "PIT.LP generation auto-detects connected pit corridors, ignores "
-            "dead ends, and asks you to confirm left or right before generation. "
-            "The pit speed-limit zone will be 79 mph (or the lower maximum speed).",
-            dialog,
-        )
-        pit_note.setWordWrap(True)
-        form.addRow(pit_note)
 
         descriptions = {
             "pathfinder": (
@@ -3318,7 +3297,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             description.setText(descriptions[selection])
             corner_box.setVisible(selection == "corner_apex")
             combined_objective.setVisible(selection == "pathfinder_refinement")
-            pit_note.setVisible(selection == "corner_apex")
             performance_box.setTitle(
                 "Car performance (used in optimization)"
                 if selection in {"minimum_time", "physics_pathfinder", "pathfinder_refinement"}
@@ -3341,32 +3319,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             return
 
         selection = model.currentData()
-        generate_pit = selection == "corner_apex" and generate_pit_line.isChecked()
-        requested_lp_name = "PIT" if generate_pit else lp_name
-        pit_candidate = None
-        if generate_pit:
-            if "PIT" not in set(self.preview_api.available_lp_files()):
-                QtWidgets.QMessageBox.warning(
-                    self, "Generate PIT.LP", "The loaded track does not contain PIT.LP."
-                )
-                return
-            race_records = self.preview_api.get_ai_line_records_immediate("RACE")
-            race_lp = [(point.dlong, point.dlat) for point in race_records]
-            try:
-                detection = detect_pit_lanes(self.preview_api.trk, race_lp=race_lp)
-            except (ValueError, IndexError, ZeroDivisionError) as exc:
-                QtWidgets.QMessageBox.warning(self, "Generate PIT.LP", str(exc))
-                return
-            if not detection.candidates:
-                QtWidgets.QMessageBox.warning(
-                    self, "Generate PIT.LP",
-                    "No connected pit lane was detected. Dead-end branches were ignored."
-                )
-                return
-            confirmation = PitLaneSelectionDialog(self.preview_api.trk, detection, self)
-            if confirmation.exec_() != QtWidgets.QDialog.Accepted:
-                return
-            pit_candidate = confirmation.candidate
         titles = {
             "pathfinder": "Pathfinder",
             "physics_pathfinder": "Physics Pathfinder",
@@ -3375,10 +3327,10 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "corner_apex": "Corner & Apex",
         }
         title = titles[selection]
-        if self.preview_api.lp_line_dirty(requested_lp_name):
+        if self.preview_api.lp_line_dirty(lp_name):
             choice = QtWidgets.QMessageBox.question(
                 self, "Replace Unsaved LP Edits",
-                f"Replace the unsaved {requested_lp_name}.LP edits with a new {title} line?",
+                f"Replace the unsaved {lp_name}.LP edits with a new {title} line?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Cancel,
                 QtWidgets.QMessageBox.Cancel,
             )
@@ -3395,7 +3347,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             side_preference=side_preference.currentData(),
             side_preference_pct=side_amount.value(),
             compare_candidates=compare_candidates.isChecked(),
-            generate_pit_line=generate_pit_line.isChecked(),
             refinement_combined_grip=combined_objective.isChecked(),
             **{key: spin.value() for key, spin in performance_controls.items()},
         )
@@ -3458,20 +3409,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                     progress_callback=update_progress,
                 )
             else:
-                pit_options = {}
-                if requested_lp_name == "PIT" and getattr(self, "_pit_editors", None):
-                    params = self._pit_editors[self._active_pit_lane_index()].parameters()
-                    pit_options = {
-                        "pit_speed_start_dlong": params.pit_speed_limit_start_dlong,
-                        "pit_speed_end_dlong": params.pit_speed_limit_end_dlong,
-                    }
-                    if pit_candidate and not any(pit_options.values()):
-                        pit_options = {
-                            "pit_speed_start_dlong": pit_candidate.entrance_dlong,
-                            "pit_speed_end_dlong": pit_candidate.exit_dlong,
-                        }
                 success, message = self.preview_api.generate_candidate_race_line(
-                    requested_lp_name, margin_feet=options["margin_feet"],
+                    lp_name, margin_feet=options["margin_feet"],
                     pit_side=options["pit_side"],
                     lookahead_feet=options["lookahead_feet"],
                     corner_width_pct=options["corner_width_pct"],
@@ -3482,10 +3421,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                     side_preference_pct=options["side_preference_pct"],
                     compare_candidates=options["compare_candidates"],
                     progress_callback=update_progress,
-                    pit_route=(pit_candidate.side, pit_candidate.entrance_dlong,
-                               pit_candidate.exit_dlong) if pit_candidate else None,
-                    reference_lp_name="RACE" if pit_candidate else None,
-                    **pit_options,
                 )
         finally:
             progress.close()
@@ -3493,7 +3428,6 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if not success:
             QtWidgets.QMessageBox.warning(self, title, message)
             return
-        lp_name = requested_lp_name
         self._set_active_lp_line_in_ui(lp_name)
         checkbox = self._lp_checkboxes.get(lp_name)
         if checkbox is not None and not checkbox.isChecked():

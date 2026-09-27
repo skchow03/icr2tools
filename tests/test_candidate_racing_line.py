@@ -423,6 +423,29 @@ class CandidateRaceLineTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "choose the pit side"):
                 optimizer._paved_corridor(self.track, self.dlongs, None, 2)
 
+    def test_auto_split_ignores_dead_end_and_keeps_continuous_path(self):
+        self.track.sects[0].num_bounds = 2
+        rows_feet = [
+            [(-10.0, 10.0)],
+            [(-10.0, -1.0), (1.0, 10.0)],
+            [(-10.0, -1.0), (1.0, 10.0)],
+            [(-10.0, -1.0)],
+        ]
+        rows = [[(lo * 6000, hi * 6000) for lo, hi in row]
+                for row in rows_feet]
+        with patch.object(optimizer, "getbounddlat",
+                          side_effect=lambda _t, _s, _f, i: (-20, 20)[i] * 6000), \
+             patch.object(optimizer, "_paved_intervals",
+                          side_effect=lambda _t, index, fraction: rows[int(fraction)]), \
+             patch.object(optimizer, "dlong2sect",
+                          side_effect=lambda _t, dlong: (0, int(dlong))):
+            lower, upper = optimizer._paved_corridor(
+                self.track, [0, 1, 2, 3], [8 * 6000] * 4, 0
+            )
+
+        self.assertEqual(list(lower), [-10, -10, -10, -10])
+        self.assertEqual(list(upper), [10, -1, -1, -1])
+
     def test_rejects_unusable_width(self):
         with self.assertRaisesRegex(ValueError, "No paved corridor wide enough"):
             self._generate(lambda _angle: 100, width=4, margin=5)
