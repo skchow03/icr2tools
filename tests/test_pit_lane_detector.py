@@ -153,6 +153,28 @@ def test_stall_row_starts_where_outside_wall_becomes_parallel():
     assert suggestion.parameters.player_pit_stall_dlong == 100 * FT
     assert suggestion.parameters.last_pit_stall_dlong == 435 * FT
     assert suggestion.parameters.pit_stall_count == 4
+    assert suggestion.parameters.pit_stall_center_dlat == -100 * FT + 31_250
+
+
+def test_left_pit_stalls_are_offset_from_far_left_wall():
+    samples = tuple(
+        PitSample(
+            feet * FT,
+            Corridor(25 * FT, 100 * FT, outer_wall=100 * FT),
+            Corridor(-50 * FT, 0),
+        )
+        for feet in range(0, 601, 25)
+    )
+    candidate = PitCandidate(
+        "left", samples, 0, 600 * FT, 600 * FT, None, "review"
+    )
+    original = PitParameters.from_values([
+        0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0
+    ])
+
+    suggestion = recommend_pit_parameters(candidate, 1000 * FT, original)
+
+    assert suggestion.parameters.pit_stall_center_dlat == 100 * FT - 31_250
 
 
 def test_stalls_unchanged_without_long_parallel_outside_wall():
