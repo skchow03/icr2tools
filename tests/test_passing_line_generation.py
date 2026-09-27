@@ -155,3 +155,65 @@ def test_integer_lp_precision_must_preserve_hierarchy(monkeypatch) -> None:
     assert "integer LP precision" in message
     assert "PASS1" not in model._ai_lines
     assert "PASS2" not in model._ai_lines
+
+
+def test_manual_lateral_speed_recalc_matches_generated_values(monkeypatch) -> None:
+    model = _model(monkeypatch)
+    success, message = model.generate_passing_lines()
+    assert success, message
+    generated = [p.lateral_speed for p in model.ai_line_records("PASS1")]
+
+    session = LPEditingSession(model)
+    changes = session.recalculate_lateral_speeds("PASS1")
+
+    assert changes == {LPChange.DATA}
+    assert [p.lateral_speed for p in model.ai_line_records("PASS1")] == pytest.approx(
+        generated
+    )
+
+
+def test_invalid_lateral_speed_stations_fail_without_partial_changes(
+    monkeypatch,
+) -> None:
+    model = _model(monkeypatch)
+    for source in ("RACE", "MAXRACE", "MINRACE"):
+        model._ai_lines[source][1].dlong = 0.0
+
+    success, message = model.generate_passing_lines()
+
+    assert not success
+    assert "lateral speeds" in message
+    assert "PASS1" not in model._ai_lines
+    assert "PASS2" not in model._ai_lines
+
+
+def test_generated_terminal_lateral_velocity_is_seam_continuous(
+    monkeypatch,
+) -> None:
+    model = _model(monkeypatch)
+    model.trk.trklength = 18000.0
+    model._ai_lines = {
+        "RACE": [
+            _point(0, 0.0, 100),
+            _point(1, 2.0, 100),
+            _point(2, -1.0, 100),
+            _point(3, 0.0, 100),
+        ],
+        "MAXRACE": [
+            _point(0, 40.0),
+            _point(1, 6.0),
+            _point(2, 20.0),
+            _point(3, 40.0),
+        ],
+        "MINRACE": [
+            _point(0, -12.0),
+            _point(1, -10.0),
+            _point(2, -12.0),
+            _point(3, -12.0),
+        ],
+    }
+    success, message = model.generate_passing_lines()
+    assert success, message
+    for name in ("PASS1", "PASS2"):
+        records = model.ai_line_records(name)
+        assert records[-1].lateral_speed == pytest.approx(records[0].lateral_speed)
