@@ -401,6 +401,20 @@ class TrackPreviewModel(QtCore.QObject):
                     f"Record {index} is too narrow for the chosen settings. "
                     "No passing lines were changed."
                 )
+            # The LP file stores integer DLAT. Refuse a result that would
+            # collapse onto RACE or a boundary when serialized.
+            if not (
+                round(maximum.dlat)
+                > round(pass1_dlat)
+                > round(r.dlat)
+                > round(pass2_dlat)
+                > round(minimum.dlat)
+            ):
+                return False, (
+                    f"Record {index} has insufficient width to preserve the "
+                    "passing-line hierarchy at integer LP precision. "
+                    "No passing lines were changed."
+                )
             if min(pass1_dlat - r.dlat, r.dlat - pass2_dlat) < 6000.0:
                 narrow_count += 1
             speed = max(0.0, r.speed_mph - speed_reduction_mph)
