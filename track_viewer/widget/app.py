@@ -12,6 +12,10 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 
 from icr2_core.cam.helpers import CameraPosition
 from icr2_core.lp.rpy import Rpy
+from icr2_core.trk.trk_utils import get_cline_pos
+from track_viewer.ai.ai_line_service import load_ai_line_records
+from track_viewer.pit.pit_lane_detector import detect_pit_lanes
+from track_viewer.widget.pit_detection_dialog import PitDetectionDialog
 from track_viewer.model.camera_models import CameraViewListing
 from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.line_diagnostics import format_diagnostics
@@ -1077,6 +1081,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             self._track_txt_weather_status_label.setText(status_text)
             self._clear_track_txt_fields()
             self._pit_save_button.setEnabled(False)
+            self._pit_detect_button.setEnabled(False)
             self._track_txt_save_button.setEnabled(False)
             self._track_txt_tire_save_button.setEnabled(False)
             self._track_txt_weather_save_button.setEnabled(False)
@@ -1110,6 +1115,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         else:
             self._pit_status_label.setText(f"Loaded {result.txt_path.name}.")
         self._pit_save_button.setEnabled(True)
+        self._pit_detect_button.setEnabled(True)
         self._track_txt_save_button.setEnabled(True)
         self._track_txt_tire_save_button.setEnabled(True)
         self._track_txt_weather_save_button.setEnabled(True)
@@ -1782,6 +1788,59 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         window = TrackMapPreviewDialog(self, pixmap, rebuild_pixmap=build_pixmap)
         window.show()
         self._trk_map_preview_window = window
+
+    def _handle_auto_detect_pit_lane(self) -> None:
+        trk = self.preview_api.trk
+        folder = self.controller.current_track_folder
+        if trk is None or folder is None:
+            QtWidgets.QMessageBox.information(
+                self, "Detect Pit Lane", "Load a track folder before detecting its pit lane."
+            )
+            return
+
+        # Prefer current in-memory LP edits, falling back to file data when
+        # the asynchronous preview cache has not loaded a line yet.
+        available = set(self.preview_api.available_lp_files())
+        cline = get_cline_pos(trk)
+        lp_lines = {}
+        for name in ("RACE", "PIT", "MINPANIC", "MAXPANIC"):
+            if name not in available:
+                continue
+            records = self.preview_api.ai_line_records(name)
+            if not records:
+                records = load_ai_line_records(
+                    trk, cline, folder, float(trk.trklength), name
+                )
+            if records:
+                lp_lines[name] = [(p.dlong, p.dlat) for p in records]
+
+        try:
+            detection = detect_pit_lanes(trk, race_lp=lp_lines.get("RACE", ()))
+        except (ValueError, IndexError, ZeroDivisionError) as exc:
+            QtWidgets.QMessageBox.warning(self, "Detect Pit Lane", str(exc))
+            return
+        if not detection.candidates:
+            QtWidgets.QMessageBox.information(
+                self, "Detect Pit Lane",
+                "No paved corridor with a confirmed entrance and rejoining exit "
+                "was found. Existing PIT values have not been changed.\n\n"
+                f"Dead-end/disconnected branches: {detection.dead_ends}\n"
+                f"Short/distant branches: {detection.too_short}",
+            )
+            return
+
+        lane_index = self._active_pit_lane_index()
+        current = self._pit_editors[lane_index].parameters()
+        dialog = PitDetectionDialog(trk, detection, current, lp_lines, self)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.suggestion is None:
+            return
+        self._pit_editors[lane_index].set_parameters(dialog.suggestion.parameters)
+        self._handle_pit_params_changed(lane_index)
+        self.statusBar().showMessage(
+            f"Applied {len(dialog.suggestion.updated_fields)} suggestions to "
+            f"{'PIT2' if lane_index else 'PIT'}. Review and click Save PIT to write.",
+            10000,
+        )
 
     def _handle_save_pit_params(self) -> None:
         pit_params = self._pit_editors[0].parameters()
