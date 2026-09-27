@@ -201,7 +201,7 @@ class PitDetectionDialog(QtWidgets.QDialog):
             for col, value in enumerate(values):
                 item = QtWidgets.QTableWidgetItem(value)
                 if changed and col == 2:
-                    item.setForeground(QtGui.QColor("#23783e"))
+                    item.setForeground(QtGui.QBrush(QtGui.QColor("#23783e")))
                 self._table.setItem(i, col, item)
         self._notes.setText(
             "Review the highlighted corridor before applying. "
