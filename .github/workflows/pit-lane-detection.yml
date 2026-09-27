@@ -1,0 +1,23 @@
+name: Pit Lane Detection
+
+on:
+  pull_request:
+    paths:
+      - "track_viewer/pit/**"
+      - "track_viewer/widget/pit_detection_dialog.py"
+      - "track_viewer/widget/tabs/pit_tab.py"
+      - "track_viewer/widget/app.py"
+      - "tests/test_pit_lane_detector.py"
+      - ".github/workflows/pit-lane-detection.yml"
+  workflow_dispatch:
+
+jobs:
+  detector:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: python -m pip install pytest
+      - run: python -m pytest -q tests/test_pit_lane_detector.py
