@@ -117,7 +117,8 @@ def test_speed_limit_uses_lp_panic_separation_when_available():
     )
     candidate = next(c for c in detect_pit_lanes(trk).candidates if c.side == "right")
     lines = {
-        "PIT": [(0, 0), (SECTION, -55 * FT), (2 * SECTION, -55 * FT),
+        "PIT": [(0, 0), (SECTION + 100 * FT, 0),
+                (SECTION + 175 * FT, -55 * FT), (2 * SECTION, -55 * FT),
                 (3 * SECTION, 0)],
         "MINPANIC": [(0, -10 * FT)],
         "MAXPANIC": [(0, 10 * FT)],
