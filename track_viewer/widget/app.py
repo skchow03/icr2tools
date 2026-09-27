@@ -2753,8 +2753,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         form.addRow("Speed below RACE", speed)
 
         note = QtWidgets.QLabel(
-            "The generated lateral-speed (Coriolis) fields start at zero. "
-            "Recalculate each passing LP's lateral speeds before saving."
+            "Lateral speed (Coriolis) is calculated automatically from "
+            "the generated passing-line geometry and its forward speed."
         )
         note.setWordWrap(True)
         form.addRow(note)
