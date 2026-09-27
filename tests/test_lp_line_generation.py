@@ -1,5 +1,7 @@
 from types import SimpleNamespace
 
+import numpy as np
+
 from track_viewer.model.track_preview_model import TrackPreviewModel
 
 
@@ -105,3 +107,49 @@ def test_closest_boundary_elevation_at_returns_none_without_track() -> None:
     model = TrackPreviewModel()
 
     assert model.closest_boundary_elevation_at(0.0, 0.0) is None
+
+
+def test_generate_lp_speeds_uses_wrapped_pit_dlong_zone(monkeypatch) -> None:
+    model = _build_model()
+    dlongs = (0.0, 3000.0, 6000.0, 9000.0)
+    xy = ((6000.0, 0.0), (0.0, 6000.0), (-6000.0, 0.0), (0.0, -6000.0))
+    model._ai_lines = {
+        "RACE": [
+            SimpleNamespace(
+                dlong=dlong,
+                dlat=0.0,
+                x=x,
+                y=y,
+                speed_mph=0.0,
+                speed_raw=0,
+            )
+            for dlong, (x, y) in zip(dlongs, xy)
+        ]
+    }
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.build_trk_banking_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            at_dlats=lambda dlats: np.zeros(len(dlats))
+        ),
+    )
+    captured = {}
+
+    def _fake_speed_profile(points, performance, **kwargs):
+        captured["limits"] = kwargs["speed_limits_mph"].copy()
+        return kwargs["speed_limits_mph"]
+
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.speed_profile_mph",
+        _fake_speed_profile,
+    )
+
+    success, message = model.recalculate_lp_speed_profile(
+        "RACE",
+        pit_speed_limit_mph=79.0,
+        pit_speed_limit_start_dlong=8000.0,
+        pit_speed_limit_end_dlong=2000.0,
+    )
+
+    assert success is True
+    assert np.array_equal(captured["limits"], [79.0, 245.0, 245.0, 79.0])
+    assert "Pit speed zone: 79.0 mph across 2 LP samples" in message

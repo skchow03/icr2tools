@@ -111,6 +111,24 @@ class IndyCarSpeedModelTest(unittest.TestCase):
         )
         self.assertLess(float(np.mean(slower)), float(np.mean(baseline)))
 
+    def test_sample_speed_limits_propagate_braking_and_acceleration(self):
+        angle = np.linspace(0, 2 * math.pi, 180, endpoint=False)
+        points = np.column_stack((8000 * np.cos(angle), 8000 * np.sin(angle)))
+        limits = np.full(len(points), 245.0)
+        limits[30:40] = 79.0
+
+        speeds = speed_profile_mph(points, speed_limits_mph=limits)
+
+        self.assertLessEqual(float(np.max(speeds[30:40])), 79.0)
+        self.assertLess(float(speeds[29]), 245.0)
+        self.assertLess(float(speeds[40]), 245.0)
+
+    def test_sample_speed_limits_must_match_points(self):
+        points = np.array([[0, 0], [100, 0], [0, 100]], dtype=float)
+
+        with self.assertRaisesRegex(ValueError, "Speed limits"):
+            speed_profile_mph(points, speed_limits_mph=[79.0, 79.0])
+
     def test_frozen_build_creates_editable_config_without_overwriting_edits(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
