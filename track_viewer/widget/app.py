@@ -3199,13 +3199,17 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         has_split = any(s.num_bounds > 2 for s in self.preview_api.trk.sects)
 
         pit_side = QtWidgets.QComboBox(dialog)
-        pit_side.addItem(f"Auto (follow existing {lp_name})", "auto")
-        pit_side.addItem("Pit on left; generate to the right", "left")
-        pit_side.addItem("Pit on right; generate to the left", "right")
+        pit_side.addItem("Auto", "auto")
+        # The optimizer option identifies the pit side to exclude, while this
+        # control presents the more useful inverse: the side to generate on.
+        pit_side.addItem("Left", "right")
+        pit_side.addItem("Right", "left")
         pit_side.setCurrentIndex(max(0, pit_side.findData(options["pit_side"])))
         pit_side.setEnabled(has_split)
-        pit_side.setToolTip("Used at TRK sections with multiple paved corridors.")
-        corner_form.addRow("Pit side at split", pit_side)
+        pit_side.setToolTip(
+            "Choose which paved corridor to generate on at split TRK sections."
+        )
+        corner_form.addRow("Generate on side at split", pit_side)
 
         lookahead = QtWidgets.QDoubleSpinBox(dialog)
         lookahead.setRange(10.0, 500.0)
