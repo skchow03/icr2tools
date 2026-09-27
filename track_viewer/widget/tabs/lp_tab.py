@@ -165,6 +165,10 @@ class LpTabBuilder:
             window._recalculate_lateral_speed_button
         )
         left_layout.addLayout(generation_tools_layout)
+        passing_tools_layout = QtWidgets.QHBoxLayout()
+        passing_tools_layout.addWidget(window._generate_passing_lines_button)
+        passing_tools_layout.addStretch(1)
+        left_layout.addLayout(passing_tools_layout)
         curve_tools_layout = QtWidgets.QHBoxLayout()
         curve_tools_layout.addWidget(window._lp_curve_edit_button)
         curve_tools_layout.addWidget(QtWidgets.QLabel("Influence"))
