@@ -258,6 +258,9 @@ class TrackPreviewModel(QtCore.QObject):
         *,
         car_performance: CarPerformance | None = None,
         max_speed_mph: float = 245.0,
+        pit_speed_limit_mph: float | None = None,
+        pit_speed_limit_start_dlong: float | None = None,
+        pit_speed_limit_end_dlong: float | None = None,
     ) -> tuple[bool, str]:
         """Apply the existing bank-aware physics model to an edited LP path."""
         if self.trk is None or not self.centerline:
@@ -266,6 +269,14 @@ class TrackPreviewModel(QtCore.QObject):
             return False, "Select an editable LP line."
         if not 0.0 < max_speed_mph <= 300.0:
             return False, "Maximum speed must be between 0 and 300 mph."
+        if pit_speed_limit_mph is not None:
+            if not 0.0 < pit_speed_limit_mph <= 300.0:
+                return False, "Pit speed limit must be between 0 and 300 mph."
+            if (
+                pit_speed_limit_start_dlong is None
+                or pit_speed_limit_end_dlong is None
+            ):
+                return False, "Pit speed limit start and end DLONGs are required."
         records = self.get_ai_line_records_immediate(lp_name)
         length = float(self.trk.trklength)
         terminal = len(records) > 1 and abs(records[-1].dlong - length) < 1.0
@@ -280,11 +291,25 @@ class TrackPreviewModel(QtCore.QObject):
             banking = build_trk_banking_profile(
                 self.trk, [p.dlong for p in unique],
             ).at_dlats([p.dlat for p in unique])
-            speeds = np.minimum(
-                speed_profile_mph(
-                    xy, car_performance, banking_degrees=banking,
-                ),
-                max_speed_mph,
+            speed_limits = np.full(len(unique), max_speed_mph, dtype=float)
+            pit_limited_count = 0
+            if pit_speed_limit_mph is not None:
+                start = float(pit_speed_limit_start_dlong) % length
+                end = float(pit_speed_limit_end_dlong) % length
+                dlongs = np.asarray([float(p.dlong) % length for p in unique])
+                if start <= end:
+                    in_pit_zone = (dlongs >= start) & (dlongs <= end)
+                else:
+                    in_pit_zone = (dlongs >= start) | (dlongs <= end)
+                speed_limits[in_pit_zone] = np.minimum(
+                    speed_limits[in_pit_zone], pit_speed_limit_mph,
+                )
+                pit_limited_count = int(np.count_nonzero(in_pit_zone))
+            speeds = speed_profile_mph(
+                xy,
+                car_performance,
+                banking_degrees=banking,
+                speed_limits_mph=speed_limits,
             )
         except (ValueError, ArithmeticError, IndexError) as exc:
             return False, f"Unable to calculate LP speeds: {exc}"
@@ -301,12 +326,19 @@ class TrackPreviewModel(QtCore.QObject):
         self._manual_lp_overrides.add(lp_name)
         self._dirty_lp_files.add(lp_name)
         self._ai_line_cache_generation += 1
+        pit_summary = ""
+        if pit_speed_limit_mph is not None:
+            pit_summary = (
+                f"Pit speed zone: {pit_speed_limit_mph:.1f} mph across "
+                f"{pit_limited_count} LP samples\n"
+            )
         return True, (
             f"LP: {lp_name}\n"
             f"Estimated lap: {format_lap_time(duration)}\n"
             f"Average speed: {distance * 3600.0 / max(duration, 1e-9):.2f} mph\n"
             f"LP distance: {distance:.3f} mi\n"
             f"Peak sampled TRK banking: {np.max(np.abs(banking)):.1f} deg\n\n"
+            f"{pit_summary}"
             "Applied the bank-aware 1995 CART speed profile to the current "
             "LP geometry; the line's positions were not changed. "
             "Existing lateral-speed values were retained; recalculate them "

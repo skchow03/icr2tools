@@ -197,12 +197,15 @@ def speed_profile_mph(
     performance: CarPerformance | None = None,
     *,
     banking_degrees=None,
+    speed_limits_mph=None,
 ) -> np.ndarray:
     """Return a closed-lap speed profile, optionally using TRK banking.
 
     banking_degrees must match the XY sample count. Positive values denote
     pavement sloping downhill to the left. Omitting it preserves the
-    historical flat-track calculation.
+    historical flat-track calculation. ``speed_limits_mph`` may provide a
+    per-sample speed ceiling; acceleration and braking sweeps propagate those
+    ceilings into the surrounding samples.
     """
     performance = performance or CarPerformance()
     points = np.asarray(points_xy_feet, dtype=float)
@@ -226,6 +229,17 @@ def speed_profile_mph(
         _corner_speed_mph(k, performance, float(bank))
         for k, bank in zip(_curvature(points), banking)
     ])
+    if speed_limits_mph is not None:
+        speed_limits = np.asarray(speed_limits_mph, dtype=float)
+        if (
+            speed_limits.shape != (len(points),)
+            or not np.all(np.isfinite(speed_limits))
+            or np.any(speed_limits <= 0.0)
+        ):
+            raise ValueError(
+                "Speed limits must be positive, finite, and match the XY samples."
+            )
+        limits = np.minimum(limits, speed_limits)
     speed = limits.copy()
 
     # Closed laps have no natural start. Repeated sweeps propagate constraints

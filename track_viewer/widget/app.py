@@ -209,6 +209,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "side_preference_pct": 0,
             "compare_candidates": False,
             "refinement_combined_grip": False,
+            "apply_pit_speed_limit": False,
+            "pit_speed_limit_mph": 79.0,
         }
         self._lp_curve_edit_button = QtWidgets.QPushButton("Smooth Drag LP")
         self._lp_curve_edit_button.setCheckable(True)
@@ -3530,6 +3532,21 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         max_speed.setSuffix(" mph")
         max_speed.setValue(options["max_speed_mph"])
         form.addRow("Maximum speed", max_speed)
+        apply_pit_limit = QtWidgets.QCheckBox("Limit speed in the pit zone", dialog)
+        apply_pit_limit.setChecked(options["apply_pit_speed_limit"])
+        apply_pit_limit.setToolTip(
+            "Use the pit speed limit start and end DLONGs currently shown "
+            "in the active Pit tab."
+        )
+        form.addRow("Pit speed zone", apply_pit_limit)
+        pit_speed_limit = QtWidgets.QDoubleSpinBox(dialog)
+        pit_speed_limit.setRange(1.0, 300.0)
+        pit_speed_limit.setDecimals(1)
+        pit_speed_limit.setSuffix(" mph")
+        pit_speed_limit.setValue(options["pit_speed_limit_mph"])
+        pit_speed_limit.setEnabled(apply_pit_limit.isChecked())
+        apply_pit_limit.toggled.connect(pit_speed_limit.setEnabled)
+        form.addRow("Pit speed limit", pit_speed_limit)
         inputs = {}
         for key, label in (
             ("acceleration_pct", "Acceleration"),
@@ -3557,6 +3574,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         if dialog.exec_() != QtWidgets.QDialog.Accepted:
             return
         options["max_speed_mph"] = max_speed.value()
+        options["apply_pit_speed_limit"] = apply_pit_limit.isChecked()
+        options["pit_speed_limit_mph"] = pit_speed_limit.value()
         options.update({key: spin.value() for key, spin in inputs.items()})
         performance = CarPerformance(
             acceleration_pct=options["acceleration_pct"],
@@ -3565,9 +3584,22 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             aero_pct=options["aero_pct"],
             safety_pct=options["safety_pct"],
         )
+        pit_kwargs = {}
+        if options["apply_pit_speed_limit"]:
+            pit_params = self._pit_editors[
+                self._active_pit_lane_index()
+            ].parameters()
+            pit_kwargs = {
+                "pit_speed_limit_mph": options["pit_speed_limit_mph"],
+                "pit_speed_limit_start_dlong": (
+                    pit_params.pit_speed_limit_start_dlong
+                ),
+                "pit_speed_limit_end_dlong": pit_params.pit_speed_limit_end_dlong,
+            }
         success, message = self.preview_api.recalculate_lp_speed_profile(
             lp_name, car_performance=performance,
             max_speed_mph=options["max_speed_mph"],
+            **pit_kwargs,
         )
         if not success:
             QtWidgets.QMessageBox.warning(self, "Generate LP Speeds", message)
