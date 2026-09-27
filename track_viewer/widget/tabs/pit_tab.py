@@ -70,6 +70,14 @@ class PitTabBuilder:
         pit_lane_layout.addWidget(window._pit_lane_count_combo)
         pit_lane_layout.addStretch(1)
         pit_layout.addLayout(pit_lane_layout)
+        window._pit_detect_button = QtWidgets.QPushButton("Auto Detect Pit Lane…")
+        window._pit_detect_button.setToolTip(
+            "Analyze TRK pavement and walls, reject non-rejoining branches, "
+            "and review suggested PIT parameters before applying."
+        )
+        window._pit_detect_button.setEnabled(False)
+        window._pit_detect_button.clicked.connect(window._handle_auto_detect_pit_lane)
+        pit_layout.addWidget(window._pit_detect_button)
         pit_layout.addWidget(window._pit_tabs)
         pit_layout.addStretch(1)
         pit_layout.addWidget(window._pit_save_button)
