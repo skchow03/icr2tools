@@ -16,6 +16,7 @@ from track_viewer.model.pit_models import PitParameters
 
 UNITS_PER_FOOT = 6000.0
 PAVED_TYPES = frozenset(range(32, 56, 2))  # concrete, asphalt, paint
+PIT_STALL_WALL_OFFSET = 31_250
 
 
 @dataclass(frozen=True)
@@ -461,11 +462,19 @@ def recommend_pit_parameters(
             # A constant PIT DLAT must stay inside the pavement at ALL stalls.
             legal_lo = max(s.pit.lo + 4 * ft for s in stall_samples)
             legal_hi = min(s.pit.hi - 4 * ft for s in stall_samples)
-            preferred_edge = median(
-                s.pit.hi if candidate.side == "right" else s.pit.lo
+            # Cars are parked beside the outside (farthest) pit wall, not the
+            # pit-wall edge facing the racing surface.  DLAT increases toward
+            # track left, so move right-pit stalls upward from their low outer
+            # wall and left-pit stalls downward from their high outer wall.
+            outer_wall = median(
+                s.pit.outer_wall
                 for s in stall_samples
+                if s.pit.outer_wall is not None
             )
-            preferred = preferred_edge + (-12 if candidate.side == "right" else 12) * ft
+            preferred = outer_wall + (
+                PIT_STALL_WALL_OFFSET if candidate.side == "right"
+                else -PIT_STALL_WALL_OFFSET
+            )
             if legal_lo <= legal_hi:
                 changes["pit_stall_center_dlat"] = round(
                     min(max(preferred, legal_lo), legal_hi)
