@@ -6,7 +6,8 @@ from types import SimpleNamespace
 
 from track_viewer.model.pit_models import PitParameters
 from track_viewer.pit.pit_lane_detector import (
-    detect_pit_lanes, recommend_pit_parameters,
+    Corridor, PitCandidate, PitSample, detect_pit_lanes,
+    recommend_pit_parameters,
 )
 
 FT = 6000
@@ -127,3 +128,55 @@ def test_speed_limit_uses_lp_panic_separation_when_available():
     suggestion = recommend_pit_parameters(candidate, trk.trklength, original, lp_lines=lines)
     assert suggestion.parameters.pit_speed_limit_start_dlong > candidate.entrance_dlong
     assert suggestion.parameters.pit_speed_limit_end_dlong < candidate.exit_dlong
+
+
+def test_stall_row_starts_where_outside_wall_becomes_parallel():
+    samples = []
+    for feet in range(0, 601, 25):
+        if feet < 100:
+            outside = -80 - feet / 5
+        elif feet <= 500:
+            outside = -100
+        else:
+            outside = -100 + (feet - 500) / 5
+        pit = Corridor(outside * FT, -25 * FT, outer_wall=outside * FT)
+        samples.append(PitSample(feet * FT, pit, Corridor(0, 50 * FT)))
+    candidate = PitCandidate(
+        "right", tuple(samples), 0, 600 * FT, 600 * FT, None, "review"
+    )
+    original = PitParameters.from_values([
+        0, 0, 0, 999, 999, 0, 0, 4, 0, 0, 0
+    ])
+
+    suggestion = recommend_pit_parameters(candidate, 1000 * FT, original)
+
+    assert suggestion.parameters.player_pit_stall_dlong == 100 * FT
+    assert suggestion.parameters.last_pit_stall_dlong == 435 * FT
+    assert suggestion.parameters.pit_stall_count == 4
+
+
+def test_stalls_unchanged_without_long_parallel_outside_wall():
+    samples = tuple(
+        PitSample(
+            feet * FT,
+            Corridor(
+                (-80 - feet / 10) * FT,
+                -25 * FT,
+                outer_wall=(-80 - feet / 10) * FT,
+            ),
+            Corridor(0, 50 * FT),
+        )
+        for feet in range(0, 601, 25)
+    )
+    candidate = PitCandidate(
+        "right", samples, 0, 600 * FT, 600 * FT, None, "review"
+    )
+    original = PitParameters.from_values([
+        0, 0, 0, 111, 222, 0, 0, 4, 0, 0, 0
+    ])
+
+    suggestion = recommend_pit_parameters(candidate, 1000 * FT, original)
+
+    assert suggestion.parameters.player_pit_stall_dlong == 111
+    assert suggestion.parameters.last_pit_stall_dlong == 222
+    assert any("parallel outside pit wall" in note for note in suggestion.notes)
