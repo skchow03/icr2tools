@@ -19,5 +19,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: python -m pip install pytest
-      - run: python -m pytest -q tests/test_pit_lane_detector.py
+      - run: python -m pip install pytest PyQt5
+      - run: python -m compileall -q track_viewer/pit track_viewer/widget/app.py track_viewer/widget/pit_detection_dialog.py track_viewer/widget/tabs/pit_tab.py
+      - run: QT_QPA_PLATFORM=offscreen python -m pytest -q tests/test_pit_lane_detector.py tests/test_pit_detection_dialog.py
