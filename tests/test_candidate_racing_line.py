@@ -71,6 +71,25 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertTrue(np.all(lower == -9))
         self.assertTrue(np.all(upper == 9))
 
+    def test_confirmed_pit_route_selects_outer_branch_only_in_zone(self):
+        self.track.trklength = 1_000_000
+        self.track.sects[0].ground_fsects = 4
+        self.track.sects[0].ground_type = [40, 0, 40, 0]
+        with patch.object(optimizer, "dlong2sect", return_value=(0, 0)), \
+             patch.object(optimizer, "getbounddlat",
+                          side_effect=lambda _t, _s, _f, i: (-30 if i == 0 else 20) * 6000), \
+             patch.object(optimizer, "getgrounddlat",
+                          side_effect=lambda _t, _s, _f, i: [-30, -18, -12, 12][i] * 6000):
+            lower, upper = optimizer._paved_corridor(
+                self.track, [100_000, 300_000, 500_000, 700_000],
+                [0, 0, 0, 0], 3,
+                pit_route=("right", 250_000, 600_000),
+            )
+        self.assertEqual((lower[0], upper[0]), (-9, 9))
+        self.assertEqual((lower[1], upper[1]), (-27, -21))
+        self.assertEqual((lower[2], upper[2]), (-27, -21))
+        self.assertEqual((lower[3], upper[3]), (-9, 9))
+
     def test_corner_targets_choose_outside_entry_and_inside_apex(self):
         straight = np.column_stack((np.linspace(0, 200, 81), np.full(81, -30)))
         a = np.linspace(-math.pi / 2, math.pi / 2, 61)[1:]

@@ -40,7 +40,14 @@ def _paved_intervals(trk, section_id: int, fraction: float) -> list[tuple[float,
     return merged
 
 
-def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
+def _in_circular_range(value, start, end, lap):
+    value, start, end = value % lap, start % lap, end % lap
+    return start <= value <= end if start <= end else value >= start or value <= end
+
+
+def _paved_corridor(
+    trk, dlongs, reference_dlats, margin_feet, pit_side="auto", pit_route=None
+):
     if pit_side not in {"auto", "left", "right"}:
         raise ValueError("Pit side must be Auto, Left, or Right.")
     lower, upper = [], []
@@ -94,7 +101,23 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
                 lo - previous_center, 0, previous_center - hi
             )
 
-        ranked = sorted(candidates, key=score)
+        route_here = bool(
+            pit_route
+            and _in_circular_range(
+                dlong, pit_route[1], pit_route[2], float(trk.trklength)
+            )
+        )
+        if route_here:
+            # Pit detection has already rejected disconnected/dead-end roads.
+            # Deliberately select the outside branch rather than allowing the
+            # existing LP/reference distance to pull PIT.LP back onto RACE.
+            ranked = sorted(
+                candidates,
+                key=lambda interval: interval[0]
+                if pit_route[0] == "right" else -interval[1],
+            )
+        else:
+            ranked = sorted(candidates, key=score)
         if (pit_side == "auto" and previous is None and len(ranked) > 1
                 and abs(score(ranked[0]) - score(ranked[1])) < 1e-8):
             raise ValueError(
@@ -102,7 +125,13 @@ def _paved_corridor(trk, dlongs, reference_dlats, margin_feet, pit_side="auto"):
                 "choose the pit side explicitly."
             )
         chosen = ranked[0]
-        if previous is not None and min(chosen[1], previous[1]) < max(chosen[0], previous[0]):
+        previous_route = bool(
+            i > 0 and pit_route and _in_circular_range(
+                dlongs[i - 1], pit_route[1], pit_route[2], float(trk.trklength)
+            )
+        )
+        if (previous is not None and route_here == previous_route
+                and min(chosen[1], previous[1]) < max(chosen[0], previous[0])):
             raise ValueError(
                 f"Paved corridor is discontinuous at DLONG {dlong:.0f}; "
                 "inspect pavement or existing RACE line."
@@ -291,7 +320,8 @@ def _linked_corner_targets(corners, lower, upper, corner_width_pct,
 
 
 def _between_record_constraints(trk, centerline, dlongs, reference_dlats,
-                                margin_feet, pit_side, centers, normals):
+                                margin_feet, pit_side, centers, normals,
+                                pit_route=None):
     """Constrain the drawn XY chord between each pair of LP records.
 
     Check quarter points and both sides of every TRK section transition.
@@ -330,7 +360,7 @@ def _between_record_constraints(trk, centerline, dlongs, reference_dlats,
     all_points = sorted(set(dlongs) | set(extra))
     all_refs = np.interp(all_points, extended_x, extended_y) * DLAT_PER_FOOT
     lo, hi = _paved_corridor(trk, all_points, all_refs.tolist(),
-                             margin_feet, pit_side)
+                             margin_feet, pit_side, pit_route)
     at = {point: index for index, point in enumerate(all_points)}
     constraints = []
     for point in extra:
@@ -448,6 +478,7 @@ def optimize_race_line(
     side_preference_pct: int = 0,
     iterations: int = 160,
     local_overrides: dict | None = None,
+    pit_route: tuple[str, float, float] | None = None,
 ) -> list[float]:
     """Return DLATs at unique LP DLONGs within the continuous paved corridor.
 
@@ -472,7 +503,7 @@ def optimize_race_line(
     if reference_dlats is not None and len(reference_dlats) != len(dlongs):
         raise ValueError("Reference RACE DLAT count does not match the LP grid.")
     lower, upper = _paved_corridor(
-        trk, dlongs, reference_dlats, margin_feet, pit_side
+        trk, dlongs, reference_dlats, margin_feet, pit_side, pit_route
     )
     centers = []
     normals = []
@@ -489,7 +520,7 @@ def optimize_race_line(
     )))
     between_records = _between_record_constraints(
         trk, centerline, dlongs, reference_dlats, margin_feet, pit_side,
-        centers, normals,
+        centers, normals, pit_route,
     )
     targets, target_weight, exit_signs = _apex_targets(
         centers, lower, upper, lookahead_feet, corner_width_pct,
