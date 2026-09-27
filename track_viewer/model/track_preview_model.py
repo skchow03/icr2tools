@@ -561,6 +561,8 @@ class TrackPreviewModel(QtCore.QObject):
         side_preference: str = "none",
         side_preference_pct: int = 0,
         compare_candidates: bool = False,
+        pit_route: tuple[str, float, float] | None = None,
+        reference_lp_name: str | None = None,
         progress_callback=None,
     ) -> tuple[bool, str]:
         """Replace the selected in-memory LP path and regenerate its speeds."""
@@ -576,18 +578,35 @@ class TrackPreviewModel(QtCore.QObject):
         track_length = float(self.trk.trklength)
         has_terminal = abs(existing[-1].dlong - track_length) < 1.0
         unique = existing[:-1] if has_terminal else existing
+        reference_dlats = [p.dlat for p in unique]
+        if reference_lp_name:
+            reference_records = self.get_ai_line_records_immediate(reference_lp_name)
+            if len(reference_records) < 2:
+                return False, f"{reference_lp_name}.LP is required as the race-line reference."
+            reference_unique = reference_records[:-1] if abs(
+                reference_records[-1].dlong - track_length
+            ) < 1.0 else reference_records
+            source_x = np.asarray([p.dlong for p in reference_unique], dtype=float)
+            source_y = np.asarray([p.dlat for p in reference_unique], dtype=float)
+            extended_x = np.r_[source_x[-1] - track_length, source_x,
+                               source_x[0] + track_length]
+            extended_y = np.r_[source_y[-1], source_y, source_y[0]]
+            reference_dlats = np.interp(
+                [p.dlong for p in unique], extended_x, extended_y
+            ).tolist()
         try:
             bank_profile = build_trk_banking_profile(self.trk, [p.dlong for p in unique])
             dlats = optimize_race_line(
                 self.trk, self.centerline, [p.dlong for p in unique],
                 margin_feet=margin_feet,
-                reference_dlats=[p.dlat for p in unique],
+                reference_dlats=reference_dlats,
                 pit_side=pit_side,
                 lookahead_feet=lookahead_feet,
                 corner_width_pct=corner_width_pct,
                 apex_position_pct=apex_position_pct,
                 side_preference=side_preference,
                 side_preference_pct=side_preference_pct,
+                pit_route=pit_route,
             )
             def evaluate_candidate(candidate_dlats):
                 xy = []
@@ -639,12 +658,13 @@ class TrackPreviewModel(QtCore.QObject):
                     trial = optimize_race_line(
                         self.trk, self.centerline, [p.dlong for p in unique],
                         margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
+                        reference_dlats=reference_dlats,
                         pit_side=pit_side, lookahead_feet=trial_lookahead,
                         corner_width_pct=corner_width_pct,
                         apex_position_pct=apex_position_pct,
                         side_preference=side_preference,
                         side_preference_pct=side_preference_pct,
+                        pit_route=pit_route,
                     )
                     candidates.append((
                         trial, apex_position_pct, corner_width_pct, trial_lookahead
@@ -681,12 +701,13 @@ class TrackPreviewModel(QtCore.QObject):
                         trial = optimize_race_line(
                             self.trk, self.centerline, [p.dlong for p in unique],
                             margin_feet=margin_feet,
-                            reference_dlats=[p.dlat for p in unique],
+                            reference_dlats=reference_dlats,
                             pit_side=pit_side, lookahead_feet=search_lookahead,
                             corner_width_pct=trial_width,
                             apex_position_pct=trial_apex,
                             side_preference=side_preference,
                             side_preference_pct=side_preference_pct,
+                            pit_route=pit_route,
                         )
                         candidates.append((
                             trial, trial_apex, trial_width, search_lookahead
@@ -743,12 +764,13 @@ class TrackPreviewModel(QtCore.QObject):
                     trial = optimize_race_line(
                         self.trk, self.centerline, [p.dlong for p in unique],
                         margin_feet=margin_feet,
-                        reference_dlats=[p.dlat for p in unique],
+                        reference_dlats=reference_dlats,
                         pit_side=pit_side, lookahead_feet=trial_lookahead,
                         corner_width_pct=trial_width,
                         apex_position_pct=trial_apex,
                         side_preference=side_preference,
                         side_preference_pct=side_preference_pct,
+                        pit_route=pit_route,
                     )
                     lap_seconds, candidate_speeds = evaluate_candidate(trial)
                     scored.append((
@@ -791,13 +813,14 @@ class TrackPreviewModel(QtCore.QObject):
                         trial = optimize_race_line(
                             self.trk, self.centerline, [p.dlong for p in unique],
                             margin_feet=margin_feet,
-                            reference_dlats=[p.dlat for p in unique],
+                            reference_dlats=reference_dlats,
                             pit_side=pit_side, lookahead_feet=global_best[5],
                             corner_width_pct=global_best[4],
                             apex_position_pct=global_best[3],
                             side_preference=side_preference,
                             side_preference_pct=side_preference_pct,
                             local_overrides=override,
+                            pit_route=pit_route,
                         )
                         lap_seconds, candidate_speeds = evaluate_candidate(trial)
                         local_trials += 1
@@ -853,13 +876,14 @@ class TrackPreviewModel(QtCore.QObject):
                         trial = optimize_race_line(
                             self.trk, self.centerline, [p.dlong for p in unique],
                             margin_feet=margin_feet,
-                            reference_dlats=[p.dlat for p in unique],
+                            reference_dlats=reference_dlats,
                             pit_side=pit_side, lookahead_feet=global_best[5],
                             corner_width_pct=global_best[4],
                             apex_position_pct=global_best[3],
                             side_preference=side_preference,
                             side_preference_pct=side_preference_pct,
                             local_overrides=override,
+                            pit_route=pit_route,
                         )
                         lap_seconds, candidate_speeds = evaluate_candidate(trial)
                         refinement_trials += 1

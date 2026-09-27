@@ -214,3 +214,56 @@ class PitDetectionDialog(QtWidgets.QDialog):
         if self.suggestion is None:
             return
         super().accept()
+
+
+class PitLaneSelectionDialog(QtWidgets.QDialog):
+    """Require the user to confirm a detected side/corridor for PIT.LP."""
+
+    def __init__(self, trk, detection: PitDetection, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Confirm PIT.LP Pit Lane")
+        self.setMinimumSize(560, 430)
+        self.candidate: PitCandidate | None = None
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(QtWidgets.QLabel(
+            "Select and visually confirm which side contains the pit lane. "
+            "Dead-end branches have been ignored.", self
+        ))
+        self._map = PitDetectionMap(trk, get_cline_pos(trk), self)
+        layout.addWidget(self._map)
+        form = QtWidgets.QFormLayout()
+        self._choices = QtWidgets.QComboBox(self)
+        self._choices.addItem("Select pit side…", None)
+        for candidate in detection.candidates:
+            self._choices.addItem(
+                f"Pit on {candidate.side} — {candidate.length / 6000:.0f} ft",
+                candidate,
+            )
+        self._choices.currentIndexChanged.connect(self._refresh)
+        form.addRow("Confirmed pit lane:", self._choices)
+        layout.addLayout(form)
+        summary = QtWidgets.QLabel(
+            f"{detection.dead_ends} disconnected/dead-end branch(es) ignored; "
+            f"{detection.too_short} short/distant branch(es) ignored.", self
+        )
+        summary.setWordWrap(True)
+        layout.addWidget(summary)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel,
+            parent=self,
+        )
+        buttons.button(QtWidgets.QDialogButtonBox.Ok).setText("Use this pit lane")
+        self._confirm = buttons.button(QtWidgets.QDialogButtonBox.Ok)
+        self._confirm.setEnabled(False)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _refresh(self, _index=0):
+        self.candidate = self._choices.currentData()
+        self._map.show_candidate(self.candidate)
+        self._confirm.setEnabled(self.candidate is not None)
+
+    def accept(self):
+        if self.candidate is not None:
+            super().accept()
