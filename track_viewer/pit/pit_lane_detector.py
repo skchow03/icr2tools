@@ -24,6 +24,8 @@ class Corridor:
     hi: float
     # An intermediate TRK boundary at the edge facing the racing surface.
     wall: float | None = None
+    # A TRK boundary at the edge facing away from the racing surface.
+    outer_wall: float | None = None
 
     @property
     def center(self) -> float:
@@ -199,9 +201,18 @@ def _side_sample(
         for j in range(sec.num_bounds)
     )
     median_edge = pit.hi if side == "right" else pit.lo
+    outside_edge = pit.lo if side == "right" else pit.hi
     intermediate = boundaries[1:-1]
     matching = [b for b in intermediate if abs(b - median_edge) <= 2 * UNITS_PER_FOOT]
-    pit = replace(pit, wall=float(min(matching, key=lambda b: abs(b-median_edge))) if matching else None)
+    outside_matching = [
+        b for b in boundaries if abs(b - outside_edge) <= 2 * UNITS_PER_FOOT
+    ]
+    pit = replace(
+        pit,
+        wall=float(min(matching, key=lambda b: abs(b - median_edge))) if matching else None,
+        outer_wall=float(min(outside_matching, key=lambda b: abs(b - outside_edge)))
+        if outside_matching else None,
+    )
     return PitSample(station.dlong, pit, racing)
 
 
@@ -328,6 +339,61 @@ def detect_pit_lanes(
     return PitDetection(tuple(candidates), dead_ends, too_short)
 
 
+def _parallel_outer_wall_span(
+    candidate: PitCandidate,
+    track_length: float,
+) -> tuple[float, float] | None:
+    """Return the longest stall-sized run with a constant outside wall.
+
+    Pit entry and exit pavement is commonly present well before and after the
+    stalls, so the full detected corridor is not a useful stall-row extent.
+    The outside edge of the pit corridor is the physical wall beside the
+    stalls; while that wall is parallel to the centerline its DLAT is constant.
+    """
+    if not candidate.samples:
+        return None
+    ft = UNITS_PER_FOOT
+    start = candidate.entrance_dlong
+    observations = [
+        (
+            (sample.dlong - start) % track_length,
+            sample.pit.outer_wall,
+        )
+        for sample in candidate.samples
+        if sample.pit.outer_wall is not None
+    ]
+    if not observations:
+        return None
+    observations.sort()
+
+    # Permit small TRK rounding/fitting noise, but do not let a gradually
+    # angled approach qualify merely because each individual step is small.
+    tolerance = 2 * ft
+    best: tuple[int, int] | None = None
+    left = 0
+    for right in range(len(observations)):
+        while left < right:
+            values = [value for _, value in observations[left:right + 1]]
+            if max(values) - min(values) <= tolerance:
+                break
+            left += 1
+        if best is None or right - left > best[1] - best[0]:
+            best = (left, right)
+
+    if best is None:
+        return None
+    first, last = best
+    # Four stations prevent a brief straight-looking part of an entry taper
+    # from becoming a stall row. It must also fit a car stall plus the pace-car
+    # space which follows the final opponent stall.
+    if last - first + 1 < 4:
+        return None
+    span_start, span_end = observations[first][0], observations[last][0]
+    if span_end - span_start < 110 * ft:
+        return None
+    return start + span_start, start + span_end
+
+
 def recommend_pit_parameters(
     candidate: PitCandidate,
     track_length: float,
@@ -349,14 +415,23 @@ def recommend_pit_parameters(
     changes["pit_access_end_dlong"] = wrap(start + total + 12 * ft)
     changes["pit_to_race_transition_dlong"] = wrap(start + total + 150 * ft)
 
-    margin = max(85 * ft, 0.10 * total)
-    # Leave additional room AFTER the last AI stall for a pace car.
-    usable_start = start + margin
-    usable_end = start + total - margin - 65 * ft
+    wall_span = _parallel_outer_wall_span(candidate, track_length)
     spacing = 45 * ft
-    if usable_end <= usable_start:
-        notes.append("Insufficient straight/paved length to suggest a stall row.")
+    if wall_span is None:
+        notes.append(
+            "No sufficiently long, centerline-parallel outside pit wall was "
+            "found; stall positions and count were left unchanged."
+        )
     else:
+        usable_start, parallel_end = wall_span
+        # The pace car occupies the position after the final opponent stall.
+        usable_end = parallel_end - 65 * ft
+        if usable_end <= usable_start:
+            notes.append(
+                "The parallel outside-wall span is too short for a stall row "
+                "and pace-car space."
+            )
+            usable_end = usable_start - 1
         capacity = 1 + int((usable_end - usable_start) // spacing)
         count = int(baseline.pit_stall_count)
         if count <= 0:
@@ -369,8 +444,11 @@ def recommend_pit_parameters(
                 "stall positions and count were left unchanged."
             )
         if 0 < count <= capacity:
-            first_stall = (usable_start + usable_end - (count - 1) * spacing) / 2
-            last_stall = first_stall + (count - 1) * spacing
+            # The constant-wall span identifies both ends of the stall row.
+            # Count is used to validate capacity, not to pull those endpoints
+            # inward using an assumed spacing.
+            first_stall = usable_start
+            last_stall = usable_end
             changes["player_pit_stall_dlong"] = wrap(first_stall)
             changes["last_pit_stall_dlong"] = wrap(last_stall)
             stall_samples = [
