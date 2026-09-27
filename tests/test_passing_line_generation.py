@@ -59,7 +59,9 @@ def test_default_generates_both_sides_from_race_even_if_maxrace_selected(
     assert [p.dlat / 6000.0 for p in pass2] == pytest.approx([-6.0, -4.0])
     assert [p.speed_mph for p in pass1] == pytest.approx([119.75, 79.75])
     assert [p.speed_mph for p in pass2] == pytest.approx([119.75, 79.75])
-    assert all(p.lateral_speed == 0.0 for p in pass1 + pass2)
+    # PASS1 approaches RACE while PASS2 moves outward in this test fixture.
+    assert all(p.lateral_speed < 0 for p in pass1)
+    assert all(p.lateral_speed > 0 for p in pass2)
     assert [(p.dlat, p.speed_mph) for p in model._ai_lines["RACE"]] == race_before
     assert [p.dlat for p in model._ai_lines["MAXRACE"]] == max_before
     assert model._dirty_lp_files == {"PASS1", "PASS2"}
