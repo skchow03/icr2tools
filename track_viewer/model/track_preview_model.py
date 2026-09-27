@@ -41,7 +41,7 @@ from track_viewer.geometry import (
     build_centerline_index,
     sample_centerline,
 )
-from track_viewer.services.io_service import TrackIOService
+from track_viewer.services.io_service import LP_FILE_NAMES, TrackIOService
 
 
 class TrackPreviewModel(QtCore.QObject):
@@ -311,6 +311,146 @@ class TrackPreviewModel(QtCore.QObject):
             "Existing lateral-speed values were retained; recalculate them "
             "separately before saving if the line was edited."
         )
+
+    def generate_passing_lines(
+        self,
+        *,
+        pass1_max_feet: float = 16.0,
+        pass2_max_feet: float = 16.0,
+        placement_pct: float = 50.0,
+        speed_reduction_mph: float = 0.25,
+    ) -> tuple[bool, str]:
+        """Build both passing LPs from RACE and the existing RACE envelopes.
+
+        Like Samsepi's spreadsheet, place each passing line a percentage of
+        the available space toward MAXRACE or MINRACE, subject to a maximum
+        distance from RACE. All source records are checked and both outputs
+        are built before either target is replaced.
+        """
+        if self.trk is None or not self.centerline or self.track_path is None:
+            return False, "Load a track folder before generating passing lines."
+        options = (
+            pass1_max_feet, pass2_max_feet, placement_pct, speed_reduction_mph
+        )
+        if not all(math.isfinite(value) for value in options):
+            return False, "Passing-line settings must be finite numbers."
+        if pass1_max_feet <= 0 or pass2_max_feet <= 0:
+            return False, "Maximum passing-line distances must be greater than zero."
+        if not 0 < placement_pct < 100:
+            return False, "Placement must be greater than 0% and less than 100%."
+        if speed_reduction_mph < 0:
+            return False, "Speed reduction cannot be negative."
+
+        sources = ("RACE", "MAXRACE", "MINRACE")
+        missing = [name for name in sources if name not in self.available_lp_files]
+        if missing:
+            return False, "Missing source LP files: " + ", ".join(missing)
+        race, maxrace, minrace = (
+            self.get_ai_line_records_immediate(name) for name in sources
+        )
+        count = len(race)
+        if count < 2 or len(maxrace) != count or len(minrace) != count:
+            return False, (
+                "RACE, MAXRACE and MINRACE need the same number of LP records "
+                "(at least two). Align the source LPs before generating."
+            )
+
+        invalid: list[int] = []
+        for index, (r, maximum, minimum) in enumerate(zip(race, maxrace, minrace)):
+            values = (
+                r.dlong, r.dlat, r.speed_mph,
+                maximum.dlong, maximum.dlat,
+                minimum.dlong, minimum.dlat,
+            )
+            if not all(math.isfinite(value) for value in values):
+                invalid.append(index)
+                continue
+            if (
+                abs(maximum.dlong - r.dlong) > 1.0
+                or abs(minimum.dlong - r.dlong) > 1.0
+                or not minimum.dlat < r.dlat < maximum.dlat
+            ):
+                invalid.append(index)
+        if invalid:
+            example = ", ".join(str(i) for i in invalid[:10])
+            remainder = " ..." if len(invalid) > 10 else ""
+            return False, (
+                f"{len(invalid)} source record(s) have misaligned DLONGs, "
+                "non-finite values, or invalid MINRACE < RACE < MAXRACE "
+                f"positions (0-based records: {example}{remainder}). "
+                "Correct the source LPs before generating."
+            )
+
+        fraction = placement_pct / 100.0
+        pass1_limit = pass1_max_feet * 6000.0  # Papyrus DLAT units per foot
+        pass2_limit = pass2_max_feet * 6000.0
+        result: dict[str, list[LpPoint]] = {"PASS1": [], "PASS2": []}
+        narrow_count = 0
+        for index, (r, maximum, minimum) in enumerate(zip(race, maxrace, minrace)):
+            pass1_dlat = r.dlat + min(
+                (maximum.dlat - r.dlat) * fraction, pass1_limit
+            )
+            pass2_dlat = r.dlat - min(
+                (r.dlat - minimum.dlat) * fraction, pass2_limit
+            )
+            if (
+                not r.dlat < pass1_dlat < maximum.dlat
+                or not minimum.dlat < pass2_dlat < r.dlat
+            ):
+                return False, (
+                    f"Record {index} is too narrow for the chosen settings. "
+                    "No passing lines were changed."
+                )
+            if min(pass1_dlat - r.dlat, r.dlat - pass2_dlat) < 6000.0:
+                narrow_count += 1
+            speed = max(0.0, r.speed_mph - speed_reduction_mph)
+            for name, dlat in (("PASS1", pass1_dlat), ("PASS2", pass2_dlat)):
+                try:
+                    x, y, _ = getxyz(
+                        self.trk, float(r.dlong), dlat, self.centerline
+                    )
+                except Exception as exc:
+                    return False, (
+                        f"Unable to calculate {name} geometry at record "
+                        f"{index}: {exc}. No passing lines were changed."
+                    )
+                result[name].append(
+                    LpPoint(
+                        x=x,
+                        y=y,
+                        dlong=float(r.dlong),
+                        dlat=dlat,
+                        speed_raw=int(round(speed * 5280.0 / 9.0)),
+                        speed_mph=speed,
+                        lateral_speed=0.0,
+                    )
+                )
+
+        if self._ai_lines is None:
+            self._ai_lines = {}
+        for name, records in result.items():
+            self._ai_lines[name] = records
+            self._manual_lp_overrides.add(name)
+            self._pending_ai_line_loads.discard(name)
+            self._dirty_lp_files.add(name)
+        available = set(self.available_lp_files) | set(result)
+        self.available_lp_files = [
+            name for name in LP_FILE_NAMES if name in available
+        ]
+        self.visible_lp_files.update(result)
+        self._ai_line_cache_generation += 1
+
+        message = (
+            f"Generated PASS1 and PASS2 from RACE ({count} records each). "
+            "Both lines have zero lateral-speed values until recalculated; "
+            "use Recalculate Lateral Speed for each LP before saving."
+        )
+        if narrow_count:
+            message += (
+                f" Warning: {narrow_count} record(s) have less than one foot "
+                "of passing-line separation from RACE."
+            )
+        return True, message
 
     def generate_lp_line(
         self,
