@@ -163,6 +163,20 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._export_all_lp_csv_button.setEnabled(False)
         self._generate_lp_button = QtWidgets.QPushButton("Generate LP Line")
         self._generate_lp_button.setEnabled(False)
+        self._generate_passing_lines_button = QtWidgets.QPushButton(
+            "Generate PASS1 / PASS2"
+        )
+        self._generate_passing_lines_button.setEnabled(False)
+        self._generate_passing_lines_button.setToolTip(
+            "Generate PASS1 and PASS2 directly from RACE, MAXRACE and MINRACE, "
+            "regardless of which LP is selected."
+        )
+        self._passing_line_options = {
+            "pass1_max_feet": 16.0,
+            "pass2_max_feet": 16.0,
+            "placement_pct": 50.0,
+            "speed_reduction_mph": 0.25,
+        }
         self._optimized_line_button = QtWidgets.QPushButton("Generate Optimized Line")
         self._optimized_line_button.setEnabled(False)
         self._optimized_line_button.setToolTip(
@@ -421,6 +435,9 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             self._handle_export_all_lp_csv
         )
         self._generate_lp_button.clicked.connect(self._handle_generate_lp_line)
+        self._generate_passing_lines_button.clicked.connect(
+            self._handle_generate_passing_lines
+        )
         self._optimized_line_button.clicked.connect(self._handle_generate_optimized_line)
         self._lp_lap_stats_button.clicked.connect(self._handle_lp_lap_statistics)
         self._trk_gaps_action.triggered.connect(
@@ -2671,6 +2688,126 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         else:
             QtWidgets.QMessageBox.warning(self, title, message)
 
+    def _handle_generate_passing_lines(self) -> None:
+        """Generate both passing LPs from named source files, not the active LP."""
+        required = {"RACE", "MAXRACE", "MINRACE"}
+        if self.preview_api.trk is None or not required.issubset(
+            self.preview_api.available_lp_files()
+        ):
+            QtWidgets.QMessageBox.warning(
+                self,
+                "Generate PASS1 / PASS2",
+                "Load a track containing RACE, MAXRACE and MINRACE first.",
+            )
+            return
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle("Generate PASS1 / PASS2 from RACE")
+        form = QtWidgets.QFormLayout()
+        explanation = QtWidgets.QLabel(
+            "Place each passing line partway from RACE toward its matching "
+            "MAXRACE/MINRACE boundary. Distances are capped independently. "
+            "Existing PASS1 and PASS2 are replaced in memory; RACE and both "
+            "boundaries are never modified."
+        )
+        explanation.setWordWrap(True)
+        form.addRow(explanation)
+        inputs = {}
+        for key, label in (
+            ("pass1_max_feet", "PASS1 max distance"),
+            ("pass2_max_feet", "PASS2 max distance"),
+        ):
+            control = QtWidgets.QDoubleSpinBox(dialog)
+            control.setRange(0.1, 100.0)
+            control.setDecimals(1)
+            control.setSingleStep(1.0)
+            control.setSuffix(" ft")
+            control.setValue(self._passing_line_options[key])
+            inputs[key] = control
+            form.addRow(label, control)
+
+        placement = QtWidgets.QDoubleSpinBox(dialog)
+        placement.setRange(1.0, 99.0)
+        placement.setDecimals(1)
+        placement.setSingleStep(5.0)
+        placement.setSuffix("%")
+        placement.setValue(self._passing_line_options["placement_pct"])
+        placement.setToolTip(
+            "Percentage of available space from RACE toward each RACE boundary. "
+            "Samsepi's spreadsheet uses 50%."
+        )
+        inputs["placement_pct"] = placement
+        form.addRow("Use available width", placement)
+
+        speed = QtWidgets.QDoubleSpinBox(dialog)
+        speed.setRange(0.0, 50.0)
+        speed.setDecimals(2)
+        speed.setSingleStep(0.25)
+        speed.setSuffix(" mph")
+        speed.setValue(self._passing_line_options["speed_reduction_mph"])
+        speed.setToolTip(
+            "Both generated LPs inherit RACE speed minus this amount, "
+            "clamped to zero."
+        )
+        inputs["speed_reduction_mph"] = speed
+        form.addRow("Speed below RACE", speed)
+
+        note = QtWidgets.QLabel(
+            "The generated lateral-speed (Coriolis) fields start at zero. "
+            "Recalculate each passing LP's lateral speeds before saving."
+        )
+        note.setWordWrap(True)
+        form.addRow(note)
+        buttons = QtWidgets.QDialogButtonBox(
+            QtWidgets.QDialogButtonBox.Ok | QtWidgets.QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout = QtWidgets.QVBoxLayout()
+        layout.addLayout(form)
+        layout.addWidget(buttons)
+        dialog.setLayout(layout)
+        if dialog.exec_() != QtWidgets.QDialog.Accepted:
+            return
+
+        dirty = [
+            name for name in ("PASS1", "PASS2")
+            if self.preview_api.lp_line_dirty(name)
+        ]
+        if dirty:
+            response = QtWidgets.QMessageBox.question(
+                self,
+                "Replace unsaved passing lines?",
+                "Generating will replace unsaved edits to "
+                + " and ".join(dirty)
+                + ". Continue?",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if response != QtWidgets.QMessageBox.Yes:
+                return
+
+        options = {key: widget.value() for key, widget in inputs.items()}
+        success, message = self.preview_api.generate_passing_lines(**options)
+        if not success:
+            QtWidgets.QMessageBox.warning(
+                self, "Generate PASS1 / PASS2", message
+            )
+            return
+
+        self._passing_line_options = options
+        # Rebuild the LP list because either passing LP may have been absent
+        # on disk, and is now available as an unsaved in-memory line.
+        self._apply_ai_line_state(
+            self.preview_api.available_lp_files(),
+            set(self.preview_api.visible_lp_files()),
+            True,
+        )
+        self.visualization_widget.update()
+        QtWidgets.QMessageBox.information(
+            self, "Generate PASS1 / PASS2", message
+        )
+
     def _handle_generate_lp_line(self) -> None:
         lp_name = self.preview_api.active_lp_line()
         if not lp_name or lp_name == "center-line":
@@ -3449,6 +3586,13 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self._recalculate_lateral_speed_button.setEnabled(enabled)
 
     def _update_generate_lp_button_state(self, lp_name: str | None = None) -> None:
+        has_sources = (
+            self.preview_api.trk is not None
+            and {"RACE", "MAXRACE", "MINRACE"}.issubset(
+                self.preview_api.available_lp_files()
+            )
+        )
+        self._generate_passing_lines_button.setEnabled(has_sources)
         name = lp_name or self.preview_api.active_lp_line()
         enabled = (
             bool(name)
