@@ -312,6 +312,10 @@ class PreviewCoordinator:
     def ai_line_records(self, name: str) -> list[LpPoint]:
         return self._lp_session.records(name)
 
+    def get_ai_line_records_immediate(self, name: str) -> list[LpPoint]:
+        """Load an LP synchronously when a workflow needs it immediately."""
+        return self._model.get_ai_line_records_immediate(name)
+
     def lp_line_dirty(self, name: str) -> bool:
         return self._lp_session.is_dirty(name)
 

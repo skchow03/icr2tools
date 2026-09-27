@@ -106,6 +106,10 @@ class TrackPreviewApi:
     def ai_line_records(self, name: str) -> list[LpPoint]:
         return self._coordinator.ai_line_records(name)
 
+    def get_ai_line_records_immediate(self, name: str) -> list[LpPoint]:
+        """Return LP records, loading them synchronously when necessary."""
+        return self._coordinator.get_ai_line_records_immediate(name)
+
     def lp_session(self) -> LPEditingSession:
         return self._coordinator.lp_session
 

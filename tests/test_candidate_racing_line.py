@@ -53,6 +53,17 @@ class CandidateRaceLineTest(unittest.TestCase):
             "RACE",
         )
 
+    def test_preview_api_can_load_lp_records_immediately(self):
+        records = [Mock(dlong=100, dlat=20)]
+        model = Mock()
+        model.get_ai_line_records_immediate.return_value = records
+        coordinator = PreviewCoordinator.__new__(PreviewCoordinator)
+        coordinator._model = model
+        api = TrackPreviewApi(coordinator)
+
+        self.assertIs(api.get_ai_line_records_immediate("RACE"), records)
+        model.get_ai_line_records_immediate.assert_called_once_with("RACE")
+
     def _generate(self, radius, width=20, margin=5, **options):
         def xyz(_trk, dlong, dlat, _cline):
             angle = 2 * math.pi * dlong / 1_000_000
