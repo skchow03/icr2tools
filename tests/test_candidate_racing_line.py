@@ -2,11 +2,14 @@
 
 import math
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 
 from track_viewer.ai import racing_line_optimizer as optimizer
+from track_viewer.model.lp_editing_session import LPEditingSession
+from track_viewer.preview_api import TrackPreviewApi
+from track_viewer.preview_coordinator import PreviewCoordinator
 
 
 class _Section:
@@ -25,6 +28,30 @@ class CandidateRaceLineTest(unittest.TestCase):
     def setUp(self):
         self.dlongs = [i * 2500 for i in range(400)]
         self.track = _Track()
+
+    def test_pit_route_options_reach_preview_model(self):
+        model = Mock()
+        model.generate_candidate_race_line.return_value = (True, "generated")
+        coordinator = PreviewCoordinator.__new__(PreviewCoordinator)
+        coordinator._lp_session = LPEditingSession(model)
+        coordinator._apply_lp_changes = Mock()
+        api = TrackPreviewApi(coordinator)
+
+        result = api.generate_candidate_race_line(
+            "PIT", 5.0,
+            pit_route=("right", 250_000, 600_000),
+            reference_lp_name="RACE",
+        )
+
+        self.assertEqual(result, (True, "generated"))
+        self.assertEqual(
+            model.generate_candidate_race_line.call_args.kwargs["pit_route"],
+            ("right", 250_000, 600_000),
+        )
+        self.assertEqual(
+            model.generate_candidate_race_line.call_args.kwargs["reference_lp_name"],
+            "RACE",
+        )
 
     def _generate(self, radius, width=20, margin=5, **options):
         def xyz(_trk, dlong, dlat, _cline):
