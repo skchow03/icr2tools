@@ -6,6 +6,7 @@ from enum import Enum, auto
 from icr2_core.lp.loader import papy_speed_to_mph
 from track_viewer.ai.indycar_speed_model import CarPerformance
 from track_viewer.ai.ai_line_service import LpPoint
+from track_viewer.ai.lateral_speed import calculate_lp_lateral_speeds
 from track_viewer.model.track_preview_model import TrackPreviewModel
 
 
@@ -259,27 +260,21 @@ class LPEditingSession:
 
     def recalculate_lateral_speeds(self, lp_name: str) -> set[LPChange]:
         records = self._model.ai_line_records(lp_name)
-        if len(records) < 3:
+        if len(records) < 2:
             return set()
-        total_records = len(records)
-        recalculated = [0.0] * total_records
-        lateral_factor = 31680000 / 54000
-        for index in range(total_records):
-            prev_record = records[(index - 1) % total_records]
-            next_record = records[(index + 1) % total_records]
-            record = records[index]
-            dlong_delta = next_record.dlong - prev_record.dlong
-            if dlong_delta == 0:
-                lateral_speed = 0.0
-            else:
-                lateral_speed = (
-                    (next_record.dlat - prev_record.dlat)
-                    / dlong_delta
-                    * (record.speed_mph * lateral_factor)
-                )
-            recalculated[(index - 2) % total_records] = lateral_speed
-        for index, lateral_speed in enumerate(recalculated):
-            records[index].lateral_speed = lateral_speed
+        try:
+            lateral_speeds = calculate_lp_lateral_speeds(
+                records,
+                track_length=float(
+                    getattr(self._model.trk, "trklength", 0)
+                    or self._model.track_length
+                    or 0
+                ),
+            )
+        except ValueError:
+            return set()
+        for record, lateral_speed in zip(records, lateral_speeds):
+            record.lateral_speed = lateral_speed
         self._model.mark_lp_line_dirty(lp_name)
         return {LPChange.DATA}
 
