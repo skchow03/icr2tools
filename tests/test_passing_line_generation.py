@@ -140,3 +140,16 @@ def test_missing_source_or_invalid_settings_do_not_create_outputs(
         assert not success
     assert "PASS1" not in model._ai_lines
     assert "PASS2" not in model._ai_lines
+
+
+def test_integer_lp_precision_must_preserve_hierarchy(monkeypatch) -> None:
+    model = _model(monkeypatch)
+    model._ai_lines["MAXRACE"][0].dlat = 0.6
+    model._ai_lines["MINRACE"][0].dlat = -0.6
+
+    success, message = model.generate_passing_lines()
+
+    assert not success
+    assert "integer LP precision" in message
+    assert "PASS1" not in model._ai_lines
+    assert "PASS2" not in model._ai_lines
