@@ -45,6 +45,72 @@ def _in_circular_range(value, start, end, lap):
     return start <= value <= end if start <= end else value >= start or value <= end
 
 
+def _pit_route_targets(trk, dlongs, reference_dlats, lower, upper, pit_route):
+    """Build a centerline plan that joins a pit branch outside its walls.
+
+    The detected entrance and exit are where the divided pit corridor exists.
+    Waiting until those points to move laterally can make the chord between two
+    LP records cross the new median wall.  Use the complete preceding section
+    for pit entry and the complete following section for pit exit instead.
+    """
+    if not pit_route:
+        return None
+    lap = float(getattr(trk, "trklength", 0) or 0)
+    if lap <= 0 or not getattr(trk, "sects", None):
+        return None
+    _side, entrance, exit_ = pit_route
+    entrance %= lap
+    exit_ %= lap
+    entrance_section, _ = dlong2sect(trk, entrance)
+    exit_section, _ = dlong2sect(trk, exit_)
+    previous = trk.sects[(entrance_section - 1) % len(trk.sects)]
+    following = trk.sects[(exit_section + 1) % len(trk.sects)]
+    transition_start = float(previous.start_dlong) % lap
+    transition_end = (
+        float(following.start_dlong) + float(following.length)
+    ) % lap
+
+    positions = np.asarray(dlongs, dtype=float) % lap
+
+    def distance(a, b):
+        return (b - a) % lap
+
+    references = (np.asarray(reference_dlats, dtype=float) / DLAT_PER_FOOT
+                  if reference_dlats is not None else (lower + upper) * 0.5)
+    references = np.clip(references, lower, upper)
+    pit_center = (lower + upper) * 0.5
+    route_indices = [
+        i for i, position in enumerate(positions)
+        if _in_circular_range(position, entrance, exit_, lap)
+    ]
+    if not route_indices:
+        return None
+    entry_index = min(route_indices, key=lambda i: distance(entrance, positions[i]))
+    exit_index = min(route_indices, key=lambda i: distance(positions[i], exit_))
+    entry_center = pit_center[entry_index]
+    exit_center = pit_center[exit_index]
+    targets = references.copy()
+    weights = np.ones(len(positions))
+
+    entry_length = distance(transition_start, entrance)
+    exit_length = distance(exit_, transition_end)
+    for i, position in enumerate(positions):
+        if _in_circular_range(position, entrance, exit_, lap):
+            targets[i] = pit_center[i]
+            weights[i] = 40.0
+        elif entry_length and distance(transition_start, position) <= entry_length:
+            t = distance(transition_start, position) / entry_length
+            smooth = t * t * (3.0 - 2.0 * t)
+            targets[i] = references[i] + smooth * (entry_center - references[i])
+            weights[i] = 8.0 + 32.0 * smooth
+        elif exit_length and distance(exit_, position) <= exit_length:
+            t = distance(exit_, position) / exit_length
+            smooth = t * t * (3.0 - 2.0 * t)
+            targets[i] = exit_center + smooth * (references[i] - exit_center)
+            weights[i] = 40.0 - 32.0 * smooth
+    return np.clip(targets, lower, upper), weights
+
+
 def _paved_corridor(
     trk, dlongs, reference_dlats, margin_feet, pit_side="auto", pit_route=None
 ):
@@ -527,6 +593,14 @@ def optimize_race_line(
         apex_position_pct, return_exit_signs=True,
         local_overrides=local_overrides,
     )
+    pit_targets = _pit_route_targets(
+        trk, dlongs, reference_dlats, lower, upper, pit_route
+    )
+    if pit_targets is not None:
+        targets, target_weight = pit_targets
+        # Corner-exit steering preferences are for a racing line and must not
+        # fight the deliberate entry/exit path of PIT.LP.
+        exit_signs[:] = 0
     side_target = None
     if side_preference != "none" and side_preference_pct > 0:
         # Treat the preference as the desired lane position, not merely a

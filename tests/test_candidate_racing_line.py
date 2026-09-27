@@ -128,6 +128,43 @@ class CandidateRaceLineTest(unittest.TestCase):
         self.assertEqual((lower[2], upper[2]), (-27, -21))
         self.assertEqual((lower[3], upper[3]), (-9, 9))
 
+    def test_pit_route_uses_adjacent_sections_for_entry_and_exit(self):
+        class Section:
+            def __init__(self, start, length):
+                self.start_dlong = start
+                self.length = length
+
+        self.track.trklength = 1_000
+        self.track.sects = [
+            Section(0, 200), Section(200, 200), Section(400, 200),
+            Section(600, 200), Section(800, 200),
+        ]
+        dlongs = np.arange(0, 1_000, 50, dtype=float)
+        lower = np.full(len(dlongs), -10.0)
+        upper = np.full(len(dlongs), 10.0)
+        # The detected divided corridor occupies sections 2 and 3. Model its
+        # center as the right-side pit lane while unified sections remain wide.
+        pit = (dlongs >= 400) & (dlongs <= 750)
+        lower[pit], upper[pit] = -30.0, -20.0
+
+        with patch.object(
+            optimizer, "dlong2sect",
+            side_effect=lambda _trk, dlong: (int(dlong // 200) % 5, 0),
+        ):
+            targets, weights = optimizer._pit_route_targets(
+                self.track, dlongs, [0] * len(dlongs), lower, upper,
+                ("right", 400, 750),
+            )
+
+        # Entry begins at the start of section 1, before the wall appears.
+        self.assertEqual(targets[4], 0)
+        self.assertLess(targets[6], 0)
+        self.assertEqual(targets[8], -25)
+        # Exit remains in transition through all of following section 4.
+        self.assertLess(targets[17], 0)
+        self.assertGreater(targets[19], -3)
+        self.assertGreater(weights[8], weights[4])
+
     def test_corner_targets_choose_outside_entry_and_inside_apex(self):
         straight = np.column_stack((np.linspace(0, 200, 81), np.full(81, -30)))
         a = np.linspace(-math.pi / 2, math.pi / 2, 61)[1:]
