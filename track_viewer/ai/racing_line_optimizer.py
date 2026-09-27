@@ -116,8 +116,9 @@ def _paved_corridor(
 ):
     if pit_side not in {"auto", "left", "right"}:
         raise ValueError("Pit side must be Auto, Left, or Right.")
-    lower, upper = [], []
-    previous = None
+    candidate_rows = []
+    references = []
+    route_states = []
     for i, dlong in enumerate(dlongs):
         section_id, fraction = dlong2sect(trk, dlong)
         section = trk.sects[section_id]
@@ -155,18 +156,6 @@ def _paved_corridor(
             )
         reference = reference_dlats[i] / DLAT_PER_FOOT if reference_dlats else 0.0
 
-        def score(interval):
-            lo, hi = interval
-            distance = max(lo - reference, 0, reference - hi)
-            if previous is None:
-                return distance
-            overlap = min(hi, previous[1]) - max(lo, previous[0])
-            continuity = 0 if overlap >= 0 else 1000 + 10 * -overlap
-            previous_center = (previous[0] + previous[1]) * 0.5
-            return 3 * distance + continuity + max(
-                lo - previous_center, 0, previous_center - hi
-            )
-
         route_here = bool(
             pit_route
             and _in_circular_range(
@@ -181,32 +170,77 @@ def _paved_corridor(
                 candidates,
                 key=lambda interval: interval[0]
                 if pit_route[0] == "right" else -interval[1],
-            )
+            )[:1]
         else:
-            ranked = sorted(candidates, key=score)
-        if (pit_side == "auto" and previous is None and len(ranked) > 1
-                and abs(score(ranked[0]) - score(ranked[1])) < 1e-8):
-            raise ValueError(
-                "Existing LP line cannot distinguish sides of a wall; "
-                "choose the pit side explicitly."
-            )
-        chosen = ranked[0]
-        previous_route = bool(
-            i > 0 and pit_route and _in_circular_range(
-                dlongs[i - 1], pit_route[1], pit_route[2], float(trk.trklength)
-            )
+            ranked = candidates
+        candidate_rows.append(ranked)
+        references.append(reference)
+        route_states.append(route_here)
+
+    # Select a complete connected corridor rather than greedily following the
+    # closest branch. A tempting split may be a paved dead end; looking through
+    # the full lap lets that branch disappear naturally while the through road
+    # remains viable.
+    def unary(interval, reference):
+        lo, hi = interval
+        return 3 * max(lo - reference, 0, reference - hi)
+
+    def transition(previous, current):
+        if min(previous[1], current[1]) < max(previous[0], current[0]):
+            return None
+        center = (previous[0] + previous[1]) * 0.5
+        return max(current[0] - center, 0, center - current[1])
+
+    solutions = []
+    for start_index, start in enumerate(candidate_rows[0]):
+        costs = {start_index: unary(start, references[0])}
+        parents = []
+        for row_index in range(1, len(candidate_rows)):
+            next_costs = {}
+            row_parents = {}
+            for current_index, current in enumerate(candidate_rows[row_index]):
+                for previous_index, cost in costs.items():
+                    step = 0.0
+                    if route_states[row_index] == route_states[row_index - 1]:
+                        step = transition(
+                            candidate_rows[row_index - 1][previous_index], current
+                        )
+                        if step is None:
+                            continue
+                    total = cost + step + unary(current, references[row_index])
+                    if current_index not in next_costs or total < next_costs[current_index]:
+                        next_costs[current_index] = total
+                        row_parents[current_index] = previous_index
+            costs = next_costs
+            parents.append(row_parents)
+            if not costs:
+                break
+        if len(parents) != len(candidate_rows) - 1:
+            continue
+        for end_index, cost in costs.items():
+            if route_states[0] == route_states[-1] and transition(
+                candidate_rows[-1][end_index], start
+            ) is None:
+                continue
+            path = [end_index]
+            for row_parents in reversed(parents):
+                path.append(row_parents[path[-1]])
+            path.reverse()
+            solutions.append((cost, path))
+    if not solutions:
+        raise ValueError(
+            "No continuous paved corridor completes the lap; inspect pavement "
+            "or the selected pit side."
         )
-        if (previous is not None and route_here == previous_route
-                and min(chosen[1], previous[1]) < max(chosen[0], previous[0])):
-            raise ValueError(
-                f"Paved corridor is discontinuous at DLONG {dlong:.0f}; "
-                "inspect pavement or existing RACE line."
-            )
-        lower.append(chosen[0])
-        upper.append(chosen[1])
-        previous = chosen
-    if min(upper[0], upper[-1]) < max(lower[0], lower[-1]):
-        raise ValueError("Paved corridor is discontinuous at the start/finish seam.")
+    solutions.sort(key=lambda item: item[0])
+    if (pit_side == "auto" and len(solutions) > 1
+            and abs(solutions[0][0] - solutions[1][0]) < 1e-8):
+        raise ValueError(
+            "Existing LP line cannot distinguish sides of a wall; "
+            "choose the pit side explicitly."
+        )
+    chosen = [row[index] for row, index in zip(candidate_rows, solutions[0][1])]
+    lower, upper = zip(*chosen)
     return np.asarray(lower), np.asarray(upper)
 
 
