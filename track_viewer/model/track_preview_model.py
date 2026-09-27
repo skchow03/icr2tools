@@ -21,6 +21,7 @@ from icr2_core.trk.surface_mesh import GroundSurfaceStrip
 from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
+from track_viewer.ai.lateral_speed import calculate_lp_lateral_speeds
 from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_legal_dlat_envelope
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
@@ -440,6 +441,22 @@ class TrackPreviewModel(QtCore.QObject):
                     )
                 )
 
+        # Compute the Coriolis (lateral velocity) field from each generated
+        # path and its assigned speed before modifying either target LP.
+        for name, records in result.items():
+            try:
+                lateral_speeds = calculate_lp_lateral_speeds(
+                    records,
+                    track_length=float(getattr(self.trk, "trklength", 0) or 0),
+                )
+            except ValueError as exc:
+                return False, (
+                    f"Unable to calculate {name} lateral speeds: {exc}. "
+                    "No passing lines were changed."
+                )
+            for record, lateral_speed in zip(records, lateral_speeds):
+                record.lateral_speed = lateral_speed
+
         if self._ai_lines is None:
             self._ai_lines = {}
         for name, records in result.items():
@@ -455,9 +472,8 @@ class TrackPreviewModel(QtCore.QObject):
         self._ai_line_cache_generation += 1
 
         message = (
-            f"Generated PASS1 and PASS2 from RACE ({count} records each). "
-            "Both lines have zero lateral-speed values until recalculated; "
-            "use Recalculate Lateral Speed for each LP before saving."
+            f"Generated PASS1 and PASS2 from RACE ({count} records each), "
+            "including calculated lateral-speed (Coriolis) values."
         )
         if narrow_count:
             message += (
