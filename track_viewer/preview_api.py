@@ -175,6 +175,21 @@ class TrackPreviewApi:
     def import_active_lp_csv(self, csv_path: Path) -> tuple[bool, str]:
         return self._coordinator.import_active_lp_csv(csv_path)
 
+    def generate_passing_lines(
+        self,
+        *,
+        pass1_max_feet: float = 16.0,
+        pass2_max_feet: float = 16.0,
+        placement_pct: float = 50.0,
+        speed_reduction_mph: float = 0.25,
+    ) -> tuple[bool, str]:
+        return self._coordinator.generate_passing_lines(
+            pass1_max_feet=pass1_max_feet,
+            pass2_max_feet=pass2_max_feet,
+            placement_pct=placement_pct,
+            speed_reduction_mph=speed_reduction_mph,
+        )
+
     def generate_lp_line(
         self,
         lp_name: str,
