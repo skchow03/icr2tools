@@ -1831,7 +1831,12 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
 
         lane_index = self._active_pit_lane_index()
         current = self._pit_editors[lane_index].parameters()
-        dialog = PitDetectionDialog(trk, detection, current, lp_lines, self)
+        # PIT.LP belongs to the primary pit lane. Do not use it to place
+        # speed-limit markers for PIT2 unless a separate verified LP exists.
+        review_lp_lines = lp_lines if lane_index == 0 else {
+            name: values for name, values in lp_lines.items() if name != "PIT"
+        }
+        dialog = PitDetectionDialog(trk, detection, current, review_lp_lines, self)
         if dialog.exec_() != QtWidgets.QDialog.Accepted or dialog.suggestion is None:
             return
         self._pit_editors[lane_index].set_parameters(dialog.suggestion.parameters)
