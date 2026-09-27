@@ -17,15 +17,17 @@ def get_cline_pos(trk):
             right_xsect = xsect - 1
             break
 
-    right_dlat = trk.xsect_dlats[right_xsect]
-    left_dlat = trk.xsect_dlats[left_xsect]
+    # Parsed track values may be fixed-width NumPy scalars.  Convert before
+    # arithmetic so subtracting coordinates cannot wrap at the dtype boundary.
+    right_dlat = float(trk.xsect_dlats[right_xsect])
+    left_dlat = float(trk.xsect_dlats[left_xsect])
     cline_adj = -right_dlat/(left_dlat - right_dlat)
     cline = []
     for sect in range(0, trk.num_sects):
-        r_x = trk.sects[sect].pos1[right_xsect]
-        r_y = trk.sects[sect].pos2[right_xsect]
-        l_x = trk.sects[sect].pos1[left_xsect]
-        l_y = trk.sects[sect].pos2[left_xsect]
+        r_x = float(trk.sects[sect].pos1[right_xsect])
+        r_y = float(trk.sects[sect].pos2[right_xsect])
+        l_x = float(trk.sects[sect].pos1[left_xsect])
+        l_y = float(trk.sects[sect].pos2[left_xsect])
 
         c_x = r_x + cline_adj * (l_x - r_x)
         c_y = r_y + cline_adj * (l_y - r_y)
