@@ -563,6 +563,47 @@ def build_legal_dlat_envelope(
     return lower * DLAT_PER_FOOT, upper * DLAT_PER_FOOT
 
 
+def constrain_dlat_path_to_pavement(
+    trk, centerline, dlongs, dlats, *, margin_feet=0.0, reference_dlats=None
+):
+    """Return a path contained by one continuous paved, wall-free corridor.
+
+    Besides clipping the LP records themselves, this applies the same
+    between-record checks used by the racing-line optimizer.  Those checks
+    prevent a straight rendered LP segment from cutting across a curved road
+    edge or an intermediate wall between two otherwise legal records.
+    """
+    if margin_feet < 0:
+        raise ValueError("Pavement-edge clearance cannot be negative.")
+    if len(dlongs) != len(dlats) or len(dlongs) < 2:
+        raise ValueError("A pavement-constrained path needs matching LP samples.")
+    if any(b <= a for a, b in zip(dlongs, dlongs[1:])):
+        raise ValueError("LP DLONG samples must be strictly increasing.")
+    references = reference_dlats if reference_dlats is not None else dlats
+    lower, upper = _paved_corridor(
+        trk, dlongs, references, margin_feet, "auto"
+    )
+    centers = []
+    normals = []
+    for dlong in dlongs:
+        x, y, _ = getxyz(trk, dlong, 0, centerline)
+        nx, ny, _ = getxyz(trk, dlong, DLAT_PER_FOOT, centerline)
+        centers.append((x / DLAT_PER_FOOT, y / DLAT_PER_FOOT))
+        normals.append(((nx - x) / DLAT_PER_FOOT, (ny - y) / DLAT_PER_FOOT))
+    centers = np.asarray(centers, dtype=float)
+    normals = np.asarray(normals, dtype=float)
+    constraints = _between_record_constraints(
+        trk, centerline, dlongs, references, margin_feet, "auto",
+        centers, normals,
+    )
+    offsets = np.asarray(dlats, dtype=float) / DLAT_PER_FOOT
+    offsets = np.clip(offsets, lower, upper)
+    offsets = _enforce_between_record_constraints(
+        offsets, lower, upper, constraints
+    )
+    return (offsets * DLAT_PER_FOOT).tolist()
+
+
 def optimize_race_line(
     trk,
     centerline,
