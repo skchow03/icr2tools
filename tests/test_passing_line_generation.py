@@ -26,6 +26,10 @@ def _model(monkeypatch) -> TrackPreviewModel:
         "track_viewer.model.track_preview_model.getxyz",
         lambda _trk, dlong, dlat, _cline: (float(dlong), float(dlat), 0.0),
     )
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.constrain_dlat_path_to_pavement",
+        lambda _trk, _cline, _dlongs, dlats, **_kwargs: list(dlats),
+    )
     model = TrackPreviewModel()
     model.trk = SimpleNamespace(trklength=6000.0)
     model.centerline = [(0.0, 0.0)]
@@ -137,9 +141,52 @@ def test_missing_source_or_invalid_settings_do_not_create_outputs(
         {"placement_pct": 0.0},
         {"placement_pct": 100.0},
         {"speed_reduction_mph": -1.0},
+        {"edge_clearance_feet": -1.0},
     ):
         success, _ = model.generate_passing_lines(**settings)
         assert not success
+    assert "PASS1" not in model._ai_lines
+    assert "PASS2" not in model._ai_lines
+
+
+def test_passing_lines_apply_pavement_clearance_to_complete_paths(
+    monkeypatch,
+) -> None:
+    model = _model(monkeypatch)
+    calls = []
+
+    def constrain(_trk, _cline, dlongs, dlats, **kwargs):
+        calls.append((list(dlongs), list(dlats), kwargs))
+        return [value - 6000.0 if value > 12000.0 else value for value in dlats]
+
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.constrain_dlat_path_to_pavement",
+        constrain,
+    )
+
+    success, message = model.generate_passing_lines(edge_clearance_feet=2.5)
+
+    assert success, message
+    assert len(calls) == 2
+    assert all(call[2]["margin_feet"] == 2.5 for call in calls)
+    assert all(call[2]["reference_dlats"] == [0.0, 12000.0] for call in calls)
+    assert [p.dlat / 6000.0 for p in model.ai_line_records("PASS1")] == [15.0, 4.0]
+    assert "2.5 ft inside paved road" in message
+
+
+def test_pavement_constraint_failure_is_atomic(monkeypatch) -> None:
+    model = _model(monkeypatch)
+    monkeypatch.setattr(
+        "track_viewer.model.track_preview_model.constrain_dlat_path_to_pavement",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            ValueError("No continuous paved corridor completes the lap")
+        ),
+    )
+
+    success, message = model.generate_passing_lines(edge_clearance_feet=4.0)
+
+    assert not success
+    assert "paved road" in message
     assert "PASS1" not in model._ai_lines
     assert "PASS2" not in model._ai_lines
 

@@ -22,7 +22,11 @@ from icr2_core.trk.trk_classes import TRKFile
 from icr2_core.trk.trk_utils import dlong2sect, getbounddlat, getxyz
 from track_viewer.ai.ai_line_service import AiLineLoadTask, LpPoint, load_ai_line_records
 from track_viewer.ai.lateral_speed import calculate_lp_lateral_speeds
-from track_viewer.ai.racing_line_optimizer import optimize_race_line, build_legal_dlat_envelope
+from track_viewer.ai.racing_line_optimizer import (
+    build_legal_dlat_envelope,
+    constrain_dlat_path_to_pavement,
+    optimize_race_line,
+)
 from track_viewer.ai.minimum_time_optimizer import optimize_minimum_time
 from track_viewer.ai.geometric_line_optimizer import optimize_geometric
 from track_viewer.ai.pathfinder_line_generator import generate_pathfinder
@@ -352,6 +356,7 @@ class TrackPreviewModel(QtCore.QObject):
         pass2_max_feet: float = 16.0,
         placement_pct: float = 50.0,
         speed_reduction_mph: float = 0.25,
+        edge_clearance_feet: float = 1.0,
     ) -> tuple[bool, str]:
         """Build both passing LPs from RACE and the existing RACE envelopes.
 
@@ -363,7 +368,8 @@ class TrackPreviewModel(QtCore.QObject):
         if self.trk is None or not self.centerline or self.track_path is None:
             return False, "Load a track folder before generating passing lines."
         options = (
-            pass1_max_feet, pass2_max_feet, placement_pct, speed_reduction_mph
+            pass1_max_feet, pass2_max_feet, placement_pct, speed_reduction_mph,
+            edge_clearance_feet,
         )
         if not all(math.isfinite(value) for value in options):
             return False, "Passing-line settings must be finite numbers."
@@ -373,6 +379,8 @@ class TrackPreviewModel(QtCore.QObject):
             return False, "Placement must be greater than 0% and less than 100%."
         if speed_reduction_mph < 0:
             return False, "Speed reduction cannot be negative."
+        if edge_clearance_feet < 0:
+            return False, "Pavement-edge clearance cannot be negative."
 
         sources = ("RACE", "MAXRACE", "MINRACE")
         missing = [name for name in sources if name not in self.available_lp_files]
@@ -418,7 +426,11 @@ class TrackPreviewModel(QtCore.QObject):
         pass1_limit = pass1_max_feet * 6000.0  # Papyrus DLAT units per foot
         pass2_limit = pass2_max_feet * 6000.0
         result: dict[str, list[LpPoint]] = {"PASS1": [], "PASS2": []}
+        source_rows: dict[str, list[tuple[LpPoint, float]]] = {
+            "PASS1": [], "PASS2": []
+        }
         narrow_count = 0
+        proposed_dlats: dict[str, list[float]] = {"PASS1": [], "PASS2": []}
         for index, (r, maximum, minimum) in enumerate(zip(race, maxrace, minrace)):
             pass1_dlat = r.dlat + min(
                 (maximum.dlat - r.dlat) * fraction, pass1_limit
@@ -452,6 +464,53 @@ class TrackPreviewModel(QtCore.QObject):
                 narrow_count += 1
             speed = max(0.0, r.speed_mph - speed_reduction_mph)
             for name, dlat in (("PASS1", pass1_dlat), ("PASS2", pass2_dlat)):
+                proposed_dlats[name].append(dlat)
+                source_rows[name].append((r, speed))
+
+        dlongs = [float(record.dlong) for record in race]
+        reference_dlats = [float(record.dlat) for record in race]
+        try:
+            safe_dlats = {
+                name: constrain_dlat_path_to_pavement(
+                    self.trk,
+                    self.centerline,
+                    dlongs,
+                    dlats,
+                    margin_feet=edge_clearance_feet,
+                    reference_dlats=reference_dlats,
+                )
+                for name, dlats in proposed_dlats.items()
+            }
+        except ValueError as exc:
+            return False, (
+                f"Unable to keep passing lines on paved road and clear of "
+                f"boundaries: {exc} No passing lines were changed."
+            )
+
+        for index, (r, maximum, minimum) in enumerate(
+            zip(race, maxrace, minrace)
+        ):
+            pass1_dlat = safe_dlats["PASS1"][index]
+            pass2_dlat = safe_dlats["PASS2"][index]
+            if not (
+                round(maximum.dlat)
+                > round(pass1_dlat)
+                > round(r.dlat)
+                > round(pass2_dlat)
+                > round(minimum.dlat)
+            ):
+                return False, (
+                    f"Pavement-edge clearance leaves insufficient legal room "
+                    f"for both passing lines at record {index}. Reduce the "
+                    "clearance or correct the source LPs. No passing lines "
+                    "were changed."
+                )
+
+        for name, rows in source_rows.items():
+            records = []
+            for index, ((r, speed), dlat) in enumerate(
+                zip(rows, safe_dlats[name])
+            ):
                 try:
                     x, y, _ = getxyz(
                         self.trk, float(r.dlong), dlat, self.centerline
@@ -461,7 +520,7 @@ class TrackPreviewModel(QtCore.QObject):
                         f"Unable to calculate {name} geometry at record "
                         f"{index}: {exc}. No passing lines were changed."
                     )
-                result[name].append(
+                records.append(
                     LpPoint(
                         x=x,
                         y=y,
@@ -472,6 +531,7 @@ class TrackPreviewModel(QtCore.QObject):
                         lateral_speed=0.0,
                     )
                 )
+            result[name] = records
 
         # Compute the Coriolis (lateral velocity) field from each generated
         # path and its assigned speed before modifying either target LP.
@@ -505,7 +565,9 @@ class TrackPreviewModel(QtCore.QObject):
 
         message = (
             f"Generated PASS1 and PASS2 from RACE ({count} records each), "
-            "including calculated lateral-speed (Coriolis) values."
+            f"kept at least {edge_clearance_feet:g} ft inside paved road "
+            "and clear of boundaries, including calculated lateral-speed "
+            "(Coriolis) values."
         )
         if narrow_count:
             message += (

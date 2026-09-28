@@ -327,6 +327,7 @@ class LPEditingSession:
         pass2_max_feet: float = 16.0,
         placement_pct: float = 50.0,
         speed_reduction_mph: float = 0.25,
+        edge_clearance_feet: float = 1.0,
     ) -> tuple[bool, str, set[LPChange]]:
         """Generate both passing LPs without consulting the selected LP."""
         success, message = self._model.generate_passing_lines(
@@ -334,6 +335,7 @@ class LPEditingSession:
             pass2_max_feet=pass2_max_feet,
             placement_pct=placement_pct,
             speed_reduction_mph=speed_reduction_mph,
+            edge_clearance_feet=edge_clearance_feet,
         )
         if success:
             return True, message, {LPChange.DATA, LPChange.VISIBILITY}

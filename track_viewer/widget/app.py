@@ -180,6 +180,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
             "pass2_max_feet": 16.0,
             "placement_pct": 50.0,
             "speed_reduction_mph": 0.25,
+            "edge_clearance_feet": 1.0,
         }
         self._optimized_line_button = QtWidgets.QPushButton("Generate Optimized Line")
         self._optimized_line_button.setEnabled(False)
@@ -674,6 +675,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         self.preview_api.set_replay_tab_active(widget is self._replay_tab)
         self._lp_speed_graph_container.setVisible(lp_tab_active)
         if not lp_tab_active:
+            self._lp_curve_edit_button.setChecked(False)
             self._set_lp_shortcut_active(False)
         else:
             lp_name = self.preview_api.active_lp_line()
@@ -2817,6 +2819,20 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
         inputs["speed_reduction_mph"] = speed
         form.addRow("Speed below RACE", speed)
+
+        clearance = QtWidgets.QDoubleSpinBox(dialog)
+        clearance.setRange(0.0, 50.0)
+        clearance.setDecimals(1)
+        clearance.setSingleStep(0.5)
+        clearance.setSuffix(" ft")
+        clearance.setValue(self._passing_line_options["edge_clearance_feet"])
+        clearance.setToolTip(
+            "Minimum distance inside asphalt, concrete, or paint edges and "
+            "physical walls/boundaries. The complete line between LP records "
+            "is checked."
+        )
+        inputs["edge_clearance_feet"] = clearance
+        form.addRow("Paved-edge clearance", clearance)
 
         note = QtWidgets.QLabel(
             "Lateral speed (Coriolis) is calculated automatically from "
