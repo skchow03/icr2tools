@@ -1,41 +1,53 @@
-# Python bytecode
+# Python bytecode and tool caches
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
 
-# Distribution / packaging
+# Distribution and packaging artifacts
 build/
 dist/
 *.egg-info/
 *.egg
 *.spec
 
-# Logs and local files
-*.log
-*.ini
-timing_log.txt
-*.csv
-*.cam
-*.scr
-*.sg
-*.xlsx
-*.png
-*.txt
-*.trk
-*.sg
-repo_dump.py
-*.json
+# Generated-output directories
+screenshots/
+exports/
+logs/
+local_settings/
+repo_dumps/
+telemetry_laps/
 
-# Virtual environments
+# Runtime files written at fixed locations
+/timing_log.txt
+/track_viewer_log.txt
+/telemetry_laps_*.csv
+/icr2timing/timing_log.txt
+/icr2timing/telemetry_laps_*.csv
+/track_viewer/track_viewer_log.txt
+/track_viewer/repo_dump_v2.txt
+
+# Virtual environments and local environment variables
 venv/
-.env/
+env/
+.venv/
+.env
+.env.*
+!.env.example
 
 # IDE / editor files
 .vscode/
 .idea/
+*.code-workspace
+
+# Temporary files
+*.tmp
+*.bak
+*.old
 
 # OS files
 Thumbs.db
+Desktop.ini
 .DS_Store
-icr2timing/profiles.ini
-icr2timing/settings.ini

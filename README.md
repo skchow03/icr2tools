@@ -14,6 +14,26 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
 pip install -e .
 ```
 
+## Generated files
+
+The following ignored directories contain generated or machine-local data and
+can be safely deleted when the associated application is not running:
+
+- `screenshots/` – generated screenshots and captured previews.
+- `exports/` – user-requested exports that should not be committed.
+- `build/` and `dist/` – packaging and build artifacts.
+- `local_settings/` – machine-specific settings and overrides.
+- `logs/` – application log output.
+- `repo_dumps/` – generated repository snapshots.
+- `telemetry_laps/` – recorded timing and telemetry data.
+
+These directory names are ignored wherever they occur in the working tree, so
+tools may create them beside the relevant application. Fixed runtime files such
+as `icr2timing/timing_log.txt`, `track_viewer/track_viewer_log.txt`, timestamped
+`telemetry_laps_*.csv` files, and `track_viewer/repo_dump_v2.txt` are ignored as
+well. File types are not ignored globally: PNG assets, JSON fixtures, CSV and
+TXT examples, and default INI configuration files remain trackable.
+
 ## Tools
 
 ### ICR2 Timing Overlay
