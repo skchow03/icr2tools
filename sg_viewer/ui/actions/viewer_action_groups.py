@@ -190,11 +190,17 @@ class Track3DActions:
     calibrate_background: Callback
     open_three_d_tools_dialog: Callback
     run_sg_integrity_checks: Callback
+    analyze_track_files: Callback
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "calibrate_background_action", _action("Open Background Calibrator", self.parent, self.calibrate_background))
         object.__setattr__(self, "three_d_tools_action", _action("Run 3D Tools…", self.parent, self.open_three_d_tools_dialog))
         object.__setattr__(self, "run_integrity_checks_action", _action("Run SG Integrity Checks", self.parent, self.run_sg_integrity_checks, enabled=False))
+        object.__setattr__(
+            self,
+            "analyze_track_files_action",
+            _action("Analyze Track Files…", self.parent, self.analyze_track_files),
+        )
 
 
 @dataclass(frozen=True)
@@ -260,6 +266,7 @@ def build_viewer_menu_bar(window: QtWidgets.QMainWindow, groups: ViewerActionGro
     tools_menu.addSeparator()
     for act in (groups.tsd.show_palette_colors_action, groups.tso.show_unique_tso_filenames_action): tools_menu.addAction(act)
     tools_menu.addSeparator(); tools_menu.addAction(groups.track3d.run_integrity_checks_action)
+    tools_menu.addAction(groups.track3d.analyze_track_files_action)
     tools_menu.addSeparator(); tools_menu.addAction(groups.track3d.calibrate_background_action); tools_menu.addAction(groups.tso.launch_tso_generator_action)
 
     window_menu = window.menuBar().addMenu("Window")
