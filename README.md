@@ -1,18 +1,35 @@
 # ICR2Tools
+
 A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
 
-## Structure
-- **icr2_core/** – shared library (memory access, DAT/TRK readers, models)
-  - [Architecture](icr2_core/ARCHITECTURE.md)
-- **icr2timing/** – live telemetry overlay app
-  - [Architecture](icr2timing/ARCHITECTURE.md)
-- **track_viewer/** – experimental desktop utility for browsing track files
-  - [Architecture](track_viewer/ARCHITECTURE.md)
+## Included tools
 
-## Install (for development)
+- **sg_viewer/** – SG track geometry editor and viewer
+  - [Architecture](sg_viewer/architecture.md)
+- **track_viewer/** – track previewer, camera editor, and AI-line tools
+  - [Architecture](track_viewer/ARCHITECTURE.md)
+- **texture_tools/** – texture conversion, editing, and palette optimization
+- **icr2timing/** – live telemetry overlay
+  - [Architecture](icr2timing/ARCHITECTURE.md)
+- **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code
+  - [Architecture](icr2_core/ARCHITECTURE.md)
+- **icr2_3d_catalog_viewer/** – track 3D catalog viewer
+- **tso_generator/** – trackside-object generator
+
+## Development setup
+
+ICR2Tools requires Python 3.9 or newer. Create and activate a virtual
+environment, then install the repository in editable mode:
+
 ```bash
+python -m venv .venv
+# Windows: .venv\Scripts\activate
+# Linux/macOS: source .venv/bin/activate
+python -m pip install --upgrade pip
 pip install -e .
 ```
+
+Run the test suite from the repository root with `python -m pytest`.
 
 ## Generated files
 
@@ -36,10 +53,22 @@ TXT examples, and default INI configuration files remain trackable.
 
 ## Tools
 
+### SG Viewer
+
+Launch the SG track geometry editor with:
+
+```bash
+sg-viewer
+# or
+python -m sg_viewer
+```
+
 ### ICR2 Timing Overlay
 Launch the legacy overlay (control panel + in-game overlay) with:
 
 ```bash
+icr2-timing
+# or
 python -m icr2timing.main
 ```
 
@@ -59,8 +88,8 @@ folders. It:
 Run it either as a module or via the installed entry point:
 
 ```bash
-python -m track_viewer
-# or, after ``pip install .``
+python -m track_viewer.main
+# or, after `pip install .`
 track-viewer
 ```
 
