@@ -16,6 +16,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from sg_viewer.replacecolors import DEFAULT_TRACK3D_COLORS
 from sg_viewer.model.history import FileHistory
 from sg_viewer.services.sg_settings_store import SGSettingsStore
+from sg_viewer.services.track_file_analyzer import analyze_track_folder
 from sg_viewer.model.preview_fsection import PreviewFSection
 from sg_viewer.services.fsect_generation_service import build_generated_fsects
 from sg_viewer.services.sg_integrity_checks import (
@@ -71,6 +72,7 @@ from sg_viewer.ui.heading_table_dialog import HeadingTableWindow
 from sg_viewer.ui.section_table_dialog import SectionTableWindow
 from sg_viewer.ui.xsect_table_dialog import XsectEntry, XsectTableWindow
 from sg_viewer.ui.tso_attributes_dialog import TracksideObjectAttributesDialog
+from sg_viewer.ui.dialogs.track_file_analysis_dialog import TrackFileAnalysisDialog
 from sg_viewer.services import sg_rendering
 from sg_viewer.ui.about import show_about_dialog
 from sg_viewer.ui.bg_calibrator_minimal import Calibrator
@@ -150,6 +152,7 @@ class SGViewerController:
         self._xsect_table_window: XsectTableWindow | None = None
         self._tso_attributes_dialog: TracksideObjectAttributesDialog | None = None
         self._integrity_report_window: QtWidgets.QDialog | None = None
+        self._track_file_analysis_window: TrackFileAnalysisDialog | None = None
         self._unique_tso_filenames_window: QtWidgets.QDialog | None = None
         self._section_dlongs_window: QtWidgets.QDialog | None = None
         self._current_path: Path | None = None
@@ -555,6 +558,7 @@ class SGViewerController:
                 self._launch_background_calibrator,
                 self._track3d_tools_controller._open_three_d_tools_dialog,
                 self._run_sg_integrity_checks,
+                self._analyze_track_files,
             ),
             help=HelpActions(self._window, self._show_about_dialog),
         )
@@ -602,6 +606,30 @@ class SGViewerController:
 
     def _show_about_dialog(self) -> None:
         show_about_dialog(self._window)
+
+    def _analyze_track_files(self) -> None:
+        selected = QtWidgets.QFileDialog.getExistingDirectory(
+            self._window,
+            "Select ICR2 Track Folder",
+            self._dialog_default_directory(),
+        )
+        if not selected:
+            return
+        try:
+            analysis = analyze_track_folder(selected)
+        except (OSError, ValueError) as exc:
+            QtWidgets.QMessageBox.critical(
+                self._window, "Analyze Track Files", f"Could not analyze the folder:\n{exc}"
+            )
+            return
+        if self._track_file_analysis_window is not None:
+            self._track_file_analysis_window.close()
+        self._track_file_analysis_window = TrackFileAnalysisDialog(
+            analysis, self._window
+        )
+        self._track_file_analysis_window.show()
+        self._track_file_analysis_window.raise_()
+        self._track_file_analysis_window.activateWindow()
 
     def _settings_path_for(self, sg_path: Path) -> Path:
         return self._sg_settings_store._settings_path(sg_path)
