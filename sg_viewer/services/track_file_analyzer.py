@@ -12,8 +12,8 @@ REQUIRED_TRACK_FILES = (
     "{track}.3do",
     "{track}.trk",
     "{track}.txt",
-    "{track}.scr"
-    "{track}.cam"
+    "{track}.scr",
+    "{track}.cam",
     "sunny.pcx",
     "race.lp",
     "maxrace.lp",
