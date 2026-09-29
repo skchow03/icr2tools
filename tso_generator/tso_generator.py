@@ -940,6 +940,111 @@ def _ui_imports():
 def build_window():
     QtCore, QtGui, QtWidgets = _ui_imports()
 
+    class ObjectPreviewWidget(QtWidgets.QOpenGLWidget):
+        """Small OpenGL-backed, mouse-orbiting preview of generated geometry."""
+
+        def __init__(self, parent=None):
+            super().__init__(parent)
+            self._verts = {}
+            self._faces = []
+            self._face_colors = {}
+            self._yaw = -35.0
+            self._pitch = 25.0
+            self._zoom = 0.82
+            self._last_mouse_pos = None
+            self.setMinimumSize(380, 320)
+            self.setFocusPolicy(QtCore.Qt.StrongFocus)
+            self.setToolTip("Drag to rotate; use the mouse wheel to zoom")
+
+        def set_geometry(self, verts, faces, face_colors):
+            self._verts = dict(verts)
+            self._faces = list(faces)
+            self._face_colors = dict(face_colors)
+            self.update()
+
+        def reset_view(self):
+            self._yaw = -35.0
+            self._pitch = 25.0
+            self._zoom = 0.82
+            self.update()
+
+        def mousePressEvent(self, event):
+            if event.button() == QtCore.Qt.LeftButton:
+                self._last_mouse_pos = event.pos()
+                self.setCursor(QtCore.Qt.ClosedHandCursor)
+
+        def mouseMoveEvent(self, event):
+            if self._last_mouse_pos is None or not (event.buttons() & QtCore.Qt.LeftButton):
+                return
+            delta = event.pos() - self._last_mouse_pos
+            self._last_mouse_pos = event.pos()
+            self._yaw += delta.x() * 0.7
+            self._pitch = max(-89.0, min(89.0, self._pitch + delta.y() * 0.7))
+            self.update()
+
+        def mouseReleaseEvent(self, event):
+            if event.button() == QtCore.Qt.LeftButton:
+                self._last_mouse_pos = None
+                self.unsetCursor()
+
+        def wheelEvent(self, event):
+            steps = event.angleDelta().y() / 120.0
+            self._zoom = max(0.2, min(3.0, self._zoom * (1.12 ** steps)))
+            self.update()
+
+        def paintGL(self):
+            painter = QtGui.QPainter(self)
+            painter.setRenderHint(QtGui.QPainter.Antialiasing)
+            painter.fillRect(self.rect(), QtGui.QColor(28, 32, 38))
+            if not self._verts:
+                painter.setPen(QtGui.QColor(190, 195, 202))
+                painter.drawText(self.rect(), QtCore.Qt.AlignCenter, "No preview geometry")
+                painter.end()
+                return
+
+            points = list(self._verts.values())
+            mins = [min(point[axis] for point in points) for axis in range(3)]
+            maxs = [max(point[axis] for point in points) for axis in range(3)]
+            center = [(mins[axis] + maxs[axis]) / 2.0 for axis in range(3)]
+            extent = max(maxs[axis] - mins[axis] for axis in range(3)) or 1.0
+
+            yaw = math.radians(self._yaw)
+            pitch = math.radians(self._pitch)
+
+            def rotate(point):
+                x, y, z = (point[i] - center[i] for i in range(3))
+                # Rotate around the vertical Z axis, then tilt around screen X.
+                x, y = x * math.cos(yaw) - y * math.sin(yaw), x * math.sin(yaw) + y * math.cos(yaw)
+                y, z = y * math.cos(pitch) - z * math.sin(pitch), y * math.sin(pitch) + z * math.cos(pitch)
+                return x, y, z
+
+            rotated = {name: rotate(point) for name, point in self._verts.items()}
+            scale = min(self.width(), self.height()) * self._zoom / extent
+            screen_center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
+
+            polygons = []
+            for name, vertex_names in self._faces:
+                if any(vertex_name not in rotated for vertex_name in vertex_names):
+                    continue
+                face_points = [rotated[vertex_name] for vertex_name in vertex_names]
+                polygon = QtGui.QPolygonF(
+                    [
+                        QtCore.QPointF(screen_center.x() + x * scale, screen_center.y() - z * scale)
+                        for x, _depth, z in face_points
+                    ]
+                )
+                polygons.append((sum(point[1] for point in face_points) / len(face_points), name, polygon))
+
+            edge_pen = QtGui.QPen(QtGui.QColor(18, 20, 24, 210), 1.0)
+            for _depth, name, polygon in sorted(polygons, reverse=True):
+                painter.setPen(edge_pen)
+                painter.setBrush(QtGui.QColor(*self._face_colors.get(name, (125, 150, 175))))
+                painter.drawPolygon(polygon)
+
+            painter.setPen(QtGui.QColor(205, 210, 216))
+            painter.drawText(12, 22, "Drag to rotate  •  Wheel to zoom")
+            painter.end()
+
     class PaletteMatrixDialog(QtWidgets.QDialog):
         def __init__(self, parent, palette, selected_index: int):
             super().__init__(parent)
@@ -984,6 +1089,8 @@ def build_window():
             self.accept()
 
     class PaletteIndexPicker(QtWidgets.QWidget):
+        colorChanged = QtCore.pyqtSignal(int)
+
         def __init__(self, parent, palette, initial_index: int):
             super().__init__(parent)
             self._palette = list(palette)
@@ -1018,6 +1125,7 @@ def build_window():
                 return
             self._index = dialog.selected_index
             self._refresh_preview()
+            self.colorChanged.emit(self._index)
 
         def set_palette(self, palette):
             self._palette = list(palette)
@@ -1026,6 +1134,7 @@ def build_window():
         def set_color_index(self, index: int):
             self._index = int(max(0, min(255, index)))
             self._refresh_preview()
+            self.colorChanged.emit(self._index)
 
         def color_index(self):
             return self._index
@@ -1065,6 +1174,19 @@ def build_window():
             layout = QtWidgets.QGridLayout(form_widget)
             root_layout.addLayout(template_layout)
             root_layout.addWidget(form_widget, 1)
+
+            preview_panel = QtWidgets.QWidget()
+            preview_layout = QtWidgets.QVBoxLayout(preview_panel)
+            preview_header = QtWidgets.QHBoxLayout()
+            preview_header.addWidget(QtWidgets.QLabel("3D Preview"))
+            preview_header.addStretch(1)
+            self.reset_preview_btn = QtWidgets.QPushButton("Reset View")
+            preview_header.addWidget(self.reset_preview_btn)
+            preview_layout.addLayout(preview_header)
+            self.preview = ObjectPreviewWidget(self)
+            preview_layout.addWidget(self.preview, 1)
+            root_layout.addWidget(preview_panel, 2)
+            self.reset_preview_btn.clicked.connect(self.preview.reset_view)
 
             self.width_spin = QtWidgets.QSpinBox()
             self.width_spin.setRange(1, 50000)
@@ -1274,6 +1396,76 @@ def build_window():
             self.refresh_templates()
             self.update_shape_field_visibility(self.shape_combo.currentText())
             self.update_grandstand_height_from_angle()
+            self._preview_timer = QtCore.QTimer(self)
+            self._preview_timer.setSingleShot(True)
+            self._preview_timer.setInterval(35)
+            self._preview_timer.timeout.connect(self.refresh_preview)
+            self._connect_preview_controls()
+            self.refresh_preview()
+            self.resize(1250, 760)
+
+        def _connect_preview_controls(self):
+            for widget in self.findChildren(QtWidgets.QSpinBox):
+                widget.valueChanged.connect(self.schedule_preview_refresh)
+            for widget in self.findChildren(QtWidgets.QDoubleSpinBox):
+                widget.valueChanged.connect(self.schedule_preview_refresh)
+            for widget in self.findChildren(QtWidgets.QComboBox):
+                widget.currentTextChanged.connect(self.schedule_preview_refresh)
+            for widget in self.findChildren(QtWidgets.QCheckBox):
+                widget.toggled.connect(self.schedule_preview_refresh)
+            for picker in self.color_pickers:
+                picker.colorChanged.connect(self.schedule_preview_refresh)
+
+        def schedule_preview_refresh(self, _value=None):
+            if hasattr(self, "_preview_timer"):
+                self._preview_timer.start()
+
+        def refresh_preview(self):
+            values = self.collect_current_values()
+            verts, faces = self._generate_current_geometry(values)
+            face_colors = {
+                name: self._preview_color_for_face(name, values)
+                for name, _vertex_names in faces
+            }
+            self.preview.set_geometry(verts, faces, face_colors)
+
+        def _generate_current_geometry(self, values):
+            return generate_building(
+                values["width"], values["depth"], values["height"],
+                values["roof_type"], values["parapet_inset"], values["parapet_height"],
+                values["gable_rise"], values["pyramid_rise"], values["building_shape"],
+                values["diameter"], values["num_sides"], values["dome_layers"],
+                values["dome_roundness"], values["rect_center_origin"],
+                values["tree_trunk_width"], values["tree_leaf_base_height"],
+                values["tree_num_sides"], values["tree_profile"], values["bridge_length"],
+                values["bridge_width"], values["bridge_clearance"], values["bridge_height"],
+                values["bridge_half"], values["grandstand_length"], values["grandstand_width"],
+                values["grandstand_height"], values["grandstand_front_height"],
+            )
+
+        def _preview_color_for_face(self, name, values):
+            if name.startswith("trunk"):
+                color_key = "tree_trunk_color_bright" if name.startswith("trunkB") else "tree_trunk_color_dark"
+                fallback = (126, 83, 50) if name.startswith("trunkB") else (82, 52, 35)
+            elif name.startswith("leaf"):
+                color_key = "tree_leaves_color_bright" if name.startswith("leafB") else "tree_leaves_color_dark"
+                fallback = (74, 153, 76) if name.startswith("leafB") else (39, 98, 53)
+            elif name.startswith(("roofB", "top", "pyrF", "pyrL", "seatB")):
+                color_key, fallback = "roof_color_bright", (196, 116, 72)
+            elif name.startswith(("roofD", "bot", "pyrR", "pyrB", "seatD")):
+                color_key, fallback = "roof_color_dark", (125, 69, 52)
+            elif name.startswith(("rs", "bk", "sideD")):
+                color_key, fallback = "side_color_dark", (84, 111, 139)
+            else:
+                color_key, fallback = "side_color_bright", (125, 158, 188)
+            index = values[color_key]
+            color = self.palette[index] if 0 <= index < len(self.palette) else fallback
+            # The initial placeholder palette is all black. Keep the preview
+            # readable until the user selects sunny.pcx.
+            palette_is_placeholder = not any(
+                channel for palette_color in self.palette for channel in palette_color
+            )
+            return fallback if color == (0, 0, 0) and palette_is_placeholder else color
 
         def _set_row_visible(self, field_name, is_visible: bool):
             label, widget = self.form_rows[field_name]
@@ -1540,35 +1732,7 @@ def build_window():
                     save_settings(self.settings)
 
                 values = self.collect_current_values()
-                verts, faces = generate_building(
-                    values["width"],
-                    values["depth"],
-                    values["height"],
-                    roof,
-                    values["parapet_inset"],
-                    values["parapet_height"],
-                    values["gable_rise"],
-                    values["pyramid_rise"],
-                    values["building_shape"],
-                    values["diameter"],
-                    values["num_sides"],
-                    values["dome_layers"],
-                    values["dome_roundness"],
-                    values["rect_center_origin"],
-                    values["tree_trunk_width"],
-                    values["tree_leaf_base_height"],
-                    values["tree_num_sides"],
-                    values["tree_profile"],
-                    values["bridge_length"],
-                    values["bridge_width"],
-                    values["bridge_clearance"],
-                    values["bridge_height"],
-                    values["bridge_half"],
-                    values["grandstand_length"],
-                    values["grandstand_width"],
-                    values["grandstand_height"],
-                    values["grandstand_front_height"],
-                )
+                verts, faces = self._generate_current_geometry(values)
 
                 default_save_dir = self.settings.get("paths", "last_3d_dir", fallback="")
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
