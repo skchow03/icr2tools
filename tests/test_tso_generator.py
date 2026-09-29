@@ -1,4 +1,5 @@
 import configparser
+import math
 from pathlib import Path
 
 from tso_generator.tso_generator import (
@@ -9,10 +10,28 @@ from tso_generator.tso_generator import (
     get_template_values,
     int_or_default,
     list_template_names,
+    preview_face_is_front_facing,
     remove_template,
     save_template,
     write_3d,
 )
+
+
+def _default_preview_rotation(verts):
+    points = list(verts.values())
+    center = [
+        (min(point[axis] for point in points) + max(point[axis] for point in points)) / 2.0
+        for axis in range(3)
+    ]
+    yaw = math.radians(-35.0)
+    pitch = math.radians(25.0)
+    rotated = {}
+    for name, point in verts.items():
+        x, y, z = (point[i] - center[i] for i in range(3))
+        x, y = x * math.cos(yaw) - y * math.sin(yaw), x * math.sin(yaw) + y * math.cos(yaw)
+        y, z = y * math.cos(pitch) - z * math.sin(pitch), y * math.sin(pitch) + z * math.cos(pitch)
+        rotated[name] = (x, y, z)
+    return rotated
 
 
 def _base_parameters():
@@ -229,6 +248,39 @@ def test_none_roof_omits_roof_faces():
     _verts, faces = generate_building(320, 1042, 100, "none", 30, 15, 50, 50)
     names = {name for name, _ in faces}
     assert not names.intersection({"topB", "topD", "roofB", "roofD", "roofL", "roofR", "pyrF"})
+
+
+def test_preview_backface_culling_keeps_rectangular_roof_visible():
+    verts, faces = generate_building(320, 1042, 100, "flat", 30, 15, 50, 50)
+    rotated = _default_preview_rotation(verts)
+
+    visible_names = {
+        name
+        for name, vertex_names in faces
+        if preview_face_is_front_facing([rotated[vertex_name] for vertex_name in vertex_names])
+    }
+
+    assert {"topB", "topD"}.issubset(visible_names)
+    assert 0 < len(visible_names.intersection({"ls1", "fr1", "rs1", "bk1"})) < 4
+
+
+def test_preview_backface_culling_keeps_circular_roof_visible():
+    verts, faces = generate_building(
+        0, 0, 120, "flat", 0, 0, 0, 0,
+        building_shape="circular", diameter=200, num_sides=12,
+    )
+    rotated = _default_preview_rotation(verts)
+
+    visible_names = {
+        name
+        for name, vertex_names in faces
+        if preview_face_is_front_facing([rotated[vertex_name] for vertex_name in vertex_names])
+    }
+
+    roof_names = {name for name, _vertex_names in faces if name.startswith("roof")}
+    visible_side_names = {name for name in visible_names if name.startswith("side")}
+    assert roof_names.issubset(visible_names)
+    assert 0 < len(visible_side_names) < 12
 
 
 
@@ -933,4 +985,3 @@ def test_grandstand_adds_front_face_when_front_height_is_nonzero():
     face_map = {name: points for name, points in faces}
     assert "seatFront" in face_map
     assert face_map["seatFront"] == ["gs_tf_l", "gs_bf_l", "gs_bf_r", "gs_tf_r"]
-
