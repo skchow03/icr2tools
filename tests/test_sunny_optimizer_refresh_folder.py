@@ -9,8 +9,8 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 or Pillow not available", allow_module_level=True)
 
-from sunny_optimizer.palette import save_palette
-from sunny_optimizer.ui.main_window import MainWindow
+from texture_tools.sunny_optimizer.palette import save_palette
+from texture_tools.sunny_optimizer.ui.main_window import MainWindow
 
 
 @pytest.fixture
@@ -246,7 +246,7 @@ def test_successful_optimization_updates_palette_header(
             )
 
     monkeypatch.setattr(
-        "sunny_optimizer.ui.main_window._get_optimizer_class", lambda: FakeOptimizer
+        "texture_tools.sunny_optimizer.ui.main_window._get_optimizer_class", lambda: FakeOptimizer
     )
     window = MainWindow()
     window._load_folder(texture_folder)

@@ -1,7 +1,7 @@
 import numpy as np
 
-from sunny_optimizer.model import OPTIMIZED_END, OPTIMIZED_START, SunnyPaletteOptimizer
-from sunny_optimizer.quantizer import Quantizer
+from texture_tools.sunny_optimizer.model import OPTIMIZED_END, OPTIMIZED_START, SunnyPaletteOptimizer
+from texture_tools.sunny_optimizer.quantizer import Quantizer
 
 
 def _fixed_palette() -> np.ndarray:

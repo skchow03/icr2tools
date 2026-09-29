@@ -1,6 +1,6 @@
 import numpy as np
 
-from sunny_optimizer.model import (
+from texture_tools.sunny_optimizer.model import (
     BROWN_BASE_INDEX,
     BROWN_DARK_INDEX,
     DIRT_BASE_RGB,
