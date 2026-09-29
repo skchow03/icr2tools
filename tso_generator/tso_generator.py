@@ -923,6 +923,20 @@ def float_or_default(raw_value, default):
         return default
 
 
+def preview_face_is_front_facing(face_points, epsilon=1e-9):
+    """Return whether a view-space polygon faces the preview camera.
+
+    The preview camera looks along positive Y and projects onto the X/Z plane.
+    Generated objects are closed meshes, so drawing their rear faces lets those
+    faces incorrectly cover roofs when polygons are sorted by their average
+    depth.  Newell's projected-area form works for triangles and quads alike.
+    """
+    projected_area = 0.0
+    for point, next_point in zip(face_points, face_points[1:] + face_points[:1]):
+        projected_area += point[0] * next_point[2] - next_point[0] * point[2]
+    return projected_area > epsilon
+
+
 def load_sunny_palette(path: str | Path):
     data = Path(path).read_bytes()
     if len(data) < 769 or data[-769] != 0x0C:
@@ -1027,6 +1041,11 @@ def build_window():
                 if any(vertex_name not in rotated for vertex_name in vertex_names):
                     continue
                 face_points = [rotated[vertex_name] for vertex_name in vertex_names]
+                # QPainter has no depth buffer.  Excluding back-facing polygons
+                # prevents far walls from being painted over rectangular and
+                # circular roofs after the average-depth sort below.
+                if not preview_face_is_front_facing(face_points):
+                    continue
                 polygon = QtGui.QPolygonF(
                     [
                         QtCore.QPointF(screen_center.x() + x * scale, screen_center.y() - z * scale)
@@ -1450,9 +1469,9 @@ def build_window():
             elif name.startswith("leaf"):
                 color_key = "tree_leaves_color_bright" if name.startswith("leafB") else "tree_leaves_color_dark"
                 fallback = (74, 153, 76) if name.startswith("leafB") else (39, 98, 53)
-            elif name.startswith(("roofB", "top", "pyrF", "pyrL", "seatB")):
+            elif name.startswith(("roofB", "roofL", "top", "pyrF", "pyrL", "seatB")):
                 color_key, fallback = "roof_color_bright", (196, 116, 72)
-            elif name.startswith(("roofD", "bot", "pyrR", "pyrB", "seatD")):
+            elif name.startswith(("roofD", "roofR", "bot", "pyrR", "pyrB", "seatD")):
                 color_key, fallback = "roof_color_dark", (125, 69, 52)
             elif name.startswith(("rs", "bk", "sideD")):
                 color_key, fallback = "side_color_dark", (84, 111, 139)
