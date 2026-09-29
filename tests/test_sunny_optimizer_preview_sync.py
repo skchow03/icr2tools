@@ -6,8 +6,8 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
-from sunny_optimizer.ui.main_window import MainWindow
-from sunny_optimizer.palette import optimal_grid_shape, visualize_palette
+from texture_tools.sunny_optimizer.ui.main_window import MainWindow
+from texture_tools.sunny_optimizer.palette import optimal_grid_shape, visualize_palette
 
 
 @pytest.fixture

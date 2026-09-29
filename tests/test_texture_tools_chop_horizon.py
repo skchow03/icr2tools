@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from PIL import Image
 
-from sunny_optimizer.chop_horizon import chop_horizon
+from texture_tools.sunny_optimizer.chop_horizon import chop_horizon
 
 
 PANEL_COLORS = [

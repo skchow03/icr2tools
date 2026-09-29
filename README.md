@@ -56,3 +56,17 @@ python -m icr2_core.trk.trk23d_cli path/to/track.trk
 
 The converter writes HI, MED, and LO ground meshes plus the section DLONG
 lists, hash data, and final index expected by track `.3D` source files.
+
+### Texture Tools
+
+Texture Tools provides texture conversion and editing workflows in one desktop
+application. The Sunny Optimizer is included as a tab within Texture Tools rather
+than as a standalone command.
+
+Launch the application with:
+
+```bash
+texture-tools
+# or
+python -m texture_tools.main
+```

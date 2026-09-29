@@ -3,14 +3,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-from sunny_optimizer.ui.settings import SunnyOptimizerSettings
+from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
 
 try:  # pragma: no cover
     from PyQt5 import QtWidgets
 except ImportError:  # pragma: no cover
     pytest.skip("PyQt5 not available", allow_module_level=True)
 
-from sunny_optimizer.ui import main_window as mw
+from texture_tools.sunny_optimizer.ui import main_window as mw
 
 
 @pytest.fixture

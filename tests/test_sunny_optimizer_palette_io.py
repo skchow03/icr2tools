@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 
-from sunny_optimizer.palette import save_palette
+from texture_tools.sunny_optimizer.palette import save_palette
 
 
 def test_save_palette_writes_320x200_white_image_data(tmp_path: Path) -> None:

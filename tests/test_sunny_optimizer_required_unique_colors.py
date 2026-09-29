@@ -17,7 +17,7 @@ def _load_settings_class():
 
 def test_optimizer_prioritizes_required_unique_colors() -> None:
     np = pytest.importorskip("numpy")
-    from sunny_optimizer.model import SunnyPaletteOptimizer
+    from texture_tools.sunny_optimizer.model import SunnyPaletteOptimizer
 
     image = np.array(
         [
