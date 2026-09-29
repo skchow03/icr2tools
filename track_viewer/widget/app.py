@@ -47,6 +47,8 @@ from track_viewer.widget.tabs.tire_txt_tab import TireTxtTabBuilder
 from track_viewer.widget.tabs.weather_tab import WeatherTabBuilder
 
 
+class OptimizedLineGenerationCanceled(Exception):
+    """Stop an optimized-line operation at its next progress update."""
 
 
 class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
@@ -3382,7 +3384,7 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         )
 
         progress = QtWidgets.QProgressDialog(
-            f"Generating {title} line...", None, 0, 100, self
+            f"Generating {title} line...", "Cancel", 0, 100, self
         )
         progress.setWindowTitle(f"Generate Optimized Line — {title}")
         progress.setWindowModality(QtCore.Qt.WindowModal)
@@ -3394,10 +3396,14 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
         QtWidgets.QApplication.processEvents()
 
         def update_progress(current, total, label):
+            if progress.wasCanceled():
+                raise OptimizedLineGenerationCanceled
             progress.setMaximum(max(1, int(total)))
             progress.setValue(min(int(current), int(total)))
             progress.setLabelText(label)
             QtWidgets.QApplication.processEvents()
+            if progress.wasCanceled():
+                raise OptimizedLineGenerationCanceled
 
         started_at = time.perf_counter()
         try:
@@ -3444,6 +3450,8 @@ class TrackViewerWindow(TrackTxtFieldMixin, QtWidgets.QMainWindow):
                     compare_candidates=options["compare_candidates"],
                     progress_callback=update_progress,
                 )
+        except OptimizedLineGenerationCanceled:
+            return
         finally:
             progress.close()
 
