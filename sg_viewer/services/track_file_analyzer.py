@@ -7,12 +7,13 @@ from pathlib import Path
 import struct
 
 
-# The playable-track checklist documented at https://skchow.com/indy/track-files/.
 # Names containing ``{track}`` use the track directory's name.
 REQUIRED_TRACK_FILES = (
     "{track}.3do",
     "{track}.trk",
     "{track}.txt",
+    "{track}.scr"
+    "{track}.cam"
     "sunny.pcx",
     "race.lp",
     "maxrace.lp",
@@ -21,6 +22,18 @@ REQUIRED_TRACK_FILES = (
     "pass2.lp",
     "pit.lp",
     "pace.lp",
+    "maxpanic.lp",
+    "minpanic.lp",
+    "sky.3do",
+    "horiz.3do",
+    "hdiagram.stp",
+    "ldiagram.stp",
+    "htshotc.stp",
+    "ltshotc.stp",
+    "htshotg.str",
+    "ltshotg.str",
+    "mtshotc.pcx",
+    "map.pcx"
 )
 
 
@@ -62,7 +75,6 @@ class TrackFileAnalysis:
             f"Folder: {self.folder}",
             f"Track name: {self.track_name}",
             f"Completeness: {status}",
-            "Checklist: https://skchow.com/indy/track-files/",
             "",
             "Required playable-track files",
             "-----------------------------",
