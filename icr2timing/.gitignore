@@ -1,42 +1,16 @@
-# --- Python caches ---
-__pycache__/
-*.py[cod]
-*$py.class
+# Build outputs produced when packaging ICR2 Timing.
+/build/
+/dist/
+/ICR2Timing.spec
+/ICR2Timing.pkg
 
-# --- Virtual environments ---
-venv/
-env/
+# Runtime logs and telemetry exports. Data files elsewhere remain trackable.
+/timing_log.txt
+/track_viewer_log.txt
+/telemetry_laps/
+/telemetry_laps_*.csv
 
-# --- Build & distribution outputs (PyInstaller, cx_Freeze, etc.) ---
-build/
-dist/
-*.spec
-*.pkg
-*.exe
-
-# --- Log files ---
-*.log
-timing_log.txt
-track_viewer_log.txt
-
-# --- VS Code settings ---
-.vscode/
-*.code-workspace
-
-# --- Temporary / generated data ---
+# Local scratch files.
 *.tmp
 *.bak
 *.old
-
-# --- Windows junk ---
-Thumbs.db
-Desktop.ini
-
-# --- Your app-specific folders ---
-ICR2Timing.spec
-ICR2Timing.pkg
-
-# --- Optional: telemetry exports or CSVs ---
-telemetry_laps/
-*.csv
-*.json
