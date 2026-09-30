@@ -420,12 +420,22 @@ def test_viewport_intensity_controls_and_presets(qapp):
     try:
         window.update_visual_intensity_controls()
         assert not window.background_brightness_spin.isEnabled()
+        assert not window.background_brightness_button.isEnabled()
+        assert window.background_brightness_spin.minimum() == -100
+        assert window.background_brightness_spin.maximum() == 100
+        assert window.background_brightness_spin.value() == 0
+        assert window.background_brightness_button.text() == "+0"
         assert not window.track_opacity_spin.isEnabled()
         assert not window.track_opacity_button.isEnabled()
         assert window.track_opacity_button.text() == "100%"
 
         window.track_opacity_spin.setValue(40)
         assert window.track_opacity_button.text() == "40%"
+
+        window.background_brightness_spin.setValue(-35)
+        assert window.background_brightness_button.text() == "-35"
+        window.background_brightness_spin.setValue(25)
+        assert window.background_brightness_button.text() == "+25"
 
         window._view_preset_combo.setCurrentText("Construction")
         assert window.sg_fsects_checkbox.isChecked()
