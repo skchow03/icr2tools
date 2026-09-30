@@ -128,10 +128,10 @@ def test_project_object_name_defaults_combined_generation_filename(
         window.close()
 
 
-def test_generator_uses_selected_display_uom_and_can_save_another_uom(
+def test_generator_uses_sg_create_uom_for_display_and_saving(
     monkeypatch, qapp, tmp_path
 ):
-    output_path = tmp_path / "metric-input-inches-output.3D"
+    output_path = tmp_path / "metric-object.3D"
     monkeypatch.setattr(
         QtWidgets.QFileDialog,
         "getSaveFileName",
@@ -143,17 +143,15 @@ def test_generator_uses_selected_display_uom_and_can_save_another_uom(
     )
     try:
         assert window.width_spin.suffix() == " m"
+        assert not hasattr(window, "output_uom_combo")
         window.width_spin.setValue(1.0)
         window.depth_spin.setValue(2.0)
-        window.output_uom_combo.setCurrentIndex(
-            window.output_uom_combo.findData("inch")
-        )
         window.generate_clicked()
 
         text = output_path.read_text(encoding="utf-8")
-        assert "% coordinate_uom: inch" in text
-        assert "c0: [<39.370079, 0, 0>];" in text
-        assert "d0: [<39.370079, 78.740157, 0>];" in text
+        assert "% coordinate_uom: meter" in text
+        assert "c0: [<1, 0, 0>];" in text
+        assert "d0: [<1, 2, 0>];" in text
     finally:
         window.close()
 
@@ -170,7 +168,50 @@ def test_distance_fields_allow_large_values_in_every_display_unit(
     try:
         window.width_spin.setValue(120.0)
 
-        assert window.width_spin.maximum() == 50000.0
+        assert window.width_spin.maximum() == tso_generator.DISTANCE_INPUT_MAX
         assert window.width_spin.value() == 120.0
     finally:
         window.close()
+
+
+def test_project_objects_switch_immediately_and_mark_unsaved_edits(qapp):
+    window = tso_generator.build_window(
+        project_templates={
+            "Garage": {"width": 6000, "depth": 12000},
+            "Tower": {"width": 18000, "depth": 18000},
+        },
+        measurement_unit="feet",
+        run_event_loop=False,
+    )
+    try:
+        garage = window.template_list.item(0)
+        tower = window.template_list.item(1)
+        window.template_list.setCurrentItem(garage)
+        assert window.width_spin.value() == pytest.approx(1.0)
+
+        window.width_spin.setValue(7.0)
+        assert garage.text() == "Garage *"
+        window.template_list.setCurrentItem(tower)
+        assert window.width_spin.value() == pytest.approx(3.0)
+
+        window.template_list.setCurrentItem(garage)
+        assert window.width_spin.value() == pytest.approx(7.0)
+    finally:
+        window.close()
+
+
+def test_new_object_defaults_have_consistent_real_world_sizes(qapp):
+    metric = tso_generator.build_window(
+        project_templates={}, measurement_unit="meter", run_event_loop=False
+    )
+    feet = tso_generator.build_window(
+        project_templates={}, measurement_unit="feet", run_event_loop=False
+    )
+    try:
+        assert feet.width_spin.value() == pytest.approx(40.0)
+        assert metric.width_spin.value() == pytest.approx(12.192)
+        assert feet.bridge_clearance_spin.value() == pytest.approx(16.0)
+        assert metric.bridge_clearance_spin.value() == pytest.approx(4.877, abs=0.001)
+    finally:
+        metric.close()
+        feet.close()
