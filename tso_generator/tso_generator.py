@@ -87,10 +87,33 @@ DISTANCE_PARAMETER_FIELDS = {
     "bridge_clearance", "bridge_height", "grandstand_length",
     "grandstand_width", "grandstand_height", "grandstand_front_height",
 }
-# Keep the editor practical in every display unit.  This is deliberately a
-# per-unit input limit rather than a conversion of the old 50,000-500ths limit;
-# converting that limit made the feet fields top out at only 8.333 ft.
-DISTANCE_INPUT_MAX = 50000.0
+# QDoubleSpinBox requires a finite range, but object dimensions should not have
+# an application-imposed size limit.  This value is effectively unbounded for
+# both the editor and the .3D format while remaining safe for Qt's double API.
+DISTANCE_INPUT_MAX = 1.0e100
+
+# Defaults are expressed in real-world feet so a newly selected SG CREATE UoM
+# never changes the physical size of the initial object.
+DEFAULT_DISTANCE_FEET = {
+    "width": 40.0,
+    "depth": 80.0,
+    "height": 20.0,
+    "diameter": 40.0,
+    "parapet_inset": 2.0,
+    "parapet_height": 2.0,
+    "gable_rise": 8.0,
+    "pyramid_rise": 8.0,
+    "tree_trunk_width": 2.0,
+    "tree_leaf_base_height": 8.0,
+    "bridge_length": 80.0,
+    "bridge_width": 30.0,
+    "bridge_clearance": 16.0,
+    "bridge_height": 4.0,
+    "grandstand_length": 100.0,
+    "grandstand_width": 40.0,
+    "grandstand_height": 25.0,
+    "grandstand_front_height": 3.0,
+}
 
 
 def convert_uom(value, from_unit: str, to_unit: str):
@@ -1230,6 +1253,9 @@ def build_window(
                 if default_save_dir:
                     set_last_3d_dir(self.settings, str(default_save_dir))
             self._updating_grandstand_fields = False
+            self._loading_object = False
+            self._dirty_objects = set()
+            self._object_drafts = {}
             self._project_object_name = ""
             self._measurement_unit = (
                 measurement_unit if measurement_unit in UOM_LABELS else "500ths"
@@ -1250,6 +1276,7 @@ def build_window(
             self.save_template_btn.clicked.connect(self.save_template_clicked)
             self.load_template_btn.clicked.connect(self.load_template_clicked)
             self.remove_template_btn.clicked.connect(self.remove_template_clicked)
+            self.template_list.currentItemChanged.connect(self._object_selection_changed)
 
             template_layout = QtWidgets.QVBoxLayout()
             template_layout.addWidget(QtWidgets.QLabel("Project Objects"))
@@ -1417,13 +1444,6 @@ def build_window(
             self.generate_btn = QtWidgets.QPushButton(generate_label)
             self.generate_btn.clicked.connect(self.generate_clicked)
 
-            self.output_uom_combo = QtWidgets.QComboBox()
-            for unit, label in UOM_LABELS.items():
-                self.output_uom_combo.addItem(label, unit)
-            self.output_uom_combo.setCurrentIndex(
-                self.output_uom_combo.findData(self._measurement_unit)
-            )
-
             distance_spins = [
                 self.width_spin, self.depth_spin, self.height_spin,
                 self.tree_trunk_width_spin, self.tree_leaf_base_height_spin,
@@ -1437,12 +1457,35 @@ def build_window(
             decimals = 0 if self._measurement_unit == "500ths" else 3
             suffix = {"500ths": " 500ths", "inch": " in", "feet": " ft", "meter": " m"}[self._measurement_unit]
             for spin in distance_spins:
-                canonical_value = spin.value()
                 spin.setDecimals(decimals)
                 spin.setSingleStep(1.0 if self._measurement_unit == "500ths" else 0.1)
                 spin.setRange(0.0, DISTANCE_INPUT_MAX)
                 spin.setSuffix(suffix)
-                spin.setValue(convert_uom(canonical_value, "500ths", self._measurement_unit))
+
+            distance_spins_by_name = {
+                "width": self.width_spin,
+                "depth": self.depth_spin,
+                "height": self.height_spin,
+                "diameter": self.diameter_spin,
+                "parapet_inset": self.inset_spin,
+                "parapet_height": self.roof_height_spin,
+                "gable_rise": self.gable_spin,
+                "pyramid_rise": self.pyramid_spin,
+                "tree_trunk_width": self.tree_trunk_width_spin,
+                "tree_leaf_base_height": self.tree_leaf_base_height_spin,
+                "bridge_length": self.bridge_length_spin,
+                "bridge_width": self.bridge_width_spin,
+                "bridge_clearance": self.bridge_clearance_spin,
+                "bridge_height": self.bridge_height_spin,
+                "grandstand_length": self.grandstand_length_spin,
+                "grandstand_width": self.grandstand_width_spin,
+                "grandstand_height": self.grandstand_height_spin,
+                "grandstand_front_height": self.grandstand_front_height_spin,
+            }
+            for field_name, feet in DEFAULT_DISTANCE_FEET.items():
+                distance_spins_by_name[field_name].setValue(
+                    convert_uom(feet, "feet", self._measurement_unit)
+                )
 
             self.form_rows = {}
 
@@ -1453,7 +1496,6 @@ def build_window(
                 self.form_rows[field_name] = (label, widget)
 
             row_specs = [
-                ("output_uom", "Save .3D Coordinates In", self.output_uom_combo),
                 ("building_shape", "Building Shape", self.shape_combo),
                 ("rect_center_origin", "Rect Origin", self.rect_center_check),
                 ("width", "Width", self.width_spin),
@@ -1522,6 +1564,17 @@ def build_window(
                 widget.toggled.connect(self.schedule_preview_refresh)
             for picker in self.color_pickers:
                 picker.colorChanged.connect(self.schedule_preview_refresh)
+
+            for widget in self.findChildren(QtWidgets.QSpinBox):
+                widget.valueChanged.connect(self._current_object_edited)
+            for widget in self.findChildren(QtWidgets.QDoubleSpinBox):
+                widget.valueChanged.connect(self._current_object_edited)
+            for widget in self.findChildren(QtWidgets.QComboBox):
+                widget.currentTextChanged.connect(self._current_object_edited)
+            for widget in self.findChildren(QtWidgets.QCheckBox):
+                widget.toggled.connect(self._current_object_edited)
+            for picker in self.color_pickers:
+                picker.colorChanged.connect(self._current_object_edited)
 
         def schedule_preview_refresh(self, _value=None):
             if hasattr(self, "_preview_timer"):
@@ -1761,15 +1814,85 @@ def build_window(
             self.tree_leaves_bright_picker.set_color_index(tree_leaves_bright)
             self.tree_leaves_dark_picker.set_color_index(tree_leaves_dark)
 
+        def _item_object_name(self, item):
+            if item is None:
+                return ""
+            return str(item.data(QtCore.Qt.UserRole) or item.text().removesuffix(" *"))
+
+        def _set_object_dirty(self, name: str, dirty: bool):
+            if not name:
+                return
+            if dirty:
+                self._dirty_objects.add(name)
+            else:
+                self._dirty_objects.discard(name)
+                self._object_drafts.pop(name, None)
+            for index in range(self.template_list.count()):
+                item = self.template_list.item(index)
+                if self._item_object_name(item) == name:
+                    item.setText(f"{name} *" if dirty else name)
+                    break
+
+        def _current_object_edited(self, _value=None):
+            if self._loading_object or not self._project_object_name:
+                return
+            name = self._project_object_name
+            draft = self.collect_current_values()
+            self._object_drafts[name] = draft
+            saved = get_template_values(self.settings, name) or {}
+            text_fields = {"building_shape", "roof_type", "tree_profile"}
+            bool_fields = {"rect_center_origin", "bridge_half"}
+
+            def equivalent(key, value):
+                saved_value = saved.get(key)
+                if key in text_fields:
+                    return str(value) == str(saved_value)
+                if key in bool_fields:
+                    parsed = str(saved_value).lower() in {"1", "true", "yes", "on"}
+                    return bool(value) == parsed
+                try:
+                    return math.isclose(float(value), float(saved_value), abs_tol=1e-6)
+                except (TypeError, ValueError):
+                    return str(value) == str(saved_value)
+
+            dirty = any(not equivalent(key, value) for key, value in draft.items())
+            self._set_object_dirty(name, dirty)
+            if dirty:
+                self._object_drafts[name] = draft
+
+        def _object_selection_changed(self, current, _previous):
+            name = self._item_object_name(current)
+            if not name:
+                return
+            values = self._object_drafts.get(name)
+            if values is None:
+                values = get_template_values(self.settings, name)
+            if values is None:
+                return
+            self._project_object_name = name
+            self._loading_object = True
+            try:
+                self.apply_values(values)
+            finally:
+                self._loading_object = False
+            self.refresh_preview()
+
         def refresh_templates(self):
-            current_name = self.template_list.currentItem().text() if self.template_list.currentItem() else ""
+            current_name = self._item_object_name(self.template_list.currentItem())
             names = list_template_names(self.settings)
+            self.template_list.blockSignals(True)
             self.template_list.clear()
-            self.template_list.addItems(names)
+            for name in names:
+                item = QtWidgets.QListWidgetItem(f"{name} *" if name in self._dirty_objects else name)
+                item.setData(QtCore.Qt.UserRole, name)
+                self.template_list.addItem(item)
             if current_name in names:
-                matches = self.template_list.findItems(current_name, QtCore.Qt.MatchExactly)
-                if matches:
-                    self.template_list.setCurrentItem(matches[0])
+                for index in range(self.template_list.count()):
+                    item = self.template_list.item(index)
+                    if self._item_object_name(item) == current_name:
+                        self.template_list.setCurrentItem(item)
+                        break
+            self.template_list.blockSignals(False)
 
         def save_template_clicked(self):
             name, ok = QtWidgets.QInputDialog.getText(
@@ -1783,28 +1906,41 @@ def build_window(
                 return
             self._project_object_name = template_name
             save_template(self.settings, template_name, self.collect_current_values())
+            self._set_object_dirty(template_name, False)
             self._persist_templates()
             self.refresh_templates()
-            matches = self.template_list.findItems(template_name, QtCore.Qt.MatchExactly)
-            if matches:
-                self.template_list.setCurrentItem(matches[0])
+            for index in range(self.template_list.count()):
+                item = self.template_list.item(index)
+                if self._item_object_name(item) == template_name:
+                    self.template_list.setCurrentItem(item)
+                    break
 
         def load_template_clicked(self):
             item = self.template_list.currentItem()
             if not item:
                 return
-            values = get_template_values(self.settings, item.text())
+            name = self._item_object_name(item)
+            values = self._object_drafts.get(name) or get_template_values(self.settings, name)
             if values is None:
                 QtWidgets.QMessageBox.warning(self, "Template", "Template not found in settings file.")
                 return
-            self._project_object_name = item.text()
-            self.apply_values(values)
+            self._project_object_name = name
+            self._loading_object = True
+            try:
+                self.apply_values(values)
+            finally:
+                self._loading_object = False
 
         def remove_template_clicked(self):
             item = self.template_list.currentItem()
             if not item:
                 return
-            remove_template(self.settings, item.text())
+            name = self._item_object_name(item)
+            remove_template(self.settings, name)
+            self._dirty_objects.discard(name)
+            self._object_drafts.pop(name, None)
+            if self._project_object_name == name:
+                self._project_object_name = ""
             self._persist_templates()
             self.refresh_templates()
 
@@ -1863,7 +1999,9 @@ def build_window(
                 params = dict(values)
                 params["roof_type"] = roof
 
-                output_unit = str(self.output_uom_combo.currentData())
+                # SG CREATE's selected measurement unit is the single source of
+                # truth for editing, metadata, and emitted .3D coordinates.
+                output_unit = self._measurement_unit
                 output_verts = convert_vertices_uom(verts, "500ths", output_unit)
                 params["coordinate_uom"] = output_unit
                 write_params = dict(params)
@@ -1876,6 +2014,7 @@ def build_window(
                     object_name = Path(out_path).stem
                     self._project_object_name = object_name
                     save_template(self.settings, object_name, params)
+                    self._set_object_dirty(object_name, False)
                     self._persist_templates()
                     self.refresh_templates()
                 if add_to_project and on_add_object is not None:
