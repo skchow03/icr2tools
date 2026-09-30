@@ -836,6 +836,49 @@ def test_tools_menu_can_launch_tso_generator_from_frozen_build(qapp, monkeypatch
         window.close()
 
 
+def test_generated_tso_bbox_is_converted_from_3d_coordinate_uom(
+    qapp, monkeypatch, tmp_path
+):
+    import tso_generator.tso_generator as generator_module
+    import sg_viewer.io.track3d_parser as track3d_parser_module
+
+    captured = {}
+    appended = []
+    monkeypatch.setattr(
+        generator_module,
+        "build_window",
+        lambda **kwargs: captured.update(kwargs) or SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        track3d_parser_module,
+        "calculate_track3d_xy_bounding_box",
+        lambda _path: SimpleNamespace(length=10.0, width=2.5),
+    )
+
+    window = SGViewerWindow()
+    try:
+        window.controller._current_path = tmp_path / "track.sg"
+        monkeypatch.setattr(
+            window.controller._trackside_objects_controller,
+            "_append_tso_at_origin",
+            lambda filename, **kwargs: appended.append((filename, kwargs)),
+        )
+
+        window.controller._launch_tso_generator()
+        captured["on_add_object"](
+            tmp_path / "building.3D", {"coordinate_uom": "feet"}
+        )
+
+        assert appended == [
+            (
+                "building",
+                {"bbox_length": 60000, "bbox_width": 15000},
+            )
+        ]
+    finally:
+        window.close()
+
+
 def test_mrk_tab_enables_sg_fsects_and_mrk_notches(qapp):
     window = SGViewerWindow()
     try:

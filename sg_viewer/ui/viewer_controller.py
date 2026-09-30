@@ -1539,7 +1539,7 @@ class SGViewerController:
             )
             return
         try:
-            from tso_generator.tso_generator import build_window
+            from tso_generator.tso_generator import build_window, convert_uom
 
             project_path = self._settings_path_for(self._current_path)
             templates = self._sg_settings_store.get_tso_generator_objects(
@@ -1560,10 +1560,17 @@ class SGViewerController:
                 )
 
                 bbox = calculate_track3d_xy_bounding_box(path)
+                coordinate_uom = str(
+                    _parameters.get("coordinate_uom", "500ths")
+                )
                 self._trackside_objects_controller._append_tso_at_origin(
                     path.stem,
-                    bbox_length=math.ceil(bbox.length),
-                    bbox_width=math.ceil(bbox.width),
+                    bbox_length=math.ceil(
+                        convert_uom(bbox.length, coordinate_uom, "500ths")
+                    ),
+                    bbox_width=math.ceil(
+                        convert_uom(bbox.width, coordinate_uom, "500ths")
+                    ),
                 )
                 feature_tabs = self._window._sidebar_feature_tabs["Objects"]
                 objects_index = feature_tabs.indexOf(self._window._tso_sidebar)
