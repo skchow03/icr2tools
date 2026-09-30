@@ -156,3 +156,21 @@ def test_generator_uses_selected_display_uom_and_can_save_another_uom(
         assert "d0: [<39.370079, 78.740157, 0>];" in text
     finally:
         window.close()
+
+
+@pytest.mark.parametrize("measurement_unit", ["feet", "inch", "meter", "500ths"])
+def test_distance_fields_allow_large_values_in_every_display_unit(
+    qapp, measurement_unit
+):
+    window = tso_generator.build_window(
+        project_templates={},
+        measurement_unit=measurement_unit,
+        run_event_loop=False,
+    )
+    try:
+        window.width_spin.setValue(120.0)
+
+        assert window.width_spin.maximum() == 50000.0
+        assert window.width_spin.value() == 120.0
+    finally:
+        window.close()

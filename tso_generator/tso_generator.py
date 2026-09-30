@@ -87,6 +87,10 @@ DISTANCE_PARAMETER_FIELDS = {
     "bridge_clearance", "bridge_height", "grandstand_length",
     "grandstand_width", "grandstand_height", "grandstand_front_height",
 }
+# Keep the editor practical in every display unit.  This is deliberately a
+# per-unit input limit rather than a conversion of the old 50,000-500ths limit;
+# converting that limit made the feet fields top out at only 8.333 ft.
+DISTANCE_INPUT_MAX = 50000.0
 
 
 def convert_uom(value, from_unit: str, to_unit: str):
@@ -1436,7 +1440,7 @@ def build_window(
                 canonical_value = spin.value()
                 spin.setDecimals(decimals)
                 spin.setSingleStep(1.0 if self._measurement_unit == "500ths" else 0.1)
-                spin.setRange(0.0, convert_uom(50000, "500ths", self._measurement_unit))
+                spin.setRange(0.0, DISTANCE_INPUT_MAX)
                 spin.setSuffix(suffix)
                 spin.setValue(convert_uom(canonical_value, "500ths", self._measurement_unit))
 
