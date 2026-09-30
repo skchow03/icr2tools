@@ -13,6 +13,7 @@ from tso_generator.tso_generator import (
     int_or_default,
     list_template_names,
     preview_face_is_front_facing,
+    perspective_project,
     remove_template,
     save_template,
     write_3d,
@@ -185,6 +186,28 @@ def test_gable_uses_roof_colors_for_slopes_and_side_colors_for_end_walls(tmp_pat
     assert "roofR: POLY <201>" in text
     assert "gableF: POLY <202>" in text
     assert "gableB: POLY <203>" in text
+
+
+def test_gable_ridge_can_span_either_building_dimension():
+    depth_verts, _faces = generate_building(
+        320, 1042, 100, "gable_depth", 30, 15, 50, 50
+    )
+    width_verts, _faces = generate_building(
+        320, 1042, 100, "gable_width", 30, 15, 50, 50
+    )
+
+    assert depth_verts["r0"] == (160, 0, 150)
+    assert depth_verts["r1"] == (160, 1042, 150)
+    assert width_verts["r0"] == (0, 521, 150)
+    assert width_verts["r1"] == (320, 521, 150)
+
+
+def test_preview_perspective_makes_farther_points_smaller():
+    near = perspective_project((100, -50, 100), 500)
+    far = perspective_project((100, 50, 100), 500)
+
+    assert near[0] > far[0]
+    assert near[1] > far[1]
 
 
 def test_parapet_uses_roof_colors_for_upper_sides_and_bright_top(tmp_path: Path):

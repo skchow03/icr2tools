@@ -40,7 +40,14 @@ def test_generator_window_has_live_3d_preview(monkeypatch, qapp):
         window.refresh_preview()
 
         assert len(window.preview._verts) != original_vertex_count
+        assert window.front_preview_btn.text() == "Front View"
+        assert window.top_preview_btn.text() == "Top View"
         assert window.reset_preview_btn.text() == "Reset View"
+
+        window.front_preview_btn.click()
+        assert (window.preview._yaw, window.preview._pitch) == (0.0, 0.0)
+        window.top_preview_btn.click()
+        assert (window.preview._yaw, window.preview._pitch) == (0.0, 90.0)
     finally:
         window.close()
 
