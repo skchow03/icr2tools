@@ -48,7 +48,6 @@ TEMPLATE_FIELDS = (
     "pyramid_rise",
     "dome_layers",
     "dome_roundness",
-    "sunny_pcx",
     "roof_color_bright",
     "roof_color_dark",
     "side_color_bright",
@@ -693,7 +692,7 @@ def write_3d(path, verts, faces, parameters):
         shape = str(params.get("building_shape", "rectangular"))
         roof = str(params.get("roof_type", "flat"))
 
-        keys = {"building_shape", "sunny_pcx"}
+        keys = {"building_shape"}
 
         if shape == "tree":
             keys.update(
@@ -862,12 +861,6 @@ def save_settings(config: configparser.ConfigParser):
     _save_templates_to_json(config)
 
 
-def set_sunny_path(config: configparser.ConfigParser, sunny_pcx_path: str):
-    if not config.has_section("paths"):
-        config.add_section("paths")
-    config["paths"]["sunny_pcx"] = sunny_pcx_path
-
-
 def set_last_3d_dir(config: configparser.ConfigParser, directory: str):
     if not config.has_section("paths"):
         config.add_section("paths")
@@ -954,6 +947,7 @@ def _ui_imports():
 def build_window(
     *,
     project_templates=None,
+    project_palette_path=None,
     on_templates_changed=None,
     on_add_object=None,
     default_save_dir=None,
@@ -963,7 +957,8 @@ def build_window(
     """Create the generator, optionally connected to an SG CREATE project.
 
     Standalone launches retain the legacy settings files.  Embedded launches pass
-    project templates and callbacks, making the object definitions project-local.
+    project templates, palette, and callbacks, making the object definitions
+    project-local.
     """
     QtCore, QtGui, QtWidgets = _ui_imports()
 
@@ -1178,6 +1173,13 @@ def build_window(
             self.palette = [(0, 0, 0)] * 256
             self.settings = load_settings()
             self._project_mode = project_templates is not None
+            configured_palette_path = self.settings.get(
+                "paths", "sunny_pcx", fallback=""
+            )
+            palette_path = (
+                project_palette_path if self._project_mode else configured_palette_path
+            )
+            self.sunny_pcx_path = str(palette_path or "").strip()
             if self._project_mode:
                 for section in list(self.settings.sections()):
                     if section.startswith(TEMPLATE_SECTION_PREFIX):
@@ -1363,10 +1365,6 @@ def build_window(
                 self.tree_leaves_dark_picker,
             ]
 
-            self.sunny_edit = QtWidgets.QLineEdit(self.settings.get("paths", "sunny_pcx", fallback=""))
-            self.sunny_browse = QtWidgets.QPushButton("Browse...")
-            self.sunny_browse.clicked.connect(self.load_sunny_pcx_clicked)
-
             self.generate_btn = QtWidgets.QPushButton("Generate .3D")
             self.generate_btn.clicked.connect(self.generate_clicked)
             self.add_to_project_btn = QtWidgets.QPushButton("Add to SG CREATE Object List")
@@ -1422,23 +1420,13 @@ def build_window(
             for row, (field_name, label, widget) in enumerate(row_specs):
                 add_form_row(row, field_name, label, widget)
 
-            sunny_row = len(row_specs)
-            layout.addWidget(QtWidgets.QLabel("sunny.pcx"), sunny_row, 0)
-            path_layout = QtWidgets.QHBoxLayout()
-            path_layout.addWidget(self.sunny_edit)
-            path_layout.addWidget(self.sunny_browse)
-            layout.addLayout(path_layout, sunny_row, 1)
-            layout.addWidget(self.generate_btn, sunny_row + 1, 0, 1, 2)
-            layout.addWidget(self.add_to_project_btn, sunny_row + 2, 0, 1, 2)
-
-            file_menu = self.menuBar().addMenu("File")
-            load_action = QtWidgets.QAction("Load sunny.pcx...", self)
-            load_action.triggered.connect(self.load_sunny_pcx_clicked)
-            file_menu.addAction(load_action)
+            action_row = len(row_specs)
+            layout.addWidget(self.generate_btn, action_row, 0, 1, 2)
+            layout.addWidget(self.add_to_project_btn, action_row + 1, 0, 1, 2)
 
             self.refresh_color_combos(defaults=(200, 201, 202, 203))
-            if self.sunny_edit.text().strip():
-                self.try_load_palette(self.sunny_edit.text().strip(), preserve_selection=True)
+            if self.sunny_pcx_path:
+                self.try_load_palette(self.sunny_pcx_path, preserve_selection=True)
             self.refresh_templates()
             self.update_shape_field_visibility(self.shape_combo.currentText())
             self.update_grandstand_height_from_angle()
@@ -1644,7 +1632,6 @@ def build_window(
                 "pyramid_rise": self.pyramid_spin.value(),
                 "dome_layers": self.dome_layers_spin.value(),
                 "dome_roundness": self.dome_roundness_spin.value(),
-                "sunny_pcx": self.sunny_edit.text().strip(),
                 "roof_color_bright": self.roof_bright_picker.color_index(),
                 "roof_color_dark": self.roof_dark_picker.color_index(),
                 "side_color_bright": self.side_bright_picker.color_index(),
@@ -1684,8 +1671,6 @@ def build_window(
             self.pyramid_spin.setValue(int_or_default(values.get("pyramid_rise"), self.pyramid_spin.value()))
             self.dome_layers_spin.setValue(int_or_default(values.get("dome_layers"), self.dome_layers_spin.value()))
             self.dome_roundness_spin.setValue(int_or_default(values.get("dome_roundness"), self.dome_roundness_spin.value()))
-            self.sunny_edit.setText(values.get("sunny_pcx", self.sunny_edit.text().strip()))
-
             self.roof_bright_picker.set_color_index(int_or_default(values.get("roof_color_bright"), 0))
             self.roof_dark_picker.set_color_index(int_or_default(values.get("roof_color_dark"), 0))
             self.side_bright_picker.set_color_index(int_or_default(values.get("side_color_bright"), 0))
@@ -1698,10 +1683,6 @@ def build_window(
             self.tree_trunk_dark_picker.set_color_index(tree_trunk_dark)
             self.tree_leaves_bright_picker.set_color_index(tree_leaves_bright)
             self.tree_leaves_dark_picker.set_color_index(tree_leaves_dark)
-
-            path = self.sunny_edit.text().strip()
-            if path:
-                self.try_load_palette(path, preserve_selection=True)
 
         def refresh_templates(self):
             current_name = self.template_list.currentItem().text() if self.template_list.currentItem() else ""
@@ -1756,20 +1737,6 @@ def build_window(
                 picker.set_palette(self.palette)
                 picker.set_color_index(int(selected))
 
-        def load_sunny_pcx_clicked(self):
-            path, _ = QtWidgets.QFileDialog.getOpenFileName(
-                self,
-                "Select sunny.pcx",
-                self.sunny_edit.text().strip(),
-                "PCX files (*.pcx);;All files (*.*)",
-            )
-            if not path:
-                return
-            self.try_load_palette(path, preserve_selection=True)
-            self.sunny_edit.setText(path)
-            set_sunny_path(self.settings, path)
-            save_settings(self.settings)
-
         def try_load_palette(self, path: str, preserve_selection: bool):
             selections = [picker.color_index() for picker in self.color_pickers]
             try:
@@ -1787,13 +1754,6 @@ def build_window(
         def _generate_to_file(self, *, add_to_project):
             try:
                 roof = self.roof_combo.currentText()
-                path = self.sunny_edit.text().strip()
-                if path:
-                    self.try_load_palette(path, preserve_selection=True)
-                    set_sunny_path(self.settings, path)
-                    if not self._project_mode:
-                        save_settings(self.settings)
-
                 values = self.collect_current_values()
                 verts, faces = self._generate_current_geometry(values)
 

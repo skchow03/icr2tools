@@ -1545,6 +1545,9 @@ class SGViewerController:
             templates = self._sg_settings_store.get_tso_generator_objects(
                 self._current_path
             )
+            palette_path = self._sg_settings_store.get_sunny_palette(
+                self._current_path
+            )
 
             def save_templates(values: dict[str, dict[str, object]]) -> None:
                 self._sg_settings_store.set_tso_generator_objects(
@@ -1569,6 +1572,7 @@ class SGViewerController:
                 default_dir = project_path.parent
             self._tso_generator_window = build_window(
                 project_templates=templates,
+                project_palette_path=palette_path,
                 on_templates_changed=save_templates,
                 on_add_object=add_object,
                 default_save_dir=default_dir,
