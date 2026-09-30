@@ -951,7 +951,20 @@ def _ui_imports():
     return QtCore, QtGui, QtWidgets
 
 
-def build_window():
+def build_window(
+    *,
+    project_templates=None,
+    on_templates_changed=None,
+    on_add_object=None,
+    default_save_dir=None,
+    parent=None,
+    run_event_loop=True,
+):
+    """Create the generator, optionally connected to an SG CREATE project.
+
+    Standalone launches retain the legacy settings files.  Embedded launches pass
+    project templates and callbacks, making the object definitions project-local.
+    """
     QtCore, QtGui, QtWidgets = _ui_imports()
 
     class ObjectPreviewWidget(QtWidgets.QOpenGLWidget):
@@ -1160,10 +1173,20 @@ def build_window():
 
     class MainWindow(QtWidgets.QMainWindow):
         def __init__(self):
-            super().__init__()
+            super().__init__(parent)
             self.setWindowTitle("ICR2 Building Generator")
             self.palette = [(0, 0, 0)] * 256
             self.settings = load_settings()
+            self._project_mode = project_templates is not None
+            if self._project_mode:
+                for section in list(self.settings.sections()):
+                    if section.startswith(TEMPLATE_SECTION_PREFIX):
+                        self.settings.remove_section(section)
+                for name, values in (project_templates or {}).items():
+                    if isinstance(name, str) and isinstance(values, dict):
+                        save_template(self.settings, name, values)
+                if default_save_dir:
+                    set_last_3d_dir(self.settings, str(default_save_dir))
             self._updating_grandstand_fields = False
             self._build_ui()
 
@@ -1346,6 +1369,9 @@ def build_window():
 
             self.generate_btn = QtWidgets.QPushButton("Generate .3D")
             self.generate_btn.clicked.connect(self.generate_clicked)
+            self.add_to_project_btn = QtWidgets.QPushButton("Add to SG CREATE Object List")
+            self.add_to_project_btn.clicked.connect(self.add_to_project_clicked)
+            self.add_to_project_btn.setVisible(on_add_object is not None)
 
             self.form_rows = {}
 
@@ -1403,6 +1429,7 @@ def build_window():
             path_layout.addWidget(self.sunny_browse)
             layout.addLayout(path_layout, sunny_row, 1)
             layout.addWidget(self.generate_btn, sunny_row + 1, 0, 1, 2)
+            layout.addWidget(self.add_to_project_btn, sunny_row + 2, 0, 1, 2)
 
             file_menu = self.menuBar().addMenu("File")
             load_action = QtWidgets.QAction("Load sunny.pcx...", self)
@@ -1692,7 +1719,7 @@ def build_window():
             if not ok or not template_name:
                 return
             save_template(self.settings, template_name, self.collect_current_values())
-            save_settings(self.settings)
+            self._persist_templates()
             self.refresh_templates()
 
         def load_template_clicked(self):
@@ -1710,8 +1737,18 @@ def build_window():
             if not item:
                 return
             remove_template(self.settings, item.text())
-            save_settings(self.settings)
+            self._persist_templates()
             self.refresh_templates()
+
+        def _persist_templates(self):
+            if not self._project_mode:
+                save_settings(self.settings)
+                return
+            if on_templates_changed is not None:
+                on_templates_changed({
+                    name: get_template_values(self.settings, name) or {}
+                    for name in list_template_names(self.settings)
+                })
 
         def refresh_color_combos(self, defaults=None):
             defaults = defaults or (0, 1, 2, 3, 96, 97, 120, 121)
@@ -1742,13 +1779,20 @@ def build_window():
                 QtWidgets.QMessageBox.warning(self, "Palette Load Error", str(exc))
 
         def generate_clicked(self):
+            self._generate_to_file(add_to_project=False)
+
+        def add_to_project_clicked(self):
+            self._generate_to_file(add_to_project=True)
+
+        def _generate_to_file(self, *, add_to_project):
             try:
                 roof = self.roof_combo.currentText()
                 path = self.sunny_edit.text().strip()
                 if path:
                     self.try_load_palette(path, preserve_selection=True)
                     set_sunny_path(self.settings, path)
-                    save_settings(self.settings)
+                    if not self._project_mode:
+                        save_settings(self.settings)
 
                 values = self.collect_current_values()
                 verts, faces = self._generate_current_geometry(values)
@@ -1764,20 +1808,34 @@ def build_window():
                     return
 
                 set_last_3d_dir(self.settings, str(Path(out_path).parent))
-                save_settings(self.settings)
+                if not self._project_mode:
+                    save_settings(self.settings)
 
                 params = dict(values)
                 params["roof_type"] = roof
 
                 write_3d(out_path, verts, faces, params)
-                QtWidgets.QMessageBox.information(self, "Success", "Building generated successfully.")
+                if self._project_mode:
+                    object_name = Path(out_path).stem
+                    save_template(self.settings, object_name, params)
+                    self._persist_templates()
+                if add_to_project and on_add_object is not None:
+                    on_add_object(Path(out_path), params)
+                    self.close()
+                else:
+                    QtWidgets.QMessageBox.information(self, "Success", "Building generated successfully.")
             except Exception as exc:
                 QtWidgets.QMessageBox.critical(self, "Error", str(exc))
 
-    app = QtWidgets.QApplication(sys.argv)
+    app = QtWidgets.QApplication.instance()
+    owns_app = app is None
+    if app is None:
+        app = QtWidgets.QApplication(sys.argv)
     window = MainWindow()
     window.show()
-    app.exec_()
+    if run_event_loop and owns_app:
+        app.exec_()
+    return window
 
 
 if __name__ == "__main__":

@@ -15,6 +15,7 @@ from tso_generator.tso_generator import (
     save_template,
     write_3d,
 )
+from sg_viewer.services.sg_settings_store import SGSettingsStore
 
 
 def _default_preview_rotation(verts):
@@ -69,6 +70,20 @@ def _base_parameters():
         "bridge_height": 20,
         "bridge_half": False,
     }
+
+
+def test_generator_objects_are_scoped_to_the_sgc_project(tmp_path: Path):
+    store = SGSettingsStore()
+    first_sg = tmp_path / "first.sg"
+    second_sg = tmp_path / "second.sg"
+    objects = {"pit_building": _base_parameters()}
+
+    store.set_tso_generator_objects(first_sg, objects)
+
+    assert store.get_tso_generator_objects(first_sg) == objects
+    assert store.get_tso_generator_objects(second_sg) == {}
+    payload = (tmp_path / "first.sgc").read_text(encoding="utf-8")
+    assert '"tso_generator_objects"' in payload
 
 
 def test_write_3d_puts_comments_after_header_and_colors_polys(tmp_path: Path):

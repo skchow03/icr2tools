@@ -212,6 +212,25 @@ class SGSettingsStore:
     ) -> None:
         self.update(sg_path, trackside_objects=objects)
 
+    def get_tso_generator_objects(
+        self, sg_path: Path
+    ) -> dict[str, dict[str, object]]:
+        """Return generator definitions belonging to this SG CREATE project."""
+        payload = self.load(sg_path)
+        raw = payload.get("tso_generator_objects")
+        if not isinstance(raw, dict):
+            return {}
+        return {
+            name: dict(values)
+            for name, values in raw.items()
+            if isinstance(name, str) and isinstance(values, dict)
+        }
+
+    def set_tso_generator_objects(
+        self, sg_path: Path, objects: dict[str, dict[str, object]]
+    ) -> None:
+        self.update(sg_path, tso_generator_objects=objects)
+
     def get_land_objects(self, sg_path: Path) -> list[dict[str, object]]:
         payload = self.load(sg_path)
         raw = payload.get("land_objects")
