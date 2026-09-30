@@ -1190,6 +1190,7 @@ def build_window(
                 if default_save_dir:
                     set_last_3d_dir(self.settings, str(default_save_dir))
             self._updating_grandstand_fields = False
+            self._project_object_name = ""
             self._build_ui()
 
         def _build_ui(self):
@@ -1199,7 +1200,7 @@ def build_window(
 
             self.template_list = QtWidgets.QListWidget()
             self.template_list.setMinimumWidth(220)
-            self.save_template_btn = QtWidgets.QPushButton("Save Template")
+            self.save_template_btn = QtWidgets.QPushButton("Save to Project")
             self.load_template_btn = QtWidgets.QPushButton("Load Selected")
             self.remove_template_btn = QtWidgets.QPushButton("Remove Selected")
 
@@ -1208,7 +1209,7 @@ def build_window(
             self.remove_template_btn.clicked.connect(self.remove_template_clicked)
 
             template_layout = QtWidgets.QVBoxLayout()
-            template_layout.addWidget(QtWidgets.QLabel("Templates"))
+            template_layout.addWidget(QtWidgets.QLabel("Project Objects"))
             template_layout.addWidget(self.template_list, 1)
             template_layout.addWidget(self.save_template_btn)
             template_layout.addWidget(self.load_template_btn)
@@ -1365,11 +1366,13 @@ def build_window(
                 self.tree_leaves_dark_picker,
             ]
 
-            self.generate_btn = QtWidgets.QPushButton("Generate .3D")
+            generate_label = (
+                "Generate .3D and Add to SG CREATE Object List"
+                if on_add_object is not None
+                else "Generate .3D"
+            )
+            self.generate_btn = QtWidgets.QPushButton(generate_label)
             self.generate_btn.clicked.connect(self.generate_clicked)
-            self.add_to_project_btn = QtWidgets.QPushButton("Add to SG CREATE Object List")
-            self.add_to_project_btn.clicked.connect(self.add_to_project_clicked)
-            self.add_to_project_btn.setVisible(on_add_object is not None)
 
             self.form_rows = {}
 
@@ -1422,7 +1425,6 @@ def build_window(
 
             action_row = len(row_specs)
             layout.addWidget(self.generate_btn, action_row, 0, 1, 2)
-            layout.addWidget(self.add_to_project_btn, action_row + 1, 0, 1, 2)
 
             self.refresh_color_combos(defaults=(200, 201, 202, 203))
             if self.sunny_pcx_path:
@@ -1695,13 +1697,22 @@ def build_window(
                     self.template_list.setCurrentItem(matches[0])
 
         def save_template_clicked(self):
-            name, ok = QtWidgets.QInputDialog.getText(self, "Save Template", "Template name:")
+            name, ok = QtWidgets.QInputDialog.getText(
+                self,
+                "Save to Project",
+                "Object name:",
+                text=self._project_object_name,
+            )
             template_name = name.strip()
             if not ok or not template_name:
                 return
+            self._project_object_name = template_name
             save_template(self.settings, template_name, self.collect_current_values())
             self._persist_templates()
             self.refresh_templates()
+            matches = self.template_list.findItems(template_name, QtCore.Qt.MatchExactly)
+            if matches:
+                self.template_list.setCurrentItem(matches[0])
 
         def load_template_clicked(self):
             item = self.template_list.currentItem()
@@ -1711,6 +1722,7 @@ def build_window(
             if values is None:
                 QtWidgets.QMessageBox.warning(self, "Template", "Template not found in settings file.")
                 return
+            self._project_object_name = item.text()
             self.apply_values(values)
 
         def remove_template_clicked(self):
@@ -1746,10 +1758,7 @@ def build_window(
                 QtWidgets.QMessageBox.warning(self, "Palette Load Error", str(exc))
 
         def generate_clicked(self):
-            self._generate_to_file(add_to_project=False)
-
-        def add_to_project_clicked(self):
-            self._generate_to_file(add_to_project=True)
+            self._generate_to_file(add_to_project=on_add_object is not None)
 
         def _generate_to_file(self, *, add_to_project):
             try:
@@ -1758,10 +1767,15 @@ def build_window(
                 verts, faces = self._generate_current_geometry(values)
 
                 default_save_dir = self.settings.get("paths", "last_3d_dir", fallback="")
+                default_path = str(default_save_dir)
+                if self._project_object_name:
+                    default_path = str(
+                        Path(default_save_dir) / f"{self._project_object_name}.3D"
+                    )
                 out_path, _ = QtWidgets.QFileDialog.getSaveFileName(
                     self,
                     "Save .3D",
-                    default_save_dir,
+                    default_path,
                     "3D files (*.3D)",
                 )
                 if not out_path:
@@ -1777,8 +1791,10 @@ def build_window(
                 write_3d(out_path, verts, faces, params)
                 if self._project_mode:
                     object_name = Path(out_path).stem
+                    self._project_object_name = object_name
                     save_template(self.settings, object_name, params)
                     self._persist_templates()
+                    self.refresh_templates()
                 if add_to_project and on_add_object is not None:
                     on_add_object(Path(out_path), params)
                     self.close()

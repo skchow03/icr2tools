@@ -1170,7 +1170,12 @@ class TracksideObjectsController:
             )
 
     def _append_tso_at_origin(
-        self, filename: str, *, land_object_name: str = ""
+        self,
+        filename: str,
+        *,
+        land_object_name: str = "",
+        bbox_length: int = 0,
+        bbox_width: int = 0,
     ) -> None:
         """Append and select a named TSO at the absolute origin."""
         obj = TracksideObject(
@@ -1181,11 +1186,13 @@ class TracksideObjectsController:
             yaw=0,
             pitch=0,
             tilt=0,
+            bbox_length=max(0, int(bbox_length)),
+            bbox_width=max(0, int(bbox_width)),
             land_object_name=land_object_name.strip(),
         )
         attributes = (
             self._tso_shape_attributes_for_filename(obj.filename)
-            if not obj.land_object_name
+            if not obj.land_object_name and not (bbox_length or bbox_width)
             else None
         )
         if attributes:

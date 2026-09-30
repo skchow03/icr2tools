@@ -72,3 +72,57 @@ def test_project_generator_uses_project_palette_without_palette_controls(
         assert "sunny_pcx" not in window.collect_current_values()
     finally:
         window.close()
+
+
+def test_project_object_name_defaults_combined_generation_filename(
+    monkeypatch, qapp, tmp_path
+):
+    saved_objects = []
+    added_objects = []
+    suggested_paths = []
+
+    monkeypatch.setattr(
+        tso_generator, "INI_PATH", tmp_path / "missing-tso-generator.ini"
+    )
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: ("scoring_tower", True),
+    )
+
+    def choose_output(_parent, _title, suggested_path, _file_filter):
+        suggested_paths.append(suggested_path)
+        return str(tmp_path / "scoring_tower.3D"), "3D files (*.3D)"
+
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", choose_output)
+
+    window = tso_generator.build_window(
+        project_templates={},
+        on_templates_changed=lambda objects: saved_objects.append(objects),
+        on_add_object=lambda path, parameters: added_objects.append(
+            (path, parameters)
+        ),
+        default_save_dir=tmp_path,
+        run_event_loop=False,
+    )
+    try:
+        assert window.save_template_btn.text() == "Save to Project"
+        assert window.generate_btn.text() == (
+            "Generate .3D and Add to SG CREATE Object List"
+        )
+        assert not hasattr(window, "add_to_project_btn")
+        assert any(
+            label.text() == "Project Objects"
+            for label in window.findChildren(QtWidgets.QLabel)
+        )
+
+        window.save_template_clicked()
+        assert window.template_list.currentItem().text() == "scoring_tower"
+        window.generate_clicked()
+
+        assert suggested_paths == [str(tmp_path / "scoring_tower.3D")]
+        assert added_objects[0][0] == tmp_path / "scoring_tower.3D"
+        assert "scoring_tower" in saved_objects[-1]
+        assert (tmp_path / "scoring_tower.3D").is_file()
+    finally:
+        window.close()
