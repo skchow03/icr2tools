@@ -756,13 +756,47 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._hi_detail_sections_overlay_checkbox.setToolTip(
             "Show the start and end DLONG dividers for every HI subsection in the selected .3D file."
         )
-        self._background_brightness_spin = QtWidgets.QSpinBox()
-        self._background_brightness_spin.setRange(-100, 100)
-        self._background_brightness_spin.setValue(0)
-        self._background_brightness_spin.setSingleStep(1)
-        self._background_brightness_spin.setMinimumWidth(72)
-        self._background_brightness_spin.setToolTip(
+        self._background_brightness_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
+        self._background_brightness_slider.setRange(-100, 100)
+        self._background_brightness_slider.setValue(0)
+        self._background_brightness_slider.setSingleStep(1)
+        self._background_brightness_slider.setPageStep(10)
+        self._background_brightness_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
+        self._background_brightness_slider.setTickInterval(25)
+        self._background_brightness_slider.setMinimumWidth(180)
+        self._background_brightness_slider.setToolTip(
             "Adjust background image brightness from -100 to 100."
+        )
+        self._background_brightness_button = QtWidgets.QToolButton()
+        self._background_brightness_button.setPopupMode(QtWidgets.QToolButton.InstantPopup)
+        self._background_brightness_button.setMinimumWidth(84)
+        self._background_brightness_button.setToolTip("Open background brightness slider.")
+        self._background_brightness_menu = QtWidgets.QMenu(
+            self._background_brightness_button
+        )
+        self._background_brightness_panel = QtWidgets.QWidget(
+            self._background_brightness_menu
+        )
+        background_brightness_layout = QtWidgets.QVBoxLayout(
+            self._background_brightness_panel
+        )
+        background_brightness_layout.setContentsMargins(10, 8, 10, 8)
+        background_brightness_layout.setSpacing(6)
+        self._background_brightness_value_label = QtWidgets.QLabel()
+        self._background_brightness_value_label.setAlignment(QtCore.Qt.AlignCenter)
+        background_brightness_layout.addWidget(self._background_brightness_value_label)
+        background_brightness_layout.addWidget(self._background_brightness_slider)
+        background_brightness_action = QtWidgets.QWidgetAction(
+            self._background_brightness_menu
+        )
+        background_brightness_action.setDefaultWidget(self._background_brightness_panel)
+        self._background_brightness_menu.addAction(background_brightness_action)
+        self._background_brightness_button.setMenu(self._background_brightness_menu)
+        self._background_brightness_slider.valueChanged.connect(
+            self._update_background_brightness_selector_label
+        )
+        self._update_background_brightness_selector_label(
+            self._background_brightness_slider.value()
         )
         self._track_opacity_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self._track_opacity_slider.setRange(0, 100)
@@ -2111,8 +2145,12 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         return self._hi_detail_sections_overlay_checkbox
 
     @property
-    def background_brightness_spin(self) -> QtWidgets.QSpinBox:
-        return self._background_brightness_spin
+    def background_brightness_spin(self) -> QtWidgets.QSlider:
+        return self._background_brightness_slider
+
+    @property
+    def background_brightness_button(self) -> QtWidgets.QToolButton:
+        return self._background_brightness_button
 
     @property
     def track_opacity_spin(self) -> QtWidgets.QSlider:
@@ -2511,7 +2549,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         layout.addSpacing(8)
         layout.addStretch(1)
         layout.addWidget(QtWidgets.QLabel("Background brightness:"))
-        layout.addWidget(self._background_brightness_spin)
+        layout.addWidget(self._background_brightness_button)
         layout.addSpacing(8)
         layout.addWidget(QtWidgets.QLabel("Track opacity:"))
         layout.addWidget(self._track_opacity_button)
@@ -2530,7 +2568,10 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         background_active = (
             has_background and self._background_image_checkbox.isChecked()
         )
-        for widget in (self._background_brightness_spin,):
+        for widget in (
+            self._background_brightness_button,
+            self._background_brightness_slider,
+        ):
             widget.setEnabled(background_active)
         has_track = bool(self._preview.section_manager.sections)
         for widget in (self._track_opacity_button, self._track_opacity_slider):
@@ -2540,6 +2581,13 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         text = f"{max(0, min(100, int(value)))}%"
         self._track_opacity_button.setText(text)
         self._track_opacity_value_label.setText(f"Track opacity: {text}")
+
+    def _update_background_brightness_selector_label(self, value: int) -> None:
+        text = f"{max(-100, min(100, int(value))):+d}"
+        self._background_brightness_button.setText(text)
+        self._background_brightness_value_label.setText(
+            f"Background brightness: {text}"
+        )
 
     def _on_view_preset_changed(self, preset: str) -> None:
         if preset == "Geometry":
