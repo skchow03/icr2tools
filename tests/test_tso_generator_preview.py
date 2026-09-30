@@ -126,3 +126,33 @@ def test_project_object_name_defaults_combined_generation_filename(
         assert (tmp_path / "scoring_tower.3D").is_file()
     finally:
         window.close()
+
+
+def test_generator_uses_selected_display_uom_and_can_save_another_uom(
+    monkeypatch, qapp, tmp_path
+):
+    output_path = tmp_path / "metric-input-inches-output.3D"
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getSaveFileName",
+        lambda *args: (str(output_path), "3D files (*.3D)"),
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args: None)
+    window = tso_generator.build_window(
+        project_templates={}, measurement_unit="meter", run_event_loop=False
+    )
+    try:
+        assert window.width_spin.suffix() == " m"
+        window.width_spin.setValue(1.0)
+        window.depth_spin.setValue(2.0)
+        window.output_uom_combo.setCurrentIndex(
+            window.output_uom_combo.findData("inch")
+        )
+        window.generate_clicked()
+
+        text = output_path.read_text(encoding="utf-8")
+        assert "% coordinate_uom: inch" in text
+        assert "c0: [<39.370079, 0, 0>];" in text
+        assert "d0: [<39.370079, 78.740157, 0>];" in text
+    finally:
+        window.close()

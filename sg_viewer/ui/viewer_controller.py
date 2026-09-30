@@ -1585,6 +1585,7 @@ class SGViewerController:
                 on_templates_changed=save_templates,
                 on_add_object=add_object,
                 default_save_dir=default_dir,
+                measurement_unit=self._window.current_measurement_unit(),
                 parent=self._window,
                 run_event_loop=False,
             )

@@ -2,6 +2,8 @@ import configparser
 import math
 from pathlib import Path
 
+import pytest
+
 from tso_generator.tso_generator import (
     TEMPLATE_SECTION_PREFIX,
     calculate_grandstand_angle,
@@ -14,6 +16,8 @@ from tso_generator.tso_generator import (
     remove_template,
     save_template,
     write_3d,
+    convert_uom,
+    convert_vertices_uom,
 )
 from sg_viewer.services.sg_settings_store import SGSettingsStore
 
@@ -102,6 +106,22 @@ def test_write_3d_puts_comments_after_header_and_colors_polys(tmp_path: Path):
     assert any("topD: POLY <200>" in line for line in poly_lines)
     assert any("ls1: POLY <202>" in line for line in poly_lines)
     assert any("rs1: POLY <203>" in line for line in poly_lines)
+
+
+def test_vertex_uom_conversion_and_written_metadata(tmp_path: Path):
+    verts = {"a": (500, 1000, 0), "b": (0, 0, 0), "c": (500, 0, 0)}
+    converted = convert_vertices_uom(verts, "500ths", "inch")
+    assert converted["a"] == (1.0, 2.0, 0.0)
+    assert convert_uom(1, "meter", "500ths") == pytest.approx(19685.03937)
+
+    out = tmp_path / "inches.3D"
+    params = _base_parameters()
+    params["coordinate_uom"] = "inch"
+    write_3d(out, converted, [("face", ["a", "b", "c"])], params)
+
+    text = out.read_text(encoding="utf-8")
+    assert "% coordinate_uom: inch" in text
+    assert "a: [<1, 2, 0>];" in text
 
 
 
