@@ -1555,7 +1555,16 @@ class SGViewerController:
                 )
 
             def add_object(path: Path, _parameters: dict[str, object]) -> None:
-                self._trackside_objects_controller._append_tso_at_origin(path.stem)
+                from sg_viewer.io.track3d_parser import (
+                    calculate_track3d_xy_bounding_box,
+                )
+
+                bbox = calculate_track3d_xy_bounding_box(path)
+                self._trackside_objects_controller._append_tso_at_origin(
+                    path.stem,
+                    bbox_length=math.ceil(bbox.length),
+                    bbox_width=math.ceil(bbox.width),
+                )
                 feature_tabs = self._window._sidebar_feature_tabs["Objects"]
                 objects_index = feature_tabs.indexOf(self._window._tso_sidebar)
                 workflow_index = self._window.right_sidebar_tabs.indexOf(feature_tabs)
