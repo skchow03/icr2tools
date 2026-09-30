@@ -8,7 +8,8 @@ Supported roof types
 - none (no roof)
 - flat
 - parapet (inset roof cap)
-- gable (simple pitched roof)
+- gable_depth (pitched roof with its ridge spanning the building depth)
+- gable_width (pitched roof with its ridge spanning the building width)
 - pyramid (4-sided pitched roof)
 - dome (for circular buildings)
 """
@@ -194,6 +195,19 @@ def add_gable_roof(verts, faces, width, depth, height, rise):
         ("roofR", ["c1", "d1", "r1", "r0"]),
         ("gableF", ["b1", "c1", "r0"]),
         ("gableB", ["d1", "a1", "r1"]),
+    ]
+
+
+def add_width_gable_roof(verts, faces, width, depth, height, rise):
+    """Add a gable whose ridge runs left-to-right across the building width."""
+    verts["r0"] = (0, depth / 2, height + rise)
+    verts["r1"] = (width, depth / 2, height + rise)
+
+    faces += [
+        ("roofL", ["a1", "r0", "r1", "d1"]),
+        ("roofR", ["b1", "c1", "r1", "r0"]),
+        ("gableF", ["a1", "b1", "r0"]),
+        ("gableB", ["c1", "d1", "r1"]),
     ]
 
 
@@ -663,8 +677,10 @@ def generate_building(
         add_flat_roof(faces)
     elif roof_type == "parapet":
         add_parapet_roof(verts, faces, width, depth, height, inset, roof_height)
-    elif roof_type == "gable":
+    elif roof_type in {"gable", "gable_depth"}:
         add_gable_roof(verts, faces, width, depth, height, gable_rise)
+    elif roof_type == "gable_width":
+        add_width_gable_roof(verts, faces, width, depth, height, gable_rise)
     elif roof_type == "pyramid":
         add_pyramid_roof(verts, faces, width, depth, height, pyramid_rise)
 
@@ -814,7 +830,7 @@ def write_3d(path, verts, faces, parameters):
         keys.update({"width", "depth", "height", "roof_type", "rect_center_origin", "roof_color_bright", "roof_color_dark", "side_color_bright", "side_color_dark"})
         if roof == "parapet":
             keys.update({"parapet_inset", "parapet_height"})
-        elif roof == "gable":
+        elif roof in {"gable", "gable_depth", "gable_width"}:
             keys.add("gable_rise")
         elif roof == "pyramid":
             keys.add("pyramid_rise")
@@ -992,6 +1008,16 @@ def preview_face_is_front_facing(face_points, epsilon=1e-9):
     return projected_area > epsilon
 
 
+def perspective_project(point, camera_distance):
+    """Project a centered view-space point onto the camera's X/Z plane."""
+    x, depth, z = point
+    denominator = camera_distance + depth
+    # The preview keeps the camera outside the model, but retain a small guard
+    # so degenerate or externally supplied geometry cannot divide by zero.
+    perspective = camera_distance / max(denominator, camera_distance * 0.05)
+    return x * perspective, z * perspective
+
+
 def load_sunny_palette(path: str | Path):
     data = Path(path).read_bytes()
     if len(data) < 769 or data[-769] != 0x0C:
@@ -1053,6 +1079,16 @@ def build_window(
             self._zoom = 0.82
             self.update()
 
+        def front_view(self):
+            self._yaw = 0.0
+            self._pitch = 0.0
+            self.update()
+
+        def top_view(self):
+            self._yaw = 0.0
+            self._pitch = 90.0
+            self.update()
+
         def mousePressEvent(self, event):
             if event.button() == QtCore.Qt.LeftButton:
                 self._last_mouse_pos = event.pos()
@@ -1105,6 +1141,7 @@ def build_window(
 
             rotated = {name: rotate(point) for name, point in self._verts.items()}
             scale = min(self.width(), self.height()) * self._zoom / extent
+            camera_distance = extent * 2.5
             screen_center = QtCore.QPointF(self.width() / 2.0, self.height() / 2.0)
 
             polygons = []
@@ -1112,6 +1149,9 @@ def build_window(
                 if any(vertex_name not in rotated for vertex_name in vertex_names):
                     continue
                 face_points = [rotated[vertex_name] for vertex_name in vertex_names]
+                projected_points = [
+                    perspective_project(point, camera_distance) for point in face_points
+                ]
                 # QPainter has no depth buffer.  Excluding back-facing polygons
                 # prevents far walls from being painted over rectangular and
                 # circular roofs after the average-depth sort below.
@@ -1120,7 +1160,7 @@ def build_window(
                 polygon = QtGui.QPolygonF(
                     [
                         QtCore.QPointF(screen_center.x() + x * scale, screen_center.y() - z * scale)
-                        for x, _depth, z in face_points
+                        for x, z in projected_points
                     ]
                 )
                 polygons.append((sum(point[1] for point in face_points) / len(face_points), name, polygon))
@@ -1132,7 +1172,7 @@ def build_window(
                 painter.drawPolygon(polygon)
 
             painter.setPen(QtGui.QColor(205, 210, 216))
-            painter.drawText(12, 22, "Drag to rotate  •  Wheel to zoom")
+            painter.drawText(12, 22, "Perspective  •  Drag to rotate  •  Wheel to zoom")
             painter.end()
 
     class PaletteMatrixDialog(QtWidgets.QDialog):
@@ -1301,12 +1341,18 @@ def build_window(
             preview_header = QtWidgets.QHBoxLayout()
             preview_header.addWidget(QtWidgets.QLabel("3D Preview"))
             preview_header.addStretch(1)
+            self.front_preview_btn = QtWidgets.QPushButton("Front View")
+            self.top_preview_btn = QtWidgets.QPushButton("Top View")
             self.reset_preview_btn = QtWidgets.QPushButton("Reset View")
+            preview_header.addWidget(self.front_preview_btn)
+            preview_header.addWidget(self.top_preview_btn)
             preview_header.addWidget(self.reset_preview_btn)
             preview_layout.addLayout(preview_header)
             self.preview = ObjectPreviewWidget(self)
             preview_layout.addWidget(self.preview, 1)
             root_layout.addWidget(preview_panel, 2)
+            self.front_preview_btn.clicked.connect(self.preview.front_view)
+            self.top_preview_btn.clicked.connect(self.preview.top_view)
             self.reset_preview_btn.clicked.connect(self.preview.reset_view)
 
             self.width_spin = QtWidgets.QDoubleSpinBox()
@@ -1341,7 +1387,9 @@ def build_window(
             self.shape_combo.currentTextChanged.connect(self.update_shape_field_visibility)
 
             self.roof_combo = QtWidgets.QComboBox()
-            self.roof_combo.currentTextChanged.connect(self.update_roof_field_visibility)
+            self.roof_combo.currentIndexChanged.connect(
+                lambda _index: self.update_roof_field_visibility(self._current_roof_type())
+            )
 
             self.inset_spin = QtWidgets.QDoubleSpinBox()
             self.inset_spin.setRange(0, 50000)
@@ -1645,19 +1693,31 @@ def build_window(
         def _set_roof_options_for_shape(self, shape: str):
             shape = str(shape)
             if shape == "rectangular":
-                options = ["none", "flat", "parapet", "gable", "pyramid"]
+                options = [
+                    ("none", "none"),
+                    ("flat", "flat"),
+                    ("parapet", "parapet"),
+                    ("Gable — ridge spans depth", "gable_depth"),
+                    ("Gable — ridge spans width", "gable_width"),
+                    ("pyramid", "pyramid"),
+                ]
             elif shape == "circular":
-                options = ["none", "flat", "dome"]
+                options = [("none", "none"), ("flat", "flat"), ("dome", "dome")]
             elif shape in {"bridge", "grandstand"}:
-                options = ["none"]
+                options = [("none", "none")]
             else:
-                options = ["none"]
-            current = self.roof_combo.currentText()
+                options = [("none", "none")]
+            current = self._current_roof_type()
             self.roof_combo.blockSignals(True)
             self.roof_combo.clear()
-            self.roof_combo.addItems(options)
-            self.roof_combo.setCurrentText(current if current in options else options[0])
+            for label, value in options:
+                self.roof_combo.addItem(label, value)
+            current_index = self.roof_combo.findData(current)
+            self.roof_combo.setCurrentIndex(current_index if current_index >= 0 else 0)
             self.roof_combo.blockSignals(False)
+
+        def _current_roof_type(self):
+            return str(self.roof_combo.currentData() or self.roof_combo.currentText()).lower()
 
         def update_grandstand_height_from_angle(self, _value=None):
             if self.shape_combo.currentText() != "grandstand" or self._updating_grandstand_fields:
@@ -1711,7 +1771,7 @@ def build_window(
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
             self._set_row_visible("tree_profile", is_tree)
-            self.update_roof_field_visibility(self.roof_combo.currentText())
+            self.update_roof_field_visibility(self._current_roof_type())
 
         def update_roof_field_visibility(self, roof_type: str):
             roof_type = str(roof_type)
@@ -1732,7 +1792,7 @@ def build_window(
             self._set_row_visible("roof_type", (not is_tree) and (not is_bridge) and (not is_grandstand))
             self._set_row_visible("parapet_inset", is_rectangular and roof_type == "parapet")
             self._set_row_visible("parapet_height", is_rectangular and roof_type == "parapet")
-            self._set_row_visible("gable_rise", is_rectangular and roof_type == "gable")
+            self._set_row_visible("gable_rise", is_rectangular and roof_type in {"gable", "gable_depth", "gable_width"})
             self._set_row_visible("pyramid_rise", is_rectangular and roof_type == "pyramid")
             is_dome = (not is_rectangular) and roof_type == "dome"
             self._set_row_visible("dome_layers", is_dome)
@@ -1762,7 +1822,7 @@ def build_window(
                 "tree_leaf_base_height": canonical(self.tree_leaf_base_height_spin),
                 "tree_num_sides": self.tree_sides_spin.value(),
                 "tree_profile": self.tree_profile_combo.currentText(),
-                "roof_type": self.roof_combo.currentText(),
+                "roof_type": self._current_roof_type(),
                 "parapet_inset": canonical(self.inset_spin),
                 "parapet_height": canonical(self.roof_height_spin),
                 "gable_rise": canonical(self.gable_spin),
@@ -1804,7 +1864,12 @@ def build_window(
             self.tree_leaf_base_height_spin.setValue(display_value(values.get("tree_leaf_base_height"), convert_uom(self.tree_leaf_base_height_spin.value(), self._measurement_unit, "500ths")))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))
             self.tree_profile_combo.setCurrentText(str(values.get("tree_profile", self.tree_profile_combo.currentText()) or "pointy"))
-            self.roof_combo.setCurrentText(values.get("roof_type", self.roof_combo.currentText()))
+            roof_type = str(values.get("roof_type", self._current_roof_type()) or "none")
+            # Existing projects used "gable" for the original depth-running ridge.
+            roof_type = "gable_depth" if roof_type == "gable" else roof_type
+            roof_index = self.roof_combo.findData(roof_type)
+            if roof_index >= 0:
+                self.roof_combo.setCurrentIndex(roof_index)
             self.inset_spin.setValue(display_value(values.get("parapet_inset"), convert_uom(self.inset_spin.value(), self._measurement_unit, "500ths")))
             self.roof_height_spin.setValue(display_value(values.get("parapet_height"), convert_uom(self.roof_height_spin.value(), self._measurement_unit, "500ths")))
             self.gable_spin.setValue(display_value(values.get("gable_rise"), convert_uom(self.gable_spin.value(), self._measurement_unit, "500ths")))
@@ -2032,7 +2097,7 @@ def build_window(
 
         def _generate_to_file(self, *, add_to_project):
             try:
-                roof = self.roof_combo.currentText()
+                roof = self._current_roof_type()
                 values = self.collect_current_values()
                 verts, faces = self._generate_current_geometry(values)
 
