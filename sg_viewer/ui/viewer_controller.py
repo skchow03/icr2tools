@@ -4,8 +4,6 @@ import logging
 import math
 import random
 import re
-import subprocess
-import sys
 from time import perf_counter
 from bisect import bisect_left
 from pathlib import Path
@@ -169,6 +167,7 @@ class SGViewerController:
         self._active_selection: SectionSelection | None = None
         self._elevation_controller = ElevationController()
         self._calibrator_window: Calibrator | None = None
+        self._tso_generator_window = None
         self._delete_shortcut = QtWidgets.QShortcut(
             QtGui.QKeySequence(QtCore.Qt.Key_Delete),
             self._window,
@@ -1532,27 +1531,51 @@ class SGViewerController:
         self._background_ui_coordinator.launch_background_calibrator()
 
     def _launch_tso_generator(self) -> None:
-        command: list[str]
-        if getattr(sys, "frozen", False):
-            command = [sys.executable, "--launch-tso-generator"]
-        else:
-            script_path = (
-                Path(__file__).resolve().parents[2]
-                / "tso_generator"
-                / "tso_generator.py"
+        if self._current_path is None:
+            QtWidgets.QMessageBox.information(
+                self._window,
+                "Open TSO Generator",
+                "Save or open an SG CREATE project before generating project objects.",
             )
-            if not script_path.is_file():
-                QtWidgets.QMessageBox.warning(
-                    self._window,
-                    "Open TSO Generator",
-                    f"Could not find tso_generator.py at:\n{script_path}",
-                )
-                return
-            command = [sys.executable, str(script_path)]
-
+            return
         try:
-            subprocess.Popen(command)
-        except OSError as exc:
+            from tso_generator.tso_generator import build_window
+
+            project_path = self._settings_path_for(self._current_path)
+            templates = self._sg_settings_store.get_tso_generator_objects(
+                self._current_path
+            )
+
+            def save_templates(values: dict[str, dict[str, object]]) -> None:
+                self._sg_settings_store.set_tso_generator_objects(
+                    self._current_path, values
+                )
+
+            def add_object(path: Path, _parameters: dict[str, object]) -> None:
+                self._trackside_objects_controller._append_tso_at_origin(path.stem)
+                feature_tabs = self._window._sidebar_feature_tabs["Objects"]
+                objects_index = feature_tabs.indexOf(self._window._tso_sidebar)
+                workflow_index = self._window.right_sidebar_tabs.indexOf(feature_tabs)
+                if objects_index >= 0:
+                    feature_tabs.setCurrentIndex(objects_index)
+                if workflow_index >= 0:
+                    self._window.right_sidebar_tabs.setCurrentIndex(workflow_index)
+                self._window.show_status_message(
+                    f"Added '{path.stem}' to the TSO list at 0, 0, 0."
+                )
+
+            default_dir = self._project_working_directory
+            if default_dir is None:
+                default_dir = project_path.parent
+            self._tso_generator_window = build_window(
+                project_templates=templates,
+                on_templates_changed=save_templates,
+                on_add_object=add_object,
+                default_save_dir=default_dir,
+                parent=self._window,
+                run_event_loop=False,
+            )
+        except (ImportError, OSError) as exc:
             QtWidgets.QMessageBox.warning(
                 self._window,
                 "Open TSO Generator",
