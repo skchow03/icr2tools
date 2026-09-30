@@ -1269,20 +1269,26 @@ def build_window(
 
             self.template_list = QtWidgets.QListWidget()
             self.template_list.setMinimumWidth(220)
-            self.save_template_btn = QtWidgets.QPushButton("Save to Project")
-            self.load_template_btn = QtWidgets.QPushButton("Load Selected")
+            self.add_template_btn = QtWidgets.QPushButton("Add New Object")
+            self.rename_template_btn = QtWidgets.QPushButton("Rename Object")
+            self.save_template_btn = QtWidgets.QPushButton("Save Current to Project")
+            self.save_all_templates_btn = QtWidgets.QPushButton("Save All to Project")
             self.remove_template_btn = QtWidgets.QPushButton("Remove Selected")
 
+            self.add_template_btn.clicked.connect(self.add_template_clicked)
+            self.rename_template_btn.clicked.connect(self.rename_template_clicked)
             self.save_template_btn.clicked.connect(self.save_template_clicked)
-            self.load_template_btn.clicked.connect(self.load_template_clicked)
+            self.save_all_templates_btn.clicked.connect(self.save_all_templates_clicked)
             self.remove_template_btn.clicked.connect(self.remove_template_clicked)
             self.template_list.currentItemChanged.connect(self._object_selection_changed)
 
             template_layout = QtWidgets.QVBoxLayout()
             template_layout.addWidget(QtWidgets.QLabel("Project Objects"))
             template_layout.addWidget(self.template_list, 1)
+            template_layout.addWidget(self.add_template_btn)
+            template_layout.addWidget(self.rename_template_btn)
             template_layout.addWidget(self.save_template_btn)
-            template_layout.addWidget(self.load_template_btn)
+            template_layout.addWidget(self.save_all_templates_btn)
             template_layout.addWidget(self.remove_template_btn)
 
             form_widget = QtWidgets.QWidget()
@@ -1545,6 +1551,10 @@ def build_window(
             self.refresh_templates()
             self.update_shape_field_visibility(self.shape_combo.currentText())
             self.update_grandstand_height_from_angle()
+            self._new_object_defaults = self.collect_current_values()
+            self._new_object_defaults.update(
+                {"building_shape": "rectangular", "roof_type": "flat"}
+            )
             self._preview_timer = QtCore.QTimer(self)
             self._preview_timer.setSingleShot(True)
             self._preview_timer.setInterval(35)
@@ -1895,14 +1905,9 @@ def build_window(
             self.template_list.blockSignals(False)
 
         def save_template_clicked(self):
-            name, ok = QtWidgets.QInputDialog.getText(
-                self,
-                "Save to Project",
-                "Object name:",
-                text=self._project_object_name,
-            )
-            template_name = name.strip()
-            if not ok or not template_name:
+            item = self.template_list.currentItem()
+            template_name = self._item_object_name(item)
+            if not template_name:
                 return
             self._project_object_name = template_name
             save_template(self.settings, template_name, self.collect_current_values())
@@ -1915,21 +1920,75 @@ def build_window(
                     self.template_list.setCurrentItem(item)
                     break
 
-        def load_template_clicked(self):
+        def save_all_templates_clicked(self):
+            if self._project_object_name in self._dirty_objects:
+                self._object_drafts[self._project_object_name] = (
+                    self.collect_current_values()
+                )
+            for name in list(self._dirty_objects):
+                values = self._object_drafts.get(name)
+                if values is not None:
+                    save_template(self.settings, name, values)
+                self._set_object_dirty(name, False)
+            self._persist_templates()
+            self.refresh_templates()
+
+        def add_template_clicked(self):
+            name, ok = QtWidgets.QInputDialog.getText(
+                self, "Add New Object", "Object name:"
+            )
+            template_name = name.strip()
+            if not ok or not template_name:
+                return
+            if get_template_values(self.settings, template_name) is not None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Add New Object", "An object with that name already exists."
+                )
+                return
+            values = dict(self._new_object_defaults)
+            save_template(self.settings, template_name, values)
+            self._project_object_name = template_name
+            self._persist_templates()
+            self.refresh_templates()
+            self._select_template(template_name)
+
+        def rename_template_clicked(self):
             item = self.template_list.currentItem()
             if not item:
                 return
-            name = self._item_object_name(item)
-            values = self._object_drafts.get(name) or get_template_values(self.settings, name)
-            if values is None:
-                QtWidgets.QMessageBox.warning(self, "Template", "Template not found in settings file.")
+            old_name = self._item_object_name(item)
+            name, ok = QtWidgets.QInputDialog.getText(
+                self, "Rename Object", "Object name:", text=old_name
+            )
+            new_name = name.strip()
+            if not ok or not new_name or new_name == old_name:
                 return
-            self._project_object_name = name
-            self._loading_object = True
-            try:
-                self.apply_values(values)
-            finally:
-                self._loading_object = False
+            if get_template_values(self.settings, new_name) is not None:
+                QtWidgets.QMessageBox.warning(
+                    self, "Rename Object", "An object with that name already exists."
+                )
+                return
+            values = get_template_values(self.settings, old_name)
+            if values is None:
+                return
+            save_template(self.settings, new_name, values)
+            remove_template(self.settings, old_name)
+            if old_name in self._object_drafts:
+                self._object_drafts[new_name] = self._object_drafts.pop(old_name)
+            if old_name in self._dirty_objects:
+                self._dirty_objects.remove(old_name)
+                self._dirty_objects.add(new_name)
+            self._project_object_name = new_name
+            self._persist_templates()
+            self.refresh_templates()
+            self._select_template(new_name)
+
+        def _select_template(self, name: str):
+            for index in range(self.template_list.count()):
+                item = self.template_list.item(index)
+                if self._item_object_name(item) == name:
+                    self.template_list.setCurrentItem(item)
+                    break
 
         def remove_template_clicked(self):
             item = self.template_list.currentItem()

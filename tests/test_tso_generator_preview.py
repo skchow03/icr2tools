@@ -106,7 +106,11 @@ def test_project_object_name_defaults_combined_generation_filename(
         run_event_loop=False,
     )
     try:
-        assert window.save_template_btn.text() == "Save to Project"
+        assert window.save_template_btn.text() == "Save Current to Project"
+        assert window.save_all_templates_btn.text() == "Save All to Project"
+        assert window.add_template_btn.text() == "Add New Object"
+        assert window.rename_template_btn.text() == "Rename Object"
+        assert not hasattr(window, "load_template_btn")
         assert window.generate_btn.text() == (
             "Generate .3D and Add to SG CREATE Object List"
         )
@@ -116,7 +120,7 @@ def test_project_object_name_defaults_combined_generation_filename(
             for label in window.findChildren(QtWidgets.QLabel)
         )
 
-        window.save_template_clicked()
+        window.add_template_clicked()
         assert window.template_list.currentItem().text() == "scoring_tower"
         window.generate_clicked()
 
@@ -196,6 +200,68 @@ def test_project_objects_switch_immediately_and_mark_unsaved_edits(qapp):
 
         window.template_list.setCurrentItem(garage)
         assert window.width_spin.value() == pytest.approx(7.0)
+    finally:
+        window.close()
+
+
+def test_save_current_and_save_all_persist_the_expected_objects(qapp):
+    saved_objects = []
+    window = tso_generator.build_window(
+        project_templates={
+            "Garage": {"width": 6000, "depth": 12000},
+            "Tower": {"width": 18000, "depth": 18000},
+        },
+        measurement_unit="feet",
+        on_templates_changed=lambda objects: saved_objects.append(objects),
+        run_event_loop=False,
+    )
+    try:
+        garage = window.template_list.item(0)
+        tower = window.template_list.item(1)
+        window.template_list.setCurrentItem(garage)
+        window.width_spin.setValue(7.0)
+        window.template_list.setCurrentItem(tower)
+        window.width_spin.setValue(4.0)
+
+        window.save_template_clicked()
+        assert float(saved_objects[-1]["Tower"]["width"]) == pytest.approx(24000)
+        assert float(saved_objects[-1]["Garage"]["width"]) == pytest.approx(6000)
+        assert window.template_list.item(0).text() == "Garage *"
+
+        window.save_all_templates_clicked()
+        assert float(saved_objects[-1]["Garage"]["width"]) == pytest.approx(42000)
+        assert window._dirty_objects == set()
+    finally:
+        window.close()
+
+
+def test_add_and_rename_project_object(monkeypatch, qapp):
+    responses = iter([("New Garage", True), ("Renamed Garage", True)])
+    monkeypatch.setattr(
+        QtWidgets.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: next(responses),
+    )
+    saved_objects = []
+    window = tso_generator.build_window(
+        project_templates={},
+        on_templates_changed=lambda objects: saved_objects.append(objects),
+        run_event_loop=False,
+    )
+    try:
+        window.shape_combo.setCurrentText("tree")
+        window.add_template_clicked()
+
+        assert window.template_list.currentItem().text() == "New Garage"
+        assert window.shape_combo.currentText() == "rectangular"
+        assert window.roof_combo.currentText() == "flat"
+        assert saved_objects[-1]["New Garage"]["building_shape"] == "rectangular"
+        assert saved_objects[-1]["New Garage"]["roof_type"] == "flat"
+
+        window.rename_template_clicked()
+        assert window.template_list.currentItem().text() == "Renamed Garage"
+        assert "New Garage" not in saved_objects[-1]
+        assert "Renamed Garage" in saved_objects[-1]
     finally:
         window.close()
 
