@@ -81,7 +81,7 @@ def test_project_generator_uses_project_palette_without_palette_controls(
         window.close()
 
 
-def test_project_object_name_defaults_combined_generation_filename(
+def test_project_object_name_defaults_object_list_filename(
     monkeypatch, qapp, tmp_path
 ):
     saved_objects = []
@@ -118,10 +118,8 @@ def test_project_object_name_defaults_combined_generation_filename(
         assert window.add_template_btn.text() == "Add New Object"
         assert window.rename_template_btn.text() == "Rename Object"
         assert not hasattr(window, "load_template_btn")
-        assert window.generate_btn.text() == (
-            "Generate .3D and Add to SG CREATE Object List"
-        )
-        assert not hasattr(window, "add_to_project_btn")
+        assert window.generate_btn.text() == "Export .3D file"
+        assert window.add_to_project_btn.text() == "Add to Object List"
         assert any(
             label.text() == "Project Objects"
             for label in window.findChildren(QtWidgets.QLabel)
@@ -129,7 +127,7 @@ def test_project_object_name_defaults_combined_generation_filename(
 
         window.add_template_clicked()
         assert window.template_list.currentItem().text() == "scoring_tower"
-        window.generate_clicked()
+        window.add_to_project_clicked()
 
         assert suggested_paths == [str(tmp_path / "scoring_tower.3D")]
         assert added_objects[0][0] == tmp_path / "scoring_tower.3D"
@@ -163,6 +161,33 @@ def test_generator_uses_sg_create_uom_for_display_and_saving(
         assert "% coordinate_uom: meter" in text
         assert "c0: [<1, 0, 0>];" in text
         assert "d0: [<1, 2, 0>];" in text
+    finally:
+        window.close()
+
+
+def test_project_export_does_not_add_to_object_list(monkeypatch, qapp, tmp_path):
+    output_path = tmp_path / "export-only.3D"
+    added_objects = []
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog,
+        "getSaveFileName",
+        lambda *args: (str(output_path), "3D files (*.3D)"),
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args: None)
+
+    window = tso_generator.build_window(
+        project_templates={},
+        on_add_object=lambda path, parameters: added_objects.append(
+            (path, parameters)
+        ),
+        default_save_dir=tmp_path,
+        run_event_loop=False,
+    )
+    try:
+        window.generate_clicked()
+
+        assert output_path.is_file()
+        assert added_objects == []
     finally:
         window.close()
 

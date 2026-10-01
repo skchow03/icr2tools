@@ -1490,13 +1490,15 @@ def build_window(
                 self.tree_leaves_dark_picker,
             ]
 
-            generate_label = (
-                "Generate .3D and Add to SG CREATE Object List"
-                if on_add_object is not None
-                else "Generate .3D"
-            )
-            self.generate_btn = QtWidgets.QPushButton(generate_label)
+            self.generate_btn = QtWidgets.QPushButton("Export .3D file")
             self.generate_btn.clicked.connect(self.generate_clicked)
+            if on_add_object is not None:
+                self.add_to_project_btn = QtWidgets.QPushButton(
+                    "Add to Object List"
+                )
+                self.add_to_project_btn.clicked.connect(
+                    self.add_to_project_clicked
+                )
 
             distance_spins = [
                 self.width_spin, self.depth_spin, self.height_spin,
@@ -1591,7 +1593,11 @@ def build_window(
                 add_form_row(row, field_name, label, widget)
 
             action_row = len(row_specs)
-            layout.addWidget(self.generate_btn, action_row, 0, 1, 2)
+            if hasattr(self, "add_to_project_btn"):
+                layout.addWidget(self.generate_btn, action_row, 0)
+                layout.addWidget(self.add_to_project_btn, action_row, 1)
+            else:
+                layout.addWidget(self.generate_btn, action_row, 0, 1, 2)
 
             self.refresh_color_combos(defaults=(200, 201, 202, 203))
             if self.sunny_pcx_path:
@@ -2093,7 +2099,10 @@ def build_window(
                 QtWidgets.QMessageBox.warning(self, "Palette Load Error", str(exc))
 
         def generate_clicked(self):
-            self._generate_to_file(add_to_project=on_add_object is not None)
+            self._generate_to_file(add_to_project=False)
+
+        def add_to_project_clicked(self):
+            self._generate_to_file(add_to_project=True)
 
         def _generate_to_file(self, *, add_to_project):
             try:
