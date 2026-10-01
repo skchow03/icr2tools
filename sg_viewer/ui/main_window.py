@@ -463,6 +463,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_add_point_button.setCheckable(True)
         self._land_edit_point_button = QtWidgets.QPushButton("Edit Point")
         self._land_edit_point_button.setCheckable(True)
+        self._land_remove_point_button = QtWidgets.QPushButton("Remove points entry")
         self._land_polygon_fill_checkbox = QtWidgets.QCheckBox("Fill polygons")
         self._land_polygon_fill_checkbox.setChecked(True)
         self._dragging_land_point_row: int | None = None
@@ -1561,6 +1562,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_point_buttons = QtWidgets.QHBoxLayout()
         land_point_buttons.addWidget(self._land_add_point_button)
         land_point_buttons.addWidget(self._land_edit_point_button)
+        land_point_buttons.addWidget(self._land_remove_point_button)
         land_layout.addLayout(land_point_buttons)
         land_layout.addWidget(self._land_points_table)
         land_layout.addWidget(QtWidgets.QLabel("Polygons"))
@@ -1583,6 +1585,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_move_polygon_down_button.setToolTip(
             "Move the selected polygon row down one position."
         )
+        self._land_remove_point_button.setToolTip(
+            "Remove the selected point row."
+        )
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
         self._land_delete_polygon_button.clicked.connect(
             self._delete_selected_land_polygon_row
@@ -1598,6 +1603,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._land_edit_point_button.toggled.connect(
             lambda checked: self._on_land_point_mode_toggled("edit", checked)
+        )
+        self._land_remove_point_button.clicked.connect(
+            self._remove_selected_land_point_row
         )
         self._land_points_table.itemChanged.connect(
             self._on_land_points_table_item_changed
@@ -5001,6 +5009,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._sync_land_points_overlay()
         self._persist_selected_land_object()
 
+    def _remove_selected_land_point_row(self) -> None:
+        self._delete_land_point_row(self._land_points_table.currentRow())
+
     def _renumber_land_points_rows(self) -> None:
         for row in range(self._land_points_table.rowCount()):
             self._land_points_table.setItem(
@@ -5709,6 +5720,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         for button in (
             self._land_add_point_button,
             self._land_edit_point_button,
+            self._land_remove_point_button,
             self._land_add_polygon_button,
             self._land_delete_polygon_button,
             self._land_move_polygon_up_button,

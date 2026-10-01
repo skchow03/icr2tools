@@ -24,12 +24,14 @@ def test_land_point_and_polygon_buttons_require_object_selection(qapp):
         window.load_land_objects([])
         assert window._land_add_point_button.isEnabled() is False
         assert window._land_edit_point_button.isEnabled() is False
+        assert window._land_remove_point_button.isEnabled() is False
         assert window._land_add_polygon_button.isEnabled() is False
         assert window._land_delete_polygon_button.isEnabled() is False
 
         window.load_land_objects([{"name": "Object 1", "points": [], "polygons": []}])
         assert window._land_add_point_button.isEnabled() is True
         assert window._land_edit_point_button.isEnabled() is True
+        assert window._land_remove_point_button.isEnabled() is True
         assert window._land_add_polygon_button.isEnabled() is True
         assert window._land_delete_polygon_button.isEnabled() is True
 
@@ -37,8 +39,32 @@ def test_land_point_and_polygon_buttons_require_object_selection(qapp):
         window._load_selected_land_object()
         assert window._land_add_point_button.isEnabled() is False
         assert window._land_edit_point_button.isEnabled() is False
+        assert window._land_remove_point_button.isEnabled() is False
         assert window._land_add_polygon_button.isEnabled() is False
         assert window._land_delete_polygon_button.isEnabled() is False
+    finally:
+        window.close()
+
+
+def test_remove_points_entry_button_removes_selected_row(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [("0", "0", "0"), ("1", "2", "3")],
+                    "polygons": [],
+                }
+            ]
+        )
+        window._land_points_table.selectRow(0)
+
+        window._land_remove_point_button.click()
+
+        assert window._land_points_table.rowCount() == 1
+        assert window._land_points_table.item(0, 0).text() == "0"
+        assert window.serialize_land_objects()[0]["points"] == [("1", "2", "3")]
     finally:
         window.close()
 
