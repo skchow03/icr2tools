@@ -456,7 +456,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Double-click a Color cell to choose a SUNNY.PCX palette color."
         )
         self._land_add_polygon_button = QtWidgets.QPushButton("Add Polygon")
-        self._land_delete_polygon_button = QtWidgets.QPushButton("Delete Polygon")
+        self._land_remove_polygon_button = QtWidgets.QPushButton(
+            "Remove polygon entry"
+        )
         self._land_move_polygon_up_button = QtWidgets.QPushButton("Move Up")
         self._land_move_polygon_down_button = QtWidgets.QPushButton("Move Down")
         self._land_add_point_button = QtWidgets.QPushButton("Add Point")
@@ -1568,7 +1570,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         land_layout.addWidget(QtWidgets.QLabel("Polygons"))
         land_polygon_buttons = QtWidgets.QHBoxLayout()
         land_polygon_buttons.addWidget(self._land_add_polygon_button)
-        land_polygon_buttons.addWidget(self._land_delete_polygon_button)
+        land_polygon_buttons.addWidget(self._land_remove_polygon_button)
         land_polygon_buttons.addWidget(self._land_move_polygon_up_button)
         land_polygon_buttons.addWidget(self._land_move_polygon_down_button)
         land_layout.addLayout(land_polygon_buttons)
@@ -1578,7 +1580,9 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_add_polygon_button.setToolTip(
             "Add a polygon row. Enter point numbers separated by commas (example: 0, 1, 2, 3)."
         )
-        self._land_delete_polygon_button.setToolTip("Delete the selected polygon row.")
+        self._land_remove_polygon_button.setToolTip(
+            "Remove the selected polygon row."
+        )
         self._land_move_polygon_up_button.setToolTip(
             "Move the selected polygon row up one position."
         )
@@ -1589,8 +1593,8 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             "Remove the selected point row."
         )
         self._land_add_polygon_button.clicked.connect(self._add_land_polygon_row)
-        self._land_delete_polygon_button.clicked.connect(
-            self._delete_selected_land_polygon_row
+        self._land_remove_polygon_button.clicked.connect(
+            self._remove_selected_land_polygon_row
         )
         self._land_move_polygon_up_button.clicked.connect(
             lambda: self._move_selected_land_polygon_row(-1)
@@ -5407,7 +5411,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         self._land_polygons_table.editItem(self._land_polygons_table.item(row, 0))
         self._persist_selected_land_object()
 
-    def _delete_selected_land_polygon_row(self) -> None:
+    def _remove_selected_land_polygon_row(self) -> None:
         row = self._land_polygons_table.currentRow()
         if row < 0 or row >= self._land_polygons_table.rowCount():
             return
@@ -5722,7 +5726,7 @@ class SGViewerWindow(QtWidgets.QMainWindow):
             self._land_edit_point_button,
             self._land_remove_point_button,
             self._land_add_polygon_button,
-            self._land_delete_polygon_button,
+            self._land_remove_polygon_button,
             self._land_move_polygon_up_button,
             self._land_move_polygon_down_button,
             self._land_remove_object_button,
