@@ -26,14 +26,14 @@ def test_land_point_and_polygon_buttons_require_object_selection(qapp):
         assert window._land_edit_point_button.isEnabled() is False
         assert window._land_remove_point_button.isEnabled() is False
         assert window._land_add_polygon_button.isEnabled() is False
-        assert window._land_delete_polygon_button.isEnabled() is False
+        assert window._land_remove_polygon_button.isEnabled() is False
 
         window.load_land_objects([{"name": "Object 1", "points": [], "polygons": []}])
         assert window._land_add_point_button.isEnabled() is True
         assert window._land_edit_point_button.isEnabled() is True
         assert window._land_remove_point_button.isEnabled() is True
         assert window._land_add_polygon_button.isEnabled() is True
-        assert window._land_delete_polygon_button.isEnabled() is True
+        assert window._land_remove_polygon_button.isEnabled() is True
 
         window._land_objects_table.clearSelection()
         window._load_selected_land_object()
@@ -41,7 +41,7 @@ def test_land_point_and_polygon_buttons_require_object_selection(qapp):
         assert window._land_edit_point_button.isEnabled() is False
         assert window._land_remove_point_button.isEnabled() is False
         assert window._land_add_polygon_button.isEnabled() is False
-        assert window._land_delete_polygon_button.isEnabled() is False
+        assert window._land_remove_polygon_button.isEnabled() is False
     finally:
         window.close()
 
@@ -65,6 +65,36 @@ def test_remove_points_entry_button_removes_selected_row(qapp):
         assert window._land_points_table.rowCount() == 1
         assert window._land_points_table.item(0, 0).text() == "0"
         assert window.serialize_land_objects()[0]["points"] == [("1", "2", "3")]
+    finally:
+        window.close()
+
+
+def test_remove_polygon_entry_button_removes_selected_row(qapp):
+    window = SGViewerWindow()
+    try:
+        window.load_land_objects(
+            [
+                {
+                    "name": "Object 1",
+                    "points": [
+                        ("0", "0", "0"),
+                        ("1", "0", "0"),
+                        ("0", "1", "0"),
+                    ],
+                    "polygons": [("0,1,2", "1"), ("0,2,1", "2")],
+                }
+            ]
+        )
+        window._land_polygons_table.selectRow(0)
+
+        assert window._land_remove_polygon_button.text() == "Remove polygon entry"
+        window._land_remove_polygon_button.click()
+
+        assert window._land_polygons_table.rowCount() == 1
+        assert window._land_polygons_table.item(0, 0).text() == "0,2,1"
+        assert window.serialize_land_objects()[0]["polygons"] == [
+            ("0,2,1", "2", "Land", "0")
+        ]
     finally:
         window.close()
 
