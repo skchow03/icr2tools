@@ -6,7 +6,11 @@ pytest.importorskip("PyQt5")
 
 from PyQt5 import QtCore, QtWidgets
 
-from sg_viewer.io.track3d_parser import Track3DDetailList, Track3DObjectList
+from sg_viewer.io.track3d_parser import (
+    Track3DDetailList,
+    Track3DObjectList,
+    Track3DTopoList,
+)
 from sg_viewer.ui.tabs.tso_visibility_tab import TSOVisibilityTab
 
 
@@ -299,6 +303,47 @@ def test_refresh_from_track3d_rebuilds_lists_and_dlong_metadata(
     assert tab._subsection_dlong_ranges[(0, 0)] == (100, 180)
     assert tab._subsection_dlong_ranges[(0, 1)] == (180, 260)
     assert tab._detail_list_dlong_ranges[(0, 0, "H")] == (100, 180)
+
+
+def test_rebuild_list_dlongs_preserves_all_visibility_assignments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _app()
+    tab = TSOVisibilityTab()
+    tab.set_object_lists([Track3DObjectList("L", 0, 0, [91])])
+    tab.set_detail_lists([Track3DDetailList(0, 0, "H", [92])])
+    tab.topo_lists = [Track3DTopoList(0, 1, "R", "MED", [93])]
+    tab._subsection_dlong_ranges = {(0, 0): (0, 999)}
+    tab._detail_list_dlong_ranges = {(0, 0, "H"): (0, 999)}
+
+    path = tmp_path / "track.3D"
+    path.write_text(
+        "DetailList_0-0H: LIST { __TSO2 };\n"
+        "# Outputing section from dlong = 100 to dlong = 180\n"
+        "sec0_s0_HI: FACE DetailList_0-0H;\n"
+        "sec0_l0: LIST { DATA { 100, 140, 180 } };\n"
+        "sec0_l1: LIST { DATA { 180, 220, 260 } };\n",
+        encoding="utf-8",
+    )
+    tab.set_track3d_path_provider(lambda: path)
+    messages: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        QtWidgets.QMessageBox,
+        "information",
+        lambda _parent, title, text, *args, **kwargs: messages.append((title, text)),
+    )
+
+    tab.rebuild_list_dlongs_button.click()
+
+    assert tab.object_lists[0].tso_ids == [91]
+    assert tab.detail_lists[0].tso_ids == [92]
+    assert tab.topo_lists[0].tso_ids == [93]
+    assert tab._subsection_dlong_ranges == {
+        (0, 0): (100, 180),
+        (0, 1): (180, 260),
+    }
+    assert tab._detail_list_dlong_ranges == {(0, 0, "H"): (100, 180)}
+    assert messages and messages[0][0] == "Rebuild List DLONGs"
 
 
 def test_refresh_from_track3d_replaces_existing_detail_lists_with_empty_set(

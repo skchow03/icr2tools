@@ -677,6 +677,7 @@ class TSOVisibilityTab(QWidget):
         self.load_detail_lists_button = QPushButton("Load DetailLists from track.3D")
         self.load_topo_lists_button = QPushButton("Populate Topo Lists from track.3D")
         self.refresh_from_track3d_button = QPushButton("Refresh from .3D")
+        self.rebuild_list_dlongs_button = QPushButton("Rebuild List DLONGs")
         self.reconcile_button = QPushButton("Reconcile Project vs track.3D")
         self.save_to_track3d_button = QPushButton("Save ObjectLists to track.3D")
         self.save_detail_lists_to_track3d_button = QPushButton(
@@ -713,6 +714,11 @@ class TSOVisibilityTab(QWidget):
         self.refresh_from_track3d_button.setToolTip(
             "Re-read the configured track.3D file and rebuild all ObjectLists, "
             "DetailLists, and section/subsection DLONG ranges."
+        )
+        self.rebuild_list_dlongs_button.setToolTip(
+            "Re-read only the start/end DLONG ranges for ObjectLists, "
+            "DetailLists, and Topo Lists from the configured track.3D file. "
+            "Current list contents are not changed."
         )
         self.reconcile_button.setToolTip(
             "Compare current ObjectLists with another track.3D file and copy/add matching rows."
@@ -829,6 +835,7 @@ class TSOVisibilityTab(QWidget):
             self._on_save_topo_lists_to_track3d_requested
         )
         self.refresh_from_track3d_button.clicked.connect(self.refresh_from_track3d)
+        self.rebuild_list_dlongs_button.clicked.connect(self.rebuild_list_dlongs)
         self.add_tso_button.clicked.connect(self._on_add_tso_requested)
         self.add_manual_tso_button.clicked.connect(self._on_add_manual_tso_requested)
         self.add_object_list_button.clicked.connect(self._on_add_object_list_requested)
@@ -873,7 +880,8 @@ class TSOVisibilityTab(QWidget):
         file_group_layout.addWidget(self.refresh_from_track3d_button, 0, 2)
         file_group_layout.addWidget(self.load_topo_lists_button, 1, 0, 1, 2)
         file_group_layout.addWidget(self.save_topo_lists_to_track3d_button, 1, 2)
-        file_group_layout.addWidget(self.reconcile_button, 2, 0, 1, 3)
+        file_group_layout.addWidget(self.rebuild_list_dlongs_button, 2, 0, 1, 3)
+        file_group_layout.addWidget(self.reconcile_button, 3, 0, 1, 3)
         file_group.setLayout(file_group_layout)
         layout.addWidget(file_group)
 
@@ -1715,6 +1723,47 @@ class TSOVisibilityTab(QWidget):
         self._refresh_tso_filter_list()
         self.populate_table()
         self.objectListsSaved.emit()
+
+    def rebuild_list_dlongs(self) -> None:
+        """Refresh list highlighting ranges without replacing visibility lists."""
+        path = self._configured_track3d_path("Rebuild List DLONGs")
+        if not path:
+            return
+
+        section_rows = parse_track3d_section_dlongs(path)
+        if not section_rows:
+            QMessageBox.warning(
+                self,
+                "Rebuild List DLONGs",
+                "The configured track.3D file does not contain any section "
+                "ObjectLists/DATA rows.",
+            )
+            return
+
+        loaded_section_count = len({int(row.section) for row in section_rows})
+        if (
+            self._current_track_section_count is not None
+            and loaded_section_count != self._current_track_section_count
+        ):
+            QMessageBox.warning(
+                self,
+                "Rebuild List DLONGs",
+                "The configured track.3D file has a different number of sections "
+                "than the current track.\n\n"
+                f"Current track sections: {self._current_track_section_count}\n"
+                f"track.3D sections: {loaded_section_count}",
+            )
+            return
+
+        self.set_section_dlong_rows(section_rows)
+        self.set_detail_list_dlong_rows(parse_track3d_detail_list_dlong_ranges(path))
+        self._emit_selected_tsos()
+        QMessageBox.information(
+            self,
+            "Rebuild List DLONGs",
+            "Rebuilt start/end DLONG ranges for ObjectLists, DetailLists, and "
+            "Topo Lists. Current visibility assignments were not changed.",
+        )
 
     def load_file(self):
         path = self._configured_track3d_path("Load track.3D")
