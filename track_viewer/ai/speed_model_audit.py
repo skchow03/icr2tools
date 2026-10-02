@@ -86,13 +86,15 @@ def audit_paths(dlongs, baseline_xy, baseline_speeds, refined_xy, refined_speeds
         "violations_over_0_1_mph": int(len(violations)),
         "rows": rows,
         "traces": traces,
-        "note": "Lateral grip only; no combined acceleration/braking tire-grip constraint.",
+        "note": ("This audit checks instantaneous lateral corner-speed limits only. "
+                 "The separate combined-grip comparison checks acceleration "
+                 "and braking while cornering, when enabled."),
     }
 
 
 def format_audit(audit):
     lines = [
-        "SPEED MODEL AUDIT (Pathfinder vs Refinement)",
+        "LATERAL-GRIP COMPLIANCE AUDIT (Pathfinder vs Refinement)",
         f"Peak refined lateral acceleration: {audit['peak_refined_lateral_g']:.3f} g "
         f"at DLONG {audit['peak_refined_dlong']:.0f} "
         f"(LP index {audit['peak_refined_index']})",
