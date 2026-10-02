@@ -347,10 +347,14 @@ class SelectionManager(QtCore.QObject):
         for section in sections:
             if not section.polyline:
                 continue
-            if not points:
-                points.extend((float(x), float(y)) for x, y in section.polyline)
-                continue
-            points.extend((float(x), float(y)) for x, y in section.polyline[1:])
+            # Match rebuild_centerline_from_sections: only discard a shared
+            # endpoint when the two sections actually meet. Tiny SG coordinate
+            # gaps otherwise leave fewer points than DLONG samples and disable
+            # subsection highlighting for the entire track.
+            polyline = section.polyline
+            if points and points[-1] == polyline[0]:
+                polyline = polyline[1:]
+            points.extend((float(x), float(y)) for x, y in polyline)
         if len(points) != len(sampled_dlongs):
             return []
         return points
