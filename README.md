@@ -112,6 +112,13 @@ Texture Tools provides texture conversion and editing workflows in one desktop
 application. The Sunny Optimizer is included as a tab within Texture Tools rather
 than as a standalone command.
 
+In **Convert from source**, select a PMP sprite to adjust its alpha cutoff with
+the slider. Each sprite's percentage (default 33%) is saved automatically as
+`alpha_cutoff_percent` in the source folder's `sunny_optimizer.json`. **Apply
+cutoff to all PMPs** copies the current value to every PMP in that folder; you can
+then adjust individual sprites further. Preview and conversion use each sprite's
+saved cutoff.
+
 Launch the application with:
 
 ```bash

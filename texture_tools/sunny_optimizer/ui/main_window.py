@@ -857,25 +857,31 @@ class MainWindow(QtWidgets.QMainWindow):
         """Refresh the selected folder's image manifest and optimization values."""
         if self.loaded_texture_folder is None:
             return
-        existing_sprites: dict[str, bool] = {}
+        existing_images: dict[str, dict] = {}
+        existing_payload: dict = {}
         settings_path = self.loaded_texture_folder / self.FOLDER_SETTINGS_FILENAME
         try:
             existing_payload = json.loads(settings_path.read_text(encoding="utf-8"))
-            existing_sprites = {
-                str(item["file"]): bool(item["sprite"])
-                for item in existing_payload.get("images", [])
-                if "file" in item and "sprite" in item
-            }
+            if not isinstance(existing_payload, dict):
+                existing_payload = {}
+            images = existing_payload.get("images", [])
+            if isinstance(images, list):
+                existing_images = {
+                    str(item["file"]): item
+                    for item in images
+                    if isinstance(item, dict) and "file" in item
+                }
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             pass
         payload = {
+            **existing_payload,
             "sunny_palette": str(self._last_sunny_palette_path or ""),
             "images": [
                 {
+                    **existing_images.get(name, {}),
                     "file": name,
                     "budget": self.per_texture_budget[name],
                     "required": self.per_texture_required_unique_colors.get(name, 0),
-                    **({"sprite": existing_sprites[name]} if name in existing_sprites else {}),
                 }
                 for name in sorted(self.texture_images, key=str.lower)
             ]

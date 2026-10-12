@@ -104,6 +104,32 @@ def test_folder_manifest_restores_its_sunny_palette(qapp, tmp_path: Path) -> Non
     assert saved["sunny_palette"] == str(palette_path.resolve())
 
 
+def test_folder_manifest_preserves_conversion_cutoffs(qapp, tmp_path: Path, monkeypatch) -> None:
+    import json
+
+    monkeypatch.setattr(
+        "texture_tools.sunny_optimizer.ui.main_window.SunnyOptimizerSettings.default_path",
+        staticmethod(lambda: tmp_path / "settings.ini"),
+    )
+    _write_png(tmp_path / "a.png", (255, 0, 0))
+    manifest_path = tmp_path / MainWindow.FOLDER_SETTINGS_FILENAME
+    manifest_path.write_text(json.dumps({"images": [
+        {"file": "a.png", "sprite": True, "alpha_cutoff_percent": 65},
+    ]}), encoding="utf-8")
+    window = MainWindow()
+    try:
+        window._load_folder(tmp_path)
+        window.per_texture_budget["a.png"] = 23
+        window._persist_current_folder_budgets()
+        window.refresh_folder()
+        saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+        assert saved["images"] == [
+            {"file": "a.png", "sprite": True, "alpha_cutoff_percent": 65, "budget": 23, "required": 0},
+        ]
+    finally:
+        window.close()
+
+
 def test_optimize_palette_uses_resizable_splitter_and_preview_titles(qapp) -> None:
     _ = qapp
     window = MainWindow()

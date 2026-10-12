@@ -295,7 +295,7 @@ def _is_pmp_sprite(path: Path) -> bool:
             alpha = image.convert("RGBA").getchannel("A")
             alpha_counts = alpha.getcolors(256 * 256) or []
             transparent_pixels = sum(
-                count for value, count in alpha_counts if value < 255
+                count for count, value in alpha_counts if value < 255
             )
             return transparent_pixels * 10 >= 256 * 256
     except (OSError, ValueError):
@@ -513,11 +513,14 @@ class PreviewPane(QtWidgets.QGroupBox):
 class ConvertTexturesWidget(QtWidgets.QWidget):
     """Browse source textures and preview their sunny.pcx-paletted output."""
 
+    DEFAULT_ALPHA_CUTOFF_PERCENT = 33
+
     def __init__(self, parent: QtWidgets.QWidget | None = None) -> None:
         super().__init__(parent)
         self._source_folder: Path | None = None
         self._palette_path: Path | None = None
         self._sprite_flags: dict[str, bool] = {}
+        self._alpha_cutoffs: dict[str, int] = {}
 
         layout = QtWidgets.QHBoxLayout(self)
         _apply_panel_layout(layout)
@@ -561,18 +564,20 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         help_label.setWordWrap(True)
         actions_layout.addWidget(help_label)
         threshold_label = QtWidgets.QLabel(
-            "PMP textures: Treat alpha ≤ as transparent:"
+            "Current PMP: Treat alpha ≤ as transparent:"
         )
         threshold_label.setWordWrap(True)
         actions_layout.addWidget(threshold_label)
         threshold_row = QtWidgets.QHBoxLayout()
         self.alpha_threshold_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal)
         self.alpha_threshold_slider.setRange(0, 100)
-        self.alpha_threshold_slider.setValue(33)
+        self.alpha_threshold_slider.setValue(self.DEFAULT_ALPHA_CUTOFF_PERCENT)
+        self.alpha_threshold_slider.setEnabled(False)
         self.alpha_threshold_slider.setTickPosition(QtWidgets.QSlider.TicksBelow)
         self.alpha_threshold_slider.setTickInterval(10)
         self.alpha_threshold_slider.setToolTip(
-            "For PMP textures, pixels at or below this alpha percentage are transparent."
+            "For the current PMP, pixels at or below this alpha percentage are transparent. "
+            "Changes are saved automatically in the source folder."
         )
         self.alpha_threshold_value_label = QtWidgets.QLabel()
         self.alpha_threshold_value_label.setMinimumWidth(42)
@@ -583,7 +588,20 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         threshold_row.addWidget(self.alpha_threshold_slider, 1)
         threshold_row.addWidget(self.alpha_threshold_value_label)
         actions_layout.addLayout(threshold_row)
-        self._alpha_threshold_changed(self.alpha_threshold_slider.value())
+        self.alpha_threshold_value_label.setText(f"{self.alpha_threshold_slider.value()}%")
+        self.apply_alpha_cutoff_all_btn = QtWidgets.QPushButton("Apply cutoff to all PMPs")
+        self.apply_alpha_cutoff_all_btn.setEnabled(False)
+        self.apply_alpha_cutoff_all_btn.setToolTip(
+            "Copy the current PMP's cutoff to every PMP in this folder. "
+            "You can still adjust each PMP individually afterward."
+        )
+        self.apply_alpha_cutoff_all_btn.clicked.connect(self._apply_alpha_cutoff_to_all)
+        actions_layout.addWidget(self.apply_alpha_cutoff_all_btn)
+        self.cutoff_settings_label = QtWidgets.QLabel(
+            "PMP cutoffs are saved automatically in sunny_optimizer.json in the source folder."
+        )
+        self.cutoff_settings_label.setWordWrap(True)
+        actions_layout.addWidget(self.cutoff_settings_label)
         actions_layout.addStretch(1)
         self.convert_selected_btn = QtWidgets.QPushButton("Convert Selected")
         self.convert_all_btn = QtWidgets.QPushButton("Convert All")
@@ -599,11 +617,39 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
 
     def _alpha_threshold_changed(self, percentage: int) -> None:
         self.alpha_threshold_value_label.setText(f"{percentage}%")
+        item = self.file_list.currentItem()
+        if item is not None:
+            name = Path(item.data(QtCore.Qt.UserRole)).name
+            if self._sprite_flags.get(name, False):
+                self._alpha_cutoffs[name] = percentage
+                self._write_texture_settings()
         self._refresh_preview()
 
-    def _alpha_threshold(self) -> int:
-        """Return the slider percentage converted to an 8-bit alpha value."""
-        return round(self.alpha_threshold_slider.value() * 255 / 100)
+    def _alpha_threshold(self, name: str) -> int:
+        """Return this texture's saved percentage as an 8-bit alpha value."""
+        return round(self._alpha_cutoffs.get(name, self.DEFAULT_ALPHA_CUTOFF_PERCENT) * 255 / 100)
+
+    def _sync_alpha_cutoff_controls(self) -> None:
+        item = self.file_list.currentItem()
+        name = Path(item.data(QtCore.Qt.UserRole)).name if item else ""
+        is_sprite = self._sprite_flags.get(name, False)
+        percentage = self._alpha_cutoffs.get(name, self.DEFAULT_ALPHA_CUTOFF_PERCENT)
+        self.alpha_threshold_slider.blockSignals(True)
+        self.alpha_threshold_slider.setValue(percentage)
+        self.alpha_threshold_slider.blockSignals(False)
+        self.alpha_threshold_slider.setEnabled(is_sprite)
+        self.alpha_threshold_value_label.setText(f"{percentage}%")
+        self.apply_alpha_cutoff_all_btn.setEnabled(is_sprite)
+
+    def _apply_alpha_cutoff_to_all(self) -> None:
+        if not self.apply_alpha_cutoff_all_btn.isEnabled():
+            return
+        percentage = self.alpha_threshold_slider.value()
+        for name, is_sprite in self._sprite_flags.items():
+            if is_sprite:
+                self._alpha_cutoffs[name] = percentage
+        self._write_texture_settings()
+        self._refresh_preview()
 
     def set_source_folder(self, folder: str | Path) -> None:
         self._source_folder = Path(folder)
@@ -611,11 +657,20 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         current_item = self.file_list.currentItem()
         current_name = Path(current_item.data(QtCore.Qt.UserRole)).name if current_item else None
         files = _collect_convert_texture_inputs(self._source_folder)
-        saved_flags = self._read_sprite_flags()
+        saved_settings = self._read_texture_settings()
         self._sprite_flags = {
-            path.name: saved_flags.get(path.name, _is_pmp_sprite(path)) for path in files
+            path.name: bool(saved_settings[path.name]["sprite"])
+            if "sprite" in saved_settings.get(path.name, {}) else _is_pmp_sprite(path)
+            for path in files
         }
-        self._write_sprite_flags()
+        self._alpha_cutoffs = {}
+        for path in files:
+            percentage = saved_settings.get(path.name, {}).get("alpha_cutoff_percent")
+            self._alpha_cutoffs[path.name] = (
+                percentage if type(percentage) is int and 0 <= percentage <= 100
+                else self.DEFAULT_ALPHA_CUTOFF_PERCENT
+            )
+        self._write_texture_settings()
         self.file_list.clear()
         for path in files:
             item = QtWidgets.QListWidgetItem(self._display_name(path.name))
@@ -630,26 +685,29 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
             self.file_list.setCurrentItem(matches[0] if matches else self.file_list.item(0))
         else:
             self._sync_sprite_button()
+            self._sync_alpha_cutoff_controls()
             self.preview_pane.clear_preview("No .png, .bmp, or .pcx files in the selected folder.")
 
     def _display_name(self, name: str) -> str:
         return f"{name} (PMP)" if self._sprite_flags.get(name, False) else name
 
-    def _read_sprite_flags(self) -> dict[str, bool]:
+    def _read_texture_settings(self) -> dict[str, dict]:
         if self._source_folder is None:
             return {}
         settings_path = self._source_folder / SunnyOptimizerWindow.FOLDER_SETTINGS_FILENAME
         try:
             payload = json.loads(settings_path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or not isinstance(payload.get("images", []), list):
+                return {}
             return {
-                str(item["file"]): bool(item["sprite"])
+                str(item["file"]): item
                 for item in payload.get("images", [])
-                if "file" in item and "sprite" in item
+                if isinstance(item, dict) and "file" in item
             }
         except (OSError, ValueError, TypeError, json.JSONDecodeError):
             return {}
 
-    def _write_sprite_flags(self) -> None:
+    def _write_texture_settings(self) -> None:
         if self._source_folder is None:
             return
         settings_path = self._source_folder / SunnyOptimizerWindow.FOLDER_SETTINGS_FILENAME
@@ -662,16 +720,24 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
             if not isinstance(payload, dict):
                 payload = {}
             images = payload.get("images", [])
+            if not isinstance(images, list):
+                images = []
             by_name = {
                 str(item["file"]): dict(item)
                 for item in images if isinstance(item, dict) and "file" in item
             }
             for name, is_sprite in self._sprite_flags.items():
-                by_name.setdefault(name, {"file": name})["sprite"] = is_sprite
+                entry = by_name.setdefault(name, {"file": name})
+                entry["sprite"] = is_sprite
+                if is_sprite or "alpha_cutoff_percent" in entry:
+                    entry["alpha_cutoff_percent"] = self._alpha_cutoffs[name]
             payload["images"] = [by_name[name] for name in sorted(by_name, key=str.lower)]
             settings_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
-        except (OSError, ValueError, TypeError, json.JSONDecodeError):
-            return
+            self.cutoff_settings_label.setText(
+                "PMP cutoffs are saved automatically in sunny_optimizer.json in the source folder."
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            self.cutoff_settings_label.setText(f"Could not save texture settings: {exc}")
 
     def _set_selected_sprite(self, checked: bool) -> None:
         item = self.file_list.currentItem()
@@ -680,7 +746,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
         name = Path(item.data(QtCore.Qt.UserRole)).name
         self._sprite_flags[name] = checked
         item.setText(self._display_name(name))
-        self._write_sprite_flags()
+        self._write_texture_settings()
         self._refresh_preview()
 
     def _sync_sprite_button(self) -> None:
@@ -776,7 +842,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                         output_path,
                         size_field=0,
                         palette_path=self._palette_path,
-                        alpha_transparent_threshold=self._alpha_threshold(),
+                        alpha_transparent_threshold=self._alpha_threshold(source_path.name),
                     )
                 else:
                     with Image.open(source_path) as source:
@@ -799,6 +865,7 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
 
     def _refresh_preview(self, *_args) -> None:
         self._sync_sprite_button()
+        self._sync_alpha_cutoff_controls()
         item = self.file_list.currentItem()
         if item is None:
             self.preview_pane.clear_preview("Select a source texture to preview.")
@@ -820,13 +887,13 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
                 preview = output.convert("RGBA")
                 is_sprite = self._sprite_flags.get(source_path.name, False)
                 if is_sprite:
-                    threshold = self._alpha_threshold()
+                    threshold = self._alpha_threshold(source_path.name)
                     alpha = source_rgba.getchannel("A").point(
                         lambda value: 0 if value <= threshold else 255
                     )
                     preview.putalpha(alpha)
             transparency_caption = (
-                f" • PMP alpha ≤ {self.alpha_threshold_slider.value()}% transparent"
+                f" • PMP alpha ≤ {self._alpha_cutoffs[source_path.name]}% transparent"
                 if is_sprite
                 else ""
             )
