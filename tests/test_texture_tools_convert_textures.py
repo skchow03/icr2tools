@@ -295,6 +295,181 @@ def test_sprite_preview_updates_for_alpha_threshold(qapp, tmp_path: Path) -> Non
         widget.close()
 
 
+def test_cutoffs_follow_current_pmp_and_persist_across_reopening(qapp, tmp_path: Path) -> None:
+    for name in ("a.png", "b.png"):
+        Image.new("RGBA", (2, 1), (255, 0, 0, 128)).save(tmp_path / name)
+    manifest_path = tmp_path / "sunny_optimizer.json"
+    manifest_path.write_text(json.dumps({
+        "sunny_palette": "remembered.pcx",
+        "images": [
+            {"file": "a.png", "sprite": True, "budget": 12, "required": 2},
+            {"file": "b.png", "sprite": True},
+        ],
+    }), encoding="utf-8")
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        widget.alpha_threshold_slider.setValue(20)
+        widget.file_list.setCurrentRow(1)
+        assert widget.alpha_threshold_slider.value() == 33
+        widget.alpha_threshold_slider.setValue(70)
+        widget.file_list.setCurrentRow(0)
+        assert widget.alpha_threshold_slider.value() == 20
+        assert widget.alpha_threshold_value_label.text() == "20%"
+        widget.set_source_folder(tmp_path)
+        assert widget.alpha_threshold_slider.value() == 20
+    finally:
+        widget.close()
+
+    saved = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert saved["sunny_palette"] == "remembered.pcx"
+    assert saved["images"] == [
+        {"file": "a.png", "sprite": True, "budget": 12, "required": 2, "alpha_cutoff_percent": 20},
+        {"file": "b.png", "sprite": True, "alpha_cutoff_percent": 70},
+    ]
+    reopened = ConvertTexturesWidget()
+    try:
+        reopened.set_source_folder(tmp_path)
+        assert reopened.alpha_threshold_slider.value() == 20
+        reopened.file_list.setCurrentRow(1)
+        assert reopened.alpha_threshold_slider.value() == 70
+    finally:
+        reopened.close()
+
+
+def test_apply_cutoff_to_all_pmps_allows_later_individual_edits(qapp, tmp_path: Path) -> None:
+    for name in ("a.png", "b.png", "track.png"):
+        Image.new("RGBA", (2, 1), (255, 0, 0, 128)).save(tmp_path / name)
+    manifest_path = tmp_path / "sunny_optimizer.json"
+    manifest_path.write_text(json.dumps({"images": [
+        {"file": "a.png", "sprite": True},
+        {"file": "b.png", "sprite": True},
+        {"file": "track.png", "sprite": False, "alpha_cutoff_percent": 15},
+    ]}), encoding="utf-8")
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        widget.alpha_threshold_slider.setValue(60)
+        widget.apply_alpha_cutoff_all_btn.click()
+        widget.file_list.setCurrentRow(1)
+        assert widget.alpha_threshold_slider.value() == 60
+        widget.alpha_threshold_slider.setValue(40)
+        widget.file_list.setCurrentRow(0)
+        assert widget.alpha_threshold_slider.value() == 60
+        widget.file_list.setCurrentRow(2)
+        assert not widget.alpha_threshold_slider.isEnabled()
+        assert not widget.apply_alpha_cutoff_all_btn.isEnabled()
+        widget.sprite_button.click()
+        assert widget.alpha_threshold_slider.isEnabled()
+        assert widget.alpha_threshold_slider.value() == 15
+        widget.sprite_button.click()
+        cutoffs = {
+            item["file"]: item["alpha_cutoff_percent"]
+            for item in json.loads(manifest_path.read_text(encoding="utf-8"))["images"]
+        }
+        assert cutoffs == {"a.png": 60, "b.png": 40, "track.png": 15}
+    finally:
+        widget.close()
+
+
+@pytest.mark.parametrize("action", ["_convert_selected", "_convert_all"])
+def test_preview_and_conversion_use_each_pmps_saved_cutoff(
+    qapp, tmp_path: Path, monkeypatch, action: str
+) -> None:
+    source_dir = tmp_path / "source"
+    output_dir = tmp_path / "output"
+    source_dir.mkdir()
+    output_dir.mkdir()
+    for name in ("a.png", "b.png"):
+        sprite = Image.new("RGBA", (2, 1))
+        sprite.putdata(((255, 0, 0, 128), (0, 0, 255, 255)))
+        sprite.save(source_dir / name)
+    (source_dir / "sunny_optimizer.json").write_text(json.dumps({"images": [
+        {"file": "a.png", "sprite": True, "alpha_cutoff_percent": 50},
+        {"file": "b.png", "sprite": True, "alpha_cutoff_percent": 49},
+    ]}), encoding="utf-8")
+    palette_path = tmp_path / "sunny.pcx"
+    _save_palette(palette_path)
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *_args: None)
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(source_dir)
+        widget.set_palette(palette_path)
+        widget.set_output_folder(output_dir)
+        assert widget.preview_pane._pixmap_item.pixmap().toImage().pixelColor(0, 0).alpha() == 0
+        widget.file_list.setCurrentRow(1)
+        assert widget.preview_pane._pixmap_item.pixmap().toImage().pixelColor(0, 0).alpha() == 255
+        # Leave b.png current: a.png must still be converted with its own cutoff.
+        widget.file_list.selectAll()
+        getattr(widget, action)()
+        from texture_tools.pmp_to_png import pmp_to_image
+
+        for name, expected_alpha in (("a.pmp", 0), ("b.pmp", 255)):
+            exported = pmp_to_image(output_dir / name, palette_path)
+            assert exported.getpixel((0, 0))[3] == expected_alpha
+            assert exported.getpixel((1, 0))[3] == 255
+    finally:
+        widget.close()
+
+
+@pytest.mark.parametrize("saved_cutoff,expected", [
+    (0, 0), (100, 100), (-1, 33), (101, 33), ("bad", 33), (None, 33), (True, 33),
+])
+def test_saved_cutoff_validation(qapp, tmp_path: Path, saved_cutoff, expected: int) -> None:
+    Image.new("RGBA", (2, 1), (255, 0, 0, 128)).save(tmp_path / "sprite.png")
+    (tmp_path / "sunny_optimizer.json").write_text(json.dumps({"images": [
+        None, {"file": "sprite.png", "sprite": True, "alpha_cutoff_percent": saved_cutoff},
+    ]}), encoding="utf-8")
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        assert widget.alpha_threshold_slider.value() == expected
+    finally:
+        widget.close()
+
+
+def test_cutoffs_are_scoped_to_source_folder(qapp, tmp_path: Path) -> None:
+    for folder in (tmp_path / "first", tmp_path / "second", tmp_path / "empty"):
+        folder.mkdir()
+    for folder in (tmp_path / "first", tmp_path / "second"):
+        Image.new("RGBA", (256, 256), (255, 0, 0, 0)).save(folder / "sprite.png")
+    widget = ConvertTexturesWidget()
+    try:
+        assert not widget.alpha_threshold_slider.isEnabled()
+        widget.set_source_folder(tmp_path / "first")
+        widget.alpha_threshold_slider.setValue(90)
+        widget.set_source_folder(tmp_path / "second")
+        assert widget.alpha_threshold_slider.value() == 33
+        widget.set_source_folder(tmp_path / "first")
+        assert widget.alpha_threshold_slider.value() == 90
+        widget.set_source_folder(tmp_path / "empty")
+        assert not widget.alpha_threshold_slider.isEnabled()
+        assert not widget.apply_alpha_cutoff_all_btn.isEnabled()
+    finally:
+        widget.close()
+
+
+def test_cutoff_save_failure_is_visible_and_keeps_the_current_value(
+    qapp, tmp_path: Path, monkeypatch
+) -> None:
+    Image.new("RGBA", (2, 1), (255, 0, 0, 128)).save(tmp_path / "sprite.png")
+    widget = ConvertTexturesWidget()
+    try:
+        widget.set_source_folder(tmp_path)
+        widget.sprite_button.click()
+
+        def fail_write(*_args, **_kwargs):
+            raise OSError("folder is read-only")
+
+        monkeypatch.setattr(Path, "write_text", fail_write)
+        widget.alpha_threshold_slider.setValue(60)
+        assert widget.alpha_threshold_slider.value() == 60
+        assert "Could not save texture settings" in widget.cutoff_settings_label.text()
+        assert "folder is read-only" in widget.cutoff_settings_label.text()
+    finally:
+        widget.close()
+
+
 def test_conversion_rejects_invalid_output_folder(qapp, tmp_path: Path, monkeypatch) -> None:
     _ = qapp
     Image.new("RGB", (1, 1), "blue").save(tmp_path / "track.png")
