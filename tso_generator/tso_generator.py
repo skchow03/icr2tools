@@ -79,7 +79,21 @@ TEMPLATE_FIELDS = (
     "grandstand_crowd_ul_v",
     "grandstand_crowd_lr_u",
     "grandstand_crowd_lr_v",
+    "grandstand_front_color",
+    "grandstand_sides_color",
+    "grandstand_back_color",
+    "grandstand_crowd_color",
+    "grandstand_bottom_color",
 )
+
+GRANDSTAND_FACE_COLOR_FIELDS = {
+    "seatFront": ("grandstand_front_color", "side_color_bright"),
+    "seatLs": ("grandstand_sides_color", "side_color_bright"),
+    "seatRs": ("grandstand_sides_color", "side_color_bright"),
+    "seatBack": ("grandstand_back_color", "roof_color_bright"),
+    "seatB": ("grandstand_crowd_color", "roof_color_bright"),
+    "seatD": ("grandstand_bottom_color", "roof_color_dark"),
+}
 
 UOM_LABELS = {
     "500ths": "500ths of an inch",
@@ -723,6 +737,18 @@ def generate_building(
 # .3D writer
 # ------------------------------------------------------------
 
+def grandstand_color_for_face(name, parameters):
+    """Resolve grandstand palette indices, preserving legacy object colors."""
+    if name.startswith("seatB_"):
+        name = "seatB"
+    field, legacy_field = GRANDSTAND_FACE_COLOR_FIELDS[name]
+    if name == "seatD" and parameters.get("roof_type") == "flat":
+        legacy_field = "roof_color_bright"
+    legacy_default = int_or_default(parameters.get("roof_color_bright"), 0) if name == "seatD" else 0
+    fallback = int_or_default(parameters.get(legacy_field), legacy_default)
+    return int_or_default(parameters.get(field), fallback)
+
+
 def write_3d(path, verts, faces, parameters):
     roof_bright = int(parameters.get("roof_color_bright", 0))
     roof_dark = int(parameters.get("roof_color_dark", roof_bright))
@@ -758,6 +784,8 @@ def write_3d(path, verts, faces, parameters):
         roof_dark = roof_bright
 
     def color_for_face(name):
+        if building_shape == "grandstand":
+            return grandstand_color_for_face(name, parameters)
         if building_shape == "tree":
             if name.startswith("trunkB"):
                 return tree_trunk_color_bright
@@ -862,6 +890,11 @@ def write_3d(path, verts, faces, parameters):
                     "grandstand_crowd_ul_v",
                     "grandstand_crowd_lr_u",
                     "grandstand_crowd_lr_v",
+                    "grandstand_front_color",
+                    "grandstand_sides_color",
+                    "grandstand_back_color",
+                    "grandstand_crowd_color",
+                    "grandstand_bottom_color",
                     "roof_color_bright",
                     "roof_color_dark",
                     "side_color_bright",
@@ -1562,6 +1595,11 @@ def build_window(
             self.tree_trunk_dark_picker = PaletteIndexPicker(self, self.palette, 97)
             self.tree_leaves_bright_picker = PaletteIndexPicker(self, self.palette, 120)
             self.tree_leaves_dark_picker = PaletteIndexPicker(self, self.palette, 121)
+            self.grandstand_front_picker = PaletteIndexPicker(self, self.palette, 202)
+            self.grandstand_sides_picker = PaletteIndexPicker(self, self.palette, 202)
+            self.grandstand_back_picker = PaletteIndexPicker(self, self.palette, 200)
+            self.grandstand_crowd_picker = PaletteIndexPicker(self, self.palette, 200)
+            self.grandstand_bottom_picker = PaletteIndexPicker(self, self.palette, 201)
             self.color_pickers = [
                 self.roof_bright_picker,
                 self.roof_dark_picker,
@@ -1571,6 +1609,11 @@ def build_window(
                 self.tree_trunk_dark_picker,
                 self.tree_leaves_bright_picker,
                 self.tree_leaves_dark_picker,
+                self.grandstand_front_picker,
+                self.grandstand_sides_picker,
+                self.grandstand_back_picker,
+                self.grandstand_crowd_picker,
+                self.grandstand_bottom_picker,
             ]
 
             self.generate_btn = QtWidgets.QPushButton("Export .3D file")
@@ -1656,6 +1699,11 @@ def build_window(
                 ("grandstand_crowd_mip", "Crowd MIP Filename", self.grandstand_crowd_mip_edit),
                 ("grandstand_crowd_ul", "Crowd Upper Left (U, V)", self.grandstand_crowd_ul_widget),
                 ("grandstand_crowd_lr", "Crowd Lower Right (U, V)", self.grandstand_crowd_lr_widget),
+                ("grandstand_front_color", "Front Color", self.grandstand_front_picker),
+                ("grandstand_sides_color", "Sides Color", self.grandstand_sides_picker),
+                ("grandstand_back_color", "Back Color", self.grandstand_back_picker),
+                ("grandstand_crowd_color", "Crowd Color", self.grandstand_crowd_picker),
+                ("grandstand_bottom_color", "Underside Color", self.grandstand_bottom_picker),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -1757,7 +1805,16 @@ def build_window(
             )
 
         def _preview_color_for_face(self, name, values):
-            if name.startswith("trunk"):
+            if values["building_shape"] == "grandstand":
+                index = grandstand_color_for_face(name, values)
+                legacy_name = "seatB" if name.startswith("seatB_") else name
+                legacy_field = GRANDSTAND_FACE_COLOR_FIELDS[legacy_name][1]
+                fallback = {
+                    "roof_color_bright": (196, 116, 72),
+                    "roof_color_dark": (125, 69, 52),
+                    "side_color_bright": (125, 158, 188),
+                }[legacy_field]
+            elif name.startswith("trunk"):
                 color_key = "tree_trunk_color_bright" if name.startswith("trunkB") else "tree_trunk_color_dark"
                 fallback = (126, 83, 50) if name.startswith("trunkB") else (82, 52, 35)
             elif name.startswith("leaf"):
@@ -1771,7 +1828,8 @@ def build_window(
                 color_key, fallback = "side_color_dark", (84, 111, 139)
             else:
                 color_key, fallback = "side_color_bright", (125, 158, 188)
-            index = values[color_key]
+            if values["building_shape"] != "grandstand":
+                index = values[color_key]
             color = self.palette[index] if 0 <= index < len(self.palette) else fallback
             # The initial placeholder palette is all black. Keep the preview
             # readable until the user selects sunny.pcx.
@@ -1866,6 +1924,12 @@ def build_window(
             self._set_row_visible("grandstand_crowd_mip", is_grandstand)
             self._set_row_visible("grandstand_crowd_ul", is_grandstand)
             self._set_row_visible("grandstand_crowd_lr", is_grandstand)
+            for field in (
+                "grandstand_front_color", "grandstand_sides_color",
+                "grandstand_back_color", "grandstand_crowd_color",
+                "grandstand_bottom_color",
+            ):
+                self._set_row_visible(field, is_grandstand)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -1923,6 +1987,11 @@ def build_window(
                 "grandstand_crowd_ul_v": self.grandstand_crowd_ul_v_spin.value(),
                 "grandstand_crowd_lr_u": self.grandstand_crowd_lr_u_spin.value(),
                 "grandstand_crowd_lr_v": self.grandstand_crowd_lr_v_spin.value(),
+                "grandstand_front_color": self.grandstand_front_picker.color_index(),
+                "grandstand_sides_color": self.grandstand_sides_picker.color_index(),
+                "grandstand_back_color": self.grandstand_back_picker.color_index(),
+                "grandstand_crowd_color": self.grandstand_crowd_picker.color_index(),
+                "grandstand_bottom_color": self.grandstand_bottom_picker.color_index(),
                 "tree_trunk_width": canonical(self.tree_trunk_width_spin),
                 "tree_leaf_base_height": canonical(self.tree_leaf_base_height_spin),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -1992,6 +2061,14 @@ def build_window(
             self.roof_dark_picker.set_color_index(int_or_default(values.get("roof_color_dark"), 0))
             self.side_bright_picker.set_color_index(int_or_default(values.get("side_color_bright"), 0))
             self.side_dark_picker.set_color_index(int_or_default(values.get("side_color_dark"), 0))
+            for face, picker in (
+                ("seatFront", self.grandstand_front_picker),
+                ("seatLs", self.grandstand_sides_picker),
+                ("seatBack", self.grandstand_back_picker),
+                ("seatB", self.grandstand_crowd_picker),
+                ("seatD", self.grandstand_bottom_picker),
+            ):
+                picker.set_color_index(grandstand_color_for_face(face, values))
             tree_trunk_bright = int_or_default(values.get("tree_trunk_color_bright", values.get("tree_trunk_color")), 0)
             tree_trunk_dark = int_or_default(values.get("tree_trunk_color_dark"), tree_trunk_bright)
             tree_leaves_bright = int_or_default(values.get("tree_leaves_color_bright", values.get("tree_leaves_color")), 0)
@@ -2191,10 +2268,11 @@ def build_window(
                 })
 
         def refresh_color_combos(self, defaults=None):
-            defaults = defaults or (0, 1, 2, 3, 96, 97, 120, 121)
-            for picker, selected in zip(self.color_pickers, defaults):
+            defaults = defaults or (0, 1, 2, 3, 96, 97, 120, 121, 202, 202, 200, 200, 201)
+            for i, picker in enumerate(self.color_pickers):
                 picker.set_palette(self.palette)
-                picker.set_color_index(int(selected))
+                if i < len(defaults):
+                    picker.set_color_index(int(defaults[i]))
 
         def try_load_palette(self, path: str, preserve_selection: bool):
             selections = [picker.color_index() for picker in self.color_pickers]

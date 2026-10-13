@@ -1132,3 +1132,46 @@ def test_grandstand_rejects_mip_names_that_break_3d_syntax(tmp_path, mip):
     with pytest.raises(ValueError, match="Crowd MIP filename"):
         write_3d(out, verts, faces, {"building_shape": "grandstand", "grandstand_crowd_mip": mip})
     assert not out.exists()
+
+
+@pytest.mark.parametrize("pieces", [1, 3])
+@pytest.mark.parametrize("mip", ["", "crowd"])
+def test_grandstand_exports_independent_polygon_colors(tmp_path, pieces, mip):
+    verts, faces = generate_grandstand(100, 30, 16, 3, pieces)
+    params = _base_parameters()
+    params.update(
+        building_shape="grandstand", roof_type="none",
+        grandstand_crowd_mip=mip, grandstand_front_color=11,
+        grandstand_sides_color=22, grandstand_back_color=33,
+        grandstand_crowd_color=0, grandstand_bottom_color=55,
+    )
+    out = tmp_path / "grandstand.3D"
+    write_3d(out, verts, faces, params)
+    text = out.read_text()
+    assert "seatFront: POLY <11>" in text
+    assert "seatLs: POLY <22>" in text
+    assert "seatRs: POLY <22>" in text
+    assert "seatBack: POLY <33>" in text
+    assert "seatD: POLY <55>" in text
+    for name, _vs in faces[:pieces]:
+        prefix = 'MATERIAL MIP="crowd", GROUP=3, POLY [T]' if mip else "POLY"
+        assert f"{name}: {prefix} <0>" in text
+    for part, color in (("front", 11), ("sides", 22), ("back", 33), ("crowd", 0), ("bottom", 55)):
+        assert f"% grandstand_{part}_color: {color}" in text
+
+
+def test_grandstand_empty_template_colors_preserve_legacy_export(tmp_path):
+    verts, faces = generate_grandstand(100, 30, 16, 3, 3)
+    params = _base_parameters()
+    params.update(building_shape="grandstand", roof_type="none")
+    for part in ("front", "sides", "back", "crowd", "bottom"):
+        params[f"grandstand_{part}_color"] = ""
+    out = tmp_path / "grandstand.3D"
+    write_3d(out, verts, faces, params)
+    text = out.read_text()
+    assert "seatFront: POLY <202>" in text
+    assert "seatLs: POLY <202>" in text
+    assert "seatRs: POLY <202>" in text
+    assert "seatBack: POLY <200>" in text
+    assert "seatD: POLY <201>" in text
+    assert all(f"seatB_{i}: POLY <200>" in text for i in (1, 2, 3))

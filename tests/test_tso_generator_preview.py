@@ -96,6 +96,64 @@ def test_generator_window_has_live_3d_preview(monkeypatch, qapp):
         window.close()
 
 
+def test_grandstand_colors_use_palette_preview_save_and_export(monkeypatch, qapp, tmp_path):
+    saved_objects = []
+    output_path = tmp_path / "grandstand.3D"
+    palette_path = tmp_path / "SUNNY.PCX"
+    palette = [(i, i, 255 - i) for i in range(256)]
+    palette_path.write_bytes(b"pcx data\x0c" + bytes(channel for rgb in palette for channel in rgb))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName", lambda *args: (str(output_path), "3D files (*.3D)"))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args: None)
+    window = tso_generator.build_window(
+        project_templates={}, project_palette_path=palette_path, run_event_loop=False,
+        on_templates_changed=lambda objects: saved_objects.append(objects),
+    )
+    parts = {"front": 11, "sides": 22, "back": 33, "crowd": 44, "bottom": 55}
+    try:
+        for part in parts:
+            picker = getattr(window, f"grandstand_{part}_picker")
+            assert picker.isHidden()
+            assert picker._palette == palette
+        window.shape_combo.setCurrentText("grandstand")
+        window.grandstand_crowd_pieces_spin.setValue(3)
+        for part, color in parts.items():
+            picker = getattr(window, f"grandstand_{part}_picker")
+            assert not picker.isHidden()
+            picker.set_color_index(color)
+        assert window.roof_bright_picker.isHidden()
+        window.refresh_preview()
+        face_colors = window.preview._face_colors
+        for face, index in {"seatFront": 11, "seatLs": 22, "seatRs": 22, "seatBack": 33, "seatD": 55}.items():
+            assert face_colors[face] == palette[index]
+        assert all(face_colors[f"seatB_{i}"] == palette[44] for i in (1, 2, 3))
+        window.generate_clicked()
+        text = output_path.read_text()
+        assert "seatBack: POLY <33>" in text
+        assert text.count('MATERIAL MIP="crowd", GROUP=3, POLY [T] <44>') == 3
+        saved = saved_objects[-1]["grandstand"]
+        assert all(saved[f"grandstand_{part}_color"] == str(color) for part, color in parts.items())
+        legacy = dict(saved)
+        for part in parts:
+            legacy[f"grandstand_{part}_color"] = ""
+        window.apply_values(legacy)
+        assert window.grandstand_front_picker.color_index() == 202
+        assert window.grandstand_sides_picker.color_index() == 202
+        assert window.grandstand_back_picker.color_index() == 200
+        assert window.grandstand_crowd_picker.color_index() == 200
+        assert window.grandstand_bottom_picker.color_index() == 201
+        window.apply_values(saved)
+        assert all(window.collect_current_values()[f"grandstand_{part}_color"] == color for part, color in parts.items())
+        window._select_template("grandstand")
+        window.grandstand_back_picker.set_color_index(66)
+        assert "grandstand" in window._dirty_objects
+        window.save_template_clicked()
+        assert saved_objects[-1]["grandstand"]["grandstand_back_color"] == "66"
+        window.shape_combo.setCurrentText("tree")
+        assert all(getattr(window, f"grandstand_{part}_picker").isHidden() for part in parts)
+    finally:
+        window.close()
+
+
 def test_project_generator_uses_project_palette_without_palette_controls(
     monkeypatch, qapp, tmp_path
 ):
