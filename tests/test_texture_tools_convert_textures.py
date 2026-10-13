@@ -407,7 +407,14 @@ def test_preview_and_conversion_use_each_pmps_saved_cutoff(
         for name, expected_alpha in (("a.pmp", 0), ("b.pmp", 255)):
             exported = pmp_to_image(output_dir / name, palette_path)
             assert exported.getpixel((0, 0))[3] == expected_alpha
+            if expected_alpha:
+                assert exported.getpixel((0, 0)) == (255, 0, 0, 255)
             assert exported.getpixel((1, 0))[3] == 255
+            widget.file_list.setCurrentRow(0 if name == "a.pmp" else 1)
+            preview = widget.preview_pane._pixmap_item.pixmap().toImage()
+            for x in range(2):
+                color = preview.pixelColor(x, 0)
+                assert (color.red(), color.green(), color.blue(), color.alpha()) == exported.getpixel((x, 0))
     finally:
         widget.close()
 

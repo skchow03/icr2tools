@@ -119,6 +119,11 @@ cutoff to all PMPs** copies the current value to every PMP in that folder; you c
 then adjust individual sprites further. Preview and conversion use each sprite's
 saved cutoff.
 
+PMP previews and exports use the same palette conversion and alpha cutoff.
+Pixels above the cutoff retain their original RGB color before palette matching
+and become fully opaque; pixels at or below it are omitted. Partial alpha is
+never blended against black, so it does not darken the exported sprite edges.
+
 Launch the application with:
 
 ```bash

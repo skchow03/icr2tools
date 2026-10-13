@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 
 from texture_tools.pmp import png_to_pmp
+from texture_tools.pmp_to_png import pmp_to_image
 
 
 def test_png_to_pmp_writes_expected_header_and_runs(tmp_path: Path) -> None:
@@ -264,3 +266,36 @@ def test_png_to_pmp_accepts_dither_option(tmp_path: Path) -> None:
 
     assert out == dst
     assert dst.exists()
+
+
+@pytest.mark.parametrize("dither", [False, True])
+@pytest.mark.parametrize("threshold", [0, 84, 255])
+@pytest.mark.parametrize("source_mode", ["RGBA", "P"])
+def test_png_to_pmp_keeps_original_rgb_at_partial_alpha_edges(
+    tmp_path: Path, dither: bool, threshold: int, source_mode: str
+) -> None:
+    src = tmp_path / "edges.png"
+    dst = tmp_path / "edges.pmp"
+    palette_path = tmp_path / "SUNNY.PCX"
+    palette = Image.new("P", (1, 1))
+    palette.putpalette([0, 0, 0, 255, 0, 0, 128, 0, 0] + [0, 0, 0] * 253)
+    palette.save(palette_path)
+    alpha_values = [0, 1, 84, 85, 128, 254, 255]
+    if source_mode == "RGBA":
+        source = Image.new("RGBA", (len(alpha_values), 1))
+        source.putdata([(255, 0, 0, alpha) for alpha in alpha_values])
+    else:
+        source = Image.new("P", (len(alpha_values), 1))
+        source.putpalette([255, 0, 0] * 256)
+        source.putdata(range(len(alpha_values)))
+        source.info["transparency"] = bytes(alpha_values)
+    source.save(src)
+    png_to_pmp(
+        src, dst, size_field=0, palette_path=palette_path,
+        alpha_transparent_threshold=threshold, dither=dither,
+    )
+    decoded = pmp_to_image(dst, palette_path)
+    assert [decoded.getpixel((x, 0)) for x in range(len(alpha_values))] == [
+        (255, 0, 0, 255) if alpha > threshold else (0, 0, 0, 0)
+        for alpha in alpha_values
+    ]

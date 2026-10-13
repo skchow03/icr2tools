@@ -16,7 +16,7 @@ except ImportError:  # pragma: no cover
     from PySide6 import QtCore, QtGui, QtWidgets  # type: ignore
 
 from icr2_core.mip.mips import img_to_mip, load_palette, mip_to_img
-from texture_tools.pmp import png_to_pmp
+from texture_tools.pmp import png_to_pmp, prepare_pmp_image
 from texture_tools.pmp_to_png import convert_pmp_to_png, pmp_to_image
 from texture_tools.sunny_optimizer.chop_horizon import prepare_horizon_sheets
 from texture_tools.sunny_optimizer.ui.settings import SunnyOptimizerSettings
@@ -875,23 +875,25 @@ class ConvertTexturesWidget(QtWidgets.QWidget):
             return
         try:
             source_path = Path(item.data(QtCore.Qt.UserRole))
-            with Image.open(source_path) as source, Image.open(self._palette_path) as palette_source:
-                source_rgba = source.convert("RGBA")
-                palette = palette_source.convert("P")
-                output = source_rgba.convert("RGB").quantize(
-                    colors=256,
-                    method=Image.Quantize.FASTOCTREE,
-                    palette=palette,
-                    dither=Image.Dither.NONE,
+            is_sprite = self._sprite_flags.get(source_path.name, False)
+            if is_sprite:
+                output, alpha = prepare_pmp_image(
+                    source_path,
+                    palette_path=self._palette_path,
+                    alpha_transparent_threshold=self._alpha_threshold(source_path.name),
                 )
                 preview = output.convert("RGBA")
-                is_sprite = self._sprite_flags.get(source_path.name, False)
-                if is_sprite:
-                    threshold = self._alpha_threshold(source_path.name)
-                    alpha = source_rgba.getchannel("A").point(
-                        lambda value: 0 if value <= threshold else 255
+                preview.putalpha(alpha)
+            else:
+                with Image.open(source_path) as source, Image.open(self._palette_path) as palette_source:
+                    palette = palette_source.convert("P")
+                    output = source.convert("RGB").quantize(
+                        colors=256,
+                        method=Image.Quantize.FASTOCTREE,
+                        palette=palette,
+                        dither=Image.Dither.NONE,
                     )
-                    preview.putalpha(alpha)
+                    preview = output.convert("RGBA")
             transparency_caption = (
                 f" • PMP alpha ≤ {self._alpha_cutoffs[source_path.name]}% transparent"
                 if is_sprite
@@ -1792,6 +1794,8 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self.input_edit.textChanged.connect(self._preview_source_changed)
         self.source_folder_edit.textChanged.connect(self._preview_source_changed)
         self.alpha_threshold_spin.valueChanged.connect(self._refresh_preview)
+        self.palette_edit.textChanged.connect(self._refresh_preview)
+        self.dither_checkbox.toggled.connect(self._refresh_preview)
         self.transparency_checkbox.toggled.connect(self._refresh_preview)
         self.transparency_color_btn.clicked.connect(self._choose_transparency_color)
         self.previous_preview_btn.clicked.connect(lambda: self._step_preview(-1))
@@ -1814,13 +1818,14 @@ class PmpConversionWidget(QtWidgets.QWidget, SharedStatusMixin, PresettableMixin
         self._preview_index = min(self._preview_index, len(candidates) - 1)
         preview_path = candidates[self._preview_index]
         try:
-            with Image.open(preview_path) as source:
-                preview = source.convert("RGBA")
             threshold = self.alpha_threshold_spin.value()
-            # PMP stores visibility as runs rather than retaining an alpha value:
-            # every included pixel is fully opaque and every excluded pixel is
-            # fully transparent. Mirror that binary representation in preview.
-            alpha = preview.getchannel("A").point(lambda value: 0 if value <= threshold else 255)
+            indexed, alpha = prepare_pmp_image(
+                preview_path,
+                palette_path=self.palette_edit.text().strip() or None,
+                alpha_transparent_threshold=threshold,
+                dither=self.dither_checkbox.isChecked(),
+            )
+            preview = indexed.convert("RGBA")
             preview.putalpha(alpha)
             if self.transparency_checkbox.isChecked():
                 color = self._transparency_color
