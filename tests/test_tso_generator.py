@@ -9,6 +9,7 @@ from tso_generator.tso_generator import (
     calculate_grandstand_angle,
     calculate_grandstand_height,
     generate_building,
+    generate_grandstand,
     get_template_values,
     int_or_default,
     list_template_names,
@@ -1043,3 +1044,91 @@ def test_grandstand_adds_front_face_when_front_height_is_nonzero():
     face_map = {name: points for name, points in faces}
     assert "seatFront" in face_map
     assert face_map["seatFront"] == ["gs_tf_l", "gs_bf_l", "gs_bf_r", "gs_tf_r"]
+
+
+@pytest.mark.parametrize("pieces", [1, 2, 3, 7])
+@pytest.mark.parametrize("front_height", [0, 3])
+def test_grandstand_crowd_pieces_cover_surface_without_gaps(pieces, front_height):
+    verts, faces = generate_building(
+        0, 0, 0, "none", 0, 0, 0, 0,
+        building_shape="grandstand", grandstand_length=100,
+        grandstand_width=30, grandstand_height=16,
+        grandstand_front_height=front_height, grandstand_crowd_pieces=pieces,
+    )
+    original_verts, original_faces = generate_grandstand(100, 30, 16, front_height)
+    crowd_faces = faces[:pieces]
+    assert len(faces) == len(original_faces) + pieces - 1
+    assert faces[pieces:] == original_faces[1:]
+    assert all(verts[name] == point for name, point in original_verts.items())
+    previous_right = 0
+    for i, (_name, vertex_names) in enumerate(crowd_faces):
+        points = [verts[name] for name in vertex_names]
+        left, right = 100 * i / pieces, 100 * (i + 1) / pieces
+        assert points == [
+            (left, 0, front_height), (right, 0, front_height),
+            (right, 30, 16), (left, 30, 16),
+        ]
+        assert left == previous_right
+        assert right > left
+        previous_right = right
+    assert previous_right == 100
+    # Distinct vertices allow the U coordinate to restart on adjacent pieces.
+    assert len({v for _name, vs in crowd_faces for v in vs}) == 4 * pieces
+
+
+@pytest.mark.parametrize("pieces", [1, 2, 3])
+@pytest.mark.parametrize("mip", ["crowd", "crowd.mip"])
+def test_grandstand_export_repeats_texture_rectangle_on_every_piece(tmp_path, pieces, mip):
+    verts, faces = generate_grandstand(100, 30, 16, 3, pieces)
+    params = _base_parameters()
+    params.update(
+        building_shape="grandstand", roof_type="none", roof_color_bright=40,
+        grandstand_crowd_pieces=pieces, grandstand_crowd_mip=mip,
+        grandstand_crowd_ul_u=10, grandstand_crowd_ul_v=20,
+        grandstand_crowd_lr_u=245, grandstand_crowd_lr_v=83,
+    )
+    out = tmp_path / "grandstand.3D"
+    write_3d(out, verts, faces, params)
+    text = out.read_text(encoding="utf-8")
+    assert text.count('MATERIAL MIP="crowd", GROUP=3, POLY [T] <40>') == pieces
+    assert text.count("T=<") == 4 * pieces
+    for i, (name, vs) in enumerate(faces[:pieces]):
+        assert f'{name}: MATERIAL MIP="crowd", GROUP=3, POLY [T] <40> {{{", ".join(vs)}}};' in text
+        for vertex, (u, v) in zip(vs, [(10, 83), (245, 83), (245, 20), (10, 20)]):
+            line = next(line for line in text.splitlines() if line.startswith(f"{vertex}:"))
+            assert line.endswith(f", T=<{u},{v}>];")
+        assert f'o{i}: BSPF ({", ".join(vs[:3])}), nil, {name},' in text
+    for name, _vs in faces[pieces:]:
+        assert f"{name}: POLY <" in text
+    assert f"% grandstand_crowd_pieces: {pieces}" in text
+    assert f"% grandstand_crowd_mip: {mip}" in text
+
+
+def test_grandstand_export_default_uvs_match_example(tmp_path):
+    verts, faces = generate_grandstand(100, 30, 16, 3)
+    out = tmp_path / "grandstand.3D"
+    write_3d(out, verts, faces, {"building_shape": "grandstand", "grandstand_crowd_mip": "crowd"})
+    text = out.read_text(encoding="utf-8")
+    assert "gs_tf_l: [<0, 0, 3>, T=<0,63>];" in text
+    assert "gs_tf_r: [<100, 0, 3>, T=<255,63>];" in text
+    assert "gs_tb_l: [<0, 30, 16>, T=<0,0>];" in text
+    assert "gs_tb_r: [<100, 30, 16>, T=<255,0>];" in text
+
+
+def test_grandstand_can_split_without_a_texture(tmp_path):
+    verts, faces = generate_grandstand(100, 30, 16, crowd_pieces=3)
+    out = tmp_path / "grandstand.3D"
+    write_3d(out, verts, faces, {"building_shape": "grandstand", "grandstand_crowd_mip": ""})
+    text = out.read_text(encoding="utf-8")
+    assert "MATERIAL" not in text
+    assert "T=<" not in text
+    assert text.count("seatB_") == 6  # Each polygon and its BSP reference.
+
+
+@pytest.mark.parametrize("mip", ['crowd"', "crowd\nother", "crowd\rother"])
+def test_grandstand_rejects_mip_names_that_break_3d_syntax(tmp_path, mip):
+    verts, faces = generate_grandstand(100, 30, 16)
+    out = tmp_path / "grandstand.3D"
+    with pytest.raises(ValueError, match="Crowd MIP filename"):
+        write_3d(out, verts, faces, {"building_shape": "grandstand", "grandstand_crowd_mip": mip})
+    assert not out.exists()
