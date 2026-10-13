@@ -138,38 +138,24 @@ def _load_palette_from_pcx_trailer(path: Path) -> Image.Image:
     return pal_img
 
 def _rgba_to_clean_rgb(rgba: Image.Image) -> Image.Image:
-    """Flatten RGBA into a clean RGB image without carrying PNG metadata/chunks forward."""
+    """Copy RGB colors without alpha blending or carrying PNG metadata forward."""
     rgba = rgba.convert("RGBA").copy()
     rgb = Image.new("RGB", rgba.size, (0, 0, 0))
-    rgb.paste(rgba, mask=rgba.getchannel("A"))
+    # PMP pixels are either omitted or fully opaque. Blending against black here
+    # would darken the RGB of every retained pixel with partial source alpha.
+    rgb.paste(rgba)
     return rgb
 
 
-def png_to_pmp(
+def prepare_pmp_image(
     input_path: str | Path,
-    output_path: str | Path,
     *,
-    size_field: int,
     palette_path: str | Path | None = "SUNNY.PCX",
-    unknown_field: bytes = DEFAULT_UNKNOWN_FIELD,
     alpha_transparent_threshold: int = 0,
     dither: bool = False,
-) -> Path:
-    """Convert an input PNG image to a PMP sprite file.
-
-    Header layout emitted by this converter:
-      - byte 0: sprite bounding-box width (0-255)
-      - byte 1: sprite bounding-box height (0-255)
-      - byte 2: signed int8 ``-left`` (pixels from image left edge to bbox left)
-      - byte 3: signed int8 ``-top`` (pixels from image top edge to bbox top)
-      - bytes 4-7: run data byte length (little-endian)
-      - bytes 8-11: opaque 4-byte field
-
-    Run payload layout emitted by this converter:
-      - 4 bytes per run: ``(y, x_start, x_end_exclusive, palette_index)``
-    """
+) -> tuple[Image.Image, Image.Image]:
+    """Return the palette indices and binary visibility used by export and preview."""
     src = Path(input_path)
-    dst = Path(output_path)
 
     try:
         rgba = _load_rgba_image_with_tolerant_fallback(src)
@@ -199,15 +185,48 @@ def png_to_pmp(
     if width > 256 or height > 256:
         raise ValueError("PMP only supports images up to 256x256 pixels")
 
-    if len(unknown_field) != 4:
-        raise ValueError("unknown_field must be exactly 4 bytes")
-
     threshold = int(alpha_transparent_threshold)
     if not 0 <= threshold <= 255:
         raise ValueError("alpha_transparent_threshold must be in range 0..255")
 
     alpha_thresholded = alpha.point(lambda value: 0 if int(value) <= threshold else 255)
-    encoded_runs = _encode_runs(indexed, alpha, alpha_transparent_threshold=threshold)
+    return indexed, alpha_thresholded
+
+
+def png_to_pmp(
+    input_path: str | Path,
+    output_path: str | Path,
+    *,
+    size_field: int,
+    palette_path: str | Path | None = "SUNNY.PCX",
+    unknown_field: bytes = DEFAULT_UNKNOWN_FIELD,
+    alpha_transparent_threshold: int = 0,
+    dither: bool = False,
+) -> Path:
+    """Convert an input PNG image to a PMP sprite file.
+
+    Header layout emitted by this converter:
+      - byte 0: sprite bounding-box width (0-255)
+      - byte 1: sprite bounding-box height (0-255)
+      - byte 2: signed int8 ``-left`` (pixels from image left edge to bbox left)
+      - byte 3: signed int8 ``-top`` (pixels from image top edge to bbox top)
+      - bytes 4-7: run data byte length (little-endian)
+      - bytes 8-11: opaque 4-byte field
+
+    Run payload layout emitted by this converter:
+      - 4 bytes per run: ``(y, x_start, x_end_exclusive, palette_index)``
+    """
+    dst = Path(output_path)
+    indexed, alpha_thresholded = prepare_pmp_image(
+        input_path,
+        palette_path=palette_path,
+        alpha_transparent_threshold=alpha_transparent_threshold,
+        dither=dither,
+    )
+    if len(unknown_field) != 4:
+        raise ValueError("unknown_field must be exactly 4 bytes")
+
+    encoded_runs = _encode_runs(indexed, alpha_thresholded)
     bbox = alpha_thresholded.getbbox()
 
     if bbox is None:
