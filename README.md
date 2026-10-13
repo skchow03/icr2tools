@@ -119,6 +119,12 @@ saved with project objects and templates. New objects default to one piece,
 `crowd`, and UV corners `(0, 0)` / `(255, 63)`; existing objects without crowd
 settings keep their single, untextured surface.
 
+Grandstands also provide palette selectors for **Front Color**, **Sides Color**
+(both ends), **Back Color**, **Crowd Color** (all crowd pieces), and
+**Underside Color**. The selected colors appear in the preview and exported
+polygons and are saved with the object. Existing grandstands inherit their
+previous polygon colors until you change these selectors.
+
 ### Texture Tools
 
 Texture Tools provides texture conversion and editing workflows in one desktop
