@@ -7,28 +7,72 @@ QtWidgets = pytest.importorskip("PyQt5.QtWidgets")
 
 
 @pytest.fixture
-def qapp():
+def qapp(monkeypatch, tmp_path):
+    # Keep machine-specific palette paths and saved objects out of UI tests.
+    monkeypatch.setattr(tso_generator, "INI_PATH", tmp_path / "tso_generator.ini")
+    monkeypatch.setattr(tso_generator, "TEMPLATE_JSON_PATH", tmp_path / "templates.json")
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     yield app
 
 
+def test_grandstand_crowd_controls_save_reload_and_export(monkeypatch, qapp, tmp_path):
+    saved_objects = []
+    output_path = tmp_path / "grandstand.3D"
+    monkeypatch.setattr(
+        QtWidgets.QFileDialog, "getSaveFileName",
+        lambda *args: (str(output_path), "3D files (*.3D)"),
+    )
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *args: None)
+    window = tso_generator.build_window(
+        project_templates={}, measurement_unit="feet", run_event_loop=False,
+        on_templates_changed=lambda objects: saved_objects.append(objects),
+    )
+    try:
+        assert window.grandstand_crowd_pieces_spin.isHidden()
+        window.shape_combo.setCurrentText("grandstand")
+        assert not window.grandstand_crowd_pieces_spin.isHidden()
+        assert not window.grandstand_crowd_mip_edit.isHidden()
+        assert window.grandstand_crowd_mip_edit.text() == "crowd"
+        window.grandstand_crowd_pieces_spin.setValue(3)
+        window.grandstand_crowd_mip_edit.setText("fans.mip")
+        window.grandstand_crowd_ul_u_spin.setValue(10)
+        window.grandstand_crowd_ul_v_spin.setValue(20)
+        window.grandstand_crowd_lr_u_spin.setValue(200)
+        window.grandstand_crowd_lr_v_spin.setValue(80)
+        window.refresh_preview()
+        assert len([name for name, _vs in window.preview._faces if name.startswith("seatB_")]) == 3
+        values = window.collect_current_values()
+        window.generate_clicked()
+        text = output_path.read_text(encoding="utf-8")
+        assert text.count('MATERIAL MIP="fans", GROUP=3, POLY [T]') == 3
+        assert "T=<10,80>" in text
+        assert "T=<200,20>" in text
+        assert "% coordinate_uom: feet" in text
+        assert "gs_c3_tf_r: [<100, 0, 3>, T=<200,80>];" in text
+        saved = saved_objects[-1]["grandstand"]
+        assert saved["grandstand_crowd_pieces"] == "3"
+        assert saved["grandstand_crowd_ul_u"] == "10"
+        window.apply_values({"building_shape": "grandstand"})
+        assert window.grandstand_crowd_pieces_spin.value() == 1
+        assert window.grandstand_crowd_mip_edit.text() == ""
+        assert window.grandstand_crowd_ul_u_spin.value() == 0
+        window.apply_values(saved)
+        assert window.collect_current_values() == values
+        window._select_template("grandstand")
+        window.grandstand_crowd_mip_edit.setText("newfans")
+        assert "grandstand" in window._dirty_objects
+        window.save_template_clicked()
+        assert saved_objects[-1]["grandstand"]["grandstand_crowd_mip"] == "newfans"
+        window.shape_combo.setCurrentText("rectangular")
+        assert window.grandstand_crowd_pieces_spin.isHidden()
+        assert window.grandstand_crowd_mip_edit.isHidden()
+        assert window.grandstand_crowd_ul_widget.isHidden()
+    finally:
+        window.close()
+
+
 def test_generator_window_has_live_3d_preview(monkeypatch, qapp):
-    windows = []
-
-    def capture_window(_app):
-        windows.extend(
-            widget
-            for widget in QtWidgets.QApplication.topLevelWidgets()
-            if widget.windowTitle() == "ICR2 Building Generator"
-        )
-        return 0
-
-    monkeypatch.setattr(QtWidgets.QApplication, "exec_", capture_window)
-
-    tso_generator.build_window()
-
-    assert windows
-    window = windows[-1]
+    window = tso_generator.build_window(run_event_loop=False)
     try:
         assert isinstance(window.preview, QtWidgets.QOpenGLWidget)
         assert window.preview.toolTip() == "Drag to rotate; use the mouse wheel to zoom"

@@ -73,6 +73,12 @@ TEMPLATE_FIELDS = (
     "grandstand_height",
     "grandstand_angle",
     "grandstand_front_height",
+    "grandstand_crowd_pieces",
+    "grandstand_crowd_mip",
+    "grandstand_crowd_ul_u",
+    "grandstand_crowd_ul_v",
+    "grandstand_crowd_lr_u",
+    "grandstand_crowd_lr_v",
 )
 
 UOM_LABELS = {
@@ -591,11 +597,12 @@ def calculate_grandstand_angle(width, height, front_height=0):
     return max(0.0, min(89.9, math.degrees(math.atan(rise / width))))
 
 
-def generate_grandstand(length, width, height, front_height=0):
+def generate_grandstand(length, width, height, front_height=0, crowd_pieces=1):
     length = max(1, int(length))
     width = max(1, int(width))
     front_height = max(0, int(front_height))
     height = max(front_height, int(height))
+    crowd_pieces = max(1, int(crowd_pieces))
 
     verts = {
         "gs_tf_l": (0, 0, front_height),
@@ -615,6 +622,21 @@ def generate_grandstand(length, width, height, front_height=0):
         ("seatLs", ["gs_tf_l", "gs_tb_l", "gs_bb_l", "gs_bf_l"]),
         ("seatRs", ["gs_tf_r", "gs_bf_r", "gs_bb_r", "gs_tb_r"]),
     ]
+
+    if crowd_pieces > 1:
+        crowd_faces = []
+        for i in range(crowd_pieces):
+            left = length * i / crowd_pieces
+            right = length * (i + 1) / crowd_pieces
+            prefix = f"gs_c{i + 1}"
+            names = [f"{prefix}_{corner}" for corner in ("tf_l", "tf_r", "tb_r", "tb_l")]
+            # Each piece needs its own vertices so UVs can restart at the seams.
+            verts.update(zip(names, (
+                (left, 0, front_height), (right, 0, front_height),
+                (right, width, height), (left, width, height),
+            )))
+            crowd_faces.append((f"seatB_{i + 1}", names))
+        faces = crowd_faces + faces[1:]
 
     if front_height > 0:
         faces.append(("seatFront", ["gs_tf_l", "gs_bf_l", "gs_bf_r", "gs_tf_r"]))
@@ -650,6 +672,7 @@ def generate_building(
     grandstand_width=120,
     grandstand_height=100,
     grandstand_front_height=0,
+    grandstand_crowd_pieces=1,
 ):
     if building_shape == "tree":
         return generate_tree(width, height, tree_trunk_width, tree_leaf_base_height, tree_num_sides, tree_profile)
@@ -669,7 +692,10 @@ def generate_building(
         return generate_bridge(bridge_length, bridge_width, bridge_clearance, bridge_height, bridge_half=bridge_half)
 
     if building_shape == "grandstand":
-        return generate_grandstand(grandstand_length, grandstand_width, grandstand_height, grandstand_front_height)
+        return generate_grandstand(
+            grandstand_length, grandstand_width, grandstand_height,
+            grandstand_front_height, grandstand_crowd_pieces,
+        )
 
     verts, faces = generate_base(width, depth, height)
 
@@ -704,6 +730,23 @@ def write_3d(path, verts, faces, parameters):
     side_dark = int(parameters.get("side_color_dark", side_bright))
     roof_type = str(parameters.get("roof_type", ""))
     building_shape = str(parameters.get("building_shape", "rectangular"))
+    crowd_mip = str(parameters.get("grandstand_crowd_mip", "") or "").strip() if building_shape == "grandstand" else ""
+    if any(character in crowd_mip for character in ('"', '\n', '\r')):
+        raise ValueError("Crowd MIP filename cannot contain quotes or line breaks.")
+    # Papyrus material names omit the file extension.
+    if crowd_mip.lower().endswith(".mip"):
+        crowd_mip = crowd_mip[:-4]
+    crowd_uvs = {}
+    crowd_faces = set()
+    if crowd_mip:
+        ul_u = int(parameters.get("grandstand_crowd_ul_u", 0))
+        ul_v = int(parameters.get("grandstand_crowd_ul_v", 0))
+        lr_u = int(parameters.get("grandstand_crowd_lr_u", 255))
+        lr_v = int(parameters.get("grandstand_crowd_lr_v", 63))
+        for name, vs in faces:
+            if name == "seatB" or name.startswith("seatB_"):
+                crowd_faces.add(name)
+                crowd_uvs.update(zip(vs, ((ul_u, lr_v), (lr_u, lr_v), (lr_u, ul_v), (ul_u, ul_v))))
     tree_trunk_color = int(parameters.get("tree_trunk_color", side_dark))
     tree_leaves_color = int(parameters.get("tree_leaves_color", side_bright))
     tree_trunk_color_bright = int(parameters.get("tree_trunk_color_bright", tree_trunk_color))
@@ -813,6 +856,12 @@ def write_3d(path, verts, faces, parameters):
                     "grandstand_height",
                     "grandstand_front_height",
                     "grandstand_angle",
+                    "grandstand_crowd_pieces",
+                    "grandstand_crowd_mip",
+                    "grandstand_crowd_ul_u",
+                    "grandstand_crowd_ul_v",
+                    "grandstand_crowd_lr_u",
+                    "grandstand_crowd_lr_v",
                     "roof_color_bright",
                     "roof_color_dark",
                     "side_color_bright",
@@ -851,13 +900,19 @@ def write_3d(path, verts, faces, parameters):
     for name in verts:
         x, y, z = verts[name]
         coordinates = ", ".join(f"{value:.6f}".rstrip("0").rstrip(".") for value in (x, y, z))
-        lines.append(f"{name}: [<{coordinates}>];")
+        texture = ""
+        if name in crowd_uvs:
+            u, v = crowd_uvs[name]
+            texture = f", T=<{u},{v}>"
+        lines.append(f"{name}: [<{coordinates}>{texture}];")
 
     lines.append("")
 
     for name, vs in faces:
         v = ", ".join(vs)
-        lines.append(f"{name}: POLY <{color_for_face(name)}> {{{v}}};")
+        material = f'MATERIAL MIP="{crowd_mip}", GROUP=3, ' if name in crowd_faces else ""
+        texture = " [T]" if name in crowd_faces else ""
+        lines.append(f"{name}: {material}POLY{texture} <{color_for_face(name)}> {{{v}}};")
 
     lines.append("")
 
@@ -1471,6 +1526,34 @@ def build_window(
             self.grandstand_width_spin.valueChanged.connect(self.update_grandstand_angle_from_height)
             self.grandstand_front_height_spin.valueChanged.connect(self.update_grandstand_angle_from_height)
 
+            self.grandstand_crowd_pieces_spin = QtWidgets.QSpinBox()
+            self.grandstand_crowd_pieces_spin.setRange(1, 1000)
+            self.grandstand_crowd_pieces_spin.setValue(1)
+            self.grandstand_crowd_pieces_spin.setToolTip(
+                "Split the crowd surface evenly along the length; repeat the full UV rectangle on each piece."
+            )
+            self.grandstand_crowd_mip_edit = QtWidgets.QLineEdit("crowd")
+            self.grandstand_crowd_mip_edit.setPlaceholderText("Blank for an untextured crowd")
+            self.grandstand_crowd_mip_edit.setToolTip(
+                "Crowd MIP filename, e.g. crowd or crowd.mip. Leave blank to export a plain polygon."
+            )
+
+            def crowd_uv_pair(corner, defaults):
+                widget = QtWidgets.QWidget()
+                pair_layout = QtWidgets.QHBoxLayout(widget)
+                pair_layout.setContentsMargins(0, 0, 0, 0)
+                for axis, default in zip(("u", "v"), defaults):
+                    spin = QtWidgets.QSpinBox()
+                    spin.setRange(-2147483647, 2147483647)
+                    spin.setValue(default)
+                    setattr(self, f"grandstand_crowd_{corner}_{axis}_spin", spin)
+                    pair_layout.addWidget(QtWidgets.QLabel(axis.upper()))
+                    pair_layout.addWidget(spin)
+                return widget
+
+            self.grandstand_crowd_ul_widget = crowd_uv_pair("ul", (0, 0))
+            self.grandstand_crowd_lr_widget = crowd_uv_pair("lr", (255, 63))
+
             self.roof_bright_picker = PaletteIndexPicker(self, self.palette, 200)
             self.roof_dark_picker = PaletteIndexPicker(self, self.palette, 201)
             self.side_bright_picker = PaletteIndexPicker(self, self.palette, 202)
@@ -1569,6 +1652,10 @@ def build_window(
                 ("grandstand_height", "Grandstand Height", self.grandstand_height_spin),
                 ("grandstand_angle", "Grandstand Angle", self.grandstand_angle_spin),
                 ("grandstand_front_height", "Grandstand Front Height", self.grandstand_front_height_spin),
+                ("grandstand_crowd_pieces", "Crowd Pieces", self.grandstand_crowd_pieces_spin),
+                ("grandstand_crowd_mip", "Crowd MIP Filename", self.grandstand_crowd_mip_edit),
+                ("grandstand_crowd_ul", "Crowd Upper Left (U, V)", self.grandstand_crowd_ul_widget),
+                ("grandstand_crowd_lr", "Crowd Lower Right (U, V)", self.grandstand_crowd_lr_widget),
                 ("tree_trunk_width", "Tree Trunk Width", self.tree_trunk_width_spin),
                 ("tree_leaf_base_height", "Tree Leaf Base Height", self.tree_leaf_base_height_spin),
                 ("tree_num_sides", "Tree Circle Sides", self.tree_sides_spin),
@@ -1618,6 +1705,7 @@ def build_window(
             self.resize(1250, 760)
 
         def _connect_preview_controls(self):
+            self.grandstand_crowd_mip_edit.textChanged.connect(self._current_object_edited)
             for widget in self.findChildren(QtWidgets.QSpinBox):
                 widget.valueChanged.connect(self.schedule_preview_refresh)
             for widget in self.findChildren(QtWidgets.QDoubleSpinBox):
@@ -1665,6 +1753,7 @@ def build_window(
                 values["bridge_width"], values["bridge_clearance"], values["bridge_height"],
                 values["bridge_half"], values["grandstand_length"], values["grandstand_width"],
                 values["grandstand_height"], values["grandstand_front_height"],
+                values["grandstand_crowd_pieces"],
             )
 
         def _preview_color_for_face(self, name, values):
@@ -1773,6 +1862,10 @@ def build_window(
             self._set_row_visible("grandstand_height", is_grandstand)
             self._set_row_visible("grandstand_angle", is_grandstand)
             self._set_row_visible("grandstand_front_height", is_grandstand)
+            self._set_row_visible("grandstand_crowd_pieces", is_grandstand)
+            self._set_row_visible("grandstand_crowd_mip", is_grandstand)
+            self._set_row_visible("grandstand_crowd_ul", is_grandstand)
+            self._set_row_visible("grandstand_crowd_lr", is_grandstand)
             self._set_row_visible("tree_trunk_width", is_tree)
             self._set_row_visible("tree_leaf_base_height", is_tree)
             self._set_row_visible("tree_num_sides", is_tree)
@@ -1824,6 +1917,12 @@ def build_window(
                 "grandstand_height": canonical(self.grandstand_height_spin),
                 "grandstand_angle": self.grandstand_angle_spin.value(),
                 "grandstand_front_height": canonical(self.grandstand_front_height_spin),
+                "grandstand_crowd_pieces": self.grandstand_crowd_pieces_spin.value(),
+                "grandstand_crowd_mip": self.grandstand_crowd_mip_edit.text().strip(),
+                "grandstand_crowd_ul_u": self.grandstand_crowd_ul_u_spin.value(),
+                "grandstand_crowd_ul_v": self.grandstand_crowd_ul_v_spin.value(),
+                "grandstand_crowd_lr_u": self.grandstand_crowd_lr_u_spin.value(),
+                "grandstand_crowd_lr_v": self.grandstand_crowd_lr_v_spin.value(),
                 "tree_trunk_width": canonical(self.tree_trunk_width_spin),
                 "tree_leaf_base_height": canonical(self.tree_leaf_base_height_spin),
                 "tree_num_sides": self.tree_sides_spin.value(),
@@ -1866,6 +1965,13 @@ def build_window(
             self.grandstand_height_spin.setValue(display_value(values.get("grandstand_height"), convert_uom(self.grandstand_height_spin.value(), self._measurement_unit, "500ths")))
             self.grandstand_angle_spin.setValue(float_or_default(values.get("grandstand_angle"), self.grandstand_angle_spin.value()))
             self.grandstand_front_height_spin.setValue(display_value(values.get("grandstand_front_height"), convert_uom(self.grandstand_front_height_spin.value(), self._measurement_unit, "500ths")))
+            # Legacy objects retain their original single, untextured crowd face.
+            self.grandstand_crowd_pieces_spin.setValue(int_or_default(values.get("grandstand_crowd_pieces"), 1))
+            self.grandstand_crowd_mip_edit.setText(str(values.get("grandstand_crowd_mip", "") or ""))
+            self.grandstand_crowd_ul_u_spin.setValue(int_or_default(values.get("grandstand_crowd_ul_u"), 0))
+            self.grandstand_crowd_ul_v_spin.setValue(int_or_default(values.get("grandstand_crowd_ul_v"), 0))
+            self.grandstand_crowd_lr_u_spin.setValue(int_or_default(values.get("grandstand_crowd_lr_u"), 255))
+            self.grandstand_crowd_lr_v_spin.setValue(int_or_default(values.get("grandstand_crowd_lr_v"), 63))
             self.tree_trunk_width_spin.setValue(display_value(values.get("tree_trunk_width"), convert_uom(self.tree_trunk_width_spin.value(), self._measurement_unit, "500ths")))
             self.tree_leaf_base_height_spin.setValue(display_value(values.get("tree_leaf_base_height"), convert_uom(self.tree_leaf_base_height_spin.value(), self._measurement_unit, "500ths")))
             self.tree_sides_spin.setValue(int_or_default(values.get("tree_num_sides"), self.tree_sides_spin.value()))

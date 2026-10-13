@@ -106,6 +106,19 @@ python -m icr2_core.trk.trk23d_cli path/to/track.trk
 The converter writes HI, MED, and LO ground meshes plus the section DLONG
 lists, hash data, and final index expected by track `.3D` source files.
 
+### TSO Generator
+
+For grandstands, **Crowd Pieces** splits the sloped crowd surface into equal
+pieces along its length. Each piece repeats the full texture rectangle specified
+by **Crowd Upper Left (U, V)** and **Crowd Lower Right (U, V)**, so longer stands
+can repeat the crowd texture instead of stretching it across the whole stand.
+**Crowd MIP Filename** accepts a name such as `crowd` or `crowd.mip`; export emits
+`MATERIAL MIP="crowd", GROUP=3, POLY [T]` on each crowd polygon with the matching
+vertex UVs. Leave the filename blank for plain polygons. These settings are
+saved with project objects and templates. New objects default to one piece,
+`crowd`, and UV corners `(0, 0)` / `(255, 63)`; existing objects without crowd
+settings keep their single, untextured surface.
+
 ### Texture Tools
 
 Texture Tools provides texture conversion and editing workflows in one desktop
