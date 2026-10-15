@@ -15,6 +15,7 @@ class TsdTransverseLineObject:
     left_dlat_bound: int
     color_index: int = 36
     command: str = "Detail"
+    tsd_file: str = ""
 
     @property
     def center_dlat(self) -> int:
@@ -51,6 +52,7 @@ class TsdDoubleSolidLineObject:
     line_width_500ths: int
     color_index: int = 158
     command: str = "Detail"
+    tsd_file: str = ""
 
     @property
     def lateral_offset_500ths(self) -> int:
@@ -97,6 +99,7 @@ class TsdSingleSolidLineObject:
     end_dlat: int
     color_index: int = 36
     command: str = "Detail"
+    tsd_file: str = ""
 
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         return (
@@ -124,6 +127,7 @@ class TsdDashedLinesObject:
     gap_to_line_ratio: float
     color_index: int = 36
     command: str = "Detail"
+    tsd_file: str = ""
 
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         command = normalize_tsd_command(self.command)
@@ -181,6 +185,7 @@ class TsdZebraCrossingObject:
     color_index: int = 36
     transverse_line_color_index: int = 36
     command: str = "Detail"
+    tsd_file: str = ""
 
     @property
     def stripe_count(self) -> int:
@@ -282,6 +287,7 @@ class TsdPitStallsObject:
     border_color_index: int = 36
     border_line_thickness_500ths: int = 1
     command: str = "Detail"
+    tsd_file: str = ""
 
     def generated_lines(self) -> tuple[TrackSurfaceDetailLine, ...]:
         command = normalize_tsd_command(self.command)
@@ -352,6 +358,7 @@ def tsd_object_to_payload(
         return {
             "type": "pit_stalls",
             "name": obj.name,
+            "tsd_file": obj.tsd_file,
             "start_dlong": int(obj.start_dlong),
             "left_dlat": int(obj.left_dlat),
             "right_dlat": int(obj.right_dlat),
@@ -369,6 +376,7 @@ def tsd_object_to_payload(
         return {
             "type": "single_solid_line",
             "name": obj.name,
+            "tsd_file": obj.tsd_file,
             "line_thickness_500ths": int(obj.line_thickness_500ths),
             "start_dlong": int(obj.start_dlong),
             "end_dlong": int(obj.end_dlong),
@@ -381,6 +389,7 @@ def tsd_object_to_payload(
         return {
             "type": "double_solid_line",
             "name": obj.name,
+            "tsd_file": obj.tsd_file,
             "start_adjusted_dlong": int(obj.start_adjusted_dlong),
             "end_adjusted_dlong": int(obj.end_adjusted_dlong),
             "dlat": int(obj.dlat),
@@ -392,6 +401,7 @@ def tsd_object_to_payload(
         return {
             "type": "dashed_lines",
             "name": obj.name,
+            "tsd_file": obj.tsd_file,
             "start_adjusted_dlong": int(obj.start_adjusted_dlong),
             "end_adjusted_dlong": int(obj.end_adjusted_dlong),
             "start_dlat": int(obj.start_dlat),
@@ -406,6 +416,7 @@ def tsd_object_to_payload(
         return {
             "type": "transverse_line",
             "name": obj.name,
+            "tsd_file": obj.tsd_file,
             "section_index": int(obj.section_index),
             "adjusted_dlong": int(obj.adjusted_dlong),
             "line_width_500ths": int(obj.line_width_500ths),
@@ -419,6 +430,7 @@ def tsd_object_to_payload(
     return {
         "type": "zebra_crossing",
         "name": obj.name,
+        "tsd_file": obj.tsd_file,
         "start_dlong": int(obj.start_dlong),
         "right_dlat": int(obj.right_dlat),
         "left_dlat": int(obj.left_dlat),
@@ -454,6 +466,7 @@ def tsd_object_from_payload(
             border_color_index=int(payload.get("border_color_index", payload.get("color_index", 36))),
             border_line_thickness_500ths=max(1, int(payload.get("border_line_thickness_500ths", 500))),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+            tsd_file=str(payload.get("tsd_file") or ""),
         )
     if payload_type == "double_solid_line":
         return TsdDoubleSolidLineObject(
@@ -464,6 +477,7 @@ def tsd_object_from_payload(
             line_width_500ths=max(1, int(payload["line_width_500ths"])),
             color_index=int(payload.get("color_index", 158)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+            tsd_file=str(payload.get("tsd_file") or ""),
         )
     if payload_type == "single_solid_line":
         return TsdSingleSolidLineObject(
@@ -475,6 +489,7 @@ def tsd_object_from_payload(
             end_dlat=int(payload.get("end_dlat", 0)),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+            tsd_file=str(payload.get("tsd_file") or ""),
         )
     if payload_type == "dashed_lines":
         return TsdDashedLinesObject(
@@ -488,6 +503,7 @@ def tsd_object_from_payload(
             gap_to_line_ratio=max(0.0, float(payload.get("gap_to_line_ratio", 3.0))),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+            tsd_file=str(payload.get("tsd_file") or ""),
         )
     if payload_type == "transverse_line":
         right_bound = payload.get("right_dlat_bound")
@@ -507,6 +523,7 @@ def tsd_object_from_payload(
             left_dlat_bound=int(left_bound),
             color_index=int(payload.get("color_index", 36)),
             command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+            tsd_file=str(payload.get("tsd_file") or ""),
         )
     if payload_type != "zebra_crossing":
         raise ValueError("Unsupported TSD object type.")
@@ -533,4 +550,5 @@ def tsd_object_from_payload(
         color_index=int(payload.get("color_index", 36)),
         transverse_line_color_index=int(payload.get("transverse_line_color_index", payload.get("color_index", 36))),
         command=normalize_tsd_command(str(payload.get("command", "Detail"))),
+        tsd_file=str(payload.get("tsd_file") or ""),
     )

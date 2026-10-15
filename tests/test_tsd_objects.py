@@ -1,3 +1,5 @@
+import pytest
+
 from sg_viewer.services.tsd_objects import (
     TsdDashedLinesObject,
     TsdDoubleSolidLineObject,
@@ -239,7 +241,7 @@ def test_single_solid_line_payload_round_trip() -> None:
     serialized = tsd_object_to_payload(obj)
 
     assert isinstance(obj, TsdSingleSolidLineObject)
-    assert serialized == payload
+    assert serialized == {**payload, "tsd_file": ""}
 
 
 def test_solid_line_payload_color_defaults() -> None:
@@ -374,3 +376,25 @@ def test_pit_stalls_payload_defaults_preserve_right_negative_left_positive() -> 
 
     assert obj.right_dlat == -20000
     assert obj.left_dlat == 20000
+
+
+@pytest.mark.parametrize("object_type", [
+    "zebra_crossing", "transverse_line", "single_solid_line",
+    "double_solid_line", "dashed_lines", "pit_stalls",
+])
+def test_tsd_file_round_trip_and_legacy_default(object_type):
+    payload = {
+        "type": object_type, "name": "Marking", "start_dlong": 0,
+        "start_adjusted_dlong": 0, "end_adjusted_dlong": 100,
+        "adjusted_dlong": 0, "dlat": 0, "line_width_500ths": 10,
+        "right_dlat": -100, "left_dlat": 100,
+        "stripe_width_500ths": 10, "stripe_length_500ths": 100,
+        "stripe_spacing_500ths": 10,
+    }
+    legacy = tsd_object_from_payload(payload)
+    assert legacy.tsd_file == ""
+    payload["tsd_file"] = "markings.tsd"
+    obj = tsd_object_from_payload(payload)
+    assert obj.tsd_file == "markings.tsd"
+    assert tsd_object_from_payload(tsd_object_to_payload(obj)) == obj
+    assert obj.generated_lines() == legacy.generated_lines()

@@ -39,6 +39,7 @@ class TsdSignalController:
             c._on_tsd_object_selection_changed
         )
         w.tsd_objects_table.cellClicked.connect(c._on_tsd_objects_table_cell_clicked)
+        w.tsd_objects_table.itemChanged.connect(c._on_tsd_object_item_changed)
         h._tsd_lines_model.dataChanged.connect(c._on_tsd_data_changed)
         h._tsd_lines_model.rowsInserted.connect(c._schedule_tsd_preview_refresh)
         h._tsd_lines_model.rowsRemoved.connect(c._schedule_tsd_preview_refresh)
