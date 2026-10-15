@@ -366,13 +366,14 @@ class SGViewerWindow(QtWidgets.QMainWindow):
         )
         self._tsd_export_objects_button = QtWidgets.QPushButton("Export all to .TSD")
         self._tsd_skid_marks_button = QtWidgets.QPushButton("Skid Marks...")
-        self._tsd_objects_table = QtWidgets.QTableWidget(0, 5)
+        self._tsd_objects_table = QtWidgets.QTableWidget(0, 6)
         self._tsd_objects_table.setHorizontalHeaderLabels(
             [
                 "Name",
                 "Type",
                 "Starting DLONG",
                 "Ending DLONG",
+                "TSD File",
                 "Attributes",
             ]
         )

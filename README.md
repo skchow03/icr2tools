@@ -63,6 +63,13 @@ sg-viewer
 python -m sg_viewer
 ```
 
+In **Surface → Surface Detail → TSD Objects**, assign each object a **TSD File**
+by editing its table cell or attributes. **Export all to .TSD** asks for an output
+folder and combines objects with the same filename into that file, in table order.
+The `.tsd` extension is optional. Export warns and stops if any object has no
+filename; existing output files require overwrite confirmation. Assignments are
+saved in the `.sgc` project and retained when duplicating objects.
+
 ### ICR2 Timing Overlay
 Launch the legacy overlay (control panel + in-game overlay) with:
 

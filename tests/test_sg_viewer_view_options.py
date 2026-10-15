@@ -3659,6 +3659,11 @@ def test_fsect_diagram_uses_wrapped_neighbor_sections(qapp, monkeypatch):
         window.close()
 
 
+def _stub_tsd_object_dialog(window, callback):
+    # Feature-controller methods resolve on the feature instance, before its host.
+    object.__setattr__(window.controller._tsd_controller, "_open_tsd_object_dialog", callback)
+
+
 def test_tsd_objects_controls_exist(qapp):
     window = SGViewerWindow()
     try:
@@ -3672,10 +3677,12 @@ def test_tsd_objects_controls_exist(qapp):
         assert window.tsd_move_object_down_button.text() == "Move Down"
         assert window.tsd_sort_objects_by_dlong_button.text() == "Sort by DLONG"
         assert window.tsd_export_objects_button.text() == "Export all to .TSD"
-        assert window.tsd_objects_table.columnCount() == 5
+        assert window.tsd_objects_table.columnCount() == 6
+        assert window.tsd_objects_table.horizontalHeaderItem(4).text() == "TSD File"
         assert window.tsd_move_line_up_button.text() == "Move Up"
         assert window.tsd_move_line_down_button.text() == "Move Down"
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -3715,6 +3722,7 @@ def test_sort_tsd_objects_by_starting_dlong_warns_and_reorders(qapp, monkeypatch
         assert "cannot be undone" in questions[0][2]
         assert questions[0][4] == QtWidgets.QMessageBox.No
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -3750,6 +3758,7 @@ def test_sort_tsd_objects_by_starting_dlong_keeps_order_when_declined(
             "Early",
         ]
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -3759,7 +3768,7 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
         sg_path = tmp_path / "track.sg"
         sg_path.write_bytes(b"")
         window.controller._current_path = sg_path
-        window.controller._open_tsd_object_dialog = (
+        _stub_tsd_object_dialog(window, (
             lambda existing=None: TsdZebraCrossingObject(
                 name="Zebra Crossing 1",
                 start_dlong=0,
@@ -3771,7 +3780,7 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
                 color_index=36,
                 command="Detail",
             )
-        )
+        ))
 
         window.controller._on_tsd_add_object_requested()
 
@@ -3782,65 +3791,126 @@ def test_add_tsd_object_updates_preview_and_sgc_state(qapp, tmp_path):
             for line in window.preview.tsd_lines
         )
         assert window.preview.show_tsd_lines is True
+        window.controller._persist_tsd_state_for_current_track(explicit_save=True)
         payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
         assert payload["tsd"]["objects"][0]["type"] == "zebra_crossing"
         assert payload["tsd"]["objects"][0]["stripe_count"] >= 1
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
-def test_export_tsd_objects_writes_single_combined_file(qapp, tmp_path, monkeypatch):
+def test_export_tsd_objects_groups_assigned_files(qapp, tmp_path, monkeypatch):
+    from sg_viewer.services.tsd_objects import tsd_object_from_payload
+    from sg_viewer.services.tsd_io import parse_tsd
+
     window = SGViewerWindow()
     try:
-        objects = iter(
-            [
-                TsdZebraCrossingObject(
-                    name="Zebra Crossing 1",
-                    start_dlong=0,
-                    right_dlat=20000,
-                    left_dlat=-20000,
-                    stripe_width_500ths=4000,
-                    stripe_length_500ths=28000,
-                    stripe_spacing_500ths=3000,
-                    color_index=36,
-                    command="Detail",
-                ),
-                TsdZebraCrossingObject(
-                    name="Zebra Crossing 2",
-                    start_dlong=1000,
-                    right_dlat=10000,
-                    left_dlat=-10000,
-                    stripe_width_500ths=5000,
-                    stripe_length_500ths=20000,
-                    stripe_spacing_500ths=2000,
-                    color_index=36,
-                    command="Detail",
-                ),
+        objects = [
+            tsd_object_from_payload({
+                "type": "single_solid_line", "name": name, "tsd_file": filename,
+                "start_dlong": start, "end_dlong": start + 100,
+            })
+            for name, filename, start in [
+                ("First", " shared ", 0),
+                ("Other", "other.tsd", 100),
+                ("Last", "SHARED.TSD", 200),
             ]
-        )
-        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
-        window.controller._on_tsd_add_object_requested()
-        window.controller._on_tsd_add_object_requested()
-        export_path = tmp_path / "all_objects_export.tsd"
+        ]
+        window.controller._tsd_objects = objects
         monkeypatch.setattr(
-            QtWidgets.QFileDialog,
-            "getSaveFileName",
-            lambda *args, **kwargs: (str(export_path), "TSD Files (*.tsd)"),
+            QtWidgets.QFileDialog, "getExistingDirectory", lambda *args: str(tmp_path)
         )
 
         window.controller._on_tsd_export_objects_requested()
 
-        assert export_path.exists()
-        content = export_path.read_text(encoding="utf-8")
-        assert content.count("Detail:") == 10
+        assert sorted(path.name for path in tmp_path.iterdir()) == ["other.tsd", "shared.tsd"]
+        assert parse_tsd((tmp_path / "shared.tsd").read_text(encoding="utf-8")).lines == (
+            *objects[0].generated_lines(), *objects[2].generated_lines()
+        )
+        assert parse_tsd((tmp_path / "other.tsd").read_text(encoding="utf-8")).lines == objects[1].generated_lines()
     finally:
+        window.controller._set_tsd_dirty(False)
+        window.close()
+
+
+@pytest.mark.parametrize("filename", ["", "   ", "../escape", "folder/file.tsd", r"folder\file.tsd", ".tsd"])
+def test_export_tsd_objects_warns_before_writing(qapp, tmp_path, monkeypatch, filename):
+    from sg_viewer.services.tsd_objects import tsd_object_from_payload
+
+    window = SGViewerWindow()
+    try:
+        window.controller._tsd_objects = [
+            tsd_object_from_payload({"type": "single_solid_line", "tsd_file": "valid.tsd"}),
+            tsd_object_from_payload({"type": "single_solid_line", "name": "Unassigned", "tsd_file": filename}),
+        ]
+        warnings = []
+        monkeypatch.setattr(QtWidgets.QMessageBox, "warning", lambda *args: warnings.append(args))
+        monkeypatch.setattr(
+            QtWidgets.QFileDialog, "getExistingDirectory",
+            lambda *args: pytest.fail("Validation must run before choosing an export folder"),
+        )
+        window.controller._on_tsd_export_objects_requested()
+        assert len(warnings) == 1
+        assert "Unassigned" in warnings[0][2]
+        assert not list(tmp_path.iterdir())
+    finally:
+        window.controller._set_tsd_dirty(False)
+        window.close()
+
+
+@pytest.mark.parametrize("cancel_folder,overwrite", [(True, False), (False, False), (False, True)])
+def test_export_tsd_objects_cancel_and_overwrite(qapp, tmp_path, monkeypatch, cancel_folder, overwrite):
+    from sg_viewer.services.tsd_objects import tsd_object_from_payload
+
+    window = SGViewerWindow()
+    try:
+        path = tmp_path / "markings.tsd"
+        path.write_text("existing content", encoding="utf-8")
+        window.controller._tsd_objects = [tsd_object_from_payload({
+            "type": "single_solid_line", "tsd_file": "markings.tsd",
+        })]
+        monkeypatch.setattr(QtWidgets.QFileDialog, "getExistingDirectory", lambda *args: "" if cancel_folder else str(tmp_path))
+        monkeypatch.setattr(QtWidgets.QMessageBox, "question", lambda *args: QtWidgets.QMessageBox.Yes if overwrite else QtWidgets.QMessageBox.No)
+        window.controller._on_tsd_export_objects_requested()
+        content = path.read_text(encoding="utf-8")
+        if overwrite and not cancel_folder:
+            assert "Detail:" in content
+        else:
+            assert content == "existing content"
+    finally:
+        window.controller._set_tsd_dirty(False)
+        window.close()
+
+
+def test_tsd_file_table_edit_persists_and_duplicates(qapp, tmp_path):
+    from sg_viewer.services.tsd_objects import tsd_object_from_payload
+
+    window = SGViewerWindow()
+    try:
+        window.controller._current_path = tmp_path / "track.sg"
+        window.controller._tsd_objects = [tsd_object_from_payload({"type": "single_solid_line"})]
+        window.controller._refresh_tsd_objects_table()
+        window.tsd_objects_table.item(0, 4).setText(" markings.tsd ")
+        assert window.controller._tsd_objects[0].tsd_file == "markings.tsd"
+        window.controller._persist_tsd_state_for_current_track(explicit_save=True)
+        payload = json.loads((tmp_path / "track.sgc").read_text(encoding="utf-8"))
+        restored = tsd_object_from_payload(payload["tsd"]["objects"][0])
+        assert restored.tsd_file == "markings.tsd"
+        window.tsd_objects_table.selectRow(0)
+        window.controller._on_tsd_duplicate_object_requested()
+        assert window.controller._tsd_objects[1].tsd_file == "markings.tsd"
+        assert window.tsd_objects_table.item(1, 4).text() == "markings.tsd"
+        assert window.tsd_objects_table.cellWidget(1, 5).text() == "Edit…"
+    finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
 def test_remove_selected_tsd_object_removes_selected_rows(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = (
+        _stub_tsd_object_dialog(window, (
             lambda existing=None: TsdZebraCrossingObject(
                 name="Zebra Crossing 1",
                 start_dlong=0,
@@ -3852,7 +3922,7 @@ def test_remove_selected_tsd_object_removes_selected_rows(qapp, monkeypatch):
                 color_index=36,
                 command="Detail",
             )
-        )
+        ))
         window.controller._on_tsd_add_object_requested()
         window.controller._on_tsd_add_object_requested()
         assert window.tsd_objects_table.rowCount() == 2
@@ -3868,6 +3938,7 @@ def test_remove_selected_tsd_object_removes_selected_rows(qapp, monkeypatch):
         assert window.tsd_objects_table.rowCount() == 1
         assert len(window.controller._tsd_objects) == 1
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -3876,7 +3947,7 @@ def test_remove_selected_tsd_object_keeps_object_when_warning_declined(
 ):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = (
+        _stub_tsd_object_dialog(window, (
             lambda existing=None: TsdZebraCrossingObject(
                 name="Zebra Crossing 1",
                 start_dlong=0,
@@ -3888,7 +3959,7 @@ def test_remove_selected_tsd_object_keeps_object_when_warning_declined(
                 color_index=36,
                 command="Detail",
             )
-        )
+        ))
         window.controller._on_tsd_add_object_requested()
         window.tsd_objects_table.selectRow(0)
         questions = []
@@ -3907,6 +3978,7 @@ def test_remove_selected_tsd_object_keeps_object_when_warning_declined(
         assert "cannot be undone" in questions[0][2]
         assert questions[0][4] == QtWidgets.QMessageBox.No
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -3915,19 +3987,19 @@ def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(
 ):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = (
+        _stub_tsd_object_dialog(window, (
             lambda existing=None: TsdZebraCrossingObject(
                 name="Crossing",
                 start_dlong=100,
-                right_dlat=0,
-                left_dlat=0,
+                right_dlat=-500,
+                left_dlat=500,
                 stripe_width_500ths=1000,
                 stripe_length_500ths=40,
                 stripe_spacing_500ths=1000,
                 color_index=36,
                 command="Detail",
             )
-        )
+        ))
         window.controller._on_tsd_add_object_requested()
 
         assert window.tsd_objects_table.item(0, 2).text() == "100"
@@ -3954,25 +4026,26 @@ def test_tsd_objects_table_shows_calculated_dlong_range_and_centers_view(
 
         assert centered_points == [pytest.approx((120.0, 0.0))]
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
 def test_tsd_objects_table_selection_on_nonzero_column_centers_view(qapp, monkeypatch):
     window = SGViewerWindow()
     try:
-        window.controller._open_tsd_object_dialog = (
+        _stub_tsd_object_dialog(window, (
             lambda existing=None: TsdZebraCrossingObject(
                 name="Crossing",
                 start_dlong=50,
-                right_dlat=0,
-                left_dlat=0,
+                right_dlat=-500,
+                left_dlat=500,
                 stripe_width_500ths=1000,
                 stripe_length_500ths=40,
                 stripe_spacing_500ths=1000,
                 color_index=36,
                 command="Detail",
             )
-        )
+        ))
         window.controller._on_tsd_add_object_requested()
         section = SimpleNamespace(
             start=(0.0, 0.0),
@@ -3995,6 +4068,7 @@ def test_tsd_objects_table_selection_on_nonzero_column_centers_view(qapp, monkey
 
         assert centered_points == [pytest.approx((70.0, 0.0))]
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -4027,7 +4101,7 @@ def test_move_selected_tsd_object_up_and_down(qapp):
                 ),
             ]
         )
-        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
+        _stub_tsd_object_dialog(window, lambda existing=None: next(objects))
         window.controller._on_tsd_add_object_requested()
         window.controller._on_tsd_add_object_requested()
 
@@ -4039,6 +4113,7 @@ def test_move_selected_tsd_object_up_and_down(qapp):
         window.controller._on_tsd_move_object_down_requested()
         assert [obj.name for obj in window.controller._tsd_objects] == ["A", "B"]
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 
@@ -4071,7 +4146,7 @@ def test_duplicate_selected_tsd_object_inserts_duplicate_below_selection(qapp):
                 ),
             ]
         )
-        window.controller._open_tsd_object_dialog = lambda existing=None: next(objects)
+        _stub_tsd_object_dialog(window, lambda existing=None: next(objects))
         window.controller._on_tsd_add_object_requested()
         window.controller._on_tsd_add_object_requested()
 
@@ -4081,6 +4156,7 @@ def test_duplicate_selected_tsd_object_inserts_duplicate_below_selection(qapp):
         assert [obj.name for obj in window.controller._tsd_objects] == ["A", "A", "B"]
         assert window.tsd_objects_table.currentRow() == 1
     finally:
+        window.controller._set_tsd_dirty(False)
         window.close()
 
 

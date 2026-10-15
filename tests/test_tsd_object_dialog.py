@@ -33,6 +33,7 @@ def test_transverse_width_is_visible_and_sets_ending_dlong(qapp):
         line_width_500ths=2_500,
         right_dlat_bound=-20_000,
         left_dlat_bound=20_000,
+        tsd_file="old.tsd",
     )
 
     def edit_and_accept() -> None:
@@ -52,6 +53,13 @@ def test_transverse_width_is_visible_and_sets_ending_dlong(qapp):
         width_spin = form.itemAt(width_row, QtWidgets.QFormLayout.FieldRole).widget()
         assert width_spin.isVisible()
         width_spin.setValue(4_000)
+        file_edit = next(
+            form.itemAt(row, QtWidgets.QFormLayout.FieldRole).widget()
+            for row in range(form.rowCount())
+            if form.itemAt(row, QtWidgets.QFormLayout.LabelRole).widget().text() == "TSD File"
+        )
+        assert file_edit.text() == "old.tsd"
+        file_edit.setText(" start.tsd ")
         dialog.accept()
 
     QtCore.QTimer.singleShot(0, edit_and_accept)
@@ -65,6 +73,7 @@ def test_transverse_width_is_visible_and_sets_ending_dlong(qapp):
 
     assert isinstance(result, TsdTransverseLineObject)
     assert result.line_width_500ths == 4_000
+    assert result.tsd_file == "start.tsd"
     generated_line = result.generated_lines()[0]
     assert generated_line.start_dlong == 10_000
     assert generated_line.end_dlong == 14_000

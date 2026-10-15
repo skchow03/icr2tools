@@ -933,7 +933,7 @@ class TsdController:
                 else:
                     object_type_label = "Zebra crossing"
                 start_dlong, end_dlong = self._tsd_object_dlong_range(obj)
-                values = [obj.name, object_type_label, str(start_dlong), str(end_dlong)]
+                values = [obj.name, object_type_label, str(start_dlong), str(end_dlong), obj.tsd_file]
                 for column, value in enumerate(values):
                     item = table.item(row, column)
                     if item is None:
@@ -942,12 +942,15 @@ class TsdController:
                     else:
                         item.setText(value)
                     item.setTextAlignment(int(QtCore.Qt.AlignCenter))
-                    item.setFlags(QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled)
+                    flags = QtCore.Qt.ItemIsSelectable | QtCore.Qt.ItemIsEnabled
+                    if column == 4:
+                        flags |= QtCore.Qt.ItemIsEditable
+                    item.setFlags(flags)
                 button = QtWidgets.QPushButton("Edit…")
                 button.clicked.connect(
                     lambda _checked=False, row_index=row: self._open_tsd_object_attributes_dialog(row_index)
                 )
-                table.setCellWidget(row, 4, button)
+                table.setCellWidget(row, 5, button)
         finally:
             table.blockSignals(previous_state)
 
@@ -973,8 +976,19 @@ class TsdController:
         self._persist_tsd_state_for_current_track()
 
     def _on_tsd_objects_table_cell_clicked(self, row: int, column: int) -> None:
-        if column == 4:
+        if column == 5:
             self._open_tsd_object_attributes_dialog(row)
+
+    def _on_tsd_object_item_changed(self, item: QtWidgets.QTableWidgetItem) -> None:
+        row = item.row()
+        if item.column() != 4 or not 0 <= row < len(self._tsd_objects):
+            return
+        filename = item.text().strip()
+        if self._tsd_objects[row].tsd_file == filename:
+            return
+        self._tsd_objects[row] = replace(self._tsd_objects[row], tsd_file=filename)
+        self._set_tsd_dirty(True)
+        self._persist_tsd_state_for_current_track()
 
     def _on_tsd_object_selection_changed(self) -> None:
         selected_rows = self._selected_row_indices(self._window.tsd_objects_table.selectionModel())
@@ -1167,24 +1181,63 @@ class TsdController:
         if not self._tsd_objects:
             QtWidgets.QMessageBox.information(self._window, "Export TSD Objects", "No TSD objects to export.")
             return
-        output_path, _selected_filter = QtWidgets.QFileDialog.getSaveFileName(
-            self._window,
-            "Export TSD Objects",
-            self._dialog_default_directory(),
-            "TSD Files (*.tsd)",
-        )
-        if not output_path:
+        missing_names = [obj.name for obj in self._tsd_objects if not obj.tsd_file.strip()]
+        if missing_names:
+            QtWidgets.QMessageBox.warning(
+                self._window,
+                "Export TSD Objects",
+                "Assign a TSD File to every TSD object before exporting.\n\n"
+                "Missing TSD File:\n" + "\n".join(missing_names),
+            )
             return
-        tsd_path = Path(output_path)
-        if tsd_path.suffix.lower() != ".tsd":
-            tsd_path = tsd_path.with_suffix(".tsd")
-        combined_lines: list[TrackSurfaceDetailLine] = []
+        grouped_lines: dict[str, list[TrackSurfaceDetailLine]] = {}
+        filenames: dict[str, str] = {}
         for obj in self._tsd_objects:
-            combined_lines.extend(obj.generated_lines())
-        tsd_path.write_text(
-            serialize_tsd(TrackSurfaceDetailFile(lines=tuple(combined_lines))),
-            encoding="utf-8",
+            filename = obj.tsd_file.strip()
+            if filename.lower().endswith(".tsd"):
+                filename = filename[:-4]
+            if (
+                not filename or filename in {".", ".."}
+                or filename.endswith((".", " "))
+                or any(char in '<>:"/\\|?*' or ord(char) < 32 for char in filename)
+            ):
+                QtWidgets.QMessageBox.warning(
+                    self._window,
+                    "Export TSD Objects",
+                    f"Invalid TSD File for {obj.name}: {obj.tsd_file}\n"
+                    "Enter a filename without a folder path, such as markings.tsd.",
+                )
+                return
+            filename += ".tsd"
+            key = filename.casefold()
+            filenames.setdefault(key, filename)
+            grouped_lines.setdefault(key, []).extend(obj.generated_lines())
+        output_directory = QtWidgets.QFileDialog.getExistingDirectory(
+            self._window, "Export TSD Objects", self._dialog_default_directory()
         )
+        if not output_directory:
+            return
+        directory = Path(output_directory)
+        existing_names = [name for name in filenames.values() if (directory / name).exists()]
+        if existing_names:
+            choice = QtWidgets.QMessageBox.question(
+                self._window,
+                "Overwrite TSD Files?",
+                "The following files already exist. Replace them?\n\n" + "\n".join(existing_names),
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No,
+                QtWidgets.QMessageBox.No,
+            )
+            if choice != QtWidgets.QMessageBox.Yes:
+                return
+        try:
+            for key, lines in grouped_lines.items():
+                (directory / filenames[key]).write_text(
+                    serialize_tsd(TrackSurfaceDetailFile(lines=tuple(lines))),
+                    encoding="utf-8",
+                )
+        except OSError as exc:
+            QtWidgets.QMessageBox.critical(self._window, "Export TSD Objects", str(exc))
+            return
         self._window.show_status_message(
-            f"Exported {len(self._tsd_objects)} TSD objects into {tsd_path.name}"
+            f"Exported {len(self._tsd_objects)} TSD objects into {len(grouped_lines)} TSD files"
         )

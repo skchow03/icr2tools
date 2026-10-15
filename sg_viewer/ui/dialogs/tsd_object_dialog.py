@@ -131,6 +131,8 @@ class TsdObjectDialog:
             type_combo.setCurrentIndex(5)
             type_combo.setEnabled(False)
         name_edit = QtWidgets.QLineEdit(existing.name if existing else default_name, dialog)
+        tsd_file_edit = QtWidgets.QLineEdit(existing.tsd_file if existing else "", dialog)
+        tsd_file_edit.setPlaceholderText("e.g. markings.tsd")
         start_dlong_spin = _create_distance_spin(dialog)
         start_dlong_spin.setRange(-2_000_000_000, 2_000_000_000)
         start_dlong_spin.setValue(existing.start_dlong if isinstance(existing, TsdZebraCrossingObject) else 0)
@@ -306,6 +308,7 @@ class TsdObjectDialog:
         unit_label = measurement_unit_label(_measurement_unit_for_parent(self._parent))
         layout.addRow("Type", type_combo)
         layout.addRow("Name", name_edit)
+        layout.addRow("TSD File", tsd_file_edit)
         layout.addRow(f"Start DLONG ({unit_label})", start_dlong_spin)
         layout.addRow(f"Right DLAT ({unit_label})", right_dlat_spin)
         layout.addRow(f"Left DLAT ({unit_label})", left_dlat_spin)
@@ -450,6 +453,7 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Pit Stalls {default_index}"
                 return TsdPitStallsObject(
                     name=name,
+                    tsd_file=tsd_file_edit.text().strip(),
                     start_dlong=_distance_value_500ths(pit_stalls_start_dlong_spin),
                     left_dlat=_distance_value_500ths(pit_stalls_left_dlat_spin),
                     right_dlat=_distance_value_500ths(pit_stalls_right_dlat_spin),
@@ -467,6 +471,7 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Double Solid Line {default_index}"
                 return TsdDoubleSolidLineObject(
                     name=name,
+                    tsd_file=tsd_file_edit.text().strip(),
                     start_adjusted_dlong=_distance_value_500ths(start_adjusted_dlong_spin),
                     end_adjusted_dlong=_distance_value_500ths(end_adjusted_dlong_spin),
                     dlat=_distance_value_500ths(dlat_spin),
@@ -478,6 +483,7 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Single Solid Line {default_index}"
                 return TsdSingleSolidLineObject(
                     name=name,
+                    tsd_file=tsd_file_edit.text().strip(),
                     line_thickness_500ths=_distance_value_500ths(single_line_thickness_spin),
                     start_dlong=_distance_value_500ths(single_start_dlong_spin),
                     end_dlong=_distance_value_500ths(single_end_dlong_spin),
@@ -490,6 +496,7 @@ class TsdObjectDialog:
                 name = name_edit.text().strip() or f"Dashed Lines {default_index}"
                 return TsdDashedLinesObject(
                     name=name,
+                    tsd_file=tsd_file_edit.text().strip(),
                     start_adjusted_dlong=_distance_value_500ths(dashed_start_dlong_spin),
                     end_adjusted_dlong=_distance_value_500ths(dashed_end_dlong_spin),
                     start_dlat=_distance_value_500ths(dashed_start_dlat_spin),
@@ -509,6 +516,7 @@ class TsdObjectDialog:
                 ) or 0
                 return TsdTransverseLineObject(
                     name=name,
+                    tsd_file=tsd_file_edit.text().strip(),
                     section_index=section_index,
                     adjusted_dlong=_distance_value_500ths(adjusted_dlong_spin),
                     line_width_500ths=_distance_value_500ths(transverse_width_spin),
@@ -520,6 +528,7 @@ class TsdObjectDialog:
             name = name_edit.text().strip() or f"Zebra Crossing {default_index}"
             return TsdZebraCrossingObject(
                 name=name,
+                tsd_file=tsd_file_edit.text().strip(),
                 start_dlong=_distance_value_500ths(start_dlong_spin),
                 right_dlat=_distance_value_500ths(right_dlat_spin),
                 left_dlat=_distance_value_500ths(left_dlat_spin),
@@ -559,6 +568,8 @@ class TsdObjectDialog:
                 type_index = type_combo.findData(type_value)
                 if type_index >= 0:
                     type_combo.setCurrentIndex(type_index)
+            with QtCore.QSignalBlocker(tsd_file_edit):
+                tsd_file_edit.setText(obj.tsd_file)
             with QtCore.QSignalBlocker(name_edit):
                 name_edit.setText(obj.name)
             with QtCore.QSignalBlocker(start_dlong_spin):
@@ -752,6 +763,7 @@ class TsdObjectDialog:
         preview_controls: tuple[QtWidgets.QWidget, ...] = (
             type_combo,
             name_edit,
+            tsd_file_edit,
             start_dlong_spin,
             right_dlat_spin,
             left_dlat_spin,
