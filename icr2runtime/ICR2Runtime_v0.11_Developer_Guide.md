@@ -60,6 +60,8 @@ These examples are for regression testing of mapping and writes, **not** for use
 
 | File | Role |
 |---|---|
+| `README.md` | Public quick start and safety notes |
+| `LICENSE` | MIT license covering this runtime directory only |
 | `CMakeLists.txt` | MSVC/CMake build configuration (`C++20`, `Psapi`) |
 | `main.cpp` | Parses write-enable command flags and launches the service |
 | `memory.h`, `memory.cpp` | Game discovery, version signatures, Ghidra-to-host translation, process read/write primitives |
@@ -73,14 +75,15 @@ Keep **one** current `service.cpp`. v0.11.1 corrected a source string-literal co
 
 ## 4. Building and starting on Windows
 
-Build on Windows using an MSVC C++20 toolchain and CMake. For example, from a developer shell with MSVC available, in the repository root:
+Build on Windows using an MSVC C++20 toolchain and CMake. From the **ICR2Tools repository root**, change into the `icr2runtime` subdirectory first (or open that subdirectory directly in your developer shell):
 
 ```powershell
+cd icr2runtime
 cmake -S . -B build
 cmake --build build --config Debug
 ```
 
-Then start the service from the repository root:
+Then start the service from the `icr2runtime` directory:
 
 ```powershell
 .\build\Debug\icr2runtime.exe
@@ -230,6 +233,8 @@ The 48.9/s result applies to the measured write test; it is **not** a measured l
 
 ```
 icr2runtime/
+  README.md
+  LICENSE
   CMakeLists.txt
   main.cpp
   memory.cpp
@@ -240,7 +245,7 @@ icr2runtime/
   ICR2Runtime_v0.11_Developer_Guide.md
 ```
 
-A short `README.md` may provide a project overview and link to this guide. Keep build outputs and machine-generated files out of version control. A typical `.gitignore` should exclude `build/`, `__pycache__/`, `*.pyc`, `*.ilk`, and compiled binaries/debug artifacts such as `*.exe` and `*.pdb`, unless releases intentionally distribute binaries separately.
+`README.md` provides the project overview and links to this guide. The MIT license in `icr2runtime/LICENSE` is proposed for this runtime directory only; it does **not** automatically license the rest of `icr2tools` or proprietary game assets. Keep build outputs and machine-generated files out of version control. A typical `.gitignore` should exclude `build/`, `__pycache__/`, `*.pyc`, `*.ilk`, and compiled binaries/debug artifacts such as `*.exe` and `*.pdb`, unless releases intentionally distribute binaries separately.
 
 **Before publishing:** Review any optional `.vscode/` settings, launch profiles, example configuration files, and commit history for absolute paths, usernames, credentials, or environment-specific details. Documentation and code should use relative paths and generic examples. The source repository need not include prior development test scripts; the historical validation results in section 7 are retained as a record of observed behavior.
 

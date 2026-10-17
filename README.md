@@ -11,6 +11,9 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
 - **texture_tools/** – texture conversion, editing, and palette optimization
 - **icr2timing/** – live telemetry overlay
   - [Architecture](icr2timing/ARCHITECTURE.md)
+- **icr2runtime/** – Windows C++ memory-access service for supported ICR2 builds
+  - [Quick start and licensing](icr2runtime/README.md)
+  - [Developer and integration guide](icr2runtime/ICR2Runtime_v0.11_Developer_Guide.md)
 - **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code
   - [Architecture](icr2_core/ARCHITECTURE.md)
 - **icr2_3d_catalog_viewer/** – track 3D catalog viewer
