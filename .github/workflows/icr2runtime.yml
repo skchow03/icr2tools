@@ -1,0 +1,31 @@
+name: ICR2Runtime v0.12
+
+on:
+  pull_request:
+    paths:
+      - "icr2runtime/**"
+      - ".github/workflows/icr2runtime.yml"
+  push:
+    branches: [main]
+    paths:
+      - "icr2runtime/**"
+      - ".github/workflows/icr2runtime.yml"
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Configure MSVC build
+        run: cmake -S icr2runtime -B icr2runtime/build -A x64
+      - name: Build runtime
+        run: cmake --build icr2runtime/build --config Release --parallel
+      - name: Python syntax checks
+        run: python -m compileall -q icr2runtime/icr2_client.py icr2runtime/runtime_launcher.py icr2runtime/tests
+      - name: Launcher unit and Windows pipe integration tests
+        env:
+          ICR2RUNTIME_EXE: ${{ github.workspace }}\\icr2runtime\\build\\Release\\icr2runtime.exe
+        run: python -m unittest discover -s icr2runtime/tests -p "test_*.py" -v
