@@ -6,6 +6,7 @@
 #include "service.h"
 
 #include <algorithm>
+#include <atomic>
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -29,7 +30,7 @@
 namespace {
 
 // New pipe name lets v0.4 and v0.5 coexist during testing.
-constexpr wchar_t kPipeName[] = LR"(\\.\pipe\ICR2Runtime_v11)";
+constexpr wchar_t kPipeName[] = LR"(\\.\pipe\ICR2Runtime_v12)";
 constexpr int kWorkerCount = 8;
 constexpr unsigned kRefreshSeconds = 30;
 constexpr std::size_t kMaxRequestBytes = 8192;
@@ -37,6 +38,15 @@ constexpr std::size_t kMaxBulkBytes = 64 * 1024;
 
 bool gWritesEnabled = false;
 bool gCodeWritesEnabled = false;
+std::atomic<bool> gStopping{false};
+std::atomic<unsigned> gActiveClients{0};
+std::atomic<ULONGLONG> gLastActivityMs{0};
+unsigned gIdleTimeoutSeconds = 0;
+
+void touchActivity() {
+    gLastActivityMs.store(GetTickCount64(), std::memory_order_relaxed);
+}
+
 
 struct PatchRecord {
     std::uint32_t pid = 0;
@@ -420,7 +430,7 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
     std::string command;
     if (!(input >> command)) return "ERR\tEMPTY_REQUEST\n";
     if (command == "CAPS") {
-        std::string caps = "OK\tREAD,BULK,MAP,PATCHES,RESTORE,SCAN,SESSION,PATCH24_READINESS";
+        std::string caps = "OK\tREAD,BULK,MAP,PATCHES,RESTORE,SCAN,SESSION,PATCH24_READINESS,LIFECYCLE_IDLE";
         if (gWritesEnabled) caps += ",PATCH_DATA,PATCHBATCH,PATCH24,ANIM_BEGIN,ANIM_UPDATE,ANIM_END,ANIM_LIST";
         if (gCodeWritesEnabled) caps += ",PATCH_CODE";
         return caps + "\n";
@@ -668,6 +678,17 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
     if (command == "PATCH24_READINESS") {
         return "OK\t24_BYTE_DATA_PATCH,EXPECTED_BYTES,TRACKED_RESTORE\n";
     }
+    if (command == "STATUS") {
+        std::string extra;
+        if (input >> extra) return "ERR\tBAD_REQUEST\n";
+        std::lock_guard<std::mutex> lock(gPatchMutex);
+        std::ostringstream out;
+        out << "OK\t0.12\tIDLE_TIMEOUT=" << gIdleTimeoutSeconds
+            << "\tACTIVE_CLIENTS=" << gActiveClients.load()
+            << "\tTRACKED_PATCHES=" << gPatches.size()
+            << "\tACTIVE_ANIMATIONS=" << gAnimations.size() << '\n';
+        return out.str();
+    }
     if (command == "PING") {
         std::string extra;
         if (input >> extra) return "ERR\tBAD_REQUEST\n";
@@ -750,7 +771,7 @@ void sendResponse(HANDLE pipe, const std::string& response) {
 }
 
 void serveClients(GameRegistry& registry, int workerNumber) {
-    while (true) {
+    while (!gStopping.load()) {
         const HANDLE pipe = CreateNamedPipeW(
             kPipeName,
             PIPE_ACCESS_DUPLEX,
@@ -764,6 +785,8 @@ void serveClients(GameRegistry& registry, int workerNumber) {
         }
         const BOOL connected = ConnectNamedPipe(pipe, nullptr);
         if (connected || GetLastError() == ERROR_PIPE_CONNECTED) {
+            gActiveClients.fetch_add(1);
+            touchActivity();
             std::string request;
             if (readRequest(pipe, request)) {
                 if (request == "SESSION") {
@@ -778,6 +801,7 @@ void serveClients(GameRegistry& registry, int workerNumber) {
                     };
                     if (framed("OK\tSESSION\n")) {
                         while (readRequest(pipe, request)) {
+                            touchActivity();
                             if (request == "QUIT") { framed("OK\tBYE\n"); break; }
                             if (!framed(serveRequest(registry, request))) break;
                         }
@@ -789,41 +813,99 @@ void serveClients(GameRegistry& registry, int workerNumber) {
                 sendResponse(pipe, "ERR\tREQUEST_TOO_LONG_OR_CLOSED\n");
             }
             DisconnectNamedPipe(pipe);
+            gActiveClients.fetch_sub(1);
+            touchActivity();
         }
         CloseHandle(pipe);
     }
 }
 
+// Wake synchronous ConnectNamedPipe workers so they can notice gStopping
+// and exit. Only called when there are no application clients connected.
+void wakeWorkers() {
+    for (int i = 0; i < kWorkerCount * 4; ++i) {
+        const HANDLE pipe = CreateFileW(kPipeName, GENERIC_READ | GENERIC_WRITE,
+                                        0, nullptr, OPEN_EXISTING, 0, nullptr);
+        if (pipe == INVALID_HANDLE_VALUE) {
+            const DWORD error = GetLastError();
+            if (error == ERROR_FILE_NOT_FOUND) break; // all workers have exited
+            if (error == ERROR_PIPE_BUSY) WaitNamedPipeW(kPipeName, 100);
+            continue;
+        }
+        constexpr char request[] = "PING\n";
+        DWORD sent = 0, received = 0;
+        WriteFile(pipe, request, sizeof(request) - 1, &sent, nullptr);
+        char reply[64]{};
+        ReadFile(pipe, reply, sizeof(reply), &received, nullptr);
+        CloseHandle(pipe);
+    }
+}
+
+bool hasPendingWrites() {
+    std::lock_guard<std::mutex> lock(gPatchMutex);
+    return !gPatches.empty() || !gAnimations.empty();
+}
+
 } // namespace
 
-void runReadOnlyService(bool enableWrites, bool enableCodeWrites) {
+void runReadOnlyService(bool enableWrites, bool enableCodeWrites,
+                        unsigned idleTimeoutSeconds) {
     gWritesEnabled = enableWrites;
     gCodeWritesEnabled = enableCodeWrites;
-    std::cout << "ICR2Runtime v0.11 - shared memory service\n";
-    std::cout << "Pipe: \\\\.\\pipe\\ICR2Runtime_v11\n";
+    gIdleTimeoutSeconds = idleTimeoutSeconds;
+    gStopping.store(false);
+    gActiveClients.store(0);
+    touchActivity();
+
+    std::cout << "ICR2Runtime v0.12 - shared memory service\n";
+    std::cout << "Pipe: \\\\.\\pipe\\ICR2Runtime_v12\n";
     std::cout << "Cached process handles, BULK/SCAN/batch, up to " << kWorkerCount
               << " concurrent pipe requests.\n";
     std::cout << "Automatic game rescan every " << kRefreshSeconds << " seconds.\n";
     std::cout << "Writes: " << (gWritesEnabled ? "ENABLED (writable DATA pages only)" : "DISABLED") << "\n";
     std::cout << "Code writes: " << (gCodeWritesEnabled ? "ENABLED (guarded executable pages)" : "DISABLED") << "\n";
-    std::cout << "Keep this program running. Stop with Ctrl+C or Shift+F5.\n";
+    if (gIdleTimeoutSeconds)
+        std::cout << "Idle shutdown: " << gIdleTimeoutSeconds << " seconds with no connected clients"
+                     " or pending patches/animations.\n";
+    else
+        std::cout << "Idle shutdown: disabled (persistent service).\n";
 
     GameRegistry registry;
     registry.refresh();
     std::cout << "Initially recognized games: " << registry.list().size() << '\n';
 
-    // Full signature scanning is isolated from the high-frequency READ path.
     std::thread refresher([&registry]() {
-        while (true) {
-            std::this_thread::sleep_for(std::chrono::seconds(kRefreshSeconds));
-            registry.refresh();
+        while (!gStopping.load()) {
+            for (unsigned i = 0; i < kRefreshSeconds && !gStopping.load(); ++i)
+                std::this_thread::sleep_for(std::chrono::seconds(1));
+            if (!gStopping.load()) registry.refresh();
         }
     });
-    refresher.detach(); // service lifetime normally ends by terminating the program
 
     std::vector<std::thread> workers;
     workers.reserve(kWorkerCount);
     for (int i = 0; i < kWorkerCount; ++i)
         workers.emplace_back(serveClients, std::ref(registry), i + 1);
+
+    // One-shot clients reset the idle clock on disconnect. Persistent sessions
+    // count as active until they close, so dashboards/animators keep the service
+    // alive. Pending writes additionally inhibit auto-exit to avoid abandoning
+    // un-restored changes.
+    while (!gStopping.load()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+        if (gIdleTimeoutSeconds == 0 || gActiveClients.load() != 0 ||
+            hasPendingWrites()) continue;
+        const auto now = GetTickCount64();
+        const auto last = gLastActivityMs.load(std::memory_order_relaxed);
+        if (now >= last &&
+            now - last >= static_cast<ULONGLONG>(gIdleTimeoutSeconds) * 1000) {
+            // An incoming connection can race this final check; clients will
+            // retry startup if they see the service closing.
+            if (gActiveClients.load() == 0 && !hasPendingWrites())
+                gStopping.store(true);
+        }
+    }
+    wakeWorkers();
     for (auto& worker : workers) worker.join();
+    refresher.join();
 }
