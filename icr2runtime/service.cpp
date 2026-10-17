@@ -30,7 +30,7 @@
 namespace {
 
 // New pipe name lets v0.4 and v0.5 coexist during testing.
-constexpr wchar_t kPipeName[] = LR"(\\.\pipe\ICR2Runtime_v12)";
+constexpr wchar_t kPipeName[] = LR"(\\.\pipe\ICR2Runtime_v13)";
 constexpr int kWorkerCount = 8;
 constexpr unsigned kRefreshSeconds = 30;
 constexpr std::size_t kMaxRequestBytes = 8192;
@@ -57,6 +57,7 @@ struct PatchRecord {
     std::uint64_t processCreationTime = 0;
     std::vector<std::uint8_t> original;
     std::vector<std::uint8_t> current;
+    bool guestCode = false; // RESTORE must use this patch's original page policy
 };
 std::mutex gPatchMutex;
 std::map<std::pair<std::uint32_t, std::uintptr_t>, PatchRecord> gPatches;
@@ -432,7 +433,7 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
     if (command == "CAPS") {
         std::string caps = "OK\tREAD,BULK,MAP,PATCHES,RESTORE,SCAN,SESSION,PATCH24_READINESS,LIFECYCLE_IDLE";
         if (gWritesEnabled) caps += ",PATCH_DATA,PATCHBATCH,PATCH24,ANIM_BEGIN,ANIM_UPDATE,ANIM_END,ANIM_LIST";
-        if (gCodeWritesEnabled) caps += ",PATCH_CODE";
+        if (gCodeWritesEnabled) caps += ",PATCH_CODE,PATCH_GUEST_CODE";
         return caps + "\n";
     }
     if (command == "ANIM_LIST") {
@@ -612,13 +613,16 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
         out << "OK\t" << gPatches.size() << "\n";
         for (const auto& [key, patch] : gPatches)
             out << "PATCH\t" << patch.pid << '\t' << std::hex << std::uppercase
-                << patch.address << std::dec << '\t' << (patch.code ? "CODE" : "DATA")
+                << patch.address << std::dec << '\t'
+                << (patch.guestCode ? "GUESTCODE" : (patch.code ? "CODE" : "DATA"))
                 << '\t' << hexBytes(patch.original) << '\t' << hexBytes(patch.current) << '\n';
         return out.str();
     }
-    if (command == "PATCH" || command == "PATCHCODE" || command == "PATCH24" || command == "RESTORE") {
+    if (command == "PATCH" || command == "PATCHCODE" || command == "PATCHGUESTCODE" ||
+        command == "PATCH24" || command == "RESTORE") {
         const bool isRestore = command == "RESTORE";
-        const bool code = command == "PATCHCODE";
+        const bool guestCode = command == "PATCHGUESTCODE";
+        const bool code = command == "PATCHCODE" || guestCode;
         const bool record24 = command == "PATCH24";
         if (!isRestore && ((code && !gCodeWritesEnabled) || (!code && !gWritesEnabled)))
             return "ERR\tWRITES_DISABLED\n";
@@ -637,13 +641,18 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
             !signatureMatches(*game)) return "ERR\tGAME_NOT_FOUND_OR_CHANGED\n";
         const auto key = std::make_pair(static_cast<std::uint32_t>(pid),
                                         static_cast<std::uintptr_t>(address));
+        if (guestCode && game->info.version != "DOS102" &&
+            game->info.version != "REND32A")
+            return "ERR\tGUEST_CODE_REQUIRES_DOS_GAME\n";
         std::lock_guard<std::mutex> lock(gPatchMutex);
         auto it = gPatches.find(key);
         if (isRestore) {
             if (it == gPatches.end()) return "ERR\tPATCH_NOT_TRACKED\n";
             const auto patch = it->second;
             if (!gameMatchesPatch(*game, patch)) return "ERR\tGAME_CHANGED\n";
-            const bool ok = patch.code
+            const bool ok = patch.guestCode
+                ? game->memory.patchGuestCodeBytes(patch.address, patch.current, patch.original)
+                : patch.code
                 ? game->memory.patchCodeBytes(patch.address, patch.current, patch.original)
                 : game->memory.patchDataBytes(patch.address, patch.current, patch.original);
             if (!ok) return "ERR\tRESTORE_FAILED_OR_CHANGED\n";
@@ -666,13 +675,15 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
         if (overlapsExisting(static_cast<std::uint32_t>(pid),
                              static_cast<std::uintptr_t>(address), after.size()))
             return "ERR\tPATCH_CONFLICT\n";
-        const bool ok = code
+        const bool ok = guestCode
+            ? game->memory.patchGuestCodeBytes(static_cast<std::uintptr_t>(address), before, after)
+            : code
             ? game->memory.patchCodeBytes(static_cast<std::uintptr_t>(address), before, after)
             : game->memory.patchDataBytes(static_cast<std::uintptr_t>(address), before, after);
         if (!ok) return "ERR\tPATCH_REJECTED_OR_FAILED\n";
         gPatches[key] = PatchRecord{static_cast<std::uint32_t>(pid), game->info.version,
             game->info.addressTranslationBase, static_cast<std::uintptr_t>(address),
-            code, game->created, std::move(before), std::move(after)};
+            code, game->created, std::move(before), std::move(after), guestCode};
         return "OK\tPATCHED\n";
     }
     if (command == "PATCH24_READINESS") {
@@ -683,7 +694,7 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
         if (input >> extra) return "ERR\tBAD_REQUEST\n";
         std::lock_guard<std::mutex> lock(gPatchMutex);
         std::ostringstream out;
-        out << "OK\t0.12\tIDLE_TIMEOUT=" << gIdleTimeoutSeconds
+        out << "OK\t0.13\tIDLE_TIMEOUT=" << gIdleTimeoutSeconds
             << "\tACTIVE_CLIENTS=" << gActiveClients.load()
             << "\tTRACKED_PATCHES=" << gPatches.size()
             << "\tACTIVE_ANIMATIONS=" << gAnimations.size() << '\n';
@@ -857,13 +868,13 @@ void runReadOnlyService(bool enableWrites, bool enableCodeWrites,
     gActiveClients.store(0);
     touchActivity();
 
-    std::cout << "ICR2Runtime v0.12 - shared memory service\n";
-    std::cout << "Pipe: \\\\.\\pipe\\ICR2Runtime_v12\n";
+    std::cout << "ICR2Runtime v0.13 - shared memory service\n";
+    std::cout << "Pipe: \\\\.\\pipe\\ICR2Runtime_v13\n";
     std::cout << "Cached process handles, BULK/SCAN/batch, up to " << kWorkerCount
               << " concurrent pipe requests.\n";
     std::cout << "Automatic game rescan every " << kRefreshSeconds << " seconds.\n";
     std::cout << "Writes: " << (gWritesEnabled ? "ENABLED (writable DATA pages only)" : "DISABLED") << "\n";
-    std::cout << "Code writes: " << (gCodeWritesEnabled ? "ENABLED (guarded executable pages)" : "DISABLED") << "\n";
+    std::cout << "Code writes: " << (gCodeWritesEnabled ? "ENABLED (native executable and DOSBox guest-code pages)" : "DISABLED") << "\n";
     if (gIdleTimeoutSeconds)
         std::cout << "Idle shutdown: " << gIdleTimeoutSeconds << " seconds with no connected clients"
                      " or pending patches/animations.\n";

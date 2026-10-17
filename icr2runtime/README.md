@@ -1,6 +1,6 @@
 # ICR2Runtime
 
-**ICR2Runtime v0.12** is an experimental, Windows-only C++ memory-access service for
+**ICR2Runtime v0.13** is an experimental, Windows-only C++ memory-access service for
 *IndyCar Racing II* (ICR2). It detects supported running game builds and exposes
 memory reads, bounded searches, optional guarded patches, and 24-byte animation
 record updates through a local Windows named pipe.
@@ -59,18 +59,18 @@ use `ICR2Session` for repeated requests on a persistent pipe connection.
 Select the target game explicitly if multiple supported game instances are
 running. Never hard-code process IDs or DOSBox translation bases.
 
-## Shared startup and shutdown (v0.12)
+## Shared startup and shutdown (v0.13)
 
 The C++ executable is single-instance per Windows login session (named mutex
-`Local\\ICR2Runtime_v12_Service`). Python tools can launch it concurrently;
+`Local\\ICR2Runtime_v13_Service`). Python tools can launch it concurrently;
 the losing launch exits normally, and both clients connect to the same
-`\\\\.\\pipe\\ICR2Runtime_v12` endpoint.
+`\\\\.\\pipe\\ICR2Runtime_v13` endpoint.
 
 ```python
 from runtime_launcher import ensure_runtime
 from icr2_client import ICR2Session
 
-client = ensure_runtime()   # reuses an existing v0.12 service or starts read-only
+client = ensure_runtime()   # reuses an existing v0.13 service or starts read-only
 print(client.status())       # version and idle/client/patch counts
 print(client.list_games())
 
@@ -104,10 +104,10 @@ to outlive the Python EXE without depending on PyInstaller temporary files.
 You must include `runtime_launcher.py` and `icr2_client.py` in the Python
 application (e.g. alongside its entry-point module).
 
-The v0.12 named-pipe endpoint replaces the v0.11 endpoint. Recompile or
-update Python clients to v0.12; old clients should not be mixed with the new
-service. Existing v0.11 services can technically run alongside v0.12 but are
-not reused by v0.12 launchers.
+The v0.13 named-pipe endpoint replaces the v0.12 endpoint. Rebuild the C++
+service and update `icr2_client.py` and `runtime_launcher.py` together.
+The old v0.12 endpoint can coexist but is not reused by v0.13 clients.
+Existing tool wrappers need the updated matching Python runtime client.
 
 ## Optional memory writes and safety
 
@@ -118,6 +118,34 @@ not reused by v0.12 launchers.
 ```
 
 The separate `--enable-code-writes` flag permits guarded code patching.
+
+### Guarded DOSBox guest code (v0.13)
+
+DOS102 and REND32A run inside DOSBox, whose emulated x86 instructions may
+reside on ordinary writable Windows memory pages rather than host executable
+pages. The new `PATCHGUESTCODE` command allows a verified guest-code patch
+**only with `--enable-code-writes`**, independently of the data-write flag.
+It requires 1–8 exact expected bytes, checks process/signature identity, and
+tracks the patch for `RESTORE`. `PATCHES` labels it `GUESTCODE`.
+
+The guest-code operation reuses the existing guarded data-page writer
+(`PAGE_READWRITE` or `PAGE_WRITECOPY`); it does not make pages executable
+or change their protection. Native WINDY `PATCHCODE` is unchanged.
+
+```python
+from icr2_client import ICR2Client
+c = ICR2Client()
+# Discover a unique live instruction signature first.
+c.patch_guest_code(pid, address, bytes.fromhex("8902"), bytes.fromhex("9090"))
+# Later, provided the game and bytes have not changed:
+c.restore(pid, address)
+```
+
+A successful host memory write does not guarantee DOSBox has invalidated
+previously recompiled guest instructions. **Live REND32A write/restore
+validation is pending.** See the
+[v0.13 guest-code notes](ICR2Runtime_v0.13_GuestCode_Notes.md).
+
 A tool that explicitly needs writes can start a missing service using
 `ensure_runtime(enable_data_writes=True)`; this requires an explicit
 application decision or user consent. If a service is already running
@@ -137,7 +165,7 @@ track-reload and multi-client scenarios.
 
 ## Documentation and integrations
 
-See the [Developer and Integration Guide](ICR2Runtime_v0.12_Developer_Guide.md)
+See the [v0.12 Developer and Integration Guide](ICR2Runtime_v0.12_Developer_Guide.md)
 for exact version signatures, address-translation rules, protocol commands,
 Python integration, previous validation results, and known limitations.
 

@@ -1,4 +1,4 @@
-"""ICR2Runtime v0.12 launcher contract tests (no ICR2 game required)."""
+"""ICR2Runtime v0.13 launcher contract tests (no ICR2 game required)."""
 import os
 from pathlib import Path
 import sys
@@ -121,20 +121,42 @@ class ServiceWindowsTests(unittest.TestCase):
             except OSError:
                 pass
             time.sleep(0.2)
-        self.fail("C++ service failed to expose the v0.12 pipe")
+        self.fail("C++ service failed to expose the v0.13 pipe")
 
     def test_single_instance_and_capability_reporting(self):
         self._start()
-        self.assertEqual(self.client.status()["version"], "0.12")
+        self.assertEqual(self.client.status()["version"], "0.13")
         caps = self.client.capabilities()
         self.assertIn("LIFECYCLE_IDLE", caps)
         self.assertNotIn("PATCH_DATA", caps)
+        self.assertNotIn("PATCH_GUEST_CODE", caps)
         other = self.subprocess.Popen(
             [os.environ["ICR2RUNTIME_EXE"]],
             stdout=self.subprocess.DEVNULL, stderr=self.subprocess.DEVNULL)
         self.assertEqual(other.wait(timeout=10), 0)
         self.assertIsNone(self.process.poll())
         self.assertTrue(self.client.ping())
+
+    def test_code_write_flag_reports_guest_capability(self):
+        import subprocess
+        import time
+        self.process = subprocess.Popen(
+            [os.environ["ICR2RUNTIME_EXE"], "--enable-code-writes"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        deadline = time.monotonic() + 25
+        while time.monotonic() < deadline:
+            try:
+                if self.client.ping():
+                    break
+            except OSError:
+                pass
+            time.sleep(0.2)
+        else:
+            self.fail("v0.13 service did not start")
+        caps = self.client.capabilities()
+        self.assertIn("PATCH_CODE", caps)
+        self.assertIn("PATCH_GUEST_CODE", caps)
+        self.assertNotIn("PATCH_DATA", caps)
 
     def test_idle_exit_respects_active_session(self):
         from icr2_client import ICR2Session
