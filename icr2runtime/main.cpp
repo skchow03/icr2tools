@@ -31,13 +31,13 @@ int main(int argc, char** argv) {
 
     // Serializes concurrent application launchers without requiring any
     // shared Python state or racing on pipe creation.
-    const HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\ICR2Runtime_v12_Service");
+    const HANDLE singleton = CreateMutexW(nullptr, FALSE, L"Local\\ICR2Runtime_v13_Service");
     if (!singleton) {
         std::cerr << "Unable to create runtime singleton mutex: " << GetLastError() << '\n';
         return 1;
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        std::cout << "ICR2Runtime v0.12 is already starting or running.\n";
+        std::cout << "ICR2Runtime v0.13 is already starting or running.\n";
         CloseHandle(singleton);
         return 0;
     }
