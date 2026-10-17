@@ -55,3 +55,10 @@ Thumbs.db
 Desktop.ini
 .DS_Store
 texture_tools/texture_tools.ini
+
+# ICR2Runtime local MSVC output (scope to this tool; do not ignore game EXEs elsewhere)
+/icr2runtime/*.exe
+/icr2runtime/*.pdb
+/icr2runtime/*.ilk
+/icr2runtime/*.idb
+/icr2runtime/*.obj
