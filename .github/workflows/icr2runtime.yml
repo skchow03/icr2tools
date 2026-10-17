@@ -27,5 +27,5 @@ jobs:
         run: python -m compileall -q icr2runtime/icr2_client.py icr2runtime/runtime_launcher.py icr2runtime/tests
       - name: Launcher unit and Windows pipe integration tests
         env:
-          ICR2RUNTIME_EXE: ${{ github.workspace }}\\icr2runtime\\build\\Release\\icr2runtime.exe
+          ICR2RUNTIME_EXE: ${{ github.workspace }}/icr2runtime/build/Release/icr2runtime.exe
         run: python -m unittest discover -s icr2runtime/tests -p "test_*.py" -v
