@@ -1,4 +1,4 @@
-"""Start or reuse the shared ICR2Runtime v0.12 service on Windows.
+"""Start or reuse the shared ICR2Runtime v0.13 service on Windows.
 
 The service remains independent of this Python application's lifetime.
 Importing this module does not load Windows-only ctypes code, which also
@@ -152,7 +152,7 @@ def ensure_runtime(*, runtime_path: Optional[os.PathLike | str] = None,
 
     code = child.poll()
     raise RuntimeStartupError(
-        f"ICR2Runtime v0.12 pipe did not become available within {startup_timeout}s "
-        f"(launcher exit code: {code}). Check that this is a v0.12 binary "
+        f"ICR2Runtime v0.13 pipe did not become available within {startup_timeout}s "
+        f"(launcher exit code: {code}). Check that this is a v0.13 binary "
         "and start it manually to inspect errors."
     )
