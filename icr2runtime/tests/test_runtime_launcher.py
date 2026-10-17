@@ -142,7 +142,7 @@ class ServiceWindowsTests(unittest.TestCase):
         self._start(timeout=2)
         with ICR2Session() as session:
             time.sleep(3)
-            self.assertEqual(session.request("PING"), "OK\\tPONG\\n")
+            self.assertEqual(session.request("PING"), "OK\tPONG\n")
             self.assertIsNone(self.process.poll())
         self.assertEqual(self.process.wait(timeout=10), 0)
 
