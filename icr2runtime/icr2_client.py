@@ -1,4 +1,4 @@
-"""Read-only Python client for ICR2Runtime v0.12 (Windows, no third-party packages).
+"""Read-only Python client for ICR2Runtime v0.13 (Windows, no third-party packages).
 
 One request per named-pipe connection. The C++ service caches the game handles,
 so connecting for each request no longer initiates a memory signature scan.
@@ -10,7 +10,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 import struct
 
-PIPE_NAME = r"\\.\pipe\ICR2Runtime_v12"
+PIPE_NAME = r"\\.\pipe\ICR2Runtime_v13"
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
 OPEN_EXISTING = 3
@@ -126,6 +126,16 @@ class ICR2Client:
         if not expected or len(expected) > 8 or len(expected) != len(new):
             raise ValueError("Code patches must contain 1-8 bytes of identical length")
         _payload(request(f"PATCHCODE {pid} {address:X} {expected.hex()} {new.hex()}"))
+
+    def patch_guest_code(self, pid: int, address: int, expected: bytes, new: bytes) -> None:
+        """Guarded guest-code patch for DOS102/REND32A inside DOSBox.
+
+        Requires --enable-code-writes. Both payloads must be 1..8 bytes and
+        identical length; the server checks expected bytes, then tracks RESTORE.
+        """
+        if not expected or len(expected) > 8 or len(expected) != len(new):
+            raise ValueError("Guest-code patches must contain 1-8 bytes of identical length")
+        _payload(request(f"PATCHGUESTCODE {pid} {address:X} {expected.hex()} {new.hex()}"))
 
     def restore(self, pid: int, address: int) -> None:
         _payload(request(f"RESTORE {pid} {address:X}"))
