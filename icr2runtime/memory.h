@@ -58,7 +58,12 @@ public:
     // The service must validate DOS102/REND32A and the process instance first.
     bool patchGuestCodeBytes(std::uintptr_t offset,
                              const std::vector<std::uint8_t>& expected,
-                             const std::vector<std::uint8_t>& replacement) const;
+                             const std::vector<std::uint8_t>& replacement) const {
+        // DOSBox stores guest instructions as host writable DATA. Reuse the
+        // already tested exact-compare, write, and read-back validation path.
+        return !expected.empty() && expected.size() <= 8 &&
+               patchDataBytes(offset, expected, replacement);
+    }
 
     template <typename T>
     bool read(std::uintptr_t offset, T& value) const {
