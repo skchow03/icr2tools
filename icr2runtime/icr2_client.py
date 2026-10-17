@@ -1,4 +1,4 @@
-"""Read-only Python client for ICR2Runtime v0.11 (Windows, no third-party packages).
+"""Read-only Python client for ICR2Runtime v0.12 (Windows, no third-party packages).
 
 One request per named-pipe connection. The C++ service caches the game handles,
 so connecting for each request no longer initiates a memory signature scan.
@@ -10,7 +10,7 @@ from ctypes import wintypes
 from dataclasses import dataclass
 import struct
 
-PIPE_NAME = r"\\.\pipe\ICR2Runtime_v11"
+PIPE_NAME = r"\\.\pipe\ICR2Runtime_v12"
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
 OPEN_EXISTING = 3
@@ -146,6 +146,11 @@ class ICR2Client:
 
     def ping(self) -> bool:
         return _payload(request("PING")) == "PONG"
+
+    def status(self) -> dict[str, str]:
+        """Return runtime version, idle timeout and current client counts."""
+        fields = _payload(request("STATUS")).split("\t")
+        return {"version": fields[0], **dict(part.split("=", 1) for part in fields[1:])}
 
     def refresh(self) -> None:
         _payload(request("REFRESH"))
