@@ -1,108 +1,84 @@
 # ICR2 Multi-Car Models
 
-Enable different car chassis models, wheel geometry, and tire appearances
-for individual cars in the native Windows version of *IndyCar Racing II*
-(WINDY101).
+ICR2 Multi-Car allows cars to use their own chassis shapes, wheel geometry,
+and tire appearances in the **native Windows version of IndyCar Racing II
+(WINDY101)**. One Python script enables both changes together.
 
-The tool uses **one Python script**: `icr2multicar.py`. Running it enables
-both chassis and wheel/tire hooks together. It changes memory in the
-running game only; it does not modify `WINDY.EXE` or carset files on disk.
+The tool modifies the running game's memory. It does **not** change game
+files or carsets on disk.
 
-## Requirements
+## What you need
 
-- Windows with a supported native **WINDY101** game process (*IndyCar Racing II*
-  Windows v1.0.1).
-- Python **3.9+**.
-- **ICR2Runtime v0.13** and its matching `icr2_client.py` and
-  `runtime_launcher.py`. See the [runtime build guide](../icr2runtime/README.md#build-on-windows).
-- A compiled `icr2runtime.exe`, started with `--enable-code-writes` for
-  patching.
+- The native Windows version of *IndyCar Racing II* (WINDY101, v1.0.1).
+- Windows and Python 3.9 or newer.
+- The **[ICR2Runtime v0.13 Windows download](https://github.com/skchow03/icr2tools/releases/download/icr2runtime-v0.13/ICR2Runtime-v0.13-win64.zip)**.
 
-Keep `icr2multicar` and `icr2runtime` beside each other:
+**No C++ compiler, CMake, or runtime build is required.**
+
+## Set up
+
+1. Download the [`icr2multicar.py` script](icr2multicar.py) from this folder
+   (on GitHub, open the file and choose **Download raw file**).
+2. Download and extract the ICR2Runtime ZIP linked above.
+3. From the extracted ZIP's `ICR2Runtime` folder, copy
+   `icr2runtime.exe`, `icr2_client.py`, and `runtime_launcher.py`
+   into the **same folder** as `icr2multicar.py`.
+
+Your folder should look like this:
 
 ```text
-icr2tools/
-  icr2runtime/
-    icr2_client.py
-    runtime_launcher.py
-    build/Debug/icr2runtime.exe
-  icr2multicar/
-    icr2multicar.py
+ICR2MultiCar/
+  icr2multicar.py
+  icr2runtime.exe
+  icr2_client.py
+  runtime_launcher.py
 ```
 
-The script and runtime client require no third-party Python packages.
+## Play
 
-## Usage
-
-1. Start WINDY101 and select the carset you want to use.
-2. Start ICR2Runtime with code writes enabled. From the repository root:
-
-   ```powershell
-   .\icr2runtime\build\Debug\icr2runtime.exe --enable-code-writes
-   ```
-
-   Stop an already-running read-only service before starting a
-   code-write-enabled one. Existing service permissions cannot be
-   upgraded automatically.
-
-3. Inspect the game without changing memory:
+1. Start WINDY101.
+2. Open a terminal in the folder shown above.
+3. Run:
 
    ```powershell
-   python icr2multicar\icr2multicar.py check
+   python icr2multicar.py run
    ```
 
-   Both the chassis and wheel/tire sites must report `READY`.
+Multi-Car automatically starts the included ICR2Runtime executable with
+the permission needed to enable both hooks. **You do not need to run
+`icr2runtime.exe` separately.**
 
-4. Enable both hooks:
+Keep the terminal open while playing. When you're finished, press
+**Ctrl+C** in the terminal and allow the script to restore the game
+instructions before closing WINDY.
 
-   ```powershell
-   python icr2multicar\icr2multicar.py run
-   ```
+## Troubleshooting
 
-   Keep the terminal open while playing. **Ctrl+C** attempts to restore
-   both instructions and free the allocated code page. Do not close WINDY
-   or the runtime while the tool is running.
+- **No WINDY101 game detected:** Make sure the *native Windows* game is
+  running; the tool does not support the DOS or Rendition versions.
+- **A runtime is already running without code-write permission:** Close
+  the existing `icr2runtime.exe` process, then run the Multi-Car command
+  again. The tool will launch the released EXE with the needed permission.
+- **Python is not recognized:** Install Python 3.9+ and make sure it is
+  available on your command line. On some Windows systems, `py` works
+  instead of `python`.
 
-If multiple supported WINDY processes are running, specify
-`--pid <process-id>`. You may provide
-`--runtime-exe <path-to-icr2runtime.exe>` to `run` when the
-tool needs to start the runtime automatically. A `check` action
-requires an already-running runtime.
+For troubleshooting, `python icr2multicar.py check` can inspect the
+game's hook sites **without changing memory**, but it requires an
+already-running ICR2Runtime service. Normal use only requires `run`.
 
-## How it works
+## Compatibility and safety
 
-The tool applies two changes together:
+- Only the supported **WINDY101** executable layout is recognized.
+- **The combined wheel/tire hook has not yet been confirmed in a live
+  WINDY session.** Treat this as an experimental modification.
+- Do not use multiple copies of Multi-Car or other tools that patch the
+  same game instructions at the same time.
+- Memory modifications can crash the game. Forced termination or
+  conflicting patches can prevent clean restoration. If the script
+  reports that cleanup failed, close WINDY before trying again.
+- This does not add independent wheel animation to each car.
 
-1. **Chassis geometry:** Changes the instruction at `0x0045B719`
-   from `89 02` to `90 90`, preventing the game from forcing one
-   shared chassis geometry pointer.
-2. **Wheels and tires:** Redirects the original call at `0x004607C0`
-   to a small x86 routine allocated in WINDY. That routine selects
-   wheel geometry and tire appearances for the active car before
-   returning to the game's code.
-
-Both edits to the game's existing instructions use ICR2Runtime's
-guarded `PATCHCODE` and `RESTORE` operations. The Python script
-allocates and manages the extra code page using Windows process-memory
-APIs. The tool does **not** provide separate per-car wheel animation.
-
-## Safety and compatibility
-
-- The tool only supports the WINDY101 build and the validated instruction
-  layout. It checks the target process, original bytes, and runtime patch
-  tracking before modifying memory.
-- **The combined wheel/tire hook has not yet been validated in a live
-  WINDY session.** Its instruction layout and relocations were checked
-  offline, but actual in-game behavior still requires testing.
-- Do not run other memory injectors that modify these sites or run
-  multiple copies of this script against the same game process.
-- Restoring instructions is not atomic with game execution. Abrupt
-  termination, conflicting patches, or stopping during rendering can
-  prevent cleanup or crash WINDY.
-- If the wheel jump cannot be safely detached, the script leaves the
-  extra code page allocated rather than free memory still being used
-  by the game. Close WINDY after an unsuccessful restoration.
-- No game executable, carset, or copyrighted game assets are included.
-
-These tools are independent community modifications and are not
-affiliated with the game's original developers or publishers.
+No game executables or copyrighted game assets are included. This is an
+independent community modification, unaffiliated with the game's original
+developers or publishers.
