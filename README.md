@@ -15,7 +15,7 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
   - [Quick start and licensing](icr2runtime/README.md)
   - [Developer and integration guide (v0.12)](icr2runtime/ICR2Runtime_v0.12_Developer_Guide.md)
   - [v0.13 guest-code changes](icr2runtime/ICR2Runtime_v0.13_GuestCode_Notes.md)
-- **icr2multicar/** – WINDY per-car chassis models and wheel/tire hooks
+- **icr2multicar/** – single-script WINDY per-car chassis and wheel/tire hooks
   - [Installation, usage and compatibility](icr2multicar/README.md)
 - **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code
   - [Architecture](icr2_core/ARCHITECTURE.md)
@@ -78,9 +78,9 @@ saved in the `.sgc` project and retained when duplicating objects.
 
 ### ICR2 Multi-Car Models
 
-Use the Windows-only multi-car wrappers with **ICR2Runtime v0.13** and the
-native WINDY101 game. The scripts support read-only inspection and guarded
-in-memory chassis and wheel/tire hooks; see the
+Run the Windows-only `icr2multicar/icr2multicar.py` script with
+**ICR2Runtime v0.13** and native WINDY101. It supports read-only inspection
+and applies the chassis and wheel/tire hooks together; see the
 [Multi-Car Models guide](icr2multicar/README.md) for setup, commands, and
 safety limitations.
 
