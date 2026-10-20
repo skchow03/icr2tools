@@ -172,7 +172,7 @@ bool GameMemory::readBytes(std::uintptr_t offset, void* destination,
     return success != FALSE && bytesRead == byteCount;
 }
 
-// This intentionally refuses read-only or executable pages; v0.6 is DATA-only.
+// Data writes intentionally refuse read-only and executable pages.
 // It also refuses a write if the value differs from the caller's expected bytes.
 bool GameMemory::patchDataBytes(std::uintptr_t offset,
         const std::vector<std::uint8_t>& expected,

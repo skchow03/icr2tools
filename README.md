@@ -12,9 +12,7 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
 - **icr2timing/** – live telemetry overlay
   - [Architecture](icr2timing/ARCHITECTURE.md)
 - **icr2runtime/** – Windows C++ memory-access service for supported ICR2 builds
-  - [Quick start and licensing](icr2runtime/README.md)
-  - [Developer and integration guide (v0.12)](icr2runtime/ICR2Runtime_v0.12_Developer_Guide.md)
-  - [v0.13 guest-code changes](icr2runtime/ICR2Runtime_v0.13_GuestCode_Notes.md)
+  - [Setup, Python API, developer reference and license](icr2runtime/README.md)
 - **icr2multicar/** – single-script WINDY per-car chassis and wheel/tire hooks
   - [Installation, usage and compatibility](icr2multicar/README.md)
 - **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code

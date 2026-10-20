@@ -1,184 +1,248 @@
 # ICR2Runtime
 
-**ICR2Runtime v0.13** is an experimental, Windows-only C++ memory-access service for
-*IndyCar Racing II* (ICR2). It detects supported running game builds and exposes
-memory reads, bounded searches, optional guarded patches, and 24-byte animation
-record updates through a local Windows named pipe.
+**ICR2Runtime v0.13** is a Windows-only C++ service that gives modding tools
+controlled access to the memory of supported *IndyCar Racing II* (ICR2)
+processes. It supports process discovery, memory reads, address translation,
+bounded searches, guarded patches, and 24-byte animation record updates.
 
-This directory is part of [ICR2Tools](../README.md). It is not a standalone
-game, a replacement executable, or a general-purpose DOSBox plugin.
+ICR2Runtime is a component of [ICR2Tools](../README.md), not a replacement
+game executable or a standalone DOSBox plugin. Its Python interface uses
+only the standard library.
 
-## Supported game builds
+## Supported games
 
-| Runtime identifier | Game environment |
+| Game identifier | Environment |
 | --- | --- |
 | `DOS102` | DOS ICR2 v1.0.2 in supported DOSBox configurations |
-| `REND32A` | Rendition ICR2 build in DOSBox |
-| `WINDY101` | Native Windows ICR2 (WINDY) |
+| `REND32A` | Rendition ICR2 in supported DOSBox configurations |
+| `WINDY101` | Native Windows ICR2 v1.0.1 |
 
-Detection depends on exact signatures. Support for other game revisions or
-DOSBox variants is not guaranteed. Runtime addresses are *Ghidra addresses for
-the detected build*, not executable file offsets or arbitrary host-process
-addresses.
+Game detection relies on exact binary signatures. Other game revisions and
+DOSBox configurations are not guaranteed to work.
 
-## Build on Windows
+## Build and start on Windows
 
-Requirements: **Windows**, **CMake 3.20+**, and an **MSVC C++20 toolchain**
-(such as Visual Studio 2022 with Desktop development with C++). The supplied
-Python client uses the Windows standard library APIs through `ctypes`; no
-third-party Python dependencies are required for that client.
-
-From the ICR2Tools repository root, use a developer terminal with MSVC
-available:
+To build from source, install **CMake 3.20+** and an **MSVC C++20 toolchain**
+(for example, Visual Studio 2022 with Desktop development with C++).
+From the ICR2Tools repository root:
 
 ```powershell
-cd icr2runtime
-cmake -S . -B build
-cmake --build build --config Debug
-.\build\Debug\icr2runtime.exe
+cmake -S icr2runtime -B icr2runtime/build -A x64
+cmake --build icr2runtime/build --config Release
+.\icr2runtime\build\Release\icr2runtime.exe
 ```
 
-The executable location may differ with your CMake generator and configuration.
+The final EXE location can depend on the CMake generator. A compiled runtime
+must match the supplied `icr2_client.py` and `runtime_launcher.py`. The
+source repository does not include a prebuilt executable.
+
+**Reads are enabled by default; writes are disabled.** To opt in to guarded
+code patches or writable data patches, start the service with the relevant
+flag:
+
+```powershell
+.\icr2runtime\build\Release\icr2runtime.exe --enable-code-writes
+# Or, for data patches and animation updates:
+.\icr2runtime\build\Release\icr2runtime.exe --enable-data-writes
+```
+
+Both flags can be supplied when a tool explicitly requires both kinds of
+writes. These permissions apply to the shared service, not to an individual
+client. Do not enable writes for tools that only need telemetry.
 
 ## Connect from Python
 
-You can start the service manually, or let any compiled Python client
-start/reuse it automatically using `runtime_launcher.ensure_runtime()`.
-For manual testing, launch a supported ICR2 build, keep the runtime running,
-and open another terminal in the `icr2runtime` directory:
+Start one of the supported games and ICR2Runtime, then run Python from the
+`icr2runtime` directory:
 
-```powershell
-python -c "from icr2_client import ICR2Client; c = ICR2Client(); print('Connected:', c.ping()); print(c.list_games())"
+```python
+from icr2_client import ICR2Client, ICR2Session
+
+client = ICR2Client()
+assert client.ping()
+print(client.status())       # Includes runtime version and active patch counts
+games = client.list_games()
+print(games)                 # PID, game build, address bases, window title
+
+# Reuse a pipe connection for frequently updated telemetry.
+with ICR2Session() as session:
+    print(session.request("PING").strip())
 ```
 
-This is read-only and does not require any write flags.
-
-The Python API is in [`icr2_client.py`](icr2_client.py). Use
-`ICR2Client.read()`, `read_bytes()`, and `read_struct()` for small reads;
-use `ICR2Session` for repeated requests on a persistent pipe connection.
-Select the target game explicitly if multiple supported game instances are
-running. Never hard-code process IDs or DOSBox translation bases.
-
-## Shared startup and shutdown (v0.13)
-
-The C++ executable is single-instance per Windows login session (named mutex
-`Local\\ICR2Runtime_v13_Service`). Python tools can launch it concurrently;
-the losing launch exits normally, and both clients connect to the same
-`\\\\.\\pipe\\ICR2Runtime_v13` endpoint.
+Alternatively, applications can import `ensure_runtime` from
+`runtime_launcher.py`. It reuses the current shared service, or starts a
+missing one with a default 60-second idle timeout:
 
 ```python
 from runtime_launcher import ensure_runtime
-from icr2_client import ICR2Session
 
-client = ensure_runtime()   # reuses an existing v0.13 service or starts read-only
-print(client.status())       # version and idle/client/patch counts
+client = ensure_runtime()  # Read-only unless explicitly requested otherwise
 print(client.list_games())
 
-# Use a persistent connection while your GUI/dashboard is active.
-with ICR2Session() as session:
-    print(session.request("PING"))
+# For applications that explicitly require guarded code writes:
+# client = ensure_runtime(enable_code_writes=True)
 ```
 
-Auto-started services use `--idle-timeout 60` by default. The service shuts
-down after 60 seconds without connected clients **only if no guarded patches
-or animation leases remain active**. Persistent `ICR2Session` connections
-prevent idle exit. Manual launches without `--idle-timeout` stay running
-until explicitly closed; `--idle-timeout 0` also disables auto-exit.
-The upper limit is 3600 seconds.
+The launcher never silently upgrades an existing read-only service to
+write-enabled. If its capabilities are insufficient, it raises
+`RuntimeCapabilityError`. Applications that supply their own bundled runtime
+can pass `runtime_path=` to `ensure_runtime()`.
+
+## Addresses and game detection
+
+Runtime addresses passed to the client are **Ghidra virtual addresses for
+the detected game build**, not raw executable file offsets or Windows host
+process addresses.
+
+```text
+Windows host address = detected translation base + Ghidra address
+```
+
+`list_games()` returns a game identifier, PID, translation base, host module
+base and window title. **Do not additionally add the host module base**, and
+do not assume translation bases are unchanged across sessions. Use
+`map_file_offset(pid, file_offset)` only for mapped, validated file regions;
+unsupported mappings fail rather than guess.
+
+The runtime provides memory access, **not** a universal telemetry address
+map. Each consuming tool must validate its addresses, types, scales, and
+meaning separately for each game build.
+
+## Python API
+
+`ICR2Client` offers these read and discovery operations:
+
+| Method | Purpose |
+| --- | --- |
+| `ping()`, `status()`, `capabilities()` | Connectivity and service information |
+| `list_games()`, `refresh()` | Discover or rescan supported processes |
+| `read(pid, address, kind="i32")` | Read a typed numeric value |
+| `read_bytes(pid, address, size)` | Read 1–65,536 bytes |
+| `read_struct(pid, address, fmt)` | Decode a packed Python `struct` |
+| `scan(pid, start, length, pattern, limit=64)` | Search for an exact byte sequence |
+| `map_file_offset(pid, offset)` | Translate a verified game file offset |
+
+Supported `read()` types are `u8`, `i8`, `u16`, `i16`, `u32`, `i32`,
+`u64`, `i64`, `f32`, and `f64`. Scans accept 1–32-byte patterns,
+spans up to 16 MiB, and a limit of up to 256 matches.
+
+Write methods require exact original bytes, matching replacement lengths,
+and the appropriate startup flag:
+
+| Method | Purpose |
+| --- | --- |
+| `patch_data(pid, address, expected, new)` | Guarded 1–8-byte data patch |
+| `patch_code(pid, address, expected, new)` | Guarded native executable-code patch |
+| `patch_guest_code(pid, address, expected, new)` | Guarded DOSBox guest-code patch |
+| `patch_batch(pid, patches)` | Up to 32 guarded data patches; best-effort rollback on error |
+| `patch24(pid, address, expected, new)` | Guarded 24-byte data record patch |
+| `patch_object6(pid, address, expected, new)` | Six signed 32-bit object fields |
+| `list_patches()`, `restore(pid, address)` | Inspect and restore tracked patches |
+| `anim_begin()`, `anim_update()`, `anim_end()` | Manage 24-byte animation leases |
+
+Animation methods are available on `ICR2Session`; each uses a PID, address
+and the corresponding 24-byte record (except `anim_end`, which needs no
+record argument). Keep a persistent session open for repeated updates. A
+session must not be shared between threads without synchronization.
+
+### Native code and DOSBox guest-code writes
+
+`PATCHCODE` patches native executable pages, including supported WINDY101
+code. `PATCHGUESTCODE` patches verified DOSBox guest instructions for
+`DOS102` and `REND32A`; it is **not** accepted for WINDY101. Both operations
+require `--enable-code-writes` and accept 1–8-byte expected/replacement
+pairs. The runtime verifies process identity, instruction bytes, and patch
+overlaps, then tracks the changes for `RESTORE`.
+
+DOSBox guest instructions can be stored in ordinary writable host pages.
+The guest-code operation handles those pages without changing their
+protection. However, a successful host-memory write does **not** establish
+that DOSBox has invalidated any cached, recompiled instructions. Live
+guest-code execution and restoration still require controlled validation.
+
+### Shared service lifecycle
+
+The v0.13 service uses:
+
+- Pipe: `\\.\pipe\ICR2Runtime_v13`
+- Mutex: `Local\ICR2Runtime_v13_Service`
+
+Only one service instance serves the current endpoint. The launcher can be
+called by multiple applications concurrently; they connect to the same
+service. A manually started service runs until closed unless
+`--idle-timeout SECONDS` is provided. Valid timeouts are 0–3600 seconds;
+0 disables automatic shutdown.
+
+The service exits after its idle interval only when there are **no active
+clients, tracked patches or animation leases**. A persistent
+`ICR2Session` prevents idle exit. Existing instances retain their original
+permissions and timeout. The service periodically refreshes process
+detection; `refresh()` triggers an immediate rescan.
+
+### Wire protocol
+
+Non-Python clients may use the local named pipe directly. Commands are
+newline-terminated ASCII; successful responses begin with `OK\t`, and
+errors with `ERR\t`. PIDs and sizes are decimal, while addresses are
+hexadecimal. The primary commands are:
+
+```text
+PING                  STATUS                 CAPS
+LIST                  REFRESH                READ
+BULK                  MAP                    SCAN
+PATCH                 PATCHCODE              PATCHGUESTCODE
+PATCHBATCH            PATCH24                PATCHES
+RESTORE               ANIM_BEGIN             ANIM_UPDATE
+ANIM_END              ANIM_LIST              PATCH24_READINESS
+```
+
+The `SESSION` handshake switches to length-framed responses for multiple
+requests on one connection. Prefer the provided `ICR2Client` and
+`ICR2Session` modules over hand-encoding commands and frames.
+
+## Integration and safety
+
+Clients should choose the target game by its reported identifier and PID,
+verify expected bytes before patching, and keep each tool's semantic memory
+addresses separate from the generic runtime. For example, an editor with
+raw EXE offsets should translate them with `MAP` before reading or writing
+memory, rather than passing file offsets as Ghidra addresses.
+
+Guarded writes are not transactional with the game's CPU. Restoration can
+fail after a game reload, process termination, conflicting memory tool, or
+abrupt shutdown. Animation leases require an explicit `anim_end()` to restore
+the original record; a crash can prevent this. Track reload handling,
+simultaneous writers, and sustained live animation workloads are not fully
+validated. Test modifications with disposable game sessions.
+
+For Python application bundles, include the matching runtime EXE,
+`icr2_client.py`, and `runtime_launcher.py`. The launcher supports
+PyInstaller's `--add-binary "icr2runtime.exe;."` configuration and can
+cache the embedded service under
+`%LOCALAPPDATA%\ICR2Tools\ICR2Runtime\<content-hash>` so it can outlive
+the application's temporary extraction directory.
+
+## Development and tests
+
+The Windows GitHub Actions workflow builds the runtime with MSVC and runs
+the Python launcher and named-pipe integration tests. From a Windows
+developer machine with a compiled runtime:
 
 ```powershell
-.\\build\\Release\\icr2runtime.exe --idle-timeout 60
+python -m unittest discover -s icr2runtime/tests -p "test_*.py" -v
 ```
 
-For public distribution, place `icr2runtime.exe` next to each compiled Python
-tool, or bundle it with PyInstaller:
-
-```powershell
-pyinstaller --onefile --windowed --add-binary "icr2runtime.exe;." mytool.py
-```
-
-When bundled in PyInstaller's temporary extraction directory, the launcher
-copies the runtime to a content-addressed per-user cache under
-`%LOCALAPPDATA%\\ICR2Tools\\ICR2Runtime`. This allows the shared service
-to outlive the Python EXE without depending on PyInstaller temporary files.
-You must include `runtime_launcher.py` and `icr2_client.py` in the Python
-application (e.g. alongside its entry-point module).
-
-The v0.13 named-pipe endpoint replaces the v0.12 endpoint. Rebuild the C++
-service and update `icr2_client.py` and `runtime_launcher.py` together.
-The old v0.12 endpoint can coexist but is not reused by v0.13 clients.
-Existing tool wrappers need the updated matching Python runtime client.
-
-## Optional memory writes and safety
-
-**Writes are disabled by default.** Enable only the capability you need:
-
-```powershell
-.\build\Debug\icr2runtime.exe --enable-data-writes
-```
-
-The separate `--enable-code-writes` flag permits guarded code patching.
-
-### Guarded DOSBox guest code (v0.13)
-
-DOS102 and REND32A run inside DOSBox, whose emulated x86 instructions may
-reside on ordinary writable Windows memory pages rather than host executable
-pages. The new `PATCHGUESTCODE` command allows a verified guest-code patch
-**only with `--enable-code-writes`**, independently of the data-write flag.
-It requires 1–8 exact expected bytes, checks process/signature identity, and
-tracks the patch for `RESTORE`. `PATCHES` labels it `GUESTCODE`.
-
-The guest-code operation reuses the existing guarded data-page writer
-(`PAGE_READWRITE` or `PAGE_WRITECOPY`); it does not make pages executable
-or change their protection. Native WINDY `PATCHCODE` is unchanged.
-
-```python
-from icr2_client import ICR2Client
-c = ICR2Client()
-# Discover a unique live instruction signature first.
-c.patch_guest_code(pid, address, bytes.fromhex("8902"), bytes.fromhex("9090"))
-# Later, provided the game and bytes have not changed:
-c.restore(pid, address)
-```
-
-A successful host memory write does not guarantee DOSBox has invalidated
-previously recompiled guest instructions. **Live REND32A write/restore
-validation is pending.** See the
-[v0.13 guest-code notes](ICR2Runtime_v0.13_GuestCode_Notes.md).
-
-A tool that explicitly needs writes can start a missing service using
-`ensure_runtime(enable_data_writes=True)`; this requires an explicit
-application decision or user consent. If a service is already running
-read-only, the helper raises `RuntimeCapabilityError` instead of restarting
-it, interrupting other clients, or silently enabling writes. The write flags
-are service-wide, not per-client authorizations. An active tracked patch or
-animation lease inhibits automatic idle shutdown; restoration still isn't
-guaranteed after crashes or process termination.
-Ordinary dashboard and telemetry readers should use neither flag.
-
-Write operations require expected original bytes and may fail if game memory
-has changed. Restoration is **not guaranteed** following an abrupt process
-exit, game reload, or a conflicting modification. Test writes only in
-disposable sessions and never assume addresses from one game build apply to
-another. The runtime has not been production-hardened or validated for all
-track-reload and multi-client scenarios.
-
-## Documentation and integrations
-
-See the [v0.12 Developer and Integration Guide](ICR2Runtime_v0.12_Developer_Guide.md)
-for exact version signatures, address-translation rules, protocol commands,
-Python integration, previous validation results, and known limitations.
-
-The service is intended to be reusable by Python tools such as ICR2Timing,
-ICR2Dash, ICR2Edit, and ICR2 Animator. The runtime provides raw memory access;
-each tool must supply and validate its own semantic telemetry/address map.
+The automated checks cover startup, client capabilities, named-pipe
+behavior and idle lifecycle, **not** live patch behavior in a running ICR2
+session. Keep game-specific acceptance tests separate from basic service
+integration tests.
 
 ## License
 
-The contents of this **`icr2runtime/` directory** are provided under the
-[MIT License](LICENSE). This directory-scoped license does not apply to other
-ICR2Tools directories or to proprietary ICR2 game files. No game assets or
-game executables are included in this component.
+The contents of **`icr2runtime/`** are available under the
+[MIT License](LICENSE). This directory-scoped license does not cover
+other ICR2Tools components or proprietary game files. No game executable
+or game assets are distributed with ICR2Runtime.
 
-ICR2Runtime is an independent modding project and is not affiliated with the
-game's original publisher or developers.
+ICR2Runtime is an independent community modding project, unaffiliated
+with the game's original developers or publishers.
