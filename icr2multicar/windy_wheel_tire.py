@@ -1,12 +1,8 @@
-"""WINDY101 per-car wheels/tires + chassis hook via ICR2Runtime v0.12.
+"""WINDY101 per-car wheel/tire and chassis hook via ICR2Runtime v0.13.
 
-Based on the uploaded WINDY_carmodel.CT's "Per-Car Wheels and Tires"
-Auto Assembler script. This is an EXPERIMENTAL in-process x86 code hook.
-
-ICR2Runtime does guarded code patches and owns the restore snapshots.
-Windows VirtualAllocEx/WriteProcessMemory allocates/fills a private code cave,
-because v0.12 has no remote-allocation API. The code cave is only valid while
-this Python process manages it. `run` is the only writing action.
+The `check` action is read-only. The `run` action installs guarded code
+patches and manages a private executable page in WINDY for the per-car wheel
+and tire selection routine. Keep `run` active until restoration completes.
 """
 from __future__ import annotations
 
@@ -17,7 +13,7 @@ import struct
 import sys
 import time
 
-# Import the known-good stage-1 chassis wrapper and runtime v0.12 integration.
+# Reuse chassis patch verification and the matching runtime client.
 import windy_multichassis as chassis
 from icr2_client import RuntimeErrorResponse
 from runtime_launcher import RuntimeCapabilityError, RuntimeStartupError
@@ -37,10 +33,9 @@ PROCESS_VM_READ = 0x0010
 PROCESS_VM_WRITE = 0x0020
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
 
-# The exact body of the combined CE Auto Assembler script, assembled as x86.
-# Placeholder markers 0x11,0x22,0x33 are 32-bit CALL/CALL/JMP displacements.
-# Address constants are adjusted if WINDY isn't loaded at its preferred base.
-# Disassembly/branch offsets verified with GNU as and objdump on i386.
+# x86 wheel/tire selection routine with address and relative-branch fixups.
+# Marker bytes 0x11, 0x22 and 0x33 stand in for CALL/CALL/JMP displacements.
+# Absolute addresses are relocated to WINDY's loaded image base.
 CODE_TEMPLATE = bytes.fromhex(
     "9c 60 8b 06 8b 40 74 83 f8 20 77 38"
     "8b 3c 85 60 36 51 00 85 ff 74 2d 31 db"
@@ -96,7 +91,7 @@ def _rel32(place_after_instruction: int, destination: int) -> bytes:
 
 
 def build_cave(base: int, image_base: int = WINDY_IMAGE_BASE) -> bytes:
-    """Relocate precisely the Cheat Engine script's absolute pointers/calls."""
+    """Relocate the x86 routine's absolute pointers and relative branches."""
     if not (0 <= base < 2**32 and 0 <= image_base < 2**32):
         raise chassis.WrapperError("Expected 32-bit addresses for WINDY x86 code cave")
     shift = image_base - WINDY_IMAGE_BASE
@@ -185,7 +180,7 @@ def validate_image(client, game):
         raise chassis.WrapperError(
             f'Unexpected WINDY address layout: translation=0x{game.translation_base:X}, '
             f'host PE base=0x{game.host_module_base:X}. Do not inject on an unverified layout.')
-    # These site bytes were cross-checked against the supplied WINDY.EXE.
+    # Require the exact original instructions at the hook site.
     expected = client.read_bytes(game.pid, WHEEL_SITE, len(WHEEL_ORIGINAL))
     if expected != WHEEL_ORIGINAL:
         raise chassis.WrapperError(f'Wheel/tire hook site is not original: {expected.hex(" ")}')
@@ -201,14 +196,14 @@ def report(client, game):
 
 def run(client, game):
     if 'PATCH_CODE' not in client.capabilities():
-        raise chassis.WrapperError('Runtime code writes disabled. Restart v0.12 with --enable-code-writes')
+        raise chassis.WrapperError('Runtime code writes disabled. Restart v0.13 with --enable-code-writes')
     validate_image(client, game)
     if chassis.inspect(client, game.pid)[0] != 'READY':
         raise chassis.WrapperError('Chassis patch already active/modified. Stop the previous '
                                    'wrapper with Ctrl+C and restore 89 02 first.')
     if wheel_state(client, game.pid)[0] != 'READY':
-        raise chassis.WrapperError('Wheel/tire hook already installed/modified. '
-                                   'Disable the Cheat Engine hook first.')
+        raise chassis.WrapperError('Wheel/tire hook already installed or modified. '
+                                   'Remove any conflicting injector before retrying.')
     cave = RemoteCave(game.pid)
     chassis_attempted = False
     wheel_expected = None
@@ -235,9 +230,8 @@ def run(client, game):
         print('\nStopping wheel/tire wrapper...')
     finally:
         # Never free executable code while the detour can still jump to it.
-        # A pipe failure AFTER a successful PATCHCODE can leave an installed
-        # detour even if the Python call raised before wheel_owned was set.
-        # Inspect both the live bytes AND the service's tracking record.
+        # A failed pipe response can occur after a successful code write.
+        # Check the live detour and runtime record before freeing its target.
         safe_to_release = False
         errors = []
         if cave.address:
@@ -291,10 +285,10 @@ def run(client, game):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='WINDY101 chassis + wheel/tire hook (ICR2Runtime v0.12)')
+    parser = argparse.ArgumentParser(description='WINDY101 chassis + wheel/tire hook (ICR2Runtime v0.13)')
     parser.add_argument('action', nargs='?', default='check', choices=('check', 'run'))
     parser.add_argument('--pid', type=int)
-    parser.add_argument('--runtime-exe', help='Path to compiled v0.12 runtime, if startup is needed')
+    parser.add_argument('--runtime-exe', help='Path to compiled ICR2Runtime v0.13, if startup is needed')
     args = parser.parse_args(argv)
     try:
         client = chassis.get_client('run' if args.action == 'run' else 'check', args.runtime_exe)
