@@ -7,50 +7,32 @@ and tire appearances in the **native Windows version of IndyCar Racing II
 The tool modifies the running game's memory. It does **not** change game
 files or carsets on disk.
 
-## What you need
+## Download the Windows application
 
-- The native Windows version of *IndyCar Racing II* (WINDY101, v1.0.1).
-- Windows and Python 3.9 or newer.
-- The **[ICR2Runtime v0.13 Windows download](https://github.com/skchow03/icr2tools/releases/download/icr2runtime-v0.13/ICR2Runtime-v0.13-win64.zip)**.
+For the simplest setup, download **ICR2MultiCar Windows** from the
+[ICR2Tools releases](https://github.com/skchow03/icr2tools/releases)
+once a Multi-Car release is published. Extract its ZIP, start WINDY101,
+then run `./ICR2MultiCar.exe run` from a PowerShell terminal in the extracted folder.
 
-**No C++ compiler, CMake, or runtime build is required.**
+The packaged EXE contains both the Python application and its matching
+ICR2Runtime service. **No Python installation, runtime download, or
+compilation is needed.** Keep the console open while playing and press
+**Ctrl+C** to attempt to restore both hooks before closing WINDY.
 
-## Set up
+### Using the Python script instead
 
-1. Download the [`icr2multicar.py` script](icr2multicar.py) from this folder
-   (on GitHub, open the file and choose **Download raw file**).
-2. Download and extract the ICR2Runtime ZIP linked above.
-3. From the extracted ZIP's `ICR2Runtime` folder, copy
-   `icr2runtime.exe`, `icr2_client.py`, and `runtime_launcher.py`
-   into the **same folder** as `icr2multicar.py`.
+If you prefer the source version, you need Python 3.9+ and
+[ICR2Runtime v0.13 for Windows](https://github.com/skchow03/icr2tools/releases/download/icr2runtime-v0.13/ICR2Runtime-v0.13-win64.zip).
 
-Your folder should look like this:
+Place `icr2multicar.py` beside the extracted `icr2runtime.exe`,
+`icr2_client.py`, and `runtime_launcher.py`, then run:
 
-```text
-ICR2MultiCar/
-  icr2multicar.py
-  icr2runtime.exe
-  icr2_client.py
-  runtime_launcher.py
+```powershell
+python icr2multicar.py run
 ```
 
-## Play
-
-1. Start WINDY101.
-2. Open a terminal in the folder shown above.
-3. Run:
-
-   ```powershell
-   python icr2multicar.py run
-   ```
-
-Multi-Car automatically starts the included ICR2Runtime executable with
-the permission needed to enable both hooks. **You do not need to run
-`icr2runtime.exe` separately.**
-
-Keep the terminal open while playing. When you're finished, press
-**Ctrl+C** in the terminal and allow the script to restore the game
-instructions before closing WINDY.
+Both distributions automatically start the runtime with the necessary
+permissions. There is no need to start `icr2runtime.exe` yourself.
 
 ## Troubleshooting
 
@@ -59,13 +41,13 @@ instructions before closing WINDY.
 - **A runtime is already running without code-write permission:** Close
   the existing `icr2runtime.exe` process, then run the Multi-Car command
   again. The tool will launch the released EXE with the needed permission.
-- **Python is not recognized:** Install Python 3.9+ and make sure it is
-  available on your command line. On some Windows systems, `py` works
-  instead of `python`.
+- **Python is not recognized:** Use the packaged Windows EXE instead, or
+  install Python 3.9+ to run the source script.
 
-For troubleshooting, `python icr2multicar.py check` can inspect the
-game's hook sites **without changing memory**, but it requires an
-already-running ICR2Runtime service. Normal use only requires `run`.
+For troubleshooting, `./ICR2MultiCar.exe check` (or
+`python icr2multicar.py check` for the source version) inspects the hook
+sites **without changing memory**, but requires an already-running
+ICR2Runtime service. Normal use only requires `run`.
 
 ## Compatibility and safety
 
