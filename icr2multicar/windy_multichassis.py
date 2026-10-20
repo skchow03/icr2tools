@@ -1,8 +1,8 @@
 """WINDY101 multi-chassis geometry unlock for ICR2Runtime v0.13.
 
-Read-only by default. Code changes happen only with the `run` or `on` action.
-This replaces the game's instruction forcing one shared car geometry pointer.
-It does NOT implement the separate wheel/tire code-cave hook.
+Read-only by default. The `on` and `run` actions change game memory;
+`off` restores the exact runtime-tracked patch. This script changes the
+shared chassis geometry pointer only, not per-car wheel or tire pointers.
 """
 from __future__ import annotations
 
@@ -12,8 +12,7 @@ import sys
 import time
 from typing import Any
 
-# Support either a sibling icr2runtime/ folder in the ICR2Tools repository
-# (recommended) or direct placement in the runtime source directory.
+# Find the matching ICR2Runtime client in the repository or beside the script.
 _THIS_DIR = Path(__file__).resolve().parent
 _RUNTIME_DIRS = (_THIS_DIR.parent / "icr2runtime", _THIS_DIR,
                  _THIS_DIR / "icr2runtime")
@@ -42,8 +41,7 @@ def runtime_binary_path(choice: str | None) -> str | None:
         if not path.is_file():
             raise WrapperError(f"Runtime EXE does not exist: {path}")
         return str(path)
-    # During development, prioritize the current CMake Debug/Release outputs
-    # over any older executable left in the source root.
+    # Prefer built executables over a copy in the source directory.
     for directory in _RUNTIME_DIRS:
         for filename in ("build/Debug/icr2runtime.exe", "build/Release/icr2runtime.exe",
                          "icr2runtime.exe"):
@@ -55,18 +53,18 @@ def runtime_binary_path(choice: str | None) -> str | None:
 
 def get_client(action: str, explicit_exe: str | None) -> ICR2Client:
     if action in ("on", "run"):
-        # An explicit write operation may start the v0.12 shared service with
-        # code writes enabled. Existing read-only instances are NEVER promoted.
+        # An explicit write operation may launch the shared service with code writes.
+        # Existing read-only instances are never promoted.
         return ensure_runtime(runtime_path=runtime_binary_path(explicit_exe),
                               enable_code_writes=True)
-    # check/off must not silently start a new runtime. In particular, STOP must
-    # talk to the service that already owns the original byte snapshot.
+    # Read-only checks and restoration require an existing service; restoration
+    # must use the service holding the original-byte snapshot.
     client = ICR2Client()
     try:
         if not client.ping():
             raise WrapperError("ICR2Runtime did not respond to PING")
     except OSError as exc:
-        raise WrapperError("No running ICR2Runtime v0.12 service. Start it first; "
+        raise WrapperError("No running ICR2Runtime v0.13 service. Start it first; "
                            "for writes use --enable-code-writes.") from exc
     return client
 
@@ -92,9 +90,9 @@ def select_game(client: ICR2Client, pid: int | None) -> Any:
 def require_runtime(client: ICR2Client) -> dict[str, str]:
     status = client.status()
     if status.get("version") != RUNTIME_VERSION:
-        raise WrapperError("Expected ICR2Runtime v0.12, got "
-                           + repr(status.get("version")) + ". Update and rebuild "
-                           "the C++ runtime plus icr2_client.py together.")
+        raise WrapperError(f"Expected ICR2Runtime v{RUNTIME_VERSION}, got "
+                           + repr(status.get("version")) + ". Rebuild the C++ "
+                           "runtime and use its matching Python client.")
     return status
 
 
@@ -132,9 +130,9 @@ def report(client: ICR2Client, pid: int) -> str:
     print(f"WINDY101 PID {pid}; address 0x{CHASSIS_ADDRESS:08X}; "
           f"bytes: {observed.hex(' ').upper()}; state: {state}")
     if state == "APPLIED_UNTRACKED":
-        print("WARNING: Code is NOPed but the active v0.12 service has no "
-              "restore record. It may have been changed by Cheat Engine or "
-              "an older service. No write will be attempted.")
+        print("WARNING: The instruction is patched, but the active runtime has "
+              "no restore record. Another injector or runtime instance may "
+              "have modified it. No write will be attempted.")
     if state == "UNKNOWN_BYTES":
         print("WARNING: Unexpected instruction bytes. A different build or "
               "third-party code patch may be present. No write will be attempted.")
@@ -150,13 +148,13 @@ def apply(client: ICR2Client, pid: int) -> bool:
         raise WrapperError(f"Refusing patch: {state} (expected untouched 89 02)")
     if "PATCH_CODE" not in client.capabilities():
         raise WrapperError("Runtime is read-only for executable code. Restart "
-                           "v0.12 with --enable-code-writes; an existing "
+                           "v0.13 with --enable-code-writes; an existing "
                            "read-only service cannot be upgraded.")
     client.patch_code(pid, CHASSIS_ADDRESS, ORIGINAL, REPLACEMENT)
     if inspect(client, pid)[0] != "APPLIED_TRACKED":
         raise WrapperError("Patch was submitted but verification failed; "
                            "use 'check' and 'off' to inspect/restore")
-    print("Multi-chassis geometry override disabled. The runtime owns the "
+    print("Per-car chassis geometry enabled. The runtime tracks the "
           "two-byte patch and retains its restore snapshot.")
     return True
 
@@ -215,7 +213,7 @@ def run(client: ICR2Client, pid: int):
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="WINDY101 multi-chassis geometry patch via ICR2Runtime v0.12")
+        description=f"WINDY101 multi-chassis geometry patch via ICR2Runtime v{RUNTIME_VERSION}")
     parser.add_argument("action", nargs="?", default="check",
                         choices=("check", "on", "off", "run"),
                         help="check=read-only; on=enable; off=restore; "
@@ -223,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--pid", type=int,
                         help="Select WINDY101 process if more than one is running")
     parser.add_argument("--runtime-exe", metavar="PATH",
-                        help="Path to the newly built v0.12 icr2runtime.exe "
+                        help=f"Path to ICR2Runtime v{RUNTIME_VERSION} executable "
                              "if automatic startup is needed")
     args = parser.parse_args(argv)
     try:
