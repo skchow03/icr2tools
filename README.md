@@ -13,7 +13,10 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
   - [Architecture](icr2timing/ARCHITECTURE.md)
 - **icr2runtime/** – Windows C++ memory-access service for supported ICR2 builds
   - [Quick start and licensing](icr2runtime/README.md)
-  - [Developer and integration guide](icr2runtime/ICR2Runtime_v0.11_Developer_Guide.md)
+  - [Developer and integration guide (v0.12)](icr2runtime/ICR2Runtime_v0.12_Developer_Guide.md)
+  - [v0.13 guest-code changes](icr2runtime/ICR2Runtime_v0.13_GuestCode_Notes.md)
+- **icr2multicar/** – WINDY per-car chassis models and wheel/tire hooks
+  - [Installation, usage and compatibility](icr2multicar/README.md)
 - **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code
   - [Architecture](icr2_core/ARCHITECTURE.md)
 - **icr2_3d_catalog_viewer/** – track 3D catalog viewer
@@ -72,6 +75,14 @@ folder and combines objects with the same filename into that file, in table orde
 The `.tsd` extension is optional. Export warns and stops if any object has no
 filename; existing output files require overwrite confirmation. Assignments are
 saved in the `.sgc` project and retained when duplicating objects.
+
+### ICR2 Multi-Car Models
+
+Use the Windows-only multi-car wrappers with **ICR2Runtime v0.13** and the
+native WINDY101 game. The scripts support read-only inspection and guarded
+in-memory chassis and wheel/tire hooks; see the
+[Multi-Car Models guide](icr2multicar/README.md) for setup, commands, and
+safety limitations.
 
 ### ICR2 Timing Overlay
 Launch the legacy overlay (control panel + in-game overlay) with:
