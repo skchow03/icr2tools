@@ -1,0 +1,83 @@
+name: Publish ICR2Runtime Windows Binary
+
+on:
+  # Future ICR2Runtime releases publish their ZIP automatically.
+  release:
+    types: [published]
+  # Backfill an existing release, including the already-published v0.13.
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing ICR2Runtime release tag (for example, icr2runtime-v0.13)'
+        required: true
+        type: string
+        default: 'icr2runtime-v0.13'
+
+permissions:
+  contents: write
+
+jobs:
+  build-package-release:
+    if: startsWith(github.event.release.tag_name || inputs.release_tag, 'icr2runtime-v')
+    runs-on: windows-latest
+    env:
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.release_tag }}
+    steps:
+      - name: Verify target GitHub release exists
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release view "$env:RELEASE_TAG" --json tagName --jq .tagName
+
+      # Build the exact source tagged for this release, not a later main commit.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure MSVC x64 build
+        run: cmake -S icr2runtime -B icr2runtime/build -A x64
+
+      - name: Build Release executable
+        run: cmake --build icr2runtime/build --config Release --parallel
+
+      - name: Python syntax checks
+        run: python -m compileall -q icr2runtime/icr2_client.py icr2runtime/runtime_launcher.py icr2runtime/tests
+
+      - name: Launcher unit and Windows named-pipe integration tests
+        env:
+          ICR2RUNTIME_EXE: ${{ github.workspace }}/icr2runtime/build/Release/icr2runtime.exe
+        run: python -m unittest discover -s icr2runtime/tests -p "test_*.py" -v
+
+      - name: Package runtime and matching Python files
+        shell: pwsh
+        run: |
+          $exe = 'icr2runtime/build/Release/icr2runtime.exe'
+          if (-not (Test-Path $exe)) { throw "Missing built runtime: $exe" }
+
+          $out = 'dist/ICR2Runtime'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          Copy-Item @(
+            $exe
+            'icr2runtime/icr2_client.py'
+            'icr2runtime/runtime_launcher.py'
+            'icr2runtime/README.md'
+            'icr2runtime/LICENSE'
+          ) -Destination $out
+
+          $version = $env:RELEASE_TAG -replace '^icr2runtime-', ''
+          $zip = "dist/ICR2Runtime-$version-win64.zip"
+          Compress-Archive -Path $out -DestinationPath $zip -Force
+          Write-Host "Release archive: $zip"
+
+      - name: Attach Windows ZIP to the existing release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = $env:RELEASE_TAG -replace '^icr2runtime-', ''
+          $zip = "dist/ICR2Runtime-$version-win64.zip"
+          gh release upload "$env:RELEASE_TAG" "$zip" --clobber
