@@ -29,7 +29,7 @@
 
 namespace {
 
-// New pipe name lets v0.4 and v0.5 coexist during testing.
+// Versioned pipe name keeps clients bound to the matching service protocol.
 constexpr wchar_t kPipeName[] = LR"(\\.\pipe\ICR2Runtime_v13)";
 constexpr int kWorkerCount = 8;
 constexpr unsigned kRefreshSeconds = 30;
@@ -78,7 +78,7 @@ std::string hexBytes(const std::vector<std::uint8_t>& bytes) {
 }
 
 
-// These signatures/offsets match the existing v0.4 detector and Python tool.
+// Recognized game signatures and offsets are specific to supported builds.
 // Validate them cheaply against cached process handles before every read.
 constexpr std::uint8_t kDosSignature[] = {
     0x55,0x6e,0x61,0x62,0x6c,0x65,0x20,0x74,0x6f,0x20,0x66,0x69,0x6e,
@@ -750,7 +750,7 @@ std::string serveRequest(GameRegistry& registry, const std::string& line) {
                     static_cast<std::size_t>(length));
 }
 
-// One request per connection, as in v0.4.  Multiple worker threads allow
+// Ordinary clients use one request per connection; multiple workers allow
 // multiple Python clients to connect simultaneously.
 bool readRequest(HANDLE pipe, std::string& request) {
     request.clear();
