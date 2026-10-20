@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release view "$env:RELEASE_TAG" --json tagName --jq .tagName
+        run: gh release view "$env:RELEASE_TAG" -R "$env:GITHUB_REPOSITORY" --json tagName --jq .tagName
 
       # Build the exact source tagged for this release, not a later main commit.
       - uses: actions/checkout@v4
@@ -80,4 +80,4 @@ jobs:
         run: |
           $version = $env:RELEASE_TAG -replace '^icr2runtime-', ''
           $zip = "dist/ICR2Runtime-$version-win64.zip"
-          gh release upload "$env:RELEASE_TAG" "$zip" --clobber
+          gh release upload "$env:RELEASE_TAG" "$zip" -R "$env:GITHUB_REPOSITORY" --clobber
