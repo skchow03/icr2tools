@@ -1,0 +1,93 @@
+name: Build ICR2 Multi-Car Windows EXE
+
+on:
+  pull_request:
+    paths:
+      - "icr2multicar/**"
+      - "icr2runtime/**"
+      - ".github/workflows/icr2multicar-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "icr2multicar/**"
+      - "icr2runtime/**"
+      - ".github/workflows/icr2multicar-build.yml"
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name != 'release' || startsWith(github.event.release.tag_name, 'icr2multicar-v')
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Build matching ICR2Runtime (MSVC x64)
+        run: |
+          cmake -S icr2runtime -B icr2runtime/build -A x64
+          cmake --build icr2runtime/build --config Release --parallel
+
+      - name: Verify runtime and Python source
+        shell: pwsh
+        env:
+          ICR2RUNTIME_EXE: ${{ github.workspace }}/icr2runtime/build/Release/icr2runtime.exe
+        run: |
+          python -m py_compile icr2multicar/icr2multicar.py icr2runtime/icr2_client.py icr2runtime/runtime_launcher.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -m unittest discover -s icr2runtime/tests -p 'test_*.py' -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Install PyInstaller
+        run: python -m pip install "pyinstaller>=6,<7"
+
+      - name: Build standalone console EXE
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --console --name ICR2MultiCar --paths icr2runtime --hidden-import icr2_client --hidden-import runtime_launcher --add-binary "icr2runtime/build/Release/icr2runtime.exe;." icr2multicar/icr2multicar.py
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke-test packaged EXE
+        shell: pwsh
+        run: |
+          & ./dist/ICR2MultiCar.exe --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Package Windows download
+        shell: pwsh
+        run: |
+          $out = "release/ICR2MultiCar"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item "dist/ICR2MultiCar.exe" "$out/ICR2MultiCar.exe"
+          Copy-Item "icr2multicar/README.md" "$out/README.md"
+          $version = if ($env:GITHUB_EVENT_NAME -eq 'release') {
+            $env:GITHUB_REF_NAME -replace '^icr2multicar-', ''
+          } else { 'test-build' }
+          $zip = "release/ICR2MultiCar-$version-win64.zip"
+          Compress-Archive -Path $out -DestinationPath $zip -Force
+
+      - name: Upload downloadable build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ICR2MultiCar-Windows
+          path: release/*.zip
+          if-no-files-found: error
+
+      - name: Attach ZIP to GitHub Release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = $env:GITHUB_REF_NAME -replace '^icr2multicar-', ''
+          $zip = "release/ICR2MultiCar-$version-win64.zip"
+          gh release upload "$env:GITHUB_REF_NAME" "$zip" -R "$env:GITHUB_REPOSITORY" --clobber
