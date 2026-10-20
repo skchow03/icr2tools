@@ -12,7 +12,7 @@ files or carsets on disk.
 For the simplest setup, download **ICR2MultiCar Windows** from the
 [ICR2Tools releases](https://github.com/skchow03/icr2tools/releases)
 once a Multi-Car release is published. Extract its ZIP, start WINDY101,
-then run `ICR2MultiCar.exe run` from a terminal in the extracted folder.
+then run `./ICR2MultiCar.exe run` from a PowerShell terminal in the extracted folder.
 
 The packaged EXE contains both the Python application and its matching
 ICR2Runtime service. **No Python installation, runtime download, or
@@ -44,7 +44,7 @@ permissions. There is no need to start `icr2runtime.exe` yourself.
 - **Python is not recognized:** Use the packaged Windows EXE instead, or
   install Python 3.9+ to run the source script.
 
-For troubleshooting, `ICR2MultiCar.exe check` (or
+For troubleshooting, `./ICR2MultiCar.exe check` (or
 `python icr2multicar.py check` for the source version) inspects the hook
 sites **without changing memory**, but requires an already-running
 ICR2Runtime service. Normal use only requires `run`.
