@@ -1,0 +1,25 @@
+name: ICR2 Multi-Car
+
+on:
+  pull_request:
+    paths:
+      - "icr2multicar/**"
+      - ".github/workflows/icr2multicar.yml"
+  push:
+    branches: [main]
+    paths:
+      - "icr2multicar/**"
+      - ".github/workflows/icr2multicar.yml"
+
+jobs:
+  smoke-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile multi-car Python script
+        run: python -m py_compile icr2multicar/icr2multicar.py
+      - name: Check command-line entry point and runtime imports
+        run: python icr2multicar/icr2multicar.py --help
