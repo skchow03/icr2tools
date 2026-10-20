@@ -1,4 +1,4 @@
-"""WINDY101 multi-chassis geometry unlock (stage 1), for ICR2Runtime v0.12.
+"""WINDY101 multi-chassis geometry unlock for ICR2Runtime v0.13.
 
 Read-only by default. Code changes happen only with the `run` or `on` action.
 This replaces the game's instruction forcing one shared car geometry pointer.
