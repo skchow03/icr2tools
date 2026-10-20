@@ -1,22 +1,180 @@
-"""WINDY101 per-car wheel/tire and chassis hook via ICR2Runtime v0.13.
+"""WINDY101 multi-car geometry and per-car wheel/tire selection.
 
-The `check` action is read-only. The `run` action installs guarded code
-patches and manages a private executable page in WINDY for the per-car wheel
-and tire selection routine. Keep `run` active until restoration completes.
+The `check` action is read-only. The `run` action uses ICR2Runtime
+for guarded, tracked instruction patches and manages a separate executable
+page for the per-car wheel/tire routine. Ctrl+C attempts to restore both.
 """
 from __future__ import annotations
 
 import argparse
 import ctypes
 from ctypes import wintypes
+from pathlib import Path
 import struct
 import sys
 import time
+from typing import Any
 
-# Reuse chassis patch verification and the matching runtime client.
-import windy_multichassis as chassis
-from icr2_client import RuntimeErrorResponse
-from runtime_launcher import RuntimeCapabilityError, RuntimeStartupError
+# Locate the matching ICR2Runtime client in the repository or beside this file.
+_THIS_DIR = Path(__file__).resolve().parent
+_RUNTIME_DIRS = (_THIS_DIR.parent / "icr2runtime", _THIS_DIR,
+                 _THIS_DIR / "icr2runtime")
+for _runtime_dir in _RUNTIME_DIRS:
+    if (_runtime_dir / "icr2_client.py").is_file() and \
+            (_runtime_dir / "runtime_launcher.py").is_file():
+        sys.path.insert(0, str(_runtime_dir))
+        break
+
+from icr2_client import ICR2Client, RuntimeErrorResponse
+from runtime_launcher import ensure_runtime, RuntimeCapabilityError, RuntimeStartupError
+
+CHASSIS_ADDRESS = 0x0045B719  # WINDY101 Ghidra virtual address, not a file offset
+ORIGINAL = bytes.fromhex("89 02")  # mov [edx], eax
+REPLACEMENT = bytes.fromhex("90 90")  # nop; nop
+RUNTIME_VERSION = "0.13"
+
+
+class WrapperError(RuntimeError):
+    pass
+
+
+def runtime_binary_path(choice: str | None) -> str | None:
+    if choice:
+        path = Path(choice).expanduser().resolve()
+        if not path.is_file():
+            raise WrapperError(f"Runtime EXE does not exist: {path}")
+        return str(path)
+    # Prefer built executables over a copy in the source directory.
+    for directory in _RUNTIME_DIRS:
+        for filename in ("build/Debug/icr2runtime.exe", "build/Release/icr2runtime.exe",
+                         "icr2runtime.exe"):
+            candidate = directory / filename
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def get_client(action: str, explicit_exe: str | None) -> ICR2Client:
+    if action == "run":
+        # An explicit write operation may launch the shared service with code writes.
+        # Existing read-only instances are never promoted.
+        return ensure_runtime(runtime_path=runtime_binary_path(explicit_exe),
+                              enable_code_writes=True)
+    # A read-only check connects to an existing runtime without starting one.
+    client = ICR2Client()
+    try:
+        if not client.ping():
+            raise WrapperError("ICR2Runtime did not respond to PING")
+    except OSError as exc:
+        raise WrapperError(f"No running ICR2Runtime v{RUNTIME_VERSION} service. "
+                           "Start it first; for writes use --enable-code-writes.") from exc
+    return client
+
+
+def select_game(client: ICR2Client, pid: int | None) -> Any:
+    games = [g for g in client.list_games() if g.version == "WINDY101"]
+    if pid is not None:
+        games = [g for g in games if g.pid == pid]
+    if not games:
+        client.refresh()
+        games = [g for g in client.list_games() if g.version == "WINDY101"]
+        if pid is not None:
+            games = [g for g in games if g.pid == pid]
+    if not games:
+        raise WrapperError("No matching WINDY101 process detected. Start WINDY "
+                           "and make sure ICR2Runtime recognizes it.")
+    if len(games) > 1:
+        raise WrapperError("More than one WINDY101 instance detected; choose --pid. "
+                           + ", ".join(str(g.pid) for g in games))
+    return games[0]
+
+
+def require_runtime(client: ICR2Client) -> dict[str, str]:
+    status = client.status()
+    if status.get("version") != RUNTIME_VERSION:
+        raise WrapperError(f"Expected ICR2Runtime v{RUNTIME_VERSION}, got "
+                           + repr(status.get("version")) + ". Rebuild the C++ "
+                           "runtime and use its matching Python client.")
+    return status
+
+
+def _chassis_owned_record(client: ICR2Client, pid: int):
+    patches = [p for p in client.list_patches()
+               if p[0] == pid and p[1] == CHASSIS_ADDRESS]
+    if len(patches) > 1:
+        raise WrapperError("Multiple patch entries at the same address")
+    if not patches:
+        return None
+    record = patches[0]
+    if (record[2] != "CODE" or record[3] != ORIGINAL or
+            record[4] != REPLACEMENT):
+        raise WrapperError("ICR2Runtime tracks a DIFFERENT patch at 0x0045B719; "
+                           "refusing to alter it")
+    return record
+
+
+def _chassis_inspect(client: ICR2Client, pid: int):
+    observed = client.read_bytes(pid, CHASSIS_ADDRESS, 2)
+    tracked = _chassis_owned_record(client, pid)
+    if observed == ORIGINAL and tracked is None:
+        return "READY", observed
+    if observed == REPLACEMENT and tracked is not None:
+        return "APPLIED_TRACKED", observed
+    if observed == REPLACEMENT and tracked is None:
+        return "APPLIED_UNTRACKED", observed
+    if observed == ORIGINAL and tracked is not None:
+        return "TRACKING_MISMATCH", observed
+    return "UNKNOWN_BYTES", observed
+
+
+def _chassis_report(client: ICR2Client, pid: int) -> str:
+    state, observed = _chassis_inspect(client, pid)
+    print(f"WINDY101 PID {pid}; address 0x{CHASSIS_ADDRESS:08X}; "
+          f"bytes: {observed.hex(' ').upper()}; state: {state}")
+    if state == "APPLIED_UNTRACKED":
+        print("WARNING: The instruction is patched, but the active runtime has "
+              "no restore record. Another injector or runtime instance may "
+              "have modified it. No write will be attempted.")
+    if state == "UNKNOWN_BYTES":
+        print("WARNING: Unexpected instruction bytes. A different build or "
+              "third-party code patch may be present. No write will be attempted.")
+    return state
+
+
+def _chassis_apply(client: ICR2Client, pid: int) -> bool:
+    state, _ = _chassis_inspect(client, pid)
+    if state == "APPLIED_TRACKED":
+        print("Already enabled and tracked by this ICR2Runtime instance.")
+        return False
+    if state != "READY":
+        raise WrapperError(f"Refusing patch: {state} (expected untouched 89 02)")
+    if "PATCH_CODE" not in client.capabilities():
+        raise WrapperError("Runtime is read-only for executable code. Restart "
+                           f"v{RUNTIME_VERSION} with --enable-code-writes; an existing "
+                           "read-only service cannot be upgraded.")
+    client.patch_code(pid, CHASSIS_ADDRESS, ORIGINAL, REPLACEMENT)
+    if _chassis_inspect(client, pid)[0] != "APPLIED_TRACKED":
+        raise WrapperError("Patch was submitted but verification failed; "
+                           "inspect the runtime-tracked patch and restore it before retrying")
+    print("Per-car chassis geometry enabled. The runtime tracks the "
+          "two-byte patch and retains its restore snapshot.")
+    return True
+
+
+def _chassis_restore(client: ICR2Client, pid: int) -> bool:
+    state, _ = _chassis_inspect(client, pid)
+    if state == "READY":
+        print("No chassis patch is active.")
+        return False
+    if state != "APPLIED_TRACKED":
+        raise WrapperError(f"Cannot restore safely: {state}. "
+                           "Only an exact runtime-tracked patch can be restored.")
+    client.restore(pid, CHASSIS_ADDRESS)
+    if _chassis_inspect(client, pid)[0] != "READY":
+        raise WrapperError("RESTORE returned but original bytes were not verified")
+    print("Restored original 89 02 instruction and released runtime patch record.")
+    return True
+
 
 WHEEL_SITE = 0x004607C0
 WHEEL_ORIGINAL = bytes.fromhex("E8 34 ED FF FF")
@@ -93,13 +251,13 @@ def _rel32(place_after_instruction: int, destination: int) -> bytes:
 def build_cave(base: int, image_base: int = WINDY_IMAGE_BASE) -> bytes:
     """Relocate the x86 routine's absolute pointers and relative branches."""
     if not (0 <= base < 2**32 and 0 <= image_base < 2**32):
-        raise chassis.WrapperError("Expected 32-bit addresses for WINDY x86 code cave")
+        raise WrapperError("Expected 32-bit addresses for WINDY x86 code cave")
     shift = image_base - WINDY_IMAGE_BASE
     blob = bytearray(CODE_TEMPLATE)
     for offset, native_target in RELOCATIONS.items():
         target = native_target + shift
         if not 0 <= target < 2**32:
-            raise chassis.WrapperError("Relocated WINDY target outside 32-bit space")
+            raise WrapperError("Relocated WINDY target outside 32-bit space")
         if offset in REL32:
             blob[offset:offset+4] = _rel32(base + offset + 4, target)
         else:
@@ -127,7 +285,7 @@ class RemoteCave:
             raise ctypes.WinError(ctypes.get_last_error())
         self.address = int(raw)
         if self.address >= 2**32:
-            raise chassis.WrapperError("WINDY is x86, but allocation exceeds 32-bit address space")
+            raise WrapperError("WINDY is x86, but allocation exceeds 32-bit address space")
         blob = build_cave(self.address, image_base)
         source = ctypes.create_string_buffer(blob)
         written = ctypes.c_size_t()
@@ -135,10 +293,10 @@ class RemoteCave:
                                               source, len(blob), ctypes.byref(written)),
                  "WriteProcessMemory(code cave)")
         if written.value != len(blob):
-            raise chassis.WrapperError("Partial write of wheel/tire code cave")
+            raise WrapperError("Partial write of wheel/tire code cave")
         # Readback through ICR2Runtime; WINDY uses identity Ghidra/host addressing.
         if client.read_bytes(pid, self.address, len(blob)) != blob:
-            raise chassis.WrapperError("Code cave readback does not match injected code")
+            raise WrapperError("Code cave readback does not match injected code")
         old_protection = wintypes.DWORD()
         _checked(self.k32.VirtualProtectEx(self.process, ctypes.c_void_p(self.address),
                                            PAGE_SIZE, PAGE_EXECUTE_READ,
@@ -173,22 +331,22 @@ def wheel_state(client, pid: int):
 
 def validate_image(client, game):
     if game.version != 'WINDY101':
-        raise chassis.WrapperError('This hook supports WINDY101 only')
+        raise WrapperError('This hook supports WINDY101 only')
     # Absolute data pointers in the assembly require genuine PE image base,
     # not merely a guessed DOSBox memory translation. WINDY is expected at 0x400000.
     if game.translation_base != 0 or game.host_module_base != WINDY_IMAGE_BASE:
-        raise chassis.WrapperError(
+        raise WrapperError(
             f'Unexpected WINDY address layout: translation=0x{game.translation_base:X}, '
             f'host PE base=0x{game.host_module_base:X}. Do not inject on an unverified layout.')
     # Require the exact original instructions at the hook site.
     expected = client.read_bytes(game.pid, WHEEL_SITE, len(WHEEL_ORIGINAL))
     if expected != WHEEL_ORIGINAL:
-        raise chassis.WrapperError(f'Wheel/tire hook site is not original: {expected.hex(" ")}')
+        raise WrapperError(f'Wheel/tire hook site is not original: {expected.hex(" ")}')
 
 
 def report(client, game):
     print(f'WINDY101 PID {game.pid}; runtime v{client.status()["version"]}')
-    chassis.report(client, game.pid)
+    _chassis_report(client, game.pid)
     state, raw = wheel_state(client, game.pid)
     print(f'Wheel/tire site 0x{WHEEL_SITE:08X}: {raw.hex(" ").upper()}; state: {state}')
     return state
@@ -196,14 +354,14 @@ def report(client, game):
 
 def run(client, game):
     if 'PATCH_CODE' not in client.capabilities():
-        raise chassis.WrapperError(f'Runtime code writes disabled. Restart v{chassis.RUNTIME_VERSION} with --enable-code-writes')
+        raise WrapperError(f'Runtime code writes disabled. Restart v{RUNTIME_VERSION} with --enable-code-writes')
     validate_image(client, game)
-    if chassis.inspect(client, game.pid)[0] != 'READY':
-        raise chassis.WrapperError('Chassis patch already active/modified. Stop the previous '
-                                   'wrapper with Ctrl+C and restore 89 02 first.')
+    if _chassis_inspect(client, game.pid)[0] != 'READY':
+        raise WrapperError('Chassis patch is already active or modified. Restore the original '
+                           'instruction before starting this tool.')
     if wheel_state(client, game.pid)[0] != 'READY':
-        raise chassis.WrapperError('Wheel/tire hook already installed or modified. '
-                                   'Remove any conflicting injector before retrying.')
+        raise WrapperError('Wheel/tire hook already installed or modified. '
+                           'Remove any conflicting injector before retrying.')
     cave = RemoteCave(game.pid)
     chassis_attempted = False
     wheel_expected = None
@@ -213,9 +371,9 @@ def run(client, game):
         # Only five original bytes are changed. The return address is +5.
         client.patch_code(game.pid, WHEEL_SITE, WHEEL_ORIGINAL, wheel_expected)
         if client.read_bytes(game.pid, WHEEL_SITE, 5) != wheel_expected:
-            raise chassis.WrapperError('Wheel hook patch did not verify')
+            raise WrapperError('Wheel hook patch did not verify')
         chassis_attempted = True
-        chassis.apply(client, game.pid)
+        _chassis_apply(client, game.pid)
         print(f'Wheel/tire hook installed at 0x{WHEEL_SITE:08X}; '
               f'x86 cave at 0x{cave.address:08X} ({len(CODE_TEMPLATE)} bytes).')
         print('Chassis + wheel/tire hook active. Press Ctrl+C to restore both. '
@@ -223,11 +381,11 @@ def run(client, game):
         while True:
             time.sleep(1)
             if client.read_bytes(game.pid, WHEEL_SITE, 5) != wheel_expected:
-                raise chassis.WrapperError('Wheel hook changed or WINDY disappeared')
-            if chassis.inspect(client, game.pid)[0] != 'APPLIED_TRACKED':
-                raise chassis.WrapperError('Chassis override changed or WINDY disappeared')
+                raise WrapperError('Wheel hook changed or WINDY disappeared')
+            if _chassis_inspect(client, game.pid)[0] != 'APPLIED_TRACKED':
+                raise WrapperError('Chassis override changed or WINDY disappeared')
     except KeyboardInterrupt:
-        print('\nStopping wheel/tire wrapper...')
+        print('\nStopping multi-car hooks...')
     finally:
         # Never free executable code while the detour can still jump to it.
         # A failed pipe response can occur after a successful code write.
@@ -243,26 +401,26 @@ def run(client, game):
                     if (len(matches) != 1 or matches[0][2] != 'CODE' or
                             matches[0][3] != WHEEL_ORIGINAL or
                             matches[0][4] != wheel_expected):
-                        raise chassis.WrapperError('Wheel hook is live but not tracked as expected')
+                        raise WrapperError('Wheel hook is live but not tracked as expected')
                     client.restore(game.pid, WHEEL_SITE)
                     if client.read_bytes(game.pid, WHEEL_SITE, 5) != WHEEL_ORIGINAL:
-                        raise chassis.WrapperError('Wheel detour restoration not confirmed')
+                        raise WrapperError('Wheel detour restoration not confirmed')
                     print('Wheel/tire JMP restored.')
                     safe_to_release = True
                 elif observed == WHEEL_ORIGINAL and not matches:
                     safe_to_release = True
                 else:
-                    raise chassis.WrapperError('Wheel site is modified or tracked unexpectedly; '
+                    raise WrapperError('Wheel site is modified or tracked unexpectedly; '
                                                'keeping cave allocated to avoid a dangling JMP')
             except Exception as exc:
                 errors.append(f'wheel restore: {exc}')
         if chassis_attempted:
             try:
-                state, _ = chassis.inspect(client, game.pid)
+                state, _ = _chassis_inspect(client, game.pid)
                 if state == 'APPLIED_TRACKED':
-                    chassis.restore(client, game.pid)
+                    _chassis_restore(client, game.pid)
                 elif state != 'READY':
-                    raise chassis.WrapperError('Chassis patch not safely restorable: ' + state)
+                    raise WrapperError('Chassis patch not safely restorable: ' + state)
             except Exception as exc:
                 errors.append(f'chassis restore: {exc}')
         if safe_to_release:
@@ -279,27 +437,28 @@ def run(client, game):
                   file=sys.stderr)
         cave.close()
         if errors:
-            raise chassis.WrapperError('Cleanup incomplete. Keep WINDY/runtime open; '
+            raise WrapperError('Cleanup incomplete. Keep WINDY/runtime open; '
                                        + ' | '.join(errors))
         print('Both hooks restored. You can exit WINDY normally.')
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=f'WINDY101 chassis + wheel/tire hook (ICR2Runtime v{chassis.RUNTIME_VERSION})')
+    parser = argparse.ArgumentParser(
+        description=f'WINDY101 multi-car model support (ICR2Runtime v{RUNTIME_VERSION})')
     parser.add_argument('action', nargs='?', default='check', choices=('check', 'run'))
     parser.add_argument('--pid', type=int)
-    parser.add_argument('--runtime-exe', help=f'Path to compiled ICR2Runtime v{chassis.RUNTIME_VERSION}, if startup is needed')
+    parser.add_argument('--runtime-exe', help=f'Path to compiled ICR2Runtime v{RUNTIME_VERSION}, if startup is needed')
     args = parser.parse_args(argv)
     try:
-        client = chassis.get_client('run' if args.action == 'run' else 'check', args.runtime_exe)
-        chassis.require_runtime(client)
-        game = chassis.select_game(client, args.pid)
+        client = get_client(args.action, args.runtime_exe)
+        require_runtime(client)
+        game = select_game(client, args.pid)
         if args.action == 'check':
             report(client, game)
         else:
             run(client, game)
         return 0
-    except (chassis.WrapperError, RuntimeCapabilityError, RuntimeStartupError,
+    except (WrapperError, RuntimeCapabilityError, RuntimeStartupError,
             RuntimeErrorResponse, OSError, ValueError) as exc:
         print(f'ERROR: {exc}', file=sys.stderr)
         return 2
