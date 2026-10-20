@@ -64,8 +64,8 @@ def get_client(action: str, explicit_exe: str | None) -> ICR2Client:
         if not client.ping():
             raise WrapperError("ICR2Runtime did not respond to PING")
     except OSError as exc:
-        raise WrapperError("No running ICR2Runtime v0.13 service. Start it first; "
-                           "for writes use --enable-code-writes.") from exc
+        raise WrapperError(f"No running ICR2Runtime v{RUNTIME_VERSION} service. "
+                           "Start it first; for writes use --enable-code-writes.") from exc
     return client
 
 
@@ -148,7 +148,7 @@ def apply(client: ICR2Client, pid: int) -> bool:
         raise WrapperError(f"Refusing patch: {state} (expected untouched 89 02)")
     if "PATCH_CODE" not in client.capabilities():
         raise WrapperError("Runtime is read-only for executable code. Restart "
-                           "v0.13 with --enable-code-writes; an existing "
+                           f"v{RUNTIME_VERSION} with --enable-code-writes; an existing "
                            "read-only service cannot be upgraded.")
     client.patch_code(pid, CHASSIS_ADDRESS, ORIGINAL, REPLACEMENT)
     if inspect(client, pid)[0] != "APPLIED_TRACKED":
