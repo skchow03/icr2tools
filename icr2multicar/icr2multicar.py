@@ -155,7 +155,7 @@ def _chassis_apply(client: ICR2Client, pid: int) -> bool:
     client.patch_code(pid, CHASSIS_ADDRESS, ORIGINAL, REPLACEMENT)
     if _chassis_inspect(client, pid)[0] != "APPLIED_TRACKED":
         raise WrapperError("Patch was submitted but verification failed; "
-                           "use 'check' and 'off' to inspect/restore")
+                           "inspect the runtime-tracked patch and restore it before retrying")
     print("Per-car chassis geometry enabled. The runtime tracks the "
           "two-byte patch and retains its restore snapshot.")
     return True
@@ -169,7 +169,7 @@ def _chassis_restore(client: ICR2Client, pid: int) -> bool:
     if state != "APPLIED_TRACKED":
         raise WrapperError(f"Cannot restore safely: {state}. "
                            "Only an exact runtime-tracked patch can be restored.")
-    client._chassis_restore(pid, CHASSIS_ADDRESS)
+    client.restore(pid, CHASSIS_ADDRESS)
     if _chassis_inspect(client, pid)[0] != "READY":
         raise WrapperError("RESTORE returned but original bytes were not verified")
     print("Restored original 89 02 instruction and released runtime patch record.")
@@ -358,10 +358,10 @@ def run(client, game):
     validate_image(client, game)
     if _chassis_inspect(client, game.pid)[0] != 'READY':
         raise WrapperError('Chassis patch is already active or modified. Restore the original '
-                                   'instruction before starting this tool.')
+                           'instruction before starting this tool.')
     if wheel_state(client, game.pid)[0] != 'READY':
         raise WrapperError('Wheel/tire hook already installed or modified. '
-                                   'Remove any conflicting injector before retrying.')
+                           'Remove any conflicting injector before retrying.')
     cave = RemoteCave(game.pid)
     chassis_attempted = False
     wheel_expected = None
@@ -385,7 +385,7 @@ def run(client, game):
             if _chassis_inspect(client, game.pid)[0] != 'APPLIED_TRACKED':
                 raise WrapperError('Chassis override changed or WINDY disappeared')
     except KeyboardInterrupt:
-        print('\nStopping wheel/tire wrapper...')
+        print('\nStopping multi-car hooks...')
     finally:
         # Never free executable code while the detour can still jump to it.
         # A failed pipe response can occur after a successful code write.
