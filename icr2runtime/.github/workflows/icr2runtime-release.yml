@@ -1,0 +1,59 @@
+
+name: Publish ICR2Runtime
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  windows-release:
+    if: startsWith(github.event.release.tag_name, 'icr2runtime-v')
+    runs-on: windows-latest
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure runtime
+        run: cmake -S icr2runtime -B icr2runtime/build -A x64
+
+      - name: Build runtime
+        run: cmake --build icr2runtime/build --config Release --parallel
+
+      - name: Run tests
+        env:
+          ICR2RUNTIME_EXE: ${{ github.workspace }}/icr2runtime/build/Release/icr2runtime.exe
+        run: |
+          python -m compileall -q icr2runtime/icr2_client.py icr2runtime/runtime_launcher.py icr2runtime/tests
+          python -m unittest discover -s icr2runtime/tests -p "test_*.py" -v
+
+      - name: Package Windows release
+        shell: pwsh
+        run: |
+          $out = "dist\ICR2Runtime"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+
+          Copy-Item @(
+            "icr2runtime\build\Release\icr2runtime.exe"
+            "icr2runtime\icr2_client.py"
+            "icr2runtime\runtime_launcher.py"
+            "icr2runtime\README.md"
+            "icr2runtime\LICENSE"
+          ) -Destination $out
+
+          $zip = "dist\ICR2Runtime-$($env:GITHUB_REF_NAME)-win64.zip"
+          Compress-Archive -Path $out -DestinationPath $zip
+
+      - name: Upload ZIP to GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $zip = "dist\ICR2Runtime-$($env:GITHUB_REF_NAME)-win64.zip"
+          gh release upload "$env:GITHUB_REF_NAME" "$zip" --clobber
