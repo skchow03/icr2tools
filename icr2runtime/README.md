@@ -20,6 +20,30 @@ only the standard library.
 Game detection relies on exact binary signatures. Other game revisions and
 DOSBox configurations are not guaranteed to work.
 
+## Download a prebuilt Windows executable
+
+Download the `ICR2Runtime-v0.13-win64.zip` asset from
+[ICR2Tools Releases](https://github.com/skchow03/icr2tools/releases/tag/icr2runtime-v0.13)
+once the Windows binary has been published. The ZIP contains the compiled
+`icr2runtime.exe`, matching `icr2_client.py` and `runtime_launcher.py`,
+this README, and the MIT license. Windows users do **not** need to install
+CMake or a C++ compiler to use a release binary.
+
+Extract the ZIP and keep the EXE alongside the matching Python files. The
+runtime is normally started automatically by tools that use the shared
+`runtime_launcher.py`, or it can be launched manually with
+`icr2runtime.exe --enable-code-writes` when a tool explicitly needs code
+patching. Python-based tools still require Python unless separately
+packaged into an executable.
+
+To publish a compiled ZIP for an existing release, maintainers can open
+[GitHub Actions](https://github.com/skchow03/icr2tools/actions/workflows/icr2runtime-release.yml),
+select **Publish ICR2Runtime Windows Binary → Run workflow**, and enter
+the published tag (for example, `icr2runtime-v0.13`). For future runtime
+releases, publishing a tag beginning with `icr2runtime-v` triggers this
+workflow automatically. The workflow builds from the release tag and
+uploads the ZIP only after successful tests.
+
 ## Build and start on Windows
 
 To build from source, install **CMake 3.20+** and an **MSVC C++20 toolchain**
