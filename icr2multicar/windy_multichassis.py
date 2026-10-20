@@ -29,7 +29,7 @@ from runtime_launcher import ensure_runtime, RuntimeCapabilityError, RuntimeStar
 CHASSIS_ADDRESS = 0x0045B719  # WINDY101 Ghidra virtual address, not a file offset
 ORIGINAL = bytes.fromhex("89 02")  # mov [edx], eax
 REPLACEMENT = bytes.fromhex("90 90")  # nop; nop
-RUNTIME_VERSION = "0.12"
+RUNTIME_VERSION = "0.13"
 
 
 class WrapperError(RuntimeError):
