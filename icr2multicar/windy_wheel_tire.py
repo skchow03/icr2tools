@@ -196,7 +196,7 @@ def report(client, game):
 
 def run(client, game):
     if 'PATCH_CODE' not in client.capabilities():
-        raise chassis.WrapperError('Runtime code writes disabled. Restart v0.13 with --enable-code-writes')
+        raise chassis.WrapperError(f'Runtime code writes disabled. Restart v{chassis.RUNTIME_VERSION} with --enable-code-writes')
     validate_image(client, game)
     if chassis.inspect(client, game.pid)[0] != 'READY':
         raise chassis.WrapperError('Chassis patch already active/modified. Stop the previous '
@@ -285,10 +285,10 @@ def run(client, game):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='WINDY101 chassis + wheel/tire hook (ICR2Runtime v0.13)')
+    parser = argparse.ArgumentParser(description=f'WINDY101 chassis + wheel/tire hook (ICR2Runtime v{chassis.RUNTIME_VERSION})')
     parser.add_argument('action', nargs='?', default='check', choices=('check', 'run'))
     parser.add_argument('--pid', type=int)
-    parser.add_argument('--runtime-exe', help='Path to compiled ICR2Runtime v0.13, if startup is needed')
+    parser.add_argument('--runtime-exe', help=f'Path to compiled ICR2Runtime v{chassis.RUNTIME_VERSION}, if startup is needed')
     args = parser.parse_args(argv)
     try:
         client = chassis.get_client('run' if args.action == 'run' else 'check', args.runtime_exe)
