@@ -459,17 +459,18 @@ def run(client, game):
                     print('Detached code cave released.')
                 except Exception as exc:
                     errors.append(f'code cave release: {exc}')
-            else:
+            # Recheck the process before reporting cleanup failure: WINDY
+            # may have exited during the restoration RPCs or the delay.
+            exited_during_cleanup = cave.has_exited()
+            if not safe_to_release and not exited_during_cleanup:
                 print('WARNING: code cave NOT released; wheel detour may still reference it.',
                       file=sys.stderr)
             cave.close()
-            if errors:
-                if cave.has_exited():
-                    print('WINDY exited during cleanup; its address space is gone. '
-                          'No remaining game-memory cleanup is necessary.')
-                else:
-                    raise WrapperError('Cleanup incomplete while WINDY remains alive; '
-                                       + ' | '.join(errors))
+            if exited_during_cleanup:
+                print('WINDY exited during cleanup; Windows released its memory.')
+            elif errors:
+                raise WrapperError('Cleanup incomplete while WINDY remains alive; '
+                                   + ' | '.join(errors))
             else:
                 print('Both hooks restored. You can exit WINDY normally.')
 
