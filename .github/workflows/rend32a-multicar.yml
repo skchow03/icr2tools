@@ -27,3 +27,36 @@ jobs:
         shell: pwsh
         run: |
           python -c "import sys,base64,zlib;sys.path.insert(0,'icr2multicar_rend32a');import rend32a_multicar as p;d=zlib.decompress(base64.b85decode(''.join(p._CORE_PATCH_DELTA)));assert len(d)>100;print('Encoded replacement patch verified:',len(d),'bytes')"
+
+      - name: Verify known alternate edits and reject conflicting writes
+        shell: pwsh
+        run: |
+          @'
+          import sys
+          sys.path.insert(0, "icr2multicar_rend32a")
+          import rend32a_multicar as p
+
+          image = bytearray(p.EXECUTABLE_SIZE)
+          differences = 0
+          for offset, stock_hex, variant_hex in p.ALTERNATE_BYTE_EDITS:
+              stock = bytes.fromhex(stock_hex)
+              variant = bytes.fromhex(variant_hex)
+              assert len(stock) == len(variant)
+              differences += sum(a != b for a, b in zip(stock, variant))
+              image[offset:offset + len(stock)] = stock
+
+          assert len(p.ALTERNATE_BYTE_EDITS) == 9
+          assert differences == 31
+          modified = p.reapply_alternate_edits(image)
+          assert sum(a != b for a, b in zip(image, modified)) == 31
+
+          try:
+              p.reapply_alternate_edits(modified)
+          except ValueError:
+              pass
+          else:
+              raise AssertionError("Expected conflicting edits to be refused")
+
+          print("31 alternate bytes preserved; overlapping changes rejected")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
