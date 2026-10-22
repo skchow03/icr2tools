@@ -16,8 +16,10 @@ then run `./ICR2MultiCar.exe run` from a PowerShell terminal in the extracted fo
 
 The packaged EXE contains both the Python application and its matching
 ICR2Runtime service. **No Python installation, runtime download, or
-compilation is needed.** Keep the console open while playing and press
-**Ctrl+C** to attempt to restore both hooks before closing WINDY.
+compilation is needed.** Keep the console open while playing. For the
+cleanest shutdown, press **Ctrl+C** to restore both hooks before closing
+WINDY. If you close WINDY first, Multi-Car detects that the game ended and
+exits without trying to restore memory that no longer exists.
 
 ### Using the Python script instead
 
@@ -57,8 +59,9 @@ ICR2Runtime service. Normal use only requires `run`.
 - Do not use multiple copies of Multi-Car or other tools that patch the
   same game instructions at the same time.
 - Memory modifications can crash the game. Forced termination or
-  conflicting patches can prevent clean restoration. If the script
-  reports that cleanup failed, close WINDY before trying again.
+  conflicting patches can prevent clean restoration while WINDY is running.
+  If the script reports incomplete cleanup while WINDY is still open,
+  close WINDY before trying again.
 - This does not add independent wheel animation to each car.
 
 No game executables or copyrighted game assets are included. This is an

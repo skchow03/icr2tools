@@ -233,6 +233,8 @@ def _win32():
     k32.VirtualFreeEx.argtypes = [wintypes.HANDLE, ctypes.c_void_p, ctypes.c_size_t,
                                   wintypes.DWORD]
     k32.VirtualFreeEx.restype = wintypes.BOOL
+    k32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    k32.WaitForSingleObject.restype = wintypes.DWORD
     k32.CloseHandle.argtypes = [wintypes.HANDLE]
     k32.CloseHandle.restype = wintypes.BOOL
     return k32
@@ -306,6 +308,15 @@ class RemoteCave:
                                                  len(blob)), "FlushInstructionCache(code cave)")
         return blob
 
+    def has_exited(self) -> bool:
+        """Check the original process handle, not a potentially reused PID."""
+        result = self.k32.WaitForSingleObject(self.process, 0)
+        if result == 0:  # WAIT_OBJECT_0
+            return True
+        if result == 0x102:  # WAIT_TIMEOUT
+            return False
+        raise ctypes.WinError(ctypes.get_last_error())
+
     def release(self):
         if not self.address:
             return
@@ -376,70 +387,92 @@ def run(client, game):
         _chassis_apply(client, game.pid)
         print(f'Wheel/tire hook installed at 0x{WHEEL_SITE:08X}; '
               f'x86 cave at 0x{cave.address:08X} ({len(CODE_TEMPLATE)} bytes).')
-        print('Chassis + wheel/tire hook active. Press Ctrl+C to restore both. '
-              'Do not close WINDY or the runtime during this session.')
+        print('Chassis + wheel/tire hook active. Press Ctrl+C to restore before '
+              'closing WINDY. Closing WINDY first is also detected.')
         while True:
             time.sleep(1)
-            if client.read_bytes(game.pid, WHEEL_SITE, 5) != wheel_expected:
-                raise WrapperError('Wheel hook changed or WINDY disappeared')
-            if _chassis_inspect(client, game.pid)[0] != 'APPLIED_TRACKED':
-                raise WrapperError('Chassis override changed or WINDY disappeared')
+            if cave.has_exited():
+                print('WINDY exited; ending Multi-Car session.')
+                break
+            try:
+                if client.read_bytes(game.pid, WHEEL_SITE, 5) != wheel_expected:
+                    raise WrapperError('Wheel hook changed while WINDY is running')
+                if _chassis_inspect(client, game.pid)[0] != 'APPLIED_TRACKED':
+                    raise WrapperError('Chassis override changed while WINDY is running')
+            except (RuntimeErrorResponse, OSError):
+                if cave.has_exited():
+                    print('WINDY exited during status check; ending session.')
+                    break
+                raise
     except KeyboardInterrupt:
         print('\nStopping multi-car hooks...')
     finally:
-        # Never free executable code while the detour can still jump to it.
-        # A failed pipe response can occur after a successful code write.
-        # Check the live detour and runtime record before freeing its target.
-        safe_to_release = False
-        errors = []
-        if cave.address:
-            try:
-                observed = client.read_bytes(game.pid, WHEEL_SITE, 5)
-                matches = [p for p in client.list_patches()
-                           if p[0] == game.pid and p[1] == WHEEL_SITE]
-                if wheel_expected is not None and observed == wheel_expected:
-                    if (len(matches) != 1 or matches[0][2] != 'CODE' or
-                            matches[0][3] != WHEEL_ORIGINAL or
-                            matches[0][4] != wheel_expected):
-                        raise WrapperError('Wheel hook is live but not tracked as expected')
-                    client.restore(game.pid, WHEEL_SITE)
-                    if client.read_bytes(game.pid, WHEEL_SITE, 5) != WHEEL_ORIGINAL:
-                        raise WrapperError('Wheel detour restoration not confirmed')
-                    print('Wheel/tire JMP restored.')
-                    safe_to_release = True
-                elif observed == WHEEL_ORIGINAL and not matches:
-                    safe_to_release = True
-                else:
-                    raise WrapperError('Wheel site is modified or tracked unexpectedly; '
-                                               'keeping cave allocated to avoid a dangling JMP')
-            except Exception as exc:
-                errors.append(f'wheel restore: {exc}')
-        if chassis_attempted:
-            try:
-                state, _ = _chassis_inspect(client, game.pid)
-                if state == 'APPLIED_TRACKED':
-                    _chassis_restore(client, game.pid)
-                elif state != 'READY':
-                    raise WrapperError('Chassis patch not safely restorable: ' + state)
-            except Exception as exc:
-                errors.append(f'chassis restore: {exc}')
-        if safe_to_release:
-            try:
-                # Detach before release. This delay reduces (but cannot eliminate)
-                # the risk that a render thread is still executing the cave.
-                time.sleep(0.5)
-                cave.release()
-                print('Detached code cave released.')
-            except Exception as exc:
-                errors.append(f'code cave release: {exc}')
+        # A terminated process has no executable detour or allocated code cave.
+        # Do not attempt runtime RESTORE on a vanished game.
+        if cave.has_exited():
+            print('WINDY has exited. Windows released its memory and injected '
+                  'code cave; no instruction restoration is needed.')
+            cave.close()
         else:
-            print('WARNING: code cave NOT released; wheel detour may still reference it.',
-                  file=sys.stderr)
-        cave.close()
-        if errors:
-            raise WrapperError('Cleanup incomplete. Keep WINDY/runtime open; '
-                                       + ' | '.join(errors))
-        print('Both hooks restored. You can exit WINDY normally.')
+            # Never free executable code while the detour can still jump to it.
+            # A failed pipe response can occur after a successful code write.
+            # Check the live detour and runtime record before freeing its target.
+            safe_to_release = False
+            errors = []
+            if cave.address:
+                try:
+                    observed = client.read_bytes(game.pid, WHEEL_SITE, 5)
+                    matches = [p for p in client.list_patches()
+                               if p[0] == game.pid and p[1] == WHEEL_SITE]
+                    if wheel_expected is not None and observed == wheel_expected:
+                        if (len(matches) != 1 or matches[0][2] != 'CODE' or
+                                matches[0][3] != WHEEL_ORIGINAL or
+                                matches[0][4] != wheel_expected):
+                            raise WrapperError('Wheel hook is live but not tracked as expected')
+                        client.restore(game.pid, WHEEL_SITE)
+                        if client.read_bytes(game.pid, WHEEL_SITE, 5) != WHEEL_ORIGINAL:
+                            raise WrapperError('Wheel detour restoration not confirmed')
+                        print('Wheel/tire JMP restored.')
+                        safe_to_release = True
+                    elif observed == WHEEL_ORIGINAL and not matches:
+                        safe_to_release = True
+                    else:
+                        raise WrapperError('Wheel site is modified or tracked unexpectedly; '
+                                                   'keeping cave allocated to avoid a dangling JMP')
+                except Exception as exc:
+                    errors.append(f'wheel restore: {exc}')
+            if chassis_attempted:
+                try:
+                    state, _ = _chassis_inspect(client, game.pid)
+                    if state == 'APPLIED_TRACKED':
+                        _chassis_restore(client, game.pid)
+                    elif state != 'READY':
+                        raise WrapperError('Chassis patch not safely restorable: ' + state)
+                except Exception as exc:
+                    errors.append(f'chassis restore: {exc}')
+            if safe_to_release:
+                try:
+                    # Detach before release. This delay reduces (but cannot eliminate)
+                    # the risk that a render thread is still executing the cave.
+                    time.sleep(0.5)
+                    cave.release()
+                    print('Detached code cave released.')
+                except Exception as exc:
+                    errors.append(f'code cave release: {exc}')
+            # Recheck the process before reporting cleanup failure: WINDY
+            # may have exited during the restoration RPCs or the delay.
+            exited_during_cleanup = cave.has_exited()
+            if not safe_to_release and not exited_during_cleanup:
+                print('WARNING: code cave NOT released; wheel detour may still reference it.',
+                      file=sys.stderr)
+            cave.close()
+            if exited_during_cleanup:
+                print('WINDY exited during cleanup; Windows released its memory.')
+            elif errors:
+                raise WrapperError('Cleanup incomplete while WINDY remains alive; '
+                                   + ' | '.join(errors))
+            else:
+                print('Both hooks restored. You can exit WINDY normally.')
 
 
 def main(argv=None):
