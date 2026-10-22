@@ -131,6 +131,17 @@ def ensure_runtime(*, runtime_path: Optional[os.PathLike | str] = None,
     # The C++ named mutex serializes concurrent launchers. A process that
     # loses that race exits normally; both launchers poll the same pipe.
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    # PyInstaller sets the Windows DLL search path to its _MEI extraction
+    # directory. Child processes inherit it, potentially loading VC runtime
+    # DLLs from _MEI and keeping that directory locked after we exit.
+    # Temporarily restore the standard search order for the external service.
+    bundled_dir = getattr(sys, "_MEIPASS", None)
+    dll_api = None
+    if sys.platform == "win32" and bundled_dir:
+        import ctypes
+        dll_api = ctypes.windll.kernel32.SetDllDirectoryW
+        if not dll_api(None):
+            raise RuntimeStartupError("Could not reset DLL search path before launching ICR2Runtime")
     try:
         # Keep the shared child independent of a PyInstaller onefile
         # extraction directory that the parent must delete on exit.
@@ -142,6 +153,11 @@ def ensure_runtime(*, runtime_path: Optional[os.PathLike | str] = None,
                                  close_fds=True)
     except OSError as exc:
         raise RuntimeStartupError(f"Could not launch {executable}: {exc}") from exc
+    finally:
+        if dll_api is not None:
+            # Restore the bundled application's own DLL lookup behavior.
+            if not dll_api(str(bundled_dir)):
+                raise RuntimeStartupError("Could not restore bundled DLL search path")
 
     deadline = time.monotonic() + startup_timeout
     while time.monotonic() < deadline:
