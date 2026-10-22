@@ -256,10 +256,14 @@ Let `T` be steering/orientation and `P` the wheel phase:
 | 3 | rear | `0x80000000` | `-P` | 0 |
 
 Front children 0/1 receive the front tire reference; rear children 2/3
-receive the rear reference. Pointer operands come from original,
-loader-relocated game instructions, rather than hard-coded live Windows
-host addresses. Each call updates only the wheel attachments of the
-chassis being drawn.
+receive the rear reference. The helper reads the **original
+loader-relocated pointer operands** from guest `0x44C9E`
+(chassis-slot table), `0x476B1` (front appearance source), and
+`0x476C3` (rear appearance source). It dereferences the front/rear
+source pointers as in the original wheel code; it does **not** overwrite
+those global source pointers. These addresses identify operands in the
+original code object, **not** new patch sites. Each call updates only
+the wheel attachments of the chassis being drawn.
 
 **Why per draw?** The 3DO loader can cache a chassis hierarchy under a
 model name, so several cars using the same 3DO may share a model-node
