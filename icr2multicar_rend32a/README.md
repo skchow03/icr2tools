@@ -91,6 +91,6 @@ checks. It documents the changes **from stock EXE to final patched EXE**.
   clean backup. Successful in-game use does not prove compatibility
   with every carset, camera, replay or damaged-car state.
 
-The tool distributes only patcher source code, **not** game executable
-bytes or commercial carsets. This independent community modification is
+The repository distributes the patcher and its replacement-byte data,
+**not** the complete original or modified game executable or commercial carsets. This independent community modification is
 not affiliated with the game's original developers or publishers.
