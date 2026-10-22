@@ -7,6 +7,10 @@ and tire appearances in the **native Windows version of IndyCar Racing II
 The tool modifies the running game's memory. It does **not** change game
 files or carsets on disk.
 
+For reverse engineering, see the **[WINDY Multi-Car technical reference](PATCH_TECHNICAL_REFERENCE.md)**.
+It documents the original and replacement instruction bytes, the injected
+80-byte x86 routine, pointer tables, and safe cleanup behavior.
+
 ## Download the Windows application
 
 For the simplest setup, download **ICR2MultiCar Windows** from the
@@ -54,8 +58,9 @@ ICR2Runtime service. Normal use only requires `run`.
 ## Compatibility and safety
 
 - Only the supported **WINDY101** executable layout is recognized.
-- **The combined wheel/tire hook has not yet been confirmed in a live
-  WINDY session.** Treat this as an experimental modification.
+- The hooks have been exercised in live WINDY sessions, but visual
+  correctness across all carsets, chassis layouts, cameras and replays is
+  **not comprehensively validated**. Treat the modification as experimental.
 - Do not use multiple copies of Multi-Car or other tools that patch the
   same game instructions at the same time.
 - Memory modifications can crash the game. Forced termination or
