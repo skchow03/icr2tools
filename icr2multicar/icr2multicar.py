@@ -190,6 +190,7 @@ PROCESS_VM_OPERATION = 0x0008
 PROCESS_VM_READ = 0x0010
 PROCESS_VM_WRITE = 0x0020
 PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+SYNCHRONIZE = 0x00100000  # Required for WaitForSingleObject(process)
 
 # x86 wheel/tire selection routine with address and relative-branch fixups.
 # Marker bytes 0x11, 0x22 and 0x33 stand in for CALL/CALL/JMP displacements.
@@ -275,7 +276,7 @@ class RemoteCave:
     def __init__(self, pid: int):
         self.k32 = _win32()
         permissions = (PROCESS_VM_OPERATION | PROCESS_VM_READ | PROCESS_VM_WRITE |
-                       PROCESS_QUERY_LIMITED_INFORMATION)
+                       PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
         self.process = _checked(self.k32.OpenProcess(permissions, False, pid),
                                 "OpenProcess(WINDY)")
         self.address = 0
