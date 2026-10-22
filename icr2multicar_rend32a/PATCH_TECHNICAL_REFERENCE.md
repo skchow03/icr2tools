@@ -319,7 +319,7 @@ overlap. The final executable stays exactly the same length.
 ### How the single-file Python patcher constructs the output
 
 The source ships **replacement-byte runs**, compressed using zlib and
-encoded with Base85, in `_BASELINE_DELTA`. It does **not** embed an entire
+encoded with Base85, in `_CORE_PATCH_DELTA`. It does **not** embed an entire
 game executable. Each decoded replacement run is:
 
 ```text
