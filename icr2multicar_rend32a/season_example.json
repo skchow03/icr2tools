@@ -1,0 +1,4 @@
+{
+  "description": "Example only; replace with chassis actually used by your carset",
+  "chassis": ["irl", "panoz", "reynard", "lola", "dallara"]
+}
