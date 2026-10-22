@@ -74,6 +74,32 @@ class LauncherTests(unittest.TestCase):
             self.assertIn("--enable-data-writes", popen.call_args.args[0])
             self.assertIn("--enable-code-writes", popen.call_args.args[0])
 
+    def test_frozen_windows_child_does_not_inherit_mei_dll_directory(self):
+        client = mock.Mock()
+        client.ping.side_effect = [OSError("missing"), True]
+        client.capabilities.return_value = {"READ"}
+        dll = mock.Mock(return_value=1)
+
+        def check_child(*args, **kwargs):
+            self.assertEqual(dll.call_args_list, [mock.call(None)])
+            self.assertEqual(kwargs["cwd"], str(Path("icr2runtime.exe").parent))
+            return mock.Mock()
+
+        with self._client_module(client), \
+                mock.patch.object(runtime_launcher, "_runtime_executable",
+                                  return_value=Path("icr2runtime.exe")), \
+                mock.patch.object(runtime_launcher.subprocess, "Popen",
+                                  side_effect=check_child), \
+                mock.patch.object(runtime_launcher.sys, "platform", "win32"), \
+                mock.patch.object(runtime_launcher.sys, "_MEIPASS", r"C:\\temp\\_MEI123",
+                                  create=True), \
+                mock.patch("ctypes.windll", create=True) as windll:
+            windll.kernel32.SetDllDirectoryW = dll
+            self.assertIs(runtime_launcher.ensure_runtime(), client)
+
+        self.assertEqual(dll.call_args_list,
+                         [mock.call(None), mock.call(r"C:\\temp\\_MEI123")])
+
     def test_bundled_exe_cached_outside_pyinstaller_temp(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)
