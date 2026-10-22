@@ -1,81 +1,97 @@
 # ICR2 Multi-Car — Rendition (REND32A)
 
-Create a modified **Rendition version** of *IndyCar Racing II* with multiple
-car chassis and per-car wheel/tire support.
+This tool modifies the **Rendition version of *IndyCar Racing II***
+to support **different chassis models and independently updated wheel/tire
+appearances across cars**.
 
-**Status:** The developer reports that the current configurable Rendition
-Multi-Car patch works in-game. The underlying FOUR V2 + C2 wheel patch was
-also tested in a mixed-chassis game. Wider testing across arbitrary carsets,
-replays, damage and other conditions is still needed. This is separate from
-the [Windows WINDY Multi-Car tool](../icr2multicar/).
+It patches a copy of your own **original `CART.EXE`**, without modifying
+your carset or requiring a compiler.
 
-**For reverse engineers:** See the
-[complete binary patch technical reference](PATCH_TECHNICAL_REFERENCE.md)
-for the exact original/replacement instruction bytes, raw and guest addresses,
-LE object-header edits, preload trampoline, wheel-update logic, 3DO fields,
-and safety/integrity checks.
+The author has successfully run a generated executable in-game. The
+patch remains experimental across untested carsets, replay modes and
+unusual chassis layouts. It is separate from the
+[native Windows Multi-Car tool](../icr2multicar/).
 
 ## Requirements
 
-- Python 3.10 or newer.
-- Your own **original, unmodified REND32A `CART.EXE`** (1,109,095 bytes).
-- A compatible carset with the desired chassis `.3do` files.
-
-There is **one Python file**, `rend32a_multicar.py`. No assembler,
-compiler, separate runtime, or other Python packages are required. No game
-executables or game assets are included.
+- Python 3.10 or later (no third-party packages).
+- The **original, unmodified REND32A `CART.EXE`** (1,109,095 bytes).
+- A carset with the desired chassis `.3do` files and associated resources.
 
 ## Quick start
 
-1. Back up your original REND32A installation and `CART.EXE`.
-2. Download [`rend32a_multicar.py`](rend32a_multicar.py) to your computer.
-3. In PowerShell or a command prompt, run:
+1. Back up the original REND32A installation and `CART.EXE`.
+2. Download [`rend32a_multicar.py`](rend32a_multicar.py).
+3. Open PowerShell or a command prompt and run:
 
    ```powershell
    python rend32a_multicar.py "C:\Games\ICR2\CART.EXE"
    ```
 
-This creates **`CART_MULTICAR.EXE`** in the same directory, without changing
-the original. By default the additional chassis list is `irl` and `panoz`.
+The tool checks your stock executable and writes
+**`CART_MULTICAR.EXE`** beside it. It never overwrites the original.
+The default additional chassis names are `irl` and `panoz`.
 
-For other chassis, explicitly list their model basenames:
+For a different selection:
 
 ```powershell
 python rend32a_multicar.py "C:\Games\ICR2\CART.EXE" --chassis irl panoz lola reynard
 ```
 
-Or automatically detect model names from a compatible carset:
+To discover chassis names automatically from a supported carset:
 
 ```powershell
 python rend32a_multicar.py "C:\Games\ICR2\CART.EXE" --carset-dir "C:\Games\ICR2\CARS\MYSEASON"
 ```
 
-The automatic scanner needs `cars.3do` and the referenced driver wrapper
-`.3do` files. It rejects unsupported carset layouts rather than guessing.
-Chassis names must be DOS 8.3-compatible basenames (up to eight characters).
+The scanner follows `cars.3do` and the driver wrapper `.3do` files.
+Chassis names must use DOS 8.3-compatible basenames (up to eight
+characters before `.3do`). The patcher rejects unsupported wrapper
+layouts instead of guessing.
 
-**To play:** Copy the generated EXE into a *separate backed-up test copy*
-of the REND32A game installation, and rename that copy to `CART.EXE`.
-Keep your original unchanged. The patcher does not change carset files or
-create missing chassis models.
+**To use the modified game:** Copy the generated EXE to a separate,
+backed-up REND32A installation and rename that copy `CART.EXE`.
+Make sure your chosen carset already references the matching chassis
+models. The patcher does not create or assign chassis files.
 
-## Problems and safeguards
+## What the EXE patch changes
 
-- **Unsupported CART.EXE:** Only the exact original REND32A executable is
-  supported. Other variants, including WINDY, DOS102, and already patched
-  files, are rejected using SHA-256 verification.
-- **Output exists:** The script will not overwrite a generated output unless
-  you specify `--overwrite`. It will never overwrite the source executable.
-- **Missing chassis files:** Ensure the desired `.3do` models and their
-  resources exist in the carset, and are assigned to drivers.
-- **In-game problems:** Start by testing `irl` and `panoz`, then add other
-  chassis incrementally. A successful reported test does not establish
-  compatibility with every model, view, replay or race state.
+Compared directly with stock `CART.EXE`, the patch:
 
-The original-to-C2 baseline is reconstructed using a compact embedded patch.
-The script verifies both the original and resulting C2 SHA-256 hashes before
-adding the chassis list. No external compiler or assembler is invoked.
+1. **Preserves each car's chassis pointer**, preventing the game from
+   replacing it with a shared default geometry reference.
+2. **Preloads additional `.3do` chassis models** using the game's existing
+   model loader.
+3. **Redirects two wheel-rendering calls** through an injected updater
+   that applies each car's wheel spin, steering and front/rear tire
+   appearance immediately before drawing.
 
-The tool is an independent community modification and is not affiliated
-with the game's developers or publishers. Do not redistribute proprietary
-game executable files or carset assets.
+It also adjusts the executable's LE header so the added routines are
+mapped and a small in-game diagnostic counter area is writable.
+
+For community reverse engineering, see the
+**[complete technical reference](PATCH_TECHNICAL_REFERENCE.md)** for
+original/replacement bytes, file offsets, guest addresses, injected x86
+instructions, model-node fields, wheel rotation formulas and integrity
+checks. It documents the changes **from stock EXE to final patched EXE**
+without requiring knowledge of development history.
+
+## Troubleshooting and limitations
+
+- **Unsupported executable:** The script accepts only the exact stock
+  REND32A `CART.EXE` version, verified by SHA-256. Other releases,
+  already patched EXEs, DOS102 and WINDY are not supported.
+- **Output already exists:** Choose another `--output` or use
+  `--overwrite` for an existing generated file. The original input
+  can never be the output.
+- **Missing or unsupported chassis:** Ensure the carset includes all
+  required model and texture resources. The wheel updater expects
+  compatible chassis models with wheel attachments in its supported
+  3DO hierarchy.
+- **Game instability:** Test additional models incrementally and keep a
+  clean backup. Successful in-game use does not prove compatibility
+  with every carset, camera, replay or damaged-car state.
+
+The tool distributes only patcher source code, **not** game executable
+bytes or commercial carsets. This independent community modification is
+not affiliated with the game's original developers or publishers.
