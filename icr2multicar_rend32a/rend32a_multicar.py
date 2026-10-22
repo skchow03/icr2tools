@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Patch a verified stock REND32A CART.EXE for independent chassis and wheel/tire models.
+"""Patch verified REND32A CART/INDYCAR executables for independent chassis and wheel/tire models.
 
 Source-only patch: no GNU assembler, compiler, runtime service or game assets.
 The configurable chassis preloader has user-reported in-game success; broader game validation is pending.
 """
 from __future__ import annotations
 import argparse
+from dataclasses import dataclass
 import base64
 import hashlib
 import json
@@ -15,7 +16,8 @@ import sys
 import zlib
 from pathlib import Path
 
-# Modified-byte runs for the shared chassis/wheel patch applied to stock CART.EXE.
+# Replacement-byte runs use canonical REND32A CART.EXE raw offsets.
+# Verified executable profiles translate these file offsets when necessary.
 # This is a replacement-byte patch, not a bundled copy of the game executable.
 _CORE_PATCH_DELTA = (
     'c-qs+XJBArVAx>-q!}693prUCm>FKDb8_af0>zm*gBjR>0xJtS&U0}91tv^LDCA=hXLzw(=+FOz<~IVzSyVEMa`cY7sIVBP<W~SCSr~vE'
@@ -53,6 +55,55 @@ VALID_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9_~!#$%&\x27()@^`{}-]{0,7}\Z')
 
 def sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+
+@dataclass(frozen=True)
+class ExecutableProfile:
+    key: str
+    label: str
+    game: str
+    size: int
+    input_sha256: str
+    core_sha256: str
+    file_shift: int
+
+
+# Each digest identifies an exact input file, not just a game version string.
+# Core digests verify the entire file after translating and applying the shared
+# 34 replacement-byte runs, before adding user-selected chassis names.
+PROFILES = (
+    ExecutableProfile("stock_cart", "Stock Rendition CART", "CART",
+                      EXECUTABLE_SIZE, ORIGINAL_SHA, CORE_PATCH_SHA, 0),
+    ExecutableProfile("icrwide_cart", "ICRWide CART (20260722001)", "CART",
+                      1109095, "d3329cde896725066436a20f4f67bf9c70fed59db1bc9947f3f3a5aa0d78889d",
+                      "86b310d5033b6f476dafc5ddf75ce125ae894b323ec6c3de5afa4aeb7a3c0c39", 0),
+    ExecutableProfile("icrwide_indycar", "ICRWide INDYCAR (20260722001)", "INDYCAR",
+                      1109095, "2a97bf1f1d04201eeef144031851a2f35f38b7309c636ad421c1084572d562c3",
+                      "1a2a9d3b9ce181749b979821f6029546b519f250b4b6406ebdc7a3b586db731a", 0),
+    ExecutableProfile("increasedheap_cart", "IncreasedHeapSize CART", "CART",
+                      1247899, "b23574535c6b38dea2a7affa43ab70a5d3d6a66d59e2ab9ddbdbd2388672a401",
+                      "e441bec360fd1bba2847393dd63863a71077d1715bf81affaa0b89da70247518", 0x21E34),
+    ExecutableProfile("increasedheap_indycar", "IncreasedHeapSize INDYCAR", "INDYCAR",
+                      1247899, "de029d70844313e7afc7e94cce6357d832ff893ede4afeb6d9fa2bf41b28e35c",
+                      "97b62ca91180590470903ee70295cfa01ad3a93abed761fad4f6581db6b94503", 0x21E34),
+)
+
+
+def identify_profile(data: bytes) -> ExecutableProfile:
+    digest = sha(data)
+    for profile in PROFILES:
+        if len(data) == profile.size and digest == profile.input_sha256:
+            return profile
+    raise ValueError(
+        f"Unsupported or previously patched executable ({len(data):,} bytes, SHA256 {digest}). "
+        "Only the five documented, unmodified REND32A executables are supported."
+    )
+
+
+def raw(profile: ExecutableProfile, canonical_offset: int) -> int:
+    """Translate a reference CART raw file offset; never shift a guest address."""
+    return canonical_offset + profile.file_shift
 
 
 def u32(b: bytes, off: int) -> int:
@@ -210,61 +261,78 @@ def emit_payload(extra: list[str]) -> bytes:
     return bytes(buf)
 
 
-def validate_core_patch(b:bytes) -> None:
-    if len(b)!=EXECUTABLE_SIZE or sha(b)!=CORE_PATCH_SHA:
-        raise ValueError('Internal shared patch checksum mismatch; expected SHA256 '+CORE_PATCH_SHA)
-    if b[LE:LE+2]!=b'LE':
-        raise ValueError('Not a DOS/32A LE executable')
-    if tuple(struct.unpack_from('<6I',b,LE_VIRT))!=(CORE_VIRTUAL_SIZE,CODE_BASE,0x2047,1,CODE_PAGES,0):
+def validate_core_patch(b: bytes, profile: ExecutableProfile) -> None:
+    if len(b) != profile.size or sha(b) != profile.core_sha256:
+        raise ValueError(f"Internal shared patch checksum mismatch for {profile.label}; "
+                         f"expected SHA256 {profile.core_sha256}")
+    le = raw(profile, LE)
+    le_virt = raw(profile, LE_VIRT)
+    if b[le:le+2] != b'LE':
+        raise ValueError('Not a DOS/32A LE game image')
+    if tuple(struct.unpack_from('<6I', b, le_virt)) != (
+            CORE_VIRTUAL_SIZE, CODE_BASE, 0x2047, 1, CODE_PAGES, 0):
         raise ValueError('Unexpected LE code object layout')
-    if b[PRELOAD_HOOK:PRELOAD_HOOK+5] != relcall(PRELOAD_HOOK,0xE7160):
+    preload_hook = raw(profile, PRELOAD_HOOK)
+    if b[preload_hook:preload_hook+5] != relcall(PRELOAD_HOOK, 0xE7160):
         raise ValueError('Expected internal model loader signature missing')
-    if b[GEOMETRY_RAW:GEOMETRY_RAW+2]!=b'\x90\x90':
+    geometry = raw(profile, GEOMETRY_RAW)
+    if b[geometry:geometry+2] != b'\x90\x90':
         raise ValueError('Chassis-preservation NOP missing')
-    if b[0xE7500:0xE7508] != REQUIRED_WHEEL_MAGIC:
+    wheel_magic = raw(profile, 0xE7500)
+    if b[wheel_magic:wheel_magic+8] != REQUIRED_WHEEL_MAGIC:
         raise ValueError('Wheel updater/diagnostic buffer signature missing')
-    if b[MAIN_WHEEL_HOOK_RAW:MAIN_WHEEL_HOOK_RAW+5] != relcall(MAIN_WHEEL_HOOK_RAW,0xE71B0):
+    main_hook = raw(profile, MAIN_WHEEL_HOOK_RAW)
+    if b[main_hook:main_hook+5] != relcall(MAIN_WHEEL_HOOK_RAW, 0xE71B0):
         raise ValueError('Main wheel hook missing')
-    if b[DIRECT_WHEEL_HOOK_RAW:DIRECT_WHEEL_HOOK_RAW+5] != relcall(DIRECT_WHEEL_HOOK_RAW,0xE7200):
+    direct_hook = raw(profile, DIRECT_WHEEL_HOOK_RAW)
+    if b[direct_hook:direct_hook+5] != relcall(DIRECT_WHEEL_HOOK_RAW, 0xE7200):
         raise ValueError('Direct wheel hook missing')
-    if any(b[PRELOAD_NEW:CODE_LIMIT]):
+    if any(b[raw(profile, PRELOAD_NEW):raw(profile, CODE_LIMIT)]):
         raise ValueError('Candidate preload cave is not empty')
-    assert_no_fixups(b,PRELOAD_NEW,CODE_LIMIT-PRELOAD_NEW)
+    assert_no_fixups(b, raw(profile, PRELOAD_NEW), CODE_LIMIT-PRELOAD_NEW, profile.file_shift)
 
 
-def patch(b: bytes, extra: list[str]) -> tuple[bytes,dict]:
-    validate_core_patch(b)
-    payload = emit_payload(extra)
-    new=bytearray(b)
-    new[PRELOAD_NEW:PRELOAD_NEW+len(payload)]=payload
-    new[PRELOAD_HOOK:PRELOAD_HOOK+5]=relcall(PRELOAD_HOOK,PRELOAD_NEW)
-    new_virtual=max(CORE_VIRTUAL_SIZE, ((PRELOAD_NEW+len(payload)-CODE_RAW+15)//16)*16)
-    if new_virtual>CODE_PAGES*4096 or CODE_BASE+new_virtual>=0xB0000:
+def patch(b: bytes, extra: list[str], profile: ExecutableProfile) -> tuple[bytes, dict]:
+    validate_core_patch(b, profile)
+    payload = emit_payload(extra)  # guest relative CALLs are unaffected by the file shift
+    new = bytearray(b)
+    preload = raw(profile, PRELOAD_NEW)
+    hook = raw(profile, PRELOAD_HOOK)
+    new[preload:preload+len(payload)] = payload
+    new[hook:hook+5] = relcall(PRELOAD_HOOK, PRELOAD_NEW)
+    new_virtual = max(CORE_VIRTUAL_SIZE, ((PRELOAD_NEW+len(payload)-CODE_RAW+15)//16)*16)
+    if new_virtual > CODE_PAGES*4096 or CODE_BASE+new_virtual >= 0xB0000:
         raise ValueError('Requested names exceed mapped LE code pages')
-    struct.pack_into('<I',new,LE_VIRT,new_virtual)
-    for raw_start,raw_end in [(GEOMETRY_RAW,GEOMETRY_RAW+2),
-                    (MAIN_WHEEL_HOOK_RAW,MAIN_WHEEL_HOOK_RAW+5),
-                    (DIRECT_WHEEL_HOOK_RAW,DIRECT_WHEEL_HOOK_RAW+5),
-                    (0xE7160,0xE71AC),(0xE71B0,0xE7538),
-                    (LE_FLAGS,LE_FLAGS+4)]:
-        assert new[raw_start:raw_end]==b[raw_start:raw_end],f'Modified protected common-patch byte region {raw_start:#x}'
-    allowed=set(range(PRELOAD_NEW,PRELOAD_NEW+len(payload)))
-    allowed.update(range(PRELOAD_HOOK,PRELOAD_HOOK+5))
-    allowed.update(range(LE_VIRT,LE_VIRT+4))
-    differences=[i for i,(x,y) in enumerate(zip(b,new)) if x!=y]
-    if not set(differences)<=allowed:
+    struct.pack_into('<I', new, raw(profile, LE_VIRT), new_virtual)
+    protected = [(GEOMETRY_RAW, GEOMETRY_RAW+2),
+                 (MAIN_WHEEL_HOOK_RAW, MAIN_WHEEL_HOOK_RAW+5),
+                 (DIRECT_WHEEL_HOOK_RAW, DIRECT_WHEEL_HOOK_RAW+5),
+                 (0xE7160, 0xE71AC), (0xE71B0, 0xE7538),
+                 (LE_FLAGS, LE_FLAGS+4)]
+    for start, end in protected:
+        a, z = raw(profile, start), raw(profile, end)
+        assert new[a:z] == b[a:z], f'Modified protected common-patch byte region {a:#x}'
+    allowed = set(range(preload, preload+len(payload)))
+    allowed.update(range(hook, hook+5))
+    allowed.update(range(raw(profile, LE_VIRT), raw(profile, LE_VIRT)+4))
+    differences = [i for i, (x, y) in enumerate(zip(b, new)) if x != y]
+    if not set(differences) <= allowed:
         raise AssertionError('Unanticipated binary changes detected')
-    manifest={'patch':'REND32A Multi-Car chassis preservation, model preload and per-car wheels',
-        'core_patch_sha256':CORE_PATCH_SHA,'output_sha256':sha(new),'file_size':len(new),
-        'extra_chassis':extra,'extra_chassis_count':len(extra),
-        'builtin_loads':['roadcar','indycar'],'loader_hook_raw':hex(PRELOAD_HOOK),
-        'new_loader_raw':hex(PRELOAD_NEW),'new_loader_guest':hex(PRELOAD_NEW-0x3BE20),
-        'loader_raw_length':len(payload),'code_object_virtual_size':hex(new_virtual),
-        'code_object_size_limit':hex(CODE_PAGES*4096),
-        'le_pages_added':0,'le_relocation_records_added':0,'changed_byte_count':len(differences),
-        'wheel_hook_bytes_unchanged':True,'chassis_nop_preserved':True,'inactive_preloader_retained_but_bypassed':True,
-        'testing_status':'user-reported successful in-game test; broader regression coverage remains pending'}
-    return bytes(new),manifest
+    manifest = {'patch': 'REND32A Multi-Car chassis preservation, model preload and per-car wheels',
+        'profile': profile.key, 'source_sha256': profile.input_sha256,
+        'file_offset_shift': hex(profile.file_shift),
+        'core_patch_sha256': profile.core_sha256, 'output_sha256': sha(new),
+        'file_size': len(new), 'extra_chassis': extra, 'extra_chassis_count': len(extra),
+        'builtin_loads': ['roadcar', 'indycar'], 'loader_hook_raw': hex(hook),
+        'new_loader_raw': hex(preload), 'new_loader_guest': hex(PRELOAD_NEW-0x3BE20),
+        'loader_raw_length': len(payload), 'code_object_virtual_size': hex(new_virtual),
+        'code_object_size_limit': hex(CODE_PAGES*4096),
+        'le_pages_added': 0, 'le_relocation_records_added': 0,
+        'changed_byte_count': len(differences),
+        'wheel_hook_bytes_unchanged': True, 'chassis_nop_preserved': True,
+        'inactive_preloader_retained_but_bypassed': True,
+        'testing_status': 'static validation on five input builds; per-build game testing pending'}
+    return bytes(new), manifest
 
 
 def read_config(path:Path)->list[str]:
@@ -276,77 +344,84 @@ def read_config(path:Path)->list[str]:
     return names
 
 
-def fixups_for_page(data: bytes, page: int) -> list[tuple[int, int]]:
-    pt, rt = LE + 0x40D, LE + 0x71D
+def fixups_for_page(data: bytes, page: int, file_shift: int = 0) -> list[tuple[int, int]]:
+    pt, rt = LE + file_shift + 0x40D, LE + file_shift + 0x71D
     start = u32(data, pt + (page - 1) * 4)
     end = u32(data, pt + page * 4)
     records = data[rt + start:rt + end]
     pos, result = 0, []
     while pos < len(records):
         if pos + 4 > len(records):
-            raise ValueError("Truncated LE relocation")
+            raise ValueError('Truncated LE relocation')
         kind = tuple(records[pos:pos + 2])
         if kind == (7, 16): length = 9
         elif kind == (7, 0): length = 7
-        else: raise ValueError(f"Unexpected LE relocation type: {kind}")
+        else: raise ValueError(f'Unexpected LE relocation type: {kind}')
         if pos + length > len(records):
-            raise ValueError("Truncated LE relocation record")
-        off = struct.unpack_from("<H", records, pos + 2)[0]
+            raise ValueError('Truncated LE relocation record')
+        off = struct.unpack_from('<H', records, pos + 2)[0]
         result.append((off, off + 4))
         pos += length
     return result
 
 
-def assert_no_fixups(data: bytes, addr: int, size: int) -> None:
-    for page in range((addr - CODE_RAW) // 4096 + 1,
-                      (addr + size - 1 - CODE_RAW) // 4096 + 2):
-        page_start = CODE_RAW + (page - 1) * 4096
-        for a, b in fixups_for_page(data, page):
-            if max(addr, page_start + a) < min(addr + size, page_start + b):
-                raise ValueError(f"Patch overlaps LE relocation on page {page}")
+def assert_no_fixups(data: bytes, addr: int, size: int, file_shift: int = 0) -> None:
+    code_raw = CODE_RAW + file_shift
+    for page in range((addr-code_raw)//4096+1,
+                      (addr+size-1-code_raw)//4096+2):
+        page_start = code_raw + (page-1)*4096
+        for a, z in fixups_for_page(data, page, file_shift):
+            if max(addr, page_start+a) < min(addr+size, page_start+z):
+                raise ValueError(f'Patch overlaps LE relocation on page {page}')
 
 
-def reconstruct_core_patch(source: bytes) -> bytes:
-    if len(source) != EXECUTABLE_SIZE or sha(source) != ORIGINAL_SHA:
-        raise ValueError("Unsupported CART.EXE version. Expected the unmodified "
-                         "1,109,095-byte REND32A executable; SHA256: " + ORIGINAL_SHA)
-    delta = zlib.decompress(base64.b85decode("".join(_CORE_PATCH_DELTA)))
+def reconstruct_core_patch(source: bytes, profile: ExecutableProfile) -> bytes:
+    if len(source) != profile.size or sha(source) != profile.input_sha256:
+        raise ValueError(f'Input no longer matches verified {profile.label} SHA256: '
+                         f'{profile.input_sha256}')
+    delta = zlib.decompress(base64.b85decode(''.join(_CORE_PATCH_DELTA)))
     output = bytearray(source)
-    at = 0
-    last_end = 0
+    at, last_end = 0, 0
     while at < len(delta):
-        if len(delta) - at < 6:
-            raise ValueError("Damaged embedded patch data")
-        offset, count = struct.unpack_from("<IH", delta, at)
+        if len(delta)-at < 6:
+            raise ValueError('Damaged embedded patch data')
+        offset, count = struct.unpack_from('<IH', delta, at)
         at += 6
-        if offset < last_end or offset + count > len(output) or at + count > len(delta):
-            raise ValueError("Damaged embedded patch range")
-        output[offset:offset + count] = delta[at:at + count]
+        offset = raw(profile, offset)
+        if offset < last_end or offset+count > len(output) or at+count > len(delta):
+            raise ValueError('Damaged embedded patch range')
+        output[offset:offset+count] = delta[at:at+count]
         at += count
-        last_end = offset + count
+        last_end = offset+count
     output = bytes(output)
-    if sha(output) != CORE_PATCH_SHA:
-        raise ValueError("Reconstructed chassis/wheel patch failed SHA256 verification")
+    if sha(output) != profile.core_sha256:
+        raise ValueError(f'Reconstructed {profile.label} core patch failed SHA256 verification')
     return output
 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Patch an original REND32A CART.EXE for multiple chassis.")
-    parser.add_argument("exe", type=Path, help="Your unmodified REND32A CART.EXE")
+    parser = argparse.ArgumentParser(
+        description='Patch a verified REND32A CART.EXE or INDYCAR.EXE for multiple chassis.')
+    parser.add_argument('exe', type=Path, help='Your unmodified, supported REND32A game EXE')
     options = parser.add_mutually_exclusive_group()
-    options.add_argument("--carset-dir", type=Path, help="Folder containing cars.3do and driver wrappers (auto-detect)")
-    options.add_argument("--chassis", nargs="+", help="Chassis names, e.g. irl panoz reynard")
-    options.add_argument("--config", type=Path, help="JSON file containing chassis names")
-    parser.add_argument("--output", type=Path, help="Output EXE (default: CART_MULTICAR.EXE next to input)")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing generated output, never original")
+    options.add_argument('--carset-dir', type=Path,
+                         help='Folder containing cars.3do and driver wrappers (auto-detect)')
+    options.add_argument('--chassis', nargs='+', help='Chassis names, e.g. irl panoz reynard')
+    options.add_argument('--config', type=Path, help='JSON file containing chassis names')
+    parser.add_argument('--output', type=Path,
+                        help='Output EXE (default: CART_MULTICAR.EXE or INDYCAR_MULTICAR.EXE)')
+    parser.add_argument('--overwrite', action='store_true',
+                        help='Overwrite an existing generated output, never original')
     args = parser.parse_args(argv)
     source = args.exe.resolve(strict=True)
-    output = (args.output or source.with_name("CART_MULTICAR.EXE")).resolve()
+    source_bytes = source.read_bytes()
+    profile = identify_profile(source_bytes)
+    output = (args.output or source.with_name(f'{profile.game}_MULTICAR.EXE')).resolve()
     if source == output:
-        raise ValueError("Refusing to overwrite original CART.EXE")
+        raise ValueError('Refusing to overwrite original game EXE')
     if output.exists() and not args.overwrite:
-        raise ValueError(f"{output.name} already exists; use --overwrite or --output")
+        raise ValueError(f'{output.name} already exists; use --overwrite or --output')
 
     details = {}
     if args.carset_dir:
@@ -356,24 +431,26 @@ def main(argv: list[str] | None = None) -> int:
     elif args.config:
         names = uniq(read_config(args.config))
     else:
-        names = ["irl", "panoz"]
-        print("Using default additional chassis: irl, panoz. "
-              "Use --carset-dir or --chassis for another season.")
+        names = ['irl', 'panoz']
+        print('Using default additional chassis: irl, panoz. '
+              'Use --carset-dir or --chassis for another season.')
 
-    print("Checking original CART.EXE...")
-    core_patch = reconstruct_core_patch(source.read_bytes())
-    patched, manifest = patch(core_patch, names)
+    print(f'Checking original {profile.label}...')
+    core_patch = reconstruct_core_patch(source_bytes, profile)
+    patched, manifest = patch(core_patch, names, profile)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(patched)
-    if sha(output.read_bytes()) != manifest["output_sha256"]:
-        raise ValueError("Written output failed verification")
-    print("Generated:", output)
-    print("Additional chassis:", ", ".join(names) if names else "(none)")
-    print("SHA256:", manifest["output_sha256"])
-    if details.get("missing_chassis_assets"):
-        print("WARNING: Missing chassis 3DO files:", ", ".join(details["missing_chassis_assets"]))
-    print("Experimental: Developer reports in-game success; broader compatibility remains unverified.")
-    print("Keep the original. Copy generated file as CART.EXE only into a backed-up test installation.")
+    if sha(output.read_bytes()) != manifest['output_sha256']:
+        raise ValueError('Written output failed verification')
+    print('Generated:', output)
+    print('Input variant:', profile.label)
+    print('Additional chassis:', ', '.join(names) if names else '(none)')
+    print('SHA256:', manifest['output_sha256'])
+    if details.get('missing_chassis_assets'):
+        print('WARNING: Missing chassis 3DO files:', ', '.join(details['missing_chassis_assets']))
+    print('Experimental: Static compatibility verified; game testing on each variant is pending.')
+    print(f'Keep the original. Copy generated file as {profile.game}.EXE only into '
+          'a backed-up test installation.')
     return 0
 
 
