@@ -2,7 +2,7 @@
 """Patch a verified original REND32A CART.EXE for multiple chassis and C2 wheels.
 
 Source-only patch: no GNU assembler, compiler, runtime service or game assets.
-The configurable chassis preloader remains experimental pending live DOSBox tests.
+The configurable chassis preloader has user-reported in-game success; broader game validation is pending.
 """
 from __future__ import annotations
 import argparse
@@ -263,7 +263,7 @@ def patch(b: bytes, extra: list[str]) -> tuple[bytes,dict]:
         'code_object_size_limit':hex(CODE_PAGES*4096),
         'le_pages_added':0,'le_relocation_records_added':0,'changed_byte_count':len(differences),
         'wheel_hook_bytes_unchanged':True,'chassis_nop_preserved':True,'original_four_v2_preloader_retained_but_bypassed':True,
-        'testing_status':'static checks only; new configurable loader untested in DOSBox'}
+        'testing_status':'user-reported successful in-game test; broader regression coverage remains pending'}
     return bytes(new),manifest
 
 
@@ -372,7 +372,7 @@ def main(argv: list[str] | None = None) -> int:
     print("SHA256:", manifest["output_sha256"])
     if details.get("missing_chassis_assets"):
         print("WARNING: Missing chassis 3DO files:", ", ".join(details["missing_chassis_assets"]))
-    print("EXPERIMENTAL: Configurable loader not yet validated live in DOSBox.")
+    print("Experimental: Developer reports in-game success; broader compatibility remains unverified.")
     print("Keep the original. Copy generated file as CART.EXE only into a backed-up test installation.")
     return 0
 

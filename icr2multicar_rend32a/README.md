@@ -3,9 +3,17 @@
 Create a modified **Rendition version** of *IndyCar Racing II* with multiple
 car chassis and per-car wheel/tire support.
 
-**Experimental:** The underlying FOUR V2 + C2 wheel patch was tested in-game,
-but the configurable chassis-name preloader still needs live DOSBox testing.
-This is separate from the [Windows WINDY Multi-Car tool](../icr2multicar/).
+**Status:** The developer reports that the current configurable Rendition
+Multi-Car patch works in-game. The underlying FOUR V2 + C2 wheel patch was
+also tested in a mixed-chassis game. Wider testing across arbitrary carsets,
+replays, damage and other conditions is still needed. This is separate from
+the [Windows WINDY Multi-Car tool](../icr2multicar/).
+
+**For reverse engineers:** See the
+[complete binary patch technical reference](PATCH_TECHNICAL_REFERENCE.md)
+for the exact original/replacement instruction bytes, raw and guest addresses,
+LE object-header edits, preload trampoline, wheel-update logic, 3DO fields,
+and safety/integrity checks.
 
 ## Requirements
 
@@ -61,8 +69,8 @@ create missing chassis models.
 - **Missing chassis files:** Ensure the desired `.3do` models and their
   resources exist in the carset, and are assigned to drivers.
 - **In-game problems:** Start by testing `irl` and `panoz`, then add other
-  chassis incrementally. The configurable name loader, unusual views,
-  replays, and all possible chassis layouts have not been validated in-game.
+  chassis incrementally. A successful reported test does not establish
+  compatibility with every model, view, replay or race state.
 
 The original-to-C2 baseline is reconstructed using a compact embedded patch.
 The script verifies both the original and resulting C2 SHA-256 hashes before
