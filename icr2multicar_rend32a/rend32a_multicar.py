@@ -29,6 +29,24 @@ _CORE_PATCH_DELTA = (
 
 ORIGINAL_SHA = 'e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c'
 CORE_PATCH_SHA = 'cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0'
+# A known modified REND32A executable (31 changed bytes versus the
+# supported stock version). Only this exact SHA is accepted. Its changes are
+# preserved in the generated EXE, but in-game compatibility is not yet verified.
+ALTERNATE_SHA = '14385142e4f0b99541f018c1f20eccd854fd17103da0dfddd81472520f9c3360'
+ALTERNATE_DEFAULT_SHA = 'f19aeca5a4a34a544961ae86ec575c7d7d3b17dbebf0785b061664aea1dd84d2'
+# (file offset, stock bytes, alternate bytes). Some runs contain unchanged
+# bytes because they represent one complete x86 instruction.
+ALTERNATE_BYTE_EDITS = (
+    (0x61C26, '40 ac 27 00', '00 88 f5 04'),
+    (0x61F74, '40 ac 27 00', '00 88 f5 04'),
+    (0x6A3C7, '40 91', '20 43'),
+    (0x6BED8, '0f b6 15 78 cb 0e 00', '8b 14 95 74 cb 03 00'),
+    (0x79244, '2c 15 00 00', 'd4 ea ff ff'),
+    (0x79252, '60 1a', '30 22'),
+    (0xABC9A, '4b 44', 'e1 cc'),
+    (0xAE67E, '40 ac 27 00', '00 88 f5 04'),
+    (0xF5FC0, '40 ac 27 00', '00 88 f5 04'),
+)
 EXECUTABLE_SIZE = 1109095
 LE = 0x6E68
 CODE_RAW = 0x4BE20
@@ -306,6 +324,48 @@ def assert_no_fixups(data: bytes, addr: int, size: int) -> None:
                 raise ValueError(f"Patch overlaps LE relocation on page {page}")
 
 
+def normalize_supported_input(source: bytes) -> tuple[bytes, bool]:
+    """Validate a known input exactly and reconstruct the canonical stock bytes.
+
+    The current common patch checksum is pinned to stock CART.EXE. When the
+    known alternate is supplied, revert only its nine documented edit runs
+    in memory; after generating the Multi-Car output, reinstate those edits.
+    The source file on disk is never modified.
+    """
+    if len(source) != EXECUTABLE_SIZE:
+        raise ValueError("Unsupported REND32A CART.EXE size")
+    digest = sha(source)
+    if digest == ORIGINAL_SHA:
+        return source, False
+    if digest != ALTERNATE_SHA:
+        raise ValueError(
+            "Unsupported REND32A CART.EXE SHA256: " + digest +
+            ". Supported: stock " + ORIGINAL_SHA + ", alternate " + ALTERNATE_SHA
+        )
+    canonical = bytearray(source)
+    for offset, stock_hex, variant_hex in ALTERNATE_BYTE_EDITS:
+        stock, variant = bytes.fromhex(stock_hex), bytes.fromhex(variant_hex)
+        if len(stock) != len(variant):
+            raise ValueError("Invalid variant edit size at " + hex(offset))
+        if canonical[offset:offset + len(variant)] != variant:
+            raise ValueError("Alternate executable differs at " + hex(offset))
+        canonical[offset:offset + len(stock)] = stock
+    if sha(canonical) != ORIGINAL_SHA:
+        raise ValueError("Alternate executable failed canonical SHA256 verification")
+    return bytes(canonical), True
+
+
+def reapply_alternate_edits(output: bytes) -> bytes:
+    """Preserve all of the alternate's changed bytes; fail on any overlap."""
+    modified = bytearray(output)
+    for offset, stock_hex, variant_hex in ALTERNATE_BYTE_EDITS:
+        stock, variant = bytes.fromhex(stock_hex), bytes.fromhex(variant_hex)
+        if modified[offset:offset + len(stock)] != stock:
+            raise ValueError("Multi-Car conflicts with alternate edit at " + hex(offset))
+        modified[offset:offset + len(variant)] = variant
+    return bytes(modified)
+
+
 def reconstruct_core_patch(source: bytes) -> bytes:
     if len(source) != EXECUTABLE_SIZE or sha(source) != ORIGINAL_SHA:
         raise ValueError("Unsupported CART.EXE version. Expected the unmodified "
@@ -361,8 +421,17 @@ def main(argv: list[str] | None = None) -> int:
               "Use --carset-dir or --chassis for another season.")
 
     print("Checking original CART.EXE...")
-    core_patch = reconstruct_core_patch(source.read_bytes())
+    original_bytes, is_alternate = normalize_supported_input(source.read_bytes())
+    if is_alternate:
+        print("Recognized modified REND32A variant; preserving its existing changes.")
+        print("CAUTION: Combined output for this variant has not been tested in-game.")
+    core_patch = reconstruct_core_patch(original_bytes)
     patched, manifest = patch(core_patch, names)
+    if is_alternate:
+        patched = reapply_alternate_edits(patched)
+        manifest['output_sha256'] = sha(patched)
+        if names == ['irl', 'panoz'] and sha(patched) != ALTERNATE_DEFAULT_SHA:
+            raise ValueError('Unexpected alternate output checksum')
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(patched)
     if sha(output.read_bytes()) != manifest["output_sha256"]:
