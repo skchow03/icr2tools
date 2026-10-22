@@ -48,6 +48,7 @@ class LauncherTests(unittest.TestCase):
             self.assertIs(runtime_launcher.ensure_runtime(idle_timeout=90), client)
             self.assertEqual(popen.call_args.args[0],
                              ["icr2runtime.exe", "--idle-timeout", "90"])
+            self.assertEqual(popen.call_args.kwargs["cwd"], ".")
 
     def test_launch_race_reuses_other_winner(self):
         client = mock.Mock()
@@ -171,3 +172,4 @@ class ServiceWindowsTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
