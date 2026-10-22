@@ -1,23 +1,31 @@
 #!/usr/bin/env python3
-"""Configurable REND32A chassis preloader built on the verified, working FOUR V2 + C2.
+"""Patch a verified original REND32A CART.EXE for multiple chassis and C2 wheels.
 
-Supports either the exact original REND32A CART.EXE (requires GNU as/ld/objcopy
-through bundled build_complete_C2.py), or the byte-exact C2 executable (stdlib only).
-
-Injects a compact PIC preload loop and 16-byte name slots into *existing* mapped
-LE code object 1 slack. Does not modify wheel update code. Does not include game assets.
+Source-only patch: no GNU assembler, compiler, runtime service or game assets.
+The configurable chassis preloader remains experimental pending live DOSBox tests.
 """
 from __future__ import annotations
 import argparse
+import base64
 import hashlib
 import json
 import re
-import shutil
 import struct
-import subprocess
 import sys
-import tempfile
+import zlib
 from pathlib import Path
+
+# Only modified bytes from the SHA-verified original -> FOUR V2 C2 baseline.
+# This is a binary patch, not a bundled copy of the copyrighted game executable.
+_BASELINE_DELTA = (
+    'c-qs+XJBArVAx>-q!}693prUCm>FKDb8_af0>zm*gBjR>0xJtS&U0}91tv^LDCA=hXLzw(=+FOz<~IVzSyVEMa`cY7sIVBP<W~SCSr~vE'
+    'js_r0hM|{5<wXlnB~VpCVqQK-Rh6D`3P?fze4q+mu!>ZmismB%iHA1;g|r!7{66&a|D1$w9~GO{lO^2UoIsMb+q2{~>(2i`&<)hw9ix(B'
+    'c<F`xJ)i~?hQzstC*TJ!Rzr;RFX?tu>5kLb#VA_D2lUPhW~m~Oi-9J*Py(`88De|a-eb}%0y*u!%T$g|U!CTk3jFOKEP+CN4BcDzP5t@5'
+    '+oZ4c8-L4vFQ6DZL$?`-b2S9WVPj~v6X0(>6APATuH#_gZ#t9?<nS;A1q63~daVX>Om_*`rq%-`T-{Y*rsW0xmWfRe(^|VHef!_t1yjP-'
+    'JpstH1S%=1H~imSvWutnTS<Mh9e-(+d-H#mqPLx)8lAo>5UJ+>Ohp{st&jKr{QsJ*yY(WF?mh+7&dAVx21p4obh^nH9ssH;X6|ND`F@=7'
+    'K2VgIp@h}+DUiX<(9r2701RFhpv-5W02f0E)At*lZX(CsBp8c<;lu>Ca#eST3I{N71YV2076Qe_f0tH+*BnrmMDr1z!$4UHLUA$*h8*y8'
+    '4mV;_DCJ||VE7LOI;Eie17ZOH@(A}@'
+)
 
 ORIGINAL_SHA = 'e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c'
 C2_SHA = 'cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0'
@@ -221,7 +229,6 @@ def validate_c2(b:bytes) -> None:
         raise ValueError('Direct wheel hook missing')
     if any(b[PRELOAD_NEW:CODE_LIMIT]):
         raise ValueError('Candidate preload cave is not empty')
-    from build_rend32a_preload_v2 import assert_no_fixups
     assert_no_fixups(b,PRELOAD_NEW,CODE_LIMIT-PRELOAD_NEW)
 
 
@@ -269,59 +276,110 @@ def read_config(path:Path)->list[str]:
     return names
 
 
-def main(argv:list[str]|None=None)->int:
-    p=argparse.ArgumentParser(description=__doc__)
-    p.add_argument('exe',type=Path,help='Original verified CART.EXE or verified final FOUR V2 C2 EXE')
-    p.add_argument('--config',type=Path,help='JSON {"chassis": ["irl", "panoz", ...]}')
-    p.add_argument('--chassis',nargs='+',help='Additional chassis basenames, e.g. --chassis irl panoz reynard')
-    p.add_argument('--carset-dir',type=Path,help='Auto-discover from cars.3do and F04/F14 driver wrappers')
-    p.add_argument('--output',type=Path,default=Path('CART_SEASON_CHASSIS_C2.EXE'))
-    p.add_argument('--overwrite',action='store_true',help='Allow overwriting an existing generated output (never the input EXE)')
-    args=p.parse_args(argv)
-    names=[]
-    details={}
-    if args.config:names.extend(read_config(args.config))
-    if args.chassis:names.extend(args.chassis)
+def fixups_for_page(data: bytes, page: int) -> list[tuple[int, int]]:
+    pt, rt = LE + 0x40D, LE + 0x71D
+    start = u32(data, pt + (page - 1) * 4)
+    end = u32(data, pt + page * 4)
+    records = data[rt + start:rt + end]
+    pos, result = 0, []
+    while pos < len(records):
+        if pos + 4 > len(records):
+            raise ValueError("Truncated LE relocation")
+        kind = tuple(records[pos:pos + 2])
+        if kind == (7, 16): length = 9
+        elif kind == (7, 0): length = 7
+        else: raise ValueError(f"Unexpected LE relocation type: {kind}")
+        if pos + length > len(records):
+            raise ValueError("Truncated LE relocation record")
+        off = struct.unpack_from("<H", records, pos + 2)[0]
+        result.append((off, off + 4))
+        pos += length
+    return result
+
+
+def assert_no_fixups(data: bytes, addr: int, size: int) -> None:
+    for page in range((addr - CODE_RAW) // 4096 + 1,
+                      (addr + size - 1 - CODE_RAW) // 4096 + 2):
+        page_start = CODE_RAW + (page - 1) * 4096
+        for a, b in fixups_for_page(data, page):
+            if max(addr, page_start + a) < min(addr + size, page_start + b):
+                raise ValueError(f"Patch overlaps LE relocation on page {page}")
+
+
+def original_to_c2(source: bytes) -> bytes:
+    if len(source) != EXECUTABLE_SIZE or sha(source) != ORIGINAL_SHA:
+        raise ValueError("Unsupported CART.EXE version. Expected the unmodified "
+                         "1,109,095-byte REND32A executable; SHA256: " + ORIGINAL_SHA)
+    delta = zlib.decompress(base64.b85decode("".join(_BASELINE_DELTA)))
+    output = bytearray(source)
+    at = 0
+    last_end = 0
+    while at < len(delta):
+        if len(delta) - at < 6:
+            raise ValueError("Damaged embedded patch data")
+        offset, count = struct.unpack_from("<IH", delta, at)
+        at += 6
+        if offset < last_end or offset + count > len(output) or at + count > len(delta):
+            raise ValueError("Damaged embedded patch range")
+        output[offset:offset + count] = delta[at:at + count]
+        at += count
+        last_end = offset + count
+    output = bytes(output)
+    if sha(output) != C2_SHA:
+        raise ValueError("Reconstructed C2 baseline failed SHA256 verification")
+    return output
+
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Patch an original REND32A CART.EXE for multiple chassis.")
+    parser.add_argument("exe", type=Path, help="Your unmodified REND32A CART.EXE")
+    options = parser.add_mutually_exclusive_group()
+    options.add_argument("--carset-dir", type=Path, help="Folder containing cars.3do and driver wrappers (auto-detect)")
+    options.add_argument("--chassis", nargs="+", help="Chassis names, e.g. irl panoz reynard")
+    options.add_argument("--config", type=Path, help="JSON file containing chassis names")
+    parser.add_argument("--output", type=Path, help="Output EXE (default: CART_MULTICAR.EXE next to input)")
+    parser.add_argument("--overwrite", action="store_true", help="Overwrite an existing generated output, never original")
+    args = parser.parse_args(argv)
+    source = args.exe.resolve(strict=True)
+    output = (args.output or source.with_name("CART_MULTICAR.EXE")).resolve()
+    if source == output:
+        raise ValueError("Refusing to overwrite original CART.EXE")
+    if output.exists() and not args.overwrite:
+        raise ValueError(f"{output.name} already exists; use --overwrite or --output")
+
+    details = {}
     if args.carset_dir:
-        auto,details=discover_from_carset(args.carset_dir)
-        names.extend(auto)
-    if not (args.config or args.chassis or args.carset_dir):
-        p.error('Supply --config, --chassis, or --carset-dir')
-    names=uniq(names)
-    if args.exe.resolve() == args.output.resolve():
-        raise ValueError('Refusing to overwrite the source executable; choose a different --output')
-    if not args.overwrite and (args.output.exists() or args.output.with_suffix('.json').exists()):
-        raise ValueError('Output already exists; choose another --output or specify --overwrite')
-    input_bytes=args.exe.read_bytes()
-    source_hash=sha(input_bytes)
-    if source_hash==ORIGINAL_SHA:
-        with tempfile.TemporaryDirectory(prefix='rend32a_c2_season_') as temp:
-            kit=Path(__file__).resolve().parent
-            command=[sys.executable,str(kit/'build_complete_C2.py'),str(args.exe.resolve()),'--output-dir',temp]
-            print('Rebuilding byte-exact C2 from original; GNU as/ld/objcopy required.',flush=True)
-            subprocess.run(command,check=True)
-            c2=Path(temp)/'CART_FOUR_V2_WHEEL_BUILD_C2_ALL_CHASSIS_EXPERIMENTAL.EXE'
-            input_bytes=c2.read_bytes()
-    elif source_hash!=C2_SHA:
-        raise ValueError('Unsupported input SHA256 '+source_hash+'; requires original '+ORIGINAL_SHA+' or C2 '+C2_SHA)
-    output,manifest=patch(input_bytes,names)
-    manifest.update({'requested_source_sha256':source_hash,'source_discovery':details})
-    args.output.parent.mkdir(parents=True,exist_ok=True)
-    args.output.write_bytes(output)
-    args.output.with_suffix('.json').write_text(json.dumps(manifest,indent=2)+'\n',encoding='utf-8')
-    assert sha(args.output.read_bytes())==manifest['output_sha256']
-    print(f'Chassis preloaded: {", ".join(names) if names else "none beyond stock Indycar/Roadcar"}')
-    print('Wrote:',args.output)
-    print('SHA256:',manifest['output_sha256'])
-    print('LE object 1 virtual size:',manifest['code_object_virtual_size'])
-    if details.get('missing_chassis_assets'):
-        print('WARNING: missing carset-local chassis files:',', '.join(details['missing_chassis_assets']))
-    print('UNTESTED configurable loader; copy only to a backed-up disposable game installation.')
+        names, details = discover_from_carset(args.carset_dir)
+    elif args.chassis:
+        names = uniq(args.chassis)
+    elif args.config:
+        names = uniq(read_config(args.config))
+    else:
+        names = ["irl", "panoz"]
+        print("Using default additional chassis: irl, panoz. "
+              "Use --carset-dir or --chassis for another season.")
+
+    print("Checking original CART.EXE...")
+    baseline = original_to_c2(source.read_bytes())
+    patched, manifest = patch(baseline, names)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(patched)
+    if sha(output.read_bytes()) != manifest["output_sha256"]:
+        raise ValueError("Written output failed verification")
+    print("Generated:", output)
+    print("Additional chassis:", ", ".join(names) if names else "(none)")
+    print("SHA256:", manifest["output_sha256"])
+    if details.get("missing_chassis_assets"):
+        print("WARNING: Missing chassis 3DO files:", ", ".join(details["missing_chassis_assets"]))
+    print("EXPERIMENTAL: Configurable loader not yet validated live in DOSBox.")
+    print("Keep the original. Copy generated file as CART.EXE only into a backed-up test installation.")
     return 0
 
 
-if __name__=='__main__':
-    try:sys.exit(main())
-    except (OSError, ValueError, subprocess.CalledProcessError) as e:
-        print('ERROR:',e,file=sys.stderr)
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except (OSError, ValueError, zlib.error) as exc:
+        print("ERROR:", exc, file=sys.stderr)
         sys.exit(1)
