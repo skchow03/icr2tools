@@ -4,7 +4,7 @@ This tool modifies the **Rendition version of *IndyCar Racing II***
 to support **different chassis models and independently updated wheel/tire
 appearances across cars**.
 
-It patches a copy of your own **original `CART.EXE`**, without modifying
+It patches a copy of your own **supported REND32A `CART.EXE`**, without modifying
 your carset or requiring a compiler.
 
 The author has successfully run a generated executable in-game. The
@@ -15,7 +15,8 @@ unusual chassis layouts. It is separate from the
 ## Requirements
 
 - Python 3.10 or later (no third-party packages).
-- The **original, unmodified REND32A `CART.EXE`** (1,109,095 bytes).
+- A **supported REND32A `CART.EXE`** (1,109,095 bytes): the original
+  release, or the exact recognized modified variant described below.
 - A carset with the desired chassis `.3do` files and associated resources.
 
 ## Quick start
@@ -28,7 +29,7 @@ unusual chassis layouts. It is separate from the
    python rend32a_multicar.py "C:\Games\ICR2\CART.EXE"
    ```
 
-The tool checks your stock executable and writes
+The tool checks your input executable and writes
 **`CART_MULTICAR.EXE`** beside it. It never overwrites the original.
 The default additional chassis names are `irl` and `panoz`.
 
@@ -75,11 +76,31 @@ original/replacement bytes, file offsets, guest addresses, injected x86
 instructions, model-node fields, wheel rotation formulas and integrity
 checks. It documents the changes **from stock EXE to final patched EXE**.
 
+## Supported REND32A executable variants
+
+| Input | SHA-256 | Testing |
+| --- | --- | --- |
+| Original stock CART.EXE | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` | Multi-Car reported working in-game |
+| Known modified CART.EXE | `14385142e4f0b99541f018c1f20eccd854fd17103da0dfddd81472520f9c3360` | **Combined Multi-Car output not yet tested in-game** |
+
+The alternate file differs from the original by 31 bytes in 10 regions.
+They include a fourfold-repeated value changed from 2,600,000 to
+83,200,000, an indexed table read in game code and several other
+numeric modifications. None of these bytes conflicts with the
+Multi-Car changes.
+
+For the modified input, the script verifies the **exact full-file hash**,
+temporarily reconstructs the known stock bytes in memory to run its
+verified patch process, and restores **all 31 of the variant's
+differences** to the output. The original source EXE is never written.
+It refuses other variants. This is a narrowly supported experimental
+input, not a guarantee of runtime compatibility.
+
 ## Troubleshooting and limitations
 
-- **Unsupported executable:** The script accepts only the exact stock
-  REND32A `CART.EXE` version, verified by SHA-256. Other releases,
-  already patched EXEs, DOS102 and WINDY are not supported.
+- **Unsupported executable:** Only the two checksums listed below are
+  accepted. Other EXEs, previously Multi-Car-patched EXEs, DOS102 and
+  WINDY are rejected. Do not bypass checksum validation.
 - **Output already exists:** Choose another `--output` or use
   `--overwrite` for an existing generated file. The original input
   can never be the output.
