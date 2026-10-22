@@ -132,7 +132,10 @@ def ensure_runtime(*, runtime_path: Optional[os.PathLike | str] = None,
     # loses that race exits normally; both launchers poll the same pipe.
     flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     try:
-        child = subprocess.Popen(command, creationflags=flags,
+        # Keep the shared child independent of a PyInstaller onefile
+        # extraction directory that the parent must delete on exit.
+        child = subprocess.Popen(command, cwd=str(executable.parent),
+                                 creationflags=flags,
                                  stdin=subprocess.DEVNULL,
                                  stdout=subprocess.DEVNULL,
                                  stderr=subprocess.DEVNULL,
