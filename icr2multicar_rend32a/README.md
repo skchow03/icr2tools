@@ -73,8 +73,7 @@ For community reverse engineering, see the
 **[complete technical reference](PATCH_TECHNICAL_REFERENCE.md)** for
 original/replacement bytes, file offsets, guest addresses, injected x86
 instructions, model-node fields, wheel rotation formulas and integrity
-checks. It documents the changes **from stock EXE to final patched EXE**
-without requiring knowledge of development history.
+checks. It documents the changes **from stock EXE to final patched EXE**.
 
 ## Troubleshooting and limitations
 
