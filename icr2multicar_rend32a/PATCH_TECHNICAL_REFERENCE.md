@@ -34,13 +34,14 @@ The carset still determines which model each driver uses.
 
 ## 2. Supported input and address conventions
 
-Only one exact stock executable is supported:
+The patcher accepts either the stock executable or one **exact, known modified variant**. Other hashes are rejected:
 
 | Property | Required value |
 | --- | --- |
 | Executable | Original REND32A `CART.EXE` |
 | Size | `1,109,095` bytes |
-| SHA-256 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
+| Original stock SHA-256 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
+| Recognized alternate SHA-256 | `14385142e4f0b99541f018c1f20eccd854fd17103da0dfddd81472520f9c3360` |
 | Format | DOS/32A Linear Executable (LE), 32-bit x86 |
 | LE header file offset | `0x6E68` |
 | Code object 1 file offset | `0x4BE20` |
@@ -67,8 +68,10 @@ different executable versions.
 ## 3. Stock-to-patched binary map
 
 The entries in this table compare **the stock `CART.EXE` directly with the
-final generated `CART_MULTICAR.EXE`**. There are no prerequisite patched
-executables or separately installed assembly components.
+final generated `CART_MULTICAR.EXE`**. For the recognized variant, all its
+pre-existing changed bytes are **preserved on top of these modifications**;
+the core hook offsets and original bytes at those hooks are identical.
+There are no prerequisite patched executables or assembly components.
 
 | Raw file offset | Guest address | Stock bytes/value | Patched bytes/value | Result |
 | --- | --- | --- | --- | --- |
@@ -330,8 +333,10 @@ byte[replacement_length] replacement_bytes
 
 The patcher:
 
-1. Verifies the input is the exact supported stock executable by **size
-   and SHA-256**.
+1. Verifies the input by **size and exact SHA-256**, accepting only the
+   two documented variants. For the alternate, verifies its nine known
+   edit runs and restores the corresponding stock bytes **in memory**,
+   checking the resulting original SHA-256.
 2. Applies the bounded, non-overlapping replacement runs for chassis
    preservation, wheel hooks/helper and the necessary LE changes.
 3. Checks a second, fixed SHA-256 digest of that common patched state,
@@ -341,9 +346,11 @@ The patcher:
    and lack of relocation overlap.
 5. Inserts the user-selected preloader and filename table; redirects
    the original Roadcar call; extends virtual size if required.
-6. Checks that **only** those three additional regions were changed,
-   verifies the written output hash, and never overwrites the original
-   executable.
+6. Checks that **only** those three additional regions were changed.
+   For the recognized alternate, it then reapplies its nine original edit
+   runs (31 actual differing bytes) **only after checking for conflicts**
+   with Multi-Car's changes. The resulting output hash is verified before
+   reporting success; the input executable is never overwritten.
 
 The internal digest used for step 3 is
 `cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0`.
@@ -354,11 +361,53 @@ With the default extra names `irl` and `panoz`, the resulting executable
 has SHA-256:
 `6105d39d94862eb5483f64ba27f7c1e4a8e6ac029c935c4c9631ebd5a1ecdd3c`.
 
+### Recognized modified CART.EXE (additional input)
+
+The alternate REND32A binary has the same 1,109,095-byte length, LE
+layout, chassis overwrite instruction, and two original wheel call
+sites as the stock executable. Its SHA-256 is
+`14385142e4f0b99541f018c1f20eccd854fd17103da0dfddd81472520f9c3360`.
+
+It differs from stock by **31 bytes across ten contiguous difference
+regions**, covering nine complete instruction/data ranges listed below.
+The program does not replace these regions; it retains them in the
+alternate Multi-Car output.
+
+| Raw offset | Original → alternate | What changes |
+| --- | --- | --- |
+| `0x61C26`, `0x61F74`, `0xAE67E`, `0xF5FC0` | `0x0027AC40` → `0x04F58800` | Four copies of a numeric constant: 2,600,000 → 83,200,000 (×32) |
+| `0x6A3C7` | `0x9140` → `0x4320` | Immediate arithmetic constant, 37,184 → 17,184 |
+| `0x6BED8` | `0F B6 15 78 CB 0E 00` → `8B 14 95 74 CB 03 00` | Changes a byte read from fixed address into a 32-bit indexed-table read |
+| `0x79244` | `0x0000152C` → `0xFFFFEAD4` | Signed immediate changes from +5,420 to −5,420 |
+| `0x79252` | `0x1A60` → `0x2230` | Immediate changes from 6,752 to 8,752 |
+| `0xABC9A` | `0x444B` → `0xCCE1` | High 16 bits of a 32-bit initialization value change |
+
+These are not merely metadata. The changed 32-fold constant is
+**consistent with** an expanded game-memory allocation or limit,
+but this exact executable's provenance and the intended purpose
+of every other difference have not been independently established.
+
+**Safety findings:** Compared with the generated default Multi-Car
+executable, **none** of the 31 alternate bytes overlaps an overwritten
+stock instruction, injected routine, or LE header patch. The patcher
+normalizes the alternate to the pinned stock checksum in memory,
+applies its existing verified binary transformation, then restores
+the alternate bytes to the output, refusing a byte conflict. For
+the default `irl`/`panoz` list the expected alternate-output
+SHA-256 is
+`f19aeca5a4a34a544961ae86ec575c7d7d3b17dbebf0785b061664aea1dd84d2`.
+
+**This verifies binary preservation, not runtime behavior.**
+The alternate contains different executable instructions and
+constants that may interact with other rendering or resource
+paths. The combined output still requires a live REND32A test
+in a disposable game installation.
+
 ## 8. Limitations and community testing
 
-- **Exact-version patch.** These offsets and instruction bytes apply only
-  to the pinned stock REND32A SHA-256. Other DOS, WINDY or patched EXEs
-  are rejected; these offsets are not portable.
+- **Exact-version patch.** These offsets and hook signatures were verified
+  against both specified SHA-256 inputs. Unknown DOS, WINDY or patched
+  EXEs are rejected; the offsets are not portable.
 - **Carset requirements.** The model files, textures and driver wrapper
   references must already exist. The patcher does not generate them.
 - **Model structure.** The wheel helper assumes F16 chassis roots with
