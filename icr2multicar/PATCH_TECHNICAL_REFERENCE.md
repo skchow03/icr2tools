@@ -307,8 +307,8 @@ Win32 process/memory APIs:
    initially `PAGE_READWRITE`. Assemble the **80-byte** code cave,
    write it with `WriteProcessMemory` and verify a byte-for-byte
    readback through ICR2Runtime.
-6. Change the page protection to `PAGE_EXECUTE_READ` and call
-   `FlushInstructionCache`.
+6. Use `VirtualProtectEx` to change the page protection to
+   `PAGE_EXECUTE_READ`, then call `FlushInstructionCache`.
 7. Apply the **five-byte wheel JMP first** with a guarded runtime
    `PATCH_CODE`; reread and verify it. Then apply the **two-byte
    chassis NOP** using another guarded `PATCH_CODE` operation and
