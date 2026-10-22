@@ -26,4 +26,4 @@ jobs:
       - name: Verify embedded delta decodes
         shell: pwsh
         run: |
-          python -c "import sys,base64,zlib;sys.path.insert(0,'icr2multicar_rend32a');import rend32a_multicar as p;d=zlib.decompress(base64.b85decode(''.join(p._BASELINE_DELTA)));assert len(d)>100;print('Encoded replacement patch verified:',len(d),'bytes')"
+          python -c "import sys,base64,zlib;sys.path.insert(0,'icr2multicar_rend32a');import rend32a_multicar as p;d=zlib.decompress(base64.b85decode(''.join(p._CORE_PATCH_DELTA)));assert len(d)>100;print('Encoded replacement patch verified:',len(d),'bytes')"

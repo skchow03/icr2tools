@@ -1,372 +1,377 @@
-# REND32A Multi-Car: binary patch technical reference
+# REND32A Multi-Car — technical reference
 
-This document describes **what the published `rend32a_multicar.py` patcher
-changes in an original REND32A `CART.EXE`**, why the changes are necessary,
-and how its injected x86 code works. It is for modders, reverse engineers,
-and anyone reviewing or reproducing the patch. For installation instructions
-see the [README](README.md).
+This document describes exactly how `rend32a_multicar.py` modifies the
+**original, unmodified Rendition IndyCar Racing II `CART.EXE`**. It is intended
+for programmers, modders and reverse engineers who want to understand or audit
+the patch. Installation and command-line instructions are in the [README](README.md).
 
-**Validation status:** The developer has reported that the generated
-REND32A Multi-Car executable works in the game. The earlier FOUR V2 + C2
-four-chassis/wheel case was also observed working in-game. This is not an
-exhaustive validation of arbitrary carsets, all camera modes, replays,
-damage, or very large chassis lists. Address maps and patch bytes below are
-for one exact executable revision, not generic ICR2 offsets.
+The developer reports successful testing in the game. This does not establish
+compatibility with every carset, chassis format, camera, replay or race state.
 
-## 1. The problem and the three fixes
+## 1. What the patch does
 
-The original renderer sometimes replaces a car's individual chassis pointer
-with a shared/default chassis pointer. Loading different driver wrapper
-`.3do` files therefore does not by itself guarantee different body shapes.
-Models outside the stock Roadcar/Indycar set also require their resources
-to be loaded into the Rendition resource context, including texture data.
-Finally, the original wheel update path uses pointers associated with a
-shared/default chassis, so wheels on nondefault chassis can have incorrect
-rotation or tire appearances.
+Stock REND32A loads and displays Roadcar and Indycar geometry through several
+shared resources. Merely substituting different `.3do` filenames in a carset
+is not enough: the game can replace an individual car's chassis pointer with
+the shared model, additional models may not yet be loaded, and the wheel
+animation path can update the wrong chassis's wheel attachments.
 
-The patch combines these changes:
+The patched executable addresses all three problems:
 
-1. **Preserve each car's chassis reference:** NOP the instruction that
-   overwrites it.
-2. **Preload additional chassis resources:** redirect the existing Roadcar
-   loader call to a trampoline that loads Roadcar first, then the additional
-   `.3do` model names selected when the executable is patched.
-3. **Update wheel attachments per draw:** divert two existing tire-selection
-   calls to adapters that preserve the stock selector, find the chassis
-   currently attached to the car being rendered, and set wheel rotation and
-   appearance fields immediately before drawing.
+1. **Keep the car's chosen chassis.** Remove a write that replaces an
+   individual chassis reference with the shared/default pointer.
+2. **Load additional chassis models.** Run the game's existing 3DO loader
+   on user-selected model names, so those resources are available before
+   cars are rendered.
+3. **Update each car's wheels just before drawing.** Hook two rendering
+   call sites, preserve the game's original tire-selection logic, and
+   update rotation and front/rear wheel appearance on the chassis currently
+   used by the car being drawn.
 
-The patch **does not** assign chassis to drivers, modify carset data, create
-3DO files, or install a live-memory hook. Driver-to-chassis assignments and
-all requisite resources must already exist in the carset. This is a
-permanent *output-file* patch made from the user's own unmodified executable.
+This is an **on-disk EXE patch**, not a runtime injector. The tool does not
+edit `cars.3do`, driver wrappers, chassis resources, or texture files.
+The carset still determines which model each driver uses.
 
-## 2. Supported binary, hashes, and address conventions
+## 2. Supported input and address conventions
 
-| Item | Value |
+Only one exact stock executable is supported:
+
+| Property | Required value |
 | --- | --- |
-| Input | Original unmodified REND32A `CART.EXE` |
-| Input size | `1,109,095` bytes |
-| Input SHA-256 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
-| Rebuilt FOUR V2 + wheel C2 baseline SHA-256 | `cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0` |
-| Example final SHA-256 (additional `irl` and `panoz`) | `6105d39d94862eb5483f64ba27f7c1e4a8e6ac029c935c4c9631ebd5a1ecdd3c` |
-| Executable format | DOS/32A **LE** (Linear Executable), x86 32-bit |
-| LE header start | raw `0x6E68` |
-| Code object 1 file start | raw `0x4BE20` |
-| Code object 1 guest base | `0x10000` |
-| Existing mapped code pages | `0x9C` = 156 pages, 4096 bytes each |
+| Executable | Original REND32A `CART.EXE` |
+| Size | `1,109,095` bytes |
+| SHA-256 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
+| Format | DOS/32A Linear Executable (LE), 32-bit x86 |
+| LE header file offset | `0x6E68` |
+| Code object 1 file offset | `0x4BE20` |
+| Code object 1 guest address | `0x10000` |
+| Existing code object pages | `0x9C` (156 × 4096 bytes) |
 
-**Two address systems are used.** A *raw/file offset* locates bytes in
-`CART.EXE` on disk. A *guest address* is the REND32A code address used by a
-disassembler or by executing DOSBox guest code. For this particular
-executable's code object 1, the translation is:
+Two kinds of addresses appear throughout this document:
+
+- **Raw/file offset:** the location of bytes in the executable on disk.
+- **Guest address:** the location of the instruction after the LE loader
+  maps the code object into the emulated DOS address space.
+
+For code object 1 in this *specific* executable:
 
 ```text
-raw file offset = guest code address + 0x3BE20
-guest code address = raw file offset - 0x3BE20
+guest_address = raw_file_offset - 0x3BE20
+raw_file_offset = guest_address + 0x3BE20
 ```
 
-This conversion applies to the verified code-object mapping, **not** to
-the LE header, arbitrary data objects, or arbitrary REND32A revisions.
-The displacements in the near `CALL` instructions below are relative and
-little-endian, not absolute addresses. All four-byte LE header fields are
-little-endian as well.
+For example, the instruction at raw `0x80ACF` executes at guest `0x44CAF`.
+Do **not** apply this translation to the LE header, other objects, or
+different executable versions.
 
-## 3. Full top-level patch map
+## 3. Stock-to-patched binary map
 
-The single-file Python patcher first recreates the known FOUR V2 + C2
-baseline, then applies the season-specific preload. The following table
-shows the **original input** and the resulting **Multi-Car executable**.
-“Original” is the *unmodified* CART.EXE; the C2 intermediate is shown
-separately where needed.
+The entries in this table compare **the stock `CART.EXE` directly with the
+final generated `CART_MULTICAR.EXE`**. There are no prerequisite patched
+executables or separately installed assembly components.
 
-| Raw file offset | Guest address | Original bytes/value | Final bytes/value | Purpose |
+| Raw file offset | Guest address | Stock bytes/value | Patched bytes/value | Result |
 | --- | --- | --- | --- | --- |
-| `0x6F2C` (4 bytes) | LE header, not code | `01 B3 09 00` = `0x9B301` | `00 B8 09 00` = `0x9B800` for the default list; may increase | Extend code-object virtual size to include the injected regions |
-| `0x6F34` (4 bytes) | LE header, not code | `45 20 00 00` = `0x2045` | `47 20 00 00` = `0x2047` | Allow the C2 diagnostic trace storage to be written; broadens code-object permissions |
-| `0x80ACF` | `0x44CAF` | `89 02` | `90 90` | Disable `mov [edx], eax`, which overwrites the individual chassis pointer |
-| `0x50970` | `0x14B50` | `E8 97 7A 05 00` | `E8 CB 6B 09 00` | Redirect original Roadcar preload call to new loader at guest `0xAB720` |
-| `0xE7160–0xE71AB` | `0xAB340–0xAB38B` | zero-filled | 76-byte FOUR V2 preload code | Old fixed `irl`/`panoz` preloader stays in the binary but is **bypassed** by the new call |
-| `0x56E07` | `0x1AFE7` | `E8 A4 C6 02 00` | `E8 A4 03 09 00` | Main renderer: `call 0x47690` becomes `call 0xAB390` |
-| `0x60052` | `0x24232` | `E8 59 34 02 00` | `E8 A9 71 08 00` | Direct renderer: `call 0x47690` becomes `call 0xAB3E0` |
-| `0xE71B0–0xE7537` | `0xAB390–0xAB717` | zero-filled | C2 wheel adapters, common wheel updater and trace storage | Original per-draw wheel functionality is wrapped and extended |
-| `0xE726C` | `0xAB44C` | zero-filled in *unmodified* input | `EB 26 90 90 90 90` | C2's six-byte adjustment inside the injected helper; explained below |
-| `0xE7500` | `0xAB6E0` | zero-filled | `49 43 57 32 02 00 00 00 ...` | `ICW2` version-2 diagnostics/counters, 56 bytes |
-| `0xE7540` onward | `0xAB720` onward | zero-filled | New position-independent loader plus variable name table | Preload requested chassis names in 16-byte slots |
+| `0x6F2C` (4 bytes) | LE header | `01 B3 09 00` (virtual size `0x9B301`) | At least `00 B8 09 00` (`0x9B800`); larger lists can extend it | Map injected code and filename table |
+| `0x6F34` (4 bytes) | LE header | `45 20 00 00` (flags `0x2045`) | `47 20 00 00` (`0x2047`) | Permit writes to the wheel diagnostics buffer; code-object permission is broadened |
+| `0x80ACF` | `0x44CAF` | `89 02` | `90 90` | Disable the chassis-pointer overwrite |
+| `0x50970` | `0x14B50` | `E8 97 7A 05 00` | `E8 CB 6B 09 00` | Redirect the existing 3DO load call to the new model preloader |
+| `0x56E07` | `0x1AFE7` | `E8 A4 C6 02 00` | `E8 A4 03 09 00` | Redirect the main renderer tire-selection call |
+| `0x60052` | `0x24232` | `E8 59 34 02 00` | `E8 A9 71 08 00` | Redirect the direct renderer tire-selection call |
+| `0xE71B0–0xE7537` | `0xAB390–0xAB717` | Zero-filled space | Wheel adapters, wheel update routine and diagnostics | Perform per-car wheel/tire updates |
+| `0xE7500` | `0xAB6E0` | Zero-filled space | `49 43 57 32 02 00 00 00 ...` | Initialize the 56-byte `ICW2` diagnostics buffer |
+| `0xE7540` onward | `0xAB720` onward | Zero-filled space | New loader routine plus filename table | Preload additional chassis files |
 
-The preload call at raw `0x50970` had **another** value in the C2
-intermediate: `E8 EB 67 09 00`, calling the fixed FOUR V2 routine at raw
-`0xE7160`. The final stage redirects it again to `0xE7540`; it does not
-delete or rewrite the old injected routine.
+There is also an **unused 76-byte routine** in `0xE7160–0xE71AB`
+(guest `0xAB340–0xAB38B`), written into otherwise empty code space.
+The final game call at `0x50970` targets `0xE7540` instead, so this
+extra routine is **not the one executed**. It is retained in the
+preverified embedded patch bytes and is not needed to understand the
+active code path.
 
-The C2 adjustment at `0xE726C` is often misunderstood: immediately
-**before** that adjustment, in the intermediate wheel Build C, the six bytes
-were `8B 85 70 92 F6 FF` (`mov eax, [ebp-0x96D90]`). C2 replaces them
-with `EB 26 90 90 90 90` (`jmp short +0x26` and four NOPs), jumping
-to guest `0xAB474`. The unmodified original had only zeros at this location;
-the comparison is **Build C → C2**, not original → C2. This bypasses
-the special exclusion checks for stock Roadcar and Indycar roots, allowing
-the same validated per-car wheel routine to run on those chassis too.
+The six bytes at raw `0xE726C` (guest `0xAB44C`) are
+`EB 26 90 90 90 90` in the final wheel helper: a short jump and four
+NOPs. They skip a model-type exclusion path so the wheel updater also
+handles the stock Roadcar and Indycar chassis. The stock EXE had
+zero-filled space at this location.
 
-For the standard `irl`/`panoz` example, the new preload is 96 bytes
-(64 bytes code/alignment plus two 16-byte filenames), and the LE virtual
-size remains `0x9B800`. The C2 baseline differs from the original in
-**894 byte positions**; the season-specific stage changes **72 additional
-byte positions relative to C2** for that default example (964 positions
-differ between the original and final files). Those numbers describe
-actual differing byte positions, not the sizes of reserved cave regions.
+**The executable file length stays unchanged.** The additional routines
+occupy existing, previously unused file space that the patch makes
+visible to the LE loader.
 
-## 4. Preserving chassis geometry
+## 4. Chassis-pointer preservation
 
-At raw `0x80ACF` / guest `0x44CAF`:
+**Raw `0x80ACF` / guest `0x44CAF`**
 
 ```asm
-; Original (2 bytes: 89 02)
+; Stock: 89 02
 mov [edx], eax
 
-; Patched (2 bytes: 90 90)
+; Patched: 90 90
 nop
 nop
 ```
 
-This suppresses a write that otherwise replaces an individual car's
-attached chassis reference with the shared/default reference. The engine's
-other chassis-loading and rendering operations are retained. The
-neighboring original instruction at raw `0x56A80` (`89 10`) is **not**
-changed by the FOUR V2 chassis-preservation step.
+In the affected renderer/model setup path, `EAX` supplies a shared
+chassis pointer and `EDX` addresses the car-specific pointer slot.
+Suppressing the write allows the existing per-driver chassis reference
+to survive. It does not rewrite the carset or insert new model-selection
+rules.
 
-## 5. Model-resource preload trampoline
+A separate original instruction at raw `0x56A80` (`89 10`) is **not**
+modified by this geometry fix.
 
-The original `CALL` at raw `0x50970` / guest `0x14B50` loads Roadcar
-using the game's existing 3DO loader, whose original entry point is raw
-`0xA840C` / guest `0x6C5EC`. The final `CALL` targets the new trampoline
-at raw `0xE7540` / guest `0xAB720`. In high-level x86 pseudocode:
+## 5. Preloading additional chassis models
+
+**Call site:** raw `0x50970` / guest `0x14B50`.
+
+The stock game calls an existing loader for Roadcar. The patch replaces
+that five-byte relative `CALL` with one targeting raw `0xE7540`,
+guest `0xAB720`. The game's original 3DO loader remains at raw
+`0xA840C` / guest `0x6C5EC`.
+
+The new loader performs the original Roadcar load first, then feeds
+each requested chassis filename to that same game loader. In
+annotated x86-style pseudocode:
 
 ```asm
-call original_3do_loader     ; preserve the original Roadcar load
-pushad                       ; save the original loader result/registers
-sub esp, 16                  ; working space, matching older trampoline
-call get_pc                  ; position-independent address discovery
+call original_3do_loader     ; do what the stock call did
+pushad                       ; preserve original returned register values
+sub esp, 16                  ; temporary working space
+call get_pc                  ; find table independent of relocation
 get_pc:
 pop esi
-lea esi, [esi + table_delta] ; pointer to 16-byte filename slots
+lea esi, [esi + table_delta] ; first 16-byte filename slot
 mov edi, name_count
 test edi, edi
 jz done
-load_next:
+next_name:
     push esi
     push edi
-    mov eax, esi             ; address of this "name.3do" string
+    mov eax, esi             ; pointer to ASCII "name.3do"
     call original_3do_loader
     pop edi
     pop esi
     add esi, 16
     dec edi
-    jnz load_next
+    jnz next_name
 done:
 add esp, 16
-popad                        ; restore original Roadcar loader result
-ret                          ; resume game after original CALL
-; 16-byte aligned:
-; "irl.3do\\0" padded to 16 bytes
-; "panoz.3do\\0" padded to 16 bytes
+popad
+ret                          ; back to the original caller
+; 16-byte aligned filename table follows:
+; "irl.3do\0"   [padding to 16 bytes]
+; "panoz.3do\0" [padding to 16 bytes]
 ```
 
-The actual writer `emit_payload()` emits raw x86 instructions without
-an assembler and fixes relative `CALL` and short branch displacements.
-It stores one null-terminated `name.3do` string per **16-byte slot**.
-Names are ASCII, DOS 8.3-compatible, case-normalized and deduplicated;
-the stock `roadcar` and `indycar` loads are not redundantly listed.
+The Python patcher writes these opcodes directly, computes the relative
+`CALL` and short-branch displacements, and uses a position-independent
+`call/pop` technique instead of introducing new LE relocation records.
+The fixed program code and alignment use 64 bytes, followed by
+**16 bytes per additional chassis name**.
 
-**Preloading is not per-driver selection.** The carset's `cars.3do` and
-driver wrappers determine which chassis a car requests. Preloading makes
-additional model resources available when those references are resolved.
-When `--carset-dir` is supplied, the patcher discovers these references
-through the supported F16 `SUPEROBJ` → F15 `DYNAMIC` driver entry and
-F04 `MATERIAL` → F14 `RECOLOR` external model reference. It fails on
-unsupported structure rather than guessing.
+Names are ASCII 8.3-compatible basenames (1–8 characters before
+`.3do`), normalized to lowercase and deduplicated. The already
+available `roadcar` and `indycar` model names are excluded from the
+additional list.
 
-For the verified LE layout, the injected names can occupy no more than
-the remaining allocated code pages. The current limit is **138 extra
-distinct names**, a *patch-space limit*, not a tested 138-chassis game
-capacity; normal carsets have at most 33 driver entries.
+**What determines the chassis of a particular driver?** The existing
+carset. The patcher optionally reads `cars.3do` and the driver `.3do`
+wrappers to discover additional resource names. The supported hierarchy
+is F16 `SUPEROBJ` → F15 `DYNAMIC` for driver entries and
+F04 `MATERIAL` → F14 `RECOLOR` → external chassis reference inside each
+driver wrapper. The preloader loads those resources, but it never
+reassigns drivers to models.
 
-## 6. The C2 wheel-rendering adapters and common helper
+## 6. Per-car wheel and tire rendering
 
-The original renderer calls the stock tire selector at guest
-`0x47690` in two places. C2 keeps its existing effects and adds a
-per-car update just before drawing. It does **not** permanently repoint
-the game's global front/rear wheel caches.
+Stock REND32A calls its tire-selection routine at guest `0x47690` from
+two rendering paths. The patch retains that routine and hooks each
+call so the active car's wheel attachments are updated immediately
+before the renderer draws the model.
 
-### Main renderer adapter: guest `0xAB390`
+### 6.1 Main renderer hook
 
-1. Call the existing `0x47690` tire selector.
-2. Save flags and general registers (`pushfd`, `pushad`).
-3. Find the car index through the render/model record, using its
-   `+0x74` index field; invalid pointers are skipped.
-4. Obtain wheel phase from saved EBP and steering/orientation from the
-   original stack.
-5. Invoke the shared wheel update routine with stream ID 0.
-6. Restore registers/flags and return to the original renderer.
+- **File offset:** `0x56E07`
+- **Guest call site:** `0x1AFE7`
+- **Stock call target:** `0x47690`
+- **New call target:** `0xAB390` (file `0xE71B0`)
 
-### Direct renderer adapter: guest `0xAB3E0`
+The adapter calls the original tire selector, then saves flags and
+general registers (`pushfd` / `pushad`). It obtains the current car
+index through the render/model record's `+0x74` field, retrieves wheel
+spin from the saved EBP context and steering/orientation from the
+original stack, and calls the common updater with stream ID 0. It
+restores the registers and flags before returning to the stock
+renderer.
 
-1. Call the existing `0x47690` tire selector.
-2. Save flags/registers.
-3. Obtain the car index from `[EDI+0x74]`, wheel phase from
-   `[ESI+0x24]`, and steering/orientation from `[ESI+0x28]`.
-4. Invoke the shared updater with stream ID 1.
-5. Restore registers/flags and return.
+### 6.2 Direct renderer hook
 
-### Shared wheel update: what is read and written
+- **File offset:** `0x60052`
+- **Guest call site:** `0x24232`
+- **Stock call target:** `0x47690`
+- **New call target:** `0xAB3E0` (file `0xE7200`)
 
-The helper uses an existing relocated instruction operand to find the
-per-car chassis-pointer table (identified in the original analysis as the
-guest `0x3C1C8` table), indexes it by car 0–32, and follows the selected
-car's *attached* chassis pointer. It requires:
+This adapter also runs the stock tire selector first. It reads the
+car index from `[EDI+0x74]`, wheel spin from `[ESI+0x24]`, and
+steering/orientation from `[ESI+0x28]`, then calls the common updater
+with stream ID 1. General registers and flags are preserved.
 
-- a valid, non-null chassis/root pointer of type `0x10` (F16
-  `SUPEROBJ` in the game's in-memory representation);
-- at least four children;
-- child slots **0–3** each pointing to a type `0x0F` (F15
-  `DYNAMIC`) wheel attachment.
+### 6.3 Common updater: input validation and pointer resolution
 
-Invalid car indices and incompatible structures are skipped rather than
-written through blindly. The selected/player car uses a separate
-renderer/hierarchy and does not necessarily have an applicable entry in
-this table; the stock selected-car path remains responsible.
+The helper follows the game's existing per-car chassis reference,
+rather than forcibly using a shared chassis. The per-car table was
+identified at guest `0x3C1C8`; the code reads the relevant pointer
+operands from **already relocated game instructions**, including:
 
-For each validated wheel attachment, the helper **writes**:
-
-| In-memory DYNAMIC offset | Field | Value |
-| --- | --- | --- |
-| `+0x10` | Z rotation | Steering/orientation for front wheels, fixed zero/half-turn values at rear |
-| `+0x14` | Y rotation | Current car's spin/rotation phase, negated for opposite side |
-| `+0x18` | X rotation | `0` |
-| `+0x1C` | Wheel appearance/model reference | The current front or rear resource chosen by the original tire selector |
-
-The exact per-wheel rotations use the game's wrapping 32-bit angle space.
-Let `T` be steering/orientation and `P` the wheel phase:
-
-| Child index | Wheel | Z | Y | X |
-| --- | --- | --- | --- | --- |
-| 0 | front | `T` | `P` | 0 |
-| 1 | front | `T XOR 0x80000000` | `-P` | 0 |
-| 2 | rear | 0 | `P` | 0 |
-| 3 | rear | `0x80000000` | `-P` | 0 |
-
-Front children 0/1 receive the front tire reference; rear children 2/3
-receive the rear reference. The helper reads the **original
-loader-relocated pointer operands** from guest `0x44C9E`
-(chassis-slot table), `0x476B1` (front appearance source), and
-`0x476C3` (rear appearance source). It dereferences the front/rear
-source pointers as in the original wheel code; it does **not** overwrite
-those global source pointers. These addresses identify operands in the
-original code object, **not** new patch sites. Each call updates only
-the wheel attachments of the chassis being drawn.
-
-**Why per draw?** The 3DO loader can cache a chassis hierarchy under a
-model name, so several cars using the same 3DO may share a model-node
-tree. Writing wheel rotation just once during car initialization would
-not produce independent animation. The C2 hook applies the active car's
-phase and appearance **immediately before its draw**, allowing mixed
-chassis and tire manufacturers.
-
-### C2 diagnostics at guest `0xAB6E0` (raw `0xE7500`)
-
-The C2 helper contains a **56-byte trace buffer** initialized in the
-patched executable. It is writable in the running game and can be
-inspected through memory diagnostics; it is not an external data file.
-
-| Buffer byte offset | Meaning |
+| Guest address | Role |
 | --- | --- |
-| `+0x00` | ASCII `ICW2` |
-| `+0x04` | Version `2` (`uint32`) |
-| `+0x08`, `+0x0C` | Main/direct adapter hit counts |
-| `+0x10`, `+0x14` | Main/direct completed wheel-update counts |
-| `+0x18`, `+0x1C` | Main/direct invalid-pointer/structure counts |
-| `+0x20` | Legacy single-car-filter target index (normally unused in C2) |
+| `0x44C9E` | Operand identifying the per-car chassis slot table |
+| `0x476B1` | Operand identifying the original front wheel appearance source |
+| `0x476C3` | Operand identifying the original rear wheel appearance source |
+
+These are **addresses read by the new helper**, not locations where
+the patch overwrites stock instructions. The original tire selector
+still determines the front and rear wheel resources.
+
+The helper accepts car indices **0–32** and verifies the attached
+chassis is non-null, has F16 type `0x10` and has at least four children.
+Wheel child indices 0–3 must each be F15 `DYNAMIC` nodes of type
+`0x0F`. Unexpected pointers or model structures are skipped rather
+than blindly written through. The selected/player car can follow a
+separate rendering hierarchy, which is not replaced by this helper.
+
+### 6.4 Exact per-wheel fields written
+
+For each validated `DYNAMIC` wheel attachment the patch writes:
+
+| Offset within wheel node | Value/function |
+| --- | --- |
+| `+0x10` | Z rotation (steering/orientation or fixed rear orientation) |
+| `+0x14` | Y rotation (wheel spin, with opposite sign on the other side) |
+| `+0x18` | X rotation, set to 0 |
+| `+0x1C` | Front or rear wheel appearance/model reference returned by stock selection |
+
+Let `T` be the current car's steering/orientation angle and `P` its
+wheel spin phase. Angles use the game's wrapping 32-bit representation.
+
+| Child | Z rotation | Y rotation | X | Appearance |
+| --- | --- | --- | --- | --- |
+| 0 — front | `T` | `P` | 0 | Front |
+| 1 — front | `T XOR 0x80000000` | `-P` | 0 | Front |
+| 2 — rear | 0 | `P` | 0 | Rear |
+| 3 — rear | `0x80000000` | `-P` | 0 | Rear |
+
+These writes target the *current car's attached chassis wheel nodes*,
+not the stock global wheel resource pointers.
+
+**Why update at draw time?** Cars that reference the same chassis
+filename may share an in-memory 3DO hierarchy. A single
+initialization-time wheel assignment cannot represent several cars
+spinning at different speeds. Updating the active car's wheel children
+immediately before rendering lets the shared geometry show
+car-specific wheel movement and tire appearances.
+
+### 6.5 Diagnostic buffer
+
+**Raw `0xE7500` / guest `0xAB6E0`** is a 56-byte diagnostic record
+within the injected helper. Its first eight bytes are
+`49 43 57 32 02 00 00 00` (ASCII `ICW2`, version 2).
+
+| Offset | Field |
+| --- | --- |
+| `+0x00` | Signature `ICW2` |
+| `+0x04` | Version (32-bit, value `2`) |
+| `+0x08` | Main-renderer adapter hit count |
+| `+0x0C` | Direct-renderer adapter hit count |
+| `+0x10` | Main-renderer successful wheel updates |
+| `+0x14` | Direct-renderer successful wheel updates |
+| `+0x18` | Main-renderer invalid-pointer/structure skips |
+| `+0x1C` | Direct-renderer invalid-pointer/structure skips |
+| `+0x20` | Reserved car-filter index field; not active in the current updater |
 | `+0x24` | Last successfully updated car index |
 | `+0x28` | Last validated chassis root pointer |
-| `+0x2C` | Most recent car index examined |
-| `+0x30`, `+0x34` | Original Roadcar/Indycar skip counters from the intermediate helper; their exclusion branch is bypassed in C2 |
+| `+0x2C` | Most recently examined car index |
+| `+0x30` / `+0x34` | Inactive stock-model exclusion counters; the current helper bypasses that exclusion |
 
-The trace buffer is why the LE object flags change to make the code
-object writable. Its counters are diagnostics, **not** proof that every
-wheel renders correctly in every context.
+The trace is **in game memory** and does not create a log file.
+It can assist diagnostics but does not independently prove correct
+visible animations in every camera and carset.
 
-## 7. LE layout, code caves, and integrity safeguards
+## 7. LE header, code space and file integrity
 
-The original object-1 virtual size at raw `0x6F2C` is `0x9B301`, too
-small to expose the injected cave consistently. FOUR V2 extended it to
-`0x9B500`; C2 further extended it to `0x9B800`. The configurable loader
-recomputes the required end of its payload, aligns it to 16 bytes and
-uses the larger of the C2 size and the new required size.
+The injected routines occupy mapped unused bytes in code object 1.
+The input object's virtual size is `0x9B301`. The patch increases it
+to at least `0x9B800` and, if a longer model-name table needs more
+room, aligns the resulting size upward to 16 bytes. The patch checks
+that the mapped virtual size stays within the existing **156 pages**,
+and that code does not overlap the following object base at `0xB0000`.
 
-- The code object starts at guest `0x10000` and uses the same **156
-  existing 4 KiB pages**. No new LE pages or relocation records are
-  inserted.
-- `0x2045 → 0x2047` at the object's flags field (`0x6F34`) allows
-  guest writes to the C2 trace buffer. **This grants writability to
-  the code object more broadly**, not just those 56 bytes.
-- The new loader is placed in formerly zero-filled mapped space after
-  the C2 helper at raw `0xE7540`. Its `call/pop` technique avoids new
-  LE relocations.
-- The patch checks that the output does not exceed mapped pages or
-  overlap the next LE object base (`0xB0000`).
+The LE code-object flags change from **`0x2045` to `0x2047`**
+to permit writes to the in-memory `ICW2` counters. This changes
+permissions for the entire code object, not just the trace record;
+that is a relevant safety/compatibility tradeoff.
 
-The published script encodes **only replacement-byte runs**, not a
-copy of `CART.EXE`. They are Base85-encoded and zlib-compressed in
-`_BASELINE_DELTA`. Each decoded record is:
+No page count or relocation records are added. The new preloader
+checks its allocated area for zeros and that no existing LE fixups
+overlap. The final executable stays exactly the same length.
+
+### How the single-file Python patcher constructs the output
+
+The source ships **replacement-byte runs**, compressed using zlib and
+encoded with Base85, in `_CORE_PATCH_DELTA`. It does **not** embed an entire
+game executable. Each decoded replacement run is:
 
 ```text
-uint32_le file_offset
+uint32_le raw_file_offset
 uint16_le replacement_length
-byte[replacement_length] new_bytes
+byte[replacement_length] replacement_bytes
 ```
 
-The builder first verifies the original executable's *size and SHA-256*,
-applies the non-overlapping replacement runs to reconstruct FOUR V2+C2,
-and verifies the reconstructed **C2 SHA-256**. It then checks the C2
-LE layout, existing hook signatures, geometry NOP, wheel-helper
-signature, empty new code cave and lack of conflicting relocation
-fixups before adding the variable preload.
+The patcher:
 
-At the season-specific stage, the permitted changed regions relative
-to C2 are exactly (1) the new preload payload at `0xE7540` onward,
-(2) the five-byte Roadcar loader call at `0x50970`, and
-(3) the four-byte virtual-size field at `0x6F2C` when expansion is
-needed. It explicitly checks that the old FOUR V2 preload,
-C2 wheel routines, geometry NOP, wheel call sites, and flags
-remain untouched. The final file size does not change.
+1. Verifies the input is the exact supported stock executable by **size
+   and SHA-256**.
+2. Applies the bounded, non-overlapping replacement runs for chassis
+   preservation, wheel hooks/helper and the necessary LE changes.
+3. Checks a second, fixed SHA-256 digest of that common patched state,
+   rejecting damaged patch data or an unexpected reconstruction.
+4. Confirms the LE object layout, expected hook instruction signatures,
+   chassis NOP, wheel helper signature, empty filename-preload area
+   and lack of relocation overlap.
+5. Inserts the user-selected preloader and filename table; redirects
+   the original Roadcar call; extends virtual size if required.
+6. Checks that **only** those three additional regions were changed,
+   verifies the written output hash, and never overwrites the original
+   executable.
 
-The script will **not** overwrite the input executable and by default
-will not overwrite an existing output. It only accepts one known
-REND32A original SHA-256. Do not transplant these offsets to another
-game version just because its file format is also LE.
+The internal digest used for step 3 is
+`cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0`.
+It is an **integrity checkpoint**, not a separate file that users
+need to find, download or build.
 
-## 8. Reproducibility, boundaries, and historical source
+With the default extra names `irl` and `panoz`, the resulting executable
+has SHA-256:
+`6105d39d94862eb5483f64ba27f7c1e4a8e6ac029c935c4c9631ebd5a1ecdd3c`.
 
-The current single-file builder deliberately avoids an external
-assembler. For independent auditing, the original, human-readable
-assembly and intermediate builders are retained in Git history at
-the commit **before** the single-file consolidation:
+## 8. Limitations and community testing
 
-- [`wheel_patch_bc.S`: full C2 wheel adapter and update assembly](https://github.com/skchow03/icr2tools/blob/2b064bcb1e619df222cc1a4624676f9b79d174d9/icr2multicar_rend32a/wheel_patch_bc.S)
-- [`build_rend32a_preload_v2.py`: original four-model preload builder](https://github.com/skchow03/icr2tools/blob/2b064bcb1e619df222cc1a4624676f9b79d174d9/icr2multicar_rend32a/build_rend32a_preload_v2.py)
-- [`build_wheel_BC.py` and `build_C2.py`: wheel helper construction and six-byte C2 change](https://github.com/skchow03/icr2tools/tree/2b064bcb1e619df222cc1a4624676f9b79d174d9/icr2multicar_rend32a)
+- **Exact-version patch.** These offsets and instruction bytes apply only
+  to the pinned stock REND32A SHA-256. Other DOS, WINDY or patched EXEs
+  are rejected; these offsets are not portable.
+- **Carset requirements.** The model files, textures and driver wrapper
+  references must already exist. The patcher does not generate them.
+- **Model structure.** The wheel helper assumes F16 chassis roots with
+  wheel children 0–3 represented as F15 `DYNAMIC` nodes. Other layouts
+  are skipped or may not render as intended.
+- **Model count.** The reserved filename space accommodates at most
+  **138 additional distinct basenames**. This is a file-layout bound,
+  not evidence that the game can load 138 unique chassis resources.
+  Normal carsets have up to 33 driver entries.
+- **Not fully regression-tested.** In-game operation has been reported
+  successful, but different carsets, shared 3DO models, mixed tire
+  appearances, unusual cameras, damage, replay, pit stops, track reloads
+  and extended races merit further testing.
 
-A byte-for-byte reconstruction of the verified C2 baseline has been
-performed against the original user's 1,109,095-byte executable. The
-default `irl`/`panoz` finished binary matches the older configurable
-patcher output exactly (hash listed above).
-
-The reported live success is encouraging, but the following remain
-useful community test cases: different carsets with 5+ distinct chassis,
-two cars sharing one 3DO at different speeds, Firestone/Goodyear
-appearances, selected-car/TV/replay cameras, pits, damage, track reloads
-and long races. The 138-name binary-capacity bound is **not** an
-assurance of practical texture or memory capacity.
-
-Distribute the **patcher source**, not modified proprietary
-`CART.EXE`, 3DO files, or copyrighted assets.
+Distribute the source patcher rather than proprietary patched
+`CART.EXE` binaries or copyrighted 3DO assets.

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch a verified original REND32A CART.EXE for multiple chassis and C2 wheels.
+"""Patch a verified stock REND32A CART.EXE for independent chassis and wheel/tire models.
 
 Source-only patch: no GNU assembler, compiler, runtime service or game assets.
 The configurable chassis preloader has user-reported in-game success; broader game validation is pending.
@@ -15,9 +15,9 @@ import sys
 import zlib
 from pathlib import Path
 
-# Only modified bytes from the SHA-verified original -> FOUR V2 C2 baseline.
-# This is a binary patch, not a bundled copy of the copyrighted game executable.
-_BASELINE_DELTA = (
+# Modified-byte runs for the shared chassis/wheel patch applied to stock CART.EXE.
+# This is a replacement-byte patch, not a bundled copy of the game executable.
+_CORE_PATCH_DELTA = (
     'c-qs+XJBArVAx>-q!}693prUCm>FKDb8_af0>zm*gBjR>0xJtS&U0}91tv^LDCA=hXLzw(=+FOz<~IVzSyVEMa`cY7sIVBP<W~SCSr~vE'
     'js_r0hM|{5<wXlnB~VpCVqQK-Rh6D`3P?fze4q+mu!>ZmismB%iHA1;g|r!7{66&a|D1$w9~GO{lO^2UoIsMb+q2{~>(2i`&<)hw9ix(B'
     'c<F`xJ)i~?hQzstC*TJ!Rzr;RFX?tu>5kLb#VA_D2lUPhW~m~Oi-9J*Py(`88De|a-eb}%0y*u!%T$g|U!CTk3jFOKEP+CN4BcDzP5t@5'
@@ -28,7 +28,7 @@ _BASELINE_DELTA = (
 )
 
 ORIGINAL_SHA = 'e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c'
-C2_SHA = 'cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0'
+CORE_PATCH_SHA = 'cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0'
 EXECUTABLE_SIZE = 1109095
 LE = 0x6E68
 CODE_RAW = 0x4BE20
@@ -36,7 +36,7 @@ CODE_BASE = 0x10000
 CODE_PAGES = 0x9C
 CODE_LIMIT = CODE_RAW + CODE_PAGES * 4096
 PRELOAD_HOOK = 0x50970       # ORIGINAL Roadcar loader call, raw file address
-PRELOAD_NEW = 0xE7540       # begins AFTER original C2 helper+trace (0xE7538)
+PRELOAD_NEW = 0xE7540       # begins after the common wheel routine and trace buffer (0xE7538)
 LOADER = 0xA840C           # original 3DO loader, raw file address
 LE_VIRT = LE + 0xC4
 LE_FLAGS = LE_VIRT + 8
@@ -44,7 +44,7 @@ MAIN_WHEEL_HOOK_RAW = 0x1AFE7 + 0x3BE20
 DIRECT_WHEEL_HOOK_RAW = 0x24232 + 0x3BE20
 GEOMETRY_RAW = 0x80ACF
 NAME_SLOT = 16             # supports 8-character basenames + '.3do' + NUL
-VIRTUAL_SIZE_C2 = 0x9B800
+CORE_VIRTUAL_SIZE = 0x9B800
 MAX_RACE_ENTRIES = 33      # cars.3do driver collection, not a theoretical chassis limit
 REQUIRED_WHEEL_MAGIC = b'ICW2\x02\x00\x00\x00'
 
@@ -166,13 +166,13 @@ def emit_payload(extra: list[str]) -> bytes:
     """Emit reloc-free i386 PIC call/loop, holding immutable names in LE code page.
 
     Call original Roadcar load, pushad, reserve same 16-byte local stack as
-    the FOUR V2 trampoline, loop through arbitrary 16-byte filename slots,
+    the injected preloader, loop through arbitrary 16-byte filename slots,
     restore caller regs/return original loader EAX, finish with RET.
     """
     buf = bytearray()
     def emit(blob: bytes) -> None: buf.extend(blob)
     def call_loader() -> None: emit(relcall(PRELOAD_NEW+len(buf),LOADER))
-    call_loader()                    # Original Roadcar load: preserve as in FOUR V2
+    call_loader()                    # Preserve the original Roadcar resource load
     emit(bytes.fromhex('60 83 ec 10'))  # pushad; sub esp,16
     emit(b'\xe8\0\0\0\0')             # call next
     getpc = len(buf)
@@ -210,19 +210,19 @@ def emit_payload(extra: list[str]) -> bytes:
     return bytes(buf)
 
 
-def validate_c2(b:bytes) -> None:
-    if len(b)!=EXECUTABLE_SIZE or sha(b)!=C2_SHA:
-        raise ValueError('Input must be the exact verified C2 binary, SHA256 '+C2_SHA)
+def validate_core_patch(b:bytes) -> None:
+    if len(b)!=EXECUTABLE_SIZE or sha(b)!=CORE_PATCH_SHA:
+        raise ValueError('Internal shared patch checksum mismatch; expected SHA256 '+CORE_PATCH_SHA)
     if b[LE:LE+2]!=b'LE':
         raise ValueError('Not a DOS/32A LE executable')
-    if tuple(struct.unpack_from('<6I',b,LE_VIRT))!=(VIRTUAL_SIZE_C2,CODE_BASE,0x2047,1,CODE_PAGES,0):
+    if tuple(struct.unpack_from('<6I',b,LE_VIRT))!=(CORE_VIRTUAL_SIZE,CODE_BASE,0x2047,1,CODE_PAGES,0):
         raise ValueError('Unexpected LE code object layout')
     if b[PRELOAD_HOOK:PRELOAD_HOOK+5] != relcall(PRELOAD_HOOK,0xE7160):
-        raise ValueError('Original FOUR V2 preload hook signature missing')
+        raise ValueError('Expected internal model loader signature missing')
     if b[GEOMETRY_RAW:GEOMETRY_RAW+2]!=b'\x90\x90':
         raise ValueError('Chassis-preservation NOP missing')
     if b[0xE7500:0xE7508] != REQUIRED_WHEEL_MAGIC:
-        raise ValueError('C2 wheel helper/diagnostic buffer signature missing')
+        raise ValueError('Wheel updater/diagnostic buffer signature missing')
     if b[MAIN_WHEEL_HOOK_RAW:MAIN_WHEEL_HOOK_RAW+5] != relcall(MAIN_WHEEL_HOOK_RAW,0xE71B0):
         raise ValueError('Main wheel hook missing')
     if b[DIRECT_WHEEL_HOOK_RAW:DIRECT_WHEEL_HOOK_RAW+5] != relcall(DIRECT_WHEEL_HOOK_RAW,0xE7200):
@@ -233,12 +233,12 @@ def validate_c2(b:bytes) -> None:
 
 
 def patch(b: bytes, extra: list[str]) -> tuple[bytes,dict]:
-    validate_c2(b)
+    validate_core_patch(b)
     payload = emit_payload(extra)
     new=bytearray(b)
     new[PRELOAD_NEW:PRELOAD_NEW+len(payload)]=payload
     new[PRELOAD_HOOK:PRELOAD_HOOK+5]=relcall(PRELOAD_HOOK,PRELOAD_NEW)
-    new_virtual=max(VIRTUAL_SIZE_C2, ((PRELOAD_NEW+len(payload)-CODE_RAW+15)//16)*16)
+    new_virtual=max(CORE_VIRTUAL_SIZE, ((PRELOAD_NEW+len(payload)-CODE_RAW+15)//16)*16)
     if new_virtual>CODE_PAGES*4096 or CODE_BASE+new_virtual>=0xB0000:
         raise ValueError('Requested names exceed mapped LE code pages')
     struct.pack_into('<I',new,LE_VIRT,new_virtual)
@@ -247,22 +247,22 @@ def patch(b: bytes, extra: list[str]) -> tuple[bytes,dict]:
                     (DIRECT_WHEEL_HOOK_RAW,DIRECT_WHEEL_HOOK_RAW+5),
                     (0xE7160,0xE71AC),(0xE71B0,0xE7538),
                     (LE_FLAGS,LE_FLAGS+4)]:
-        assert new[raw_start:raw_end]==b[raw_start:raw_end],f'Modified protected C2 byte region {raw_start:#x}'
+        assert new[raw_start:raw_end]==b[raw_start:raw_end],f'Modified protected common-patch byte region {raw_start:#x}'
     allowed=set(range(PRELOAD_NEW,PRELOAD_NEW+len(payload)))
     allowed.update(range(PRELOAD_HOOK,PRELOAD_HOOK+5))
     allowed.update(range(LE_VIRT,LE_VIRT+4))
     differences=[i for i,(x,y) in enumerate(zip(b,new)) if x!=y]
     if not set(differences)<=allowed:
         raise AssertionError('Unanticipated binary changes detected')
-    manifest={'patch':'REND32A configurable season chassis preload + unchanged C2 wheel fix',
-        'input_c2_sha256':C2_SHA,'output_sha256':sha(new),'file_size':len(new),
+    manifest={'patch':'REND32A Multi-Car chassis preservation, model preload and per-car wheels',
+        'core_patch_sha256':CORE_PATCH_SHA,'output_sha256':sha(new),'file_size':len(new),
         'extra_chassis':extra,'extra_chassis_count':len(extra),
         'builtin_loads':['roadcar','indycar'],'loader_hook_raw':hex(PRELOAD_HOOK),
         'new_loader_raw':hex(PRELOAD_NEW),'new_loader_guest':hex(PRELOAD_NEW-0x3BE20),
         'loader_raw_length':len(payload),'code_object_virtual_size':hex(new_virtual),
         'code_object_size_limit':hex(CODE_PAGES*4096),
         'le_pages_added':0,'le_relocation_records_added':0,'changed_byte_count':len(differences),
-        'wheel_hook_bytes_unchanged':True,'chassis_nop_preserved':True,'original_four_v2_preloader_retained_but_bypassed':True,
+        'wheel_hook_bytes_unchanged':True,'chassis_nop_preserved':True,'inactive_preloader_retained_but_bypassed':True,
         'testing_status':'user-reported successful in-game test; broader regression coverage remains pending'}
     return bytes(new),manifest
 
@@ -306,11 +306,11 @@ def assert_no_fixups(data: bytes, addr: int, size: int) -> None:
                 raise ValueError(f"Patch overlaps LE relocation on page {page}")
 
 
-def original_to_c2(source: bytes) -> bytes:
+def reconstruct_core_patch(source: bytes) -> bytes:
     if len(source) != EXECUTABLE_SIZE or sha(source) != ORIGINAL_SHA:
         raise ValueError("Unsupported CART.EXE version. Expected the unmodified "
                          "1,109,095-byte REND32A executable; SHA256: " + ORIGINAL_SHA)
-    delta = zlib.decompress(base64.b85decode("".join(_BASELINE_DELTA)))
+    delta = zlib.decompress(base64.b85decode("".join(_CORE_PATCH_DELTA)))
     output = bytearray(source)
     at = 0
     last_end = 0
@@ -325,8 +325,8 @@ def original_to_c2(source: bytes) -> bytes:
         at += count
         last_end = offset + count
     output = bytes(output)
-    if sha(output) != C2_SHA:
-        raise ValueError("Reconstructed C2 baseline failed SHA256 verification")
+    if sha(output) != CORE_PATCH_SHA:
+        raise ValueError("Reconstructed chassis/wheel patch failed SHA256 verification")
     return output
 
 
@@ -361,8 +361,8 @@ def main(argv: list[str] | None = None) -> int:
               "Use --carset-dir or --chassis for another season.")
 
     print("Checking original CART.EXE...")
-    baseline = original_to_c2(source.read_bytes())
-    patched, manifest = patch(baseline, names)
+    core_patch = reconstruct_core_patch(source.read_bytes())
+    patched, manifest = patch(core_patch, names)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(patched)
     if sha(output.read_bytes()) != manifest["output_sha256"]:
