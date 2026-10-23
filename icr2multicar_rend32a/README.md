@@ -38,6 +38,60 @@ mapped game-code addresses match the canonical build, but their raw *file*
 offsets are `0x21E34` higher. The patcher automatically translates raw
 offsets and verifies a separate complete patched-image SHA-256 for each input.
 
+## Known ICRWide viewport regression (under investigation)
+
+**Reported October 22, 2026:** The original ICRWide (20260722001)
+CART/INDYCAR builds render widescreen correctly, but after applying the
+multi-car patch the 3D scene reportedly appears in the **upper-left quarter**
+of the display. Both IncreasedHeapSize versions work for the reporter.
+
+Binary comparison confirms that the 61 widescreen-specific bytes in the CART
+ICRWide build do **not** overlap any of the 34 shared core patch runs, and
+the original LE code cave is free. This rules out a simple collision at those
+offsets, **not** a runtime interaction. Possible causes include wrapper
+recognition of an original executable fingerprint, the expanded/writable LE
+code mapping, the model preloader, or the two wheel-renderer hooks. We have
+not established which one is responsible; the ICRWide profiles should not yet
+be considered gameplay-compatible.
+
+### Isolate the cause
+
+Download [`diagnose_icrwide.py`](diagnose_icrwide.py) alongside the main
+patcher. Pass one of the **original** ICRWide binaries, not an already
+modified executable:
+
+```powershell
+python diagnose_icrwide.py "C:\\Games\\ICR2\\ICRWide.20260722001_CART.EXE"
+```
+
+The diagnostic creates eight **different test builds** under
+`icrwide_diagnostics`, each with its own `CART.EXE` or `INDYCAR.EXE`.
+Keep original files and game installations backed up. Copy only one test
+build into an isolated game installation at a time; the files cannot be
+expected to work if combined. Use an ordinary stock carset for the
+hook-disabled trials.
+
+| Build | Difference from the original / full patch | What it isolates |
+| --- | --- | --- |
+| `01_fingerprint_only` | Changes one zero byte in an unused code cave | Does **any** file-hash change break widescreen recognition? |
+| `02_header_only` | Changes only the LE code object's virtual size and writable flags | Does extra LE code mapping affect the wrapper? |
+| `03_chassis_only` | Applies just the 2-byte chassis-preservation NOP | Does chassis pointer preservation affect rendering? |
+| `04_no_wheel_hooks` | Full patch, but both wheel-renderer CALL sites restored | Are wheel hooks responsible? |
+| `05_no_preloader` | Full patch, but original Roadcar loader CALL restored | Is extra-model loading responsible? |
+| `06_neither_hook` | Full patch with both wheel hooks and loader hook disabled | Do the hooks jointly cause the problem? |
+| `07_no_extra_chassis` | Full patch, but preloader has no extra model names | Is loading additional chassis responsible? |
+| `08_full_multicar` | The currently reported failing patch | Baseline for comparison |
+
+**Start with `01_fingerprint_only` and `04_no_wheel_hooks`.**
+If the fingerprint-only build displays the same defect, communicate this
+result to the wrapper developer before altering renderer code; a full-file
+fingerprint dependency is then strongly suspected. If fingerprint-only
+works but no-wheel-hooks fixes the scene, investigate the wheel adapters
+and the widescreen wrapper's graphics callbacks. If neither isolates it,
+test `02_header_only`, `05_no_preloader`, and `06_neither_hook`.
+The diagnostic builds themselves are **not** validated for correct car
+wheel graphics or resource loading.
+
 ## Quick start
 
 1. Back up the original REND32A installation and `CART.EXE`.

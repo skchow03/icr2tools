@@ -435,6 +435,10 @@ def main(argv: list[str] | None = None) -> int:
         print('Using default additional chassis: irl, panoz. '
               'Use --carset-dir or --chassis for another season.')
 
+    if profile.key.startswith('icrwide_'):
+        print('WARNING: A reproducible ICRWide viewport regression is under investigation:')
+        print('         3D rendering may occupy only the upper-left quarter of the screen.')
+        print('         See README.md and diagnose_icrwide.py before relying on this output.')
     print(f'Checking original {profile.label}...')
     core_patch = reconstruct_core_patch(source_bytes, profile)
     patched, manifest = patch(core_patch, names, profile)
