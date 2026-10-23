@@ -29,9 +29,6 @@ _CORE_PATCH_DELTA = (
     '4mV;_DCJ||VE7LOI;Eie17ZOH@(A}@'
 )
 
-ORIGINAL_SHA = 'e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c'
-CORE_PATCH_SHA = 'cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0'
-EXECUTABLE_SIZE = 1109095
 LE = 0x6E68
 CODE_RAW = 0x4BE20
 CODE_BASE = 0x10000
@@ -72,15 +69,10 @@ class ExecutableProfile:
 # Each digest identifies an exact input file, not just a game version string.
 # Core digests verify the entire file after translating and applying the shared
 # 34 replacement-byte runs, before adding user-selected chassis names.
+# Only the two IncreasedHeapSize releases have successful user-reported
+# runtime validation with the Rendition wrapper. The original stock CART
+# and both ICRWide variants are deliberately not accepted by this tool.
 PROFILES = (
-    ExecutableProfile("stock_cart", "Stock Rendition CART", "CART",
-                      EXECUTABLE_SIZE, ORIGINAL_SHA, CORE_PATCH_SHA, 0),
-    ExecutableProfile("icrwide_cart", "ICRWide CART (20260722001)", "CART",
-                      1109095, "d3329cde896725066436a20f4f67bf9c70fed59db1bc9947f3f3a5aa0d78889d",
-                      "86b310d5033b6f476dafc5ddf75ce125ae894b323ec6c3de5afa4aeb7a3c0c39", 0),
-    ExecutableProfile("icrwide_indycar", "ICRWide INDYCAR (20260722001)", "INDYCAR",
-                      1109095, "2a97bf1f1d04201eeef144031851a2f35f38b7309c636ad421c1084572d562c3",
-                      "1a2a9d3b9ce181749b979821f6029546b519f250b4b6406ebdc7a3b586db731a", 0),
     ExecutableProfile("increasedheap_cart", "IncreasedHeapSize CART", "CART",
                       1247899, "b23574535c6b38dea2a7affa43ab70a5d3d6a66d59e2ab9ddbdbd2388672a401",
                       "e441bec360fd1bba2847393dd63863a71077d1715bf81affaa0b89da70247518", 0x21E34),
@@ -89,7 +81,6 @@ PROFILES = (
                       "97b62ca91180590470903ee70295cfa01ad3a93abed761fad4f6581db6b94503", 0x21E34),
 )
 
-
 def identify_profile(data: bytes) -> ExecutableProfile:
     digest = sha(data)
     for profile in PROFILES:
@@ -97,7 +88,7 @@ def identify_profile(data: bytes) -> ExecutableProfile:
             return profile
     raise ValueError(
         f"Unsupported or previously patched executable ({len(data):,} bytes, SHA256 {digest}). "
-        "Only the five documented, unmodified REND32A executables are supported."
+        "Only the two verified, unmodified IncreasedHeapSize CART/INDYCAR executables are supported."
     )
 
 
@@ -331,7 +322,7 @@ def patch(b: bytes, extra: list[str], profile: ExecutableProfile) -> tuple[bytes
         'changed_byte_count': len(differences),
         'wheel_hook_bytes_unchanged': True, 'chassis_nop_preserved': True,
         'inactive_preloader_retained_but_bypassed': True,
-        'testing_status': 'static validation on five input builds; per-build game testing pending'}
+        'testing_status': 'user-reported successful operation on IncreasedHeapSize CART and INDYCAR; broader regression coverage pending'}
     return bytes(new), manifest
 
 
@@ -402,8 +393,8 @@ def reconstruct_core_patch(source: bytes, profile: ExecutableProfile) -> bytes:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description='Patch a verified REND32A CART.EXE or INDYCAR.EXE for multiple chassis.')
-    parser.add_argument('exe', type=Path, help='Your unmodified, supported REND32A game EXE')
+        description='Patch verified IncreasedHeapSize CART.EXE or INDYCAR.EXE for multiple chassis.')
+    parser.add_argument('exe', type=Path, help='Your unmodified IncreasedHeapSize CART or INDYCAR executable')
     options = parser.add_mutually_exclusive_group()
     options.add_argument('--carset-dir', type=Path,
                          help='Folder containing cars.3do and driver wrappers (auto-detect)')
@@ -448,7 +439,7 @@ def main(argv: list[str] | None = None) -> int:
     print('SHA256:', manifest['output_sha256'])
     if details.get('missing_chassis_assets'):
         print('WARNING: Missing chassis 3DO files:', ', '.join(details['missing_chassis_assets']))
-    print('Experimental: Static compatibility verified; game testing on each variant is pending.')
+    print('IncreasedHeapSize runtime operation reported successful; broader testing remains experimental.')
     print(f'Keep the original. Copy generated file as {profile.game}.EXE only into '
           'a backed-up test installation.')
     return 0
