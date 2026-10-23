@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Regression tests for the DOS/4GW Rendition multi-car patcher.
+"""Regression tests for the Rendition multi-car patcher.
 
 The normal unit tests need no commercial files. To run binary golden tests,
-set ICR2_DOS4GW_FIXTURES to a directory containing the two supported
+set ICR2_REND_FIXTURES to a directory containing the two supported
 IncreasedHeapSize original EXEs listed in FIXTURES. They are intentionally not distributed in this repository.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from dos4gw_multicar import (
+from rend_multicar import (
     CODE_LIMIT, LE_VIRT, PRELOAD_HOOK, PRELOAD_NEW, PROFILES,
     emit_payload, identify_profile, main, patch, raw, reconstruct_core_patch,
     relcall, sha, validate_core_patch,
@@ -71,11 +71,11 @@ class ProfileTests(unittest.TestCase):
             identify_profile(b"\0" * PROFILES[0].size)
 
 
-@unittest.skipUnless(os.environ.get("ICR2_DOS4GW_FIXTURES"),
-                     "Set ICR2_DOS4GW_FIXTURES for binary regression tests")
+@unittest.skipUnless(os.environ.get("ICR2_REND_FIXTURES"),
+                     "Set ICR2_REND_FIXTURES for binary regression tests")
 class ExecutableGoldenTests(unittest.TestCase):
     def test_excluded_original_builds_are_rejected(self) -> None:
-        directory = Path(os.environ["ICR2_DOS4GW_FIXTURES"])
+        directory = Path(os.environ["ICR2_REND_FIXTURES"])
         for filename, expected_sha in EXCLUDED_FIXTURES.items():
             path = directory / filename
             if not path.is_file():
@@ -87,7 +87,7 @@ class ExecutableGoldenTests(unittest.TestCase):
                     identify_profile(source)
 
     def test_every_profile_against_uploaded_fixture_hashes(self) -> None:
-        directory = Path(os.environ["ICR2_DOS4GW_FIXTURES"])
+        directory = Path(os.environ["ICR2_REND_FIXTURES"])
         for profile in PROFILES:
             filename, expected_final_sha = FIXTURES[profile.key]
             with self.subTest(profile=profile.key):
@@ -123,7 +123,7 @@ class ExecutableGoldenTests(unittest.TestCase):
                     identify_profile(result)
 
     def test_cli_selects_game_specific_default_filename(self) -> None:
-        directory = Path(os.environ["ICR2_DOS4GW_FIXTURES"])
+        directory = Path(os.environ["ICR2_REND_FIXTURES"])
         for profile in PROFILES:
             filename, golden_sha = FIXTURES[profile.key]
             with self.subTest(profile=profile.key):
