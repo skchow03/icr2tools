@@ -13,6 +13,8 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from diagnose_icrwide import variants as diagnostic_variants
+
 from rend32a_multicar import (
     CODE_LIMIT, LE_VIRT, PRELOAD_HOOK, PRELOAD_NEW, PROFILES,
     emit_payload, identify_profile, main, patch, raw, reconstruct_core_patch,
@@ -99,6 +101,36 @@ class ExecutableGoldenTests(unittest.TestCase):
                 self.assertEqual(sum(a != b for a, b in zip(source, result)), 964)
                 with self.assertRaisesRegex(ValueError, "Unsupported"):
                     identify_profile(result)
+
+    def test_icrwide_diagnostics_only_change_intended_regions(self) -> None:
+        directory = Path(os.environ["ICR2_REND32A_FIXTURES"])
+        for profile in PROFILES:
+            if not profile.key.startswith("icrwide_"):
+                continue
+            with self.subTest(profile=profile.key):
+                filename, golden_sha = FIXTURES[profile.key]
+                source = (directory / filename).read_bytes()
+                variants = diagnostic_variants(source, profile)
+                self.assertEqual(len(variants), 8)
+                self.assertEqual(sha(variants["08_full_multicar"]), golden_sha)
+                self.assertEqual(len(variants["01_fingerprint_only"]), len(source))
+                self.assertEqual(sum(a != b for a, b in
+                                     zip(source, variants["01_fingerprint_only"])), 1)
+                self.assertEqual(sum(a != b for a, b in
+                                     zip(source, variants["03_chassis_only"])), 2)
+                main_hook = raw(profile, 0x56E07)
+                direct_hook = raw(profile, 0x60052)
+                no_wheels = variants["04_no_wheel_hooks"]
+                self.assertEqual(no_wheels[main_hook:main_hook+5],
+                                 source[main_hook:main_hook+5])
+                self.assertEqual(no_wheels[direct_hook:direct_hook+5],
+                                 source[direct_hook:direct_hook+5])
+                no_preload = variants["05_no_preloader"]
+                preload = raw(profile, PRELOAD_HOOK)
+                self.assertEqual(no_preload[preload:preload+5],
+                                 source[preload:preload+5])
+                for blob in variants.values():
+                    self.assertEqual(len(blob), len(source))
 
     def test_cli_selects_game_specific_default_filename(self) -> None:
         directory = Path(os.environ["ICR2_REND32A_FIXTURES"])
