@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Patch verified REND32A CART/INDYCAR executables for independent chassis and wheel/tire models.
+"""Patch verified DOS/4GW Rendition CART/INDYCAR executables for independent chassis and wheel/tire models.
 
 Source-only patch: no GNU assembler, compiler, runtime service or game assets.
 The configurable chassis preloader has user-reported in-game success; broader game validation is pending.
@@ -16,7 +16,9 @@ import sys
 import zlib
 from pathlib import Path
 
-# Replacement-byte runs use canonical REND32A CART.EXE raw offsets.
+# Replacement-byte runs use canonical REND32A CART.EXE offsets for historical reference.
+# That original DOS/32A executable is NOT an accepted input. Only the two
+# DOS/4GW-based IncreasedHeapSize releases are supported.
 # Verified executable profiles translate these file offsets when necessary.
 # This is a replacement-byte patch, not a bundled copy of the game executable.
 _CORE_PATCH_DELTA = (
@@ -309,7 +311,7 @@ def patch(b: bytes, extra: list[str], profile: ExecutableProfile) -> tuple[bytes
     differences = [i for i, (x, y) in enumerate(zip(b, new)) if x != y]
     if not set(differences) <= allowed:
         raise AssertionError('Unanticipated binary changes detected')
-    manifest = {'patch': 'REND32A Multi-Car chassis preservation, model preload and per-car wheels',
+    manifest = {'patch': 'DOS/4GW Rendition Multi-Car chassis preservation, model preload and per-car wheels',
         'profile': profile.key, 'source_sha256': profile.input_sha256,
         'file_offset_shift': hex(profile.file_shift),
         'core_patch_sha256': profile.core_sha256, 'output_sha256': sha(new),
@@ -393,7 +395,7 @@ def reconstruct_core_patch(source: bytes, profile: ExecutableProfile) -> bytes:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description='Patch verified IncreasedHeapSize CART.EXE or INDYCAR.EXE for multiple chassis.')
+        description='Patch verified DOS/4GW Rendition IncreasedHeapSize CART.EXE or INDYCAR.EXE for multiple chassis.')
     parser.add_argument('exe', type=Path, help='Your unmodified IncreasedHeapSize CART or INDYCAR executable')
     options = parser.add_mutually_exclusive_group()
     options.add_argument('--carset-dir', type=Path,

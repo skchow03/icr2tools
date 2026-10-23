@@ -1,6 +1,6 @@
-# REND32A Multi-Car — technical reference
+# DOS/4GW Rendition Multi-Car — technical reference
 
-This document describes exactly how `rend32a_multicar.py` modifies the
+This document describes exactly how `dos4gw_multicar.py` modifies the
 **two verified IncreasedHeapSize Rendition `CART.EXE`/`INDYCAR.EXE` input builds**. It is intended
 for programmers, modders and reverse engineers who want to understand or audit
 the patch. Installation and command-line instructions are in the [README](README.md).
@@ -34,7 +34,10 @@ The carset still determines which model each driver uses.
 
 ## 2. Supported input and address conventions
 
-Only the two exact IncreasedHeapSize executables listed below are accepted.
+Only the two exact DOS/4GW-based IncreasedHeapSize Rendition executables listed below are accepted.
+The term **REND32A** elsewhere in this reference denotes the historical
+canonical DOS/32A build whose original code layout supplies reference offsets;
+it does **not** denote a supported input or the project's current name.
 The following original REND32A CART layout remains a **reference for
 canonical raw offsets only**. That original stock EXE is **not a supported
 patcher input**.
@@ -76,7 +79,7 @@ relative CALL displacement calculations.
 
 Each accepted build has a separate pinned SHA-256 for the fully reconstructed
 shared core patch. Input and core hashes are listed in
-`rend32a_multicar.py`. The patcher rejects stock REND32A, ICRWide and
+`dos4gw_multicar.py`. The patcher rejects stock REND32A, ICRWide and
 other builds even if some original instruction bytes match. It does not guess
 offsets for unknown releases. The IncreasedHeapSize builds contain an
 additional DOS/4GW/BW prefix before the LE game image while retaining the
@@ -402,9 +405,9 @@ validated golden-output SHA-256 hashes are:
 
 ### Variant-specific golden tests
 
-`test_rend32a_multicar.py` tests the patcher without bundled game files.
+`test_dos4gw_multicar.py` tests the patcher without bundled game files.
 When the tester supplies the two original IncreasedHeapSize EXEs via the
-`ICR2_REND32A_FIXTURES` environment variable, the suite verifies each
+`ICR2_DOS4GW_FIXTURES` environment variable, the suite verifies each
 source digest, translated LE layout, core digest, final digest for
 `irl`/`panoz`, expected write count, and default output name. If present,
 stock CART and ICRWide binaries are also checked for rejection. See the

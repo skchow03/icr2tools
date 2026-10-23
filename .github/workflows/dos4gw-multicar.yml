@@ -1,0 +1,31 @@
+name: DOS/4GW Rendition Multi-Car
+
+on:
+  pull_request:
+    paths:
+      - "icr2multicar_dos4gw/**"
+      - ".github/workflows/dos4gw-multicar.yml"
+  push:
+    branches: [main]
+    paths:
+      - "icr2multicar_dos4gw/**"
+      - ".github/workflows/dos4gw-multicar.yml"
+
+jobs:
+  smoke-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python
+        run: python -m py_compile icr2multicar_dos4gw/dos4gw_multicar.py
+      - name: Check command-line help
+        run: python icr2multicar_dos4gw/dos4gw_multicar.py --help
+      - name: Run source-only unit tests
+        run: python -m unittest discover -s icr2multicar_dos4gw -p "test_*.py" -v
+      - name: Verify embedded delta decodes
+        shell: pwsh
+        run: |
+          python -c "import sys,base64,zlib;sys.path.insert(0,'icr2multicar_dos4gw');import dos4gw_multicar as p;d=zlib.decompress(base64.b85decode(''.join(p._CORE_PATCH_DELTA)));assert len(d)>100;print('Encoded replacement patch verified:',len(d),'bytes')"
