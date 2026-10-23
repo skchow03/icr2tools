@@ -1,6 +1,6 @@
-# ICR2 Multi-Car — Rendition (REND32A)
+# ICR2 Multi-Car — Rendition (IncreasedHeapSize)
 
-This tool modifies the **Rendition version of *IndyCar Racing II***
+This tool modifies the **IncreasedHeapSize Rendition versions of *IndyCar Racing II***
 to support **different chassis models and independently updated wheel/tire
 appearances across cars**.
 
@@ -15,13 +15,16 @@ carsets, replay modes and unusual chassis layouts remains pending. It is separat
 ## Requirements
 
 - Python 3.10 or later (no third-party packages).
-- One of the **two exact, unmodified IncreasedHeapSize REND32A executables** listed below. Modified or unknown EXEs are rejected.
+- One of the **two exact, unmodified IncreasedHeapSize Rendition executables** listed below. Modified or unknown EXEs are rejected.
 - A carset with the desired chassis `.3do` files and associated resources.
 
 ## Recognized executable versions
 
 The patcher deliberately accepts only these two exact binary fingerprints.
-Both have been reported working in-game with the Rendition wrapper.
+Both have been reported working in-game with Sharangad's Rendition wrapper.
+**Rendition** identifies the graphics version, whereas DOS/4GW is also used
+by non-Rendition DOS ICR2 executables. The supported inputs are the two pinned
+IncreasedHeapSize versions, not every Rendition or DOS/4GW executable.
 
 | Input build | Size | SHA-256 |
 | --- | ---: | --- |
@@ -43,11 +46,11 @@ and verifies a separate full-image SHA-256 checkpoint for each supported input.
 ## Quick start
 
 1. Back up the original IncreasedHeapSize installation and game executable.
-2. Download [`rend32a_multicar.py`](rend32a_multicar.py).
+2. Download [`rend_multicar.py`](rend_multicar.py).
 3. Open PowerShell or a command prompt and run:
 
    ```powershell
-   python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE"
+   python rend_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE"
    ```
 
 The tool checks the entire original executable by SHA-256 and writes
@@ -58,13 +61,13 @@ The default additional chassis names are `irl` and `panoz`.
 For a different selection:
 
 ```powershell
-python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --chassis irl panoz lola reynard
+python rend_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --chassis irl panoz lola reynard
 ```
 
 To discover chassis names automatically from a supported carset:
 
 ```powershell
-python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --carset-dir "C:\Games\ICR2\CARS\MYSEASON"
+python rend_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --carset-dir "C:\Games\ICR2\CARS\MYSEASON"
 ```
 
 The scanner follows `cars.3do` and the driver wrapper `.3do` files.
@@ -118,15 +121,15 @@ an explicit `0x21E34` translation for the supported IncreasedHeapSize inputs.
 
 ## Tests
 
-The included `test_rend32a_multicar.py` performs source-only unit tests
+The included `test_rend_multicar.py` performs source-only unit tests
 without any proprietary executables:
 
 ```bash
-python -m unittest discover -s icr2multicar_rend32a -p "test_*.py"
+python -m unittest discover -s icr2multicar_rend -p "test_*.py"
 ```
 
 To verify the two supported full-file input fingerprints, core patch images,
-and output golden hashes, set `ICR2_REND32A_FIXTURES` to a folder containing
+and output golden hashes, set `ICR2_REND_FIXTURES` to a folder containing
 the **original, unmodified** files named
 `ICR2.IncreasedHeapSize_CART.EXE` and
 `ICR2.IncreasedHeapSize_INDYCAR.EXE`, then rerun the tests. An optional
