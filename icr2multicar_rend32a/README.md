@@ -7,45 +7,47 @@ appearances across cars**.
 It patches a copy of your own **supported, unmodified `CART.EXE` or `INDYCAR.EXE`**, without modifying
 your carset or requiring a compiler.
 
-The author has successfully run a generated executable in-game. The
-patch remains experimental across untested carsets, replay modes and
-unusual chassis layouts. It is separate from the
+The IncreasedHeapSize CART and INDYCAR builds have user-reported successful
+in-game operation with Sharangad's Rendition wrapper. Broader testing across
+carsets, replay modes and unusual chassis layouts remains pending. It is separate from the
 [native Windows Multi-Car tool](../icr2multicar/).
 
 ## Requirements
 
 - Python 3.10 or later (no third-party packages).
-- One of the **five exact, verified REND32A input executables** listed below. Modified or unknown EXEs are rejected.
+- One of the **two exact, unmodified IncreasedHeapSize REND32A executables** listed below. Modified or unknown EXEs are rejected.
 - A carset with the desired chassis `.3do` files and associated resources.
 
 ## Recognized executable versions
 
-These are *exact binary fingerprints*, not loose labels. The patcher accepts the
-original REND32A CART build, plus four builds reported compatible with
-Sharangad's wrapper. Runtime testing of the newly added combinations remains
-pending.
+The patcher deliberately accepts only these two exact binary fingerprints.
+Both have been reported working in-game with the Rendition wrapper.
 
 | Input build | Size | SHA-256 |
 | --- | ---: | --- |
-| Original REND32A CART | 1,109,095 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
-| ICRWide (20260722001), CART | 1,109,095 | `d3329cde896725066436a20f4f67bf9c70fed59db1bc9947f3f3a5aa0d78889d` |
-| ICRWide (20260722001), INDYCAR | 1,109,095 | `2a97bf1f1d04201eeef144031851a2f35f38b7309c636ad421c1084572d562c3` |
-| IncreasedHeapSize, CART | 1,247,899 | `b23574535c6b38dea2a7affa43ab70a5d3d6a66d59e2ab9ddbdbd2388672a401` |
-| IncreasedHeapSize, INDYCAR | 1,247,899 | `de029d70844313e7afc7e94cce6357d832ff893ede4afeb6d9fa2bf41b28e35c` |
+| IncreasedHeapSize CART | 1,247,899 | `b23574535c6b38dea2a7affa43ab70a5d3d6a66d59e2ab9ddbdbd2388672a401` |
+| IncreasedHeapSize INDYCAR | 1,247,899 | `de029d70844313e7afc7e94cce6357d832ff893ede4afeb6d9fa2bf41b28e35c` |
 
-The IncreasedHeapSize builds have an additional DOS executable prefix. Their
-mapped game-code addresses match the canonical build, but their raw *file*
-offsets are `0x21E34` higher. The patcher automatically translates raw
-offsets and verifies a separate complete patched-image SHA-256 for each input.
+**Not supported:** original stock REND32A CART, either ICRWide widescreen
+executable, ordinary DOS 1.0.2, WINDY, and any already-patched EXE.
+ICRWide's 3D viewport regression is triggered by the expanded LE code-object
+virtual size; simply restoring that size makes the injected routines
+inaccessible and crashes. The original stock REND32A build is excluded at
+the user's request; this is a support policy, not proof that stock is unstable.
+
+The two supported builds contain a larger DOS executable prefix. Their
+mapped game-code addresses match the canonical reference layout, but their
+raw *file* offsets are `0x21E34` higher. The patcher translates raw offsets
+and verifies a separate full-image SHA-256 checkpoint for each supported input.
 
 ## Quick start
 
-1. Back up the original REND32A installation and `CART.EXE`.
+1. Back up the original IncreasedHeapSize installation and game executable.
 2. Download [`rend32a_multicar.py`](rend32a_multicar.py).
 3. Open PowerShell or a command prompt and run:
 
    ```powershell
-   python rend32a_multicar.py "C:\Games\ICR2\CART.EXE"
+   python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE"
    ```
 
 The tool checks the entire original executable by SHA-256 and writes
@@ -56,13 +58,13 @@ The default additional chassis names are `irl` and `panoz`.
 For a different selection:
 
 ```powershell
-python rend32a_multicar.py "C:\Games\ICR2\CART.EXE" --chassis irl panoz lola reynard
+python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --chassis irl panoz lola reynard
 ```
 
 To discover chassis names automatically from a supported carset:
 
 ```powershell
-python rend32a_multicar.py "C:\Games\ICR2\CART.EXE" --carset-dir "C:\Games\ICR2\CARS\MYSEASON"
+python rend32a_multicar.py "C:\Games\ICR2\ICR2.IncreasedHeapSize_CART.EXE" --carset-dir "C:\Games\ICR2\CARS\MYSEASON"
 ```
 
 The scanner follows `cars.3do` and the driver wrapper `.3do` files.
@@ -71,14 +73,14 @@ characters before `.3do`). The patcher rejects unsupported wrapper
 layouts instead of guessing.
 
 **To use the modified game:** Copy the generated EXE to a separate,
-backed-up REND32A installation and rename that copy `CART.EXE` or `INDYCAR.EXE`,
+backed-up IncreasedHeapSize installation and rename that copy `CART.EXE` or `INDYCAR.EXE`,
 as appropriate.
 Make sure your chosen carset already references the matching chassis
 models. The patcher does not create or assign chassis files.
 
 ## What the EXE patch changes
 
-Compared directly with stock `CART.EXE`, the patch:
+Compared with the corresponding unmodified IncreasedHeapSize executable, the patch:
 
 1. **Preserves each car's chassis pointer**, preventing the game from
    replacing it with a shared default geometry reference.
@@ -95,13 +97,14 @@ For community reverse engineering, see the
 **[complete technical reference](PATCH_TECHNICAL_REFERENCE.md)** for
 original/replacement bytes, file offsets, guest addresses, injected x86
 instructions, model-node fields, wheel rotation formulas and integrity
-checks. It documents the changes **from stock EXE to final patched EXE**.
+checks. It documents changes using a canonical stock-code offset reference plus
+an explicit `0x21E34` translation for the supported IncreasedHeapSize inputs.
 
 ## Troubleshooting and limitations
 
-- **Unsupported executable:** The script accepts only the five exact original
-  builds above, verified by size and SHA-256. Other releases, already patched
-  EXEs, ordinary DOS 1.0.2 and WINDY are not supported.
+- **Unsupported executable:** The script accepts only the two IncreasedHeapSize
+  builds above, verified by size and SHA-256. Stock REND32A, ICRWide,
+  ordinary DOS 1.0.2, WINDY, and previously patched EXEs are rejected.
 - **Output already exists:** Choose another `--output` or use
   `--overwrite` for an existing generated file. The original input
   can never be the output.
@@ -122,13 +125,14 @@ without any proprietary executables:
 python -m unittest discover -s icr2multicar_rend32a -p "test_*.py"
 ```
 
-To check all five known executable fingerprints, core patches, and final golden
-hashes, set `ICR2_REND32A_FIXTURES` to a folder with the original EXEs named
-`CART(1).EXE`, `ICRWide.20260722001_CART.EXE`,
-`ICRWide.20260722001_INDYCAR.EXE`,
-`ICR2.IncreasedHeapSize_CART.EXE`, and
-`ICR2.IncreasedHeapSize_INDYCAR.EXE`, then rerun the same test command.
-Do not distribute these game binaries in the repository.
+To verify the two supported full-file input fingerprints, core patch images,
+and output golden hashes, set `ICR2_REND32A_FIXTURES` to a folder containing
+the **original, unmodified** files named
+`ICR2.IncreasedHeapSize_CART.EXE` and
+`ICR2.IncreasedHeapSize_INDYCAR.EXE`, then rerun the tests. An optional
+negative test also rejects stock CART and ICRWide files if those
+additional originals are present. No proprietary executables are
+distributed in the repository.
 
 The repository distributes the patcher and its replacement-byte data,
 **not** the complete original or modified game executable or commercial carsets. This independent community modification is

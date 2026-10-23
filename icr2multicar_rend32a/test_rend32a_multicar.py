@@ -2,8 +2,8 @@
 """Regression tests for the REND32A multi-car patcher.
 
 The normal unit tests need no commercial files. To run binary golden tests,
-set ICR2_REND32A_FIXTURES to a directory containing the five original EXEs
-listed in FIXTURES. They are intentionally not distributed in this repository.
+set ICR2_REND32A_FIXTURES to a directory containing the two supported
+IncreasedHeapSize original EXEs listed in FIXTURES. They are intentionally not distributed in this repository.
 """
 from __future__ import annotations
 
@@ -21,27 +21,33 @@ from rend32a_multicar import (
 
 
 FIXTURES = {
-    "stock_cart": ("CART(1).EXE",
-                   "6105d39d94862eb5483f64ba27f7c1e4a8e6ac029c935c4c9631ebd5a1ecdd3c"),
-    "icrwide_cart": ("ICRWide.20260722001_CART.EXE",
-                     "51e99afcc0c57af1e82b37be40b1c8bf7ccc13cc45645fdd0a845de710e69c29"),
-    "icrwide_indycar": ("ICRWide.20260722001_INDYCAR.EXE",
-                       "bc41c58c6b0d4d6e5b2a6ba176e3c0c6ac62b7b317e42fb1b385cc883667d3ae"),
     "increasedheap_cart": ("ICR2.IncreasedHeapSize_CART.EXE",
                            "5cb3ee72f261f256249cd316b3c0425ba37539e021916783ee62eb7c194defe8"),
     "increasedheap_indycar": ("ICR2.IncreasedHeapSize_INDYCAR.EXE",
                              "fa43698f2362c92090cfc2216868ce9bdb094ed05992eb18bb5a004c122c7799"),
 }
 
+# Optional negative fixtures, when present in the same test directory. These
+# binaries must remain rejected even if their previously supported fingerprints
+# still match. They are not required for the positive golden regression tests.
+EXCLUDED_FIXTURES = {
+    "CART(1).EXE": "e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c",
+    "ICRWide.20260722001_CART.EXE": "d3329cde896725066436a20f4f67bf9c70fed59db1bc9947f3f3a5aa0d78889d",
+    "ICRWide.20260722001_INDYCAR.EXE": "2a97bf1f1d04201eeef144031851a2f35f38b7309c636ad421c1084572d562c3",
+}
+
 
 class ProfileTests(unittest.TestCase):
     def test_unique_and_consistent_profiles(self) -> None:
-        self.assertEqual(len(PROFILES), 5)
+        self.assertEqual(len(PROFILES), 2)
         self.assertEqual({p.key for p in PROFILES}, set(FIXTURES))
-        self.assertEqual(len({p.input_sha256 for p in PROFILES}), 5)
+        self.assertEqual(len({p.input_sha256 for p in PROFILES}), 2)
         for profile in PROFILES:
             with self.subTest(profile=profile.key):
                 self.assertIn(profile.game, ("CART", "INDYCAR"))
+                self.assertTrue(profile.key.startswith("increasedheap_"))
+                self.assertEqual(profile.file_shift, 0x21E34)
+                self.assertEqual(profile.size, 1247899)
                 self.assertEqual(len(profile.input_sha256), 64)
                 self.assertEqual(len(profile.core_sha256), 64)
                 self.assertEqual(raw(profile, LE_VIRT), LE_VIRT + profile.file_shift)
@@ -68,6 +74,18 @@ class ProfileTests(unittest.TestCase):
 @unittest.skipUnless(os.environ.get("ICR2_REND32A_FIXTURES"),
                      "Set ICR2_REND32A_FIXTURES for binary regression tests")
 class ExecutableGoldenTests(unittest.TestCase):
+    def test_excluded_original_builds_are_rejected(self) -> None:
+        directory = Path(os.environ["ICR2_REND32A_FIXTURES"])
+        for filename, expected_sha in EXCLUDED_FIXTURES.items():
+            path = directory / filename
+            if not path.is_file():
+                continue
+            with self.subTest(excluded=filename):
+                source = path.read_bytes()
+                self.assertEqual(sha(source), expected_sha)
+                with self.assertRaisesRegex(ValueError, "Unsupported"):
+                    identify_profile(source)
+
     def test_every_profile_against_uploaded_fixture_hashes(self) -> None:
         directory = Path(os.environ["ICR2_REND32A_FIXTURES"])
         for profile in PROFILES:
@@ -77,6 +95,10 @@ class ExecutableGoldenTests(unittest.TestCase):
                 self.assertEqual(len(source), profile.size)
                 self.assertEqual(sha(source), profile.input_sha256)
                 self.assertEqual(identify_profile(source), profile)
+                mutated = bytearray(source)
+                mutated[-1] ^= 1
+                with self.assertRaisesRegex(ValueError, "Unsupported"):
+                    identify_profile(bytes(mutated))
                 core = reconstruct_core_patch(source, profile)
                 self.assertEqual(sha(core), profile.core_sha256)
                 validate_core_patch(core, profile)

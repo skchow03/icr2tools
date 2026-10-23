@@ -1,7 +1,7 @@
 # REND32A Multi-Car — technical reference
 
 This document describes exactly how `rend32a_multicar.py` modifies the
-**five verified Rendition IndyCar Racing II `CART.EXE`/`INDYCAR.EXE` input builds**. It is intended
+**two verified IncreasedHeapSize Rendition `CART.EXE`/`INDYCAR.EXE` input builds**. It is intended
 for programmers, modders and reverse engineers who want to understand or audit
 the patch. Installation and command-line instructions are in the [README](README.md).
 
@@ -34,14 +34,14 @@ The carset still determines which model each driver uses.
 
 ## 2. Supported input and address conventions
 
-Five exact original input executables are supported. The canonical reference
-layout remains the stock REND32A CART build:
+Only the two exact IncreasedHeapSize executables listed below are accepted.
+The following original REND32A CART layout remains a **reference for
+canonical raw offsets only**. That original stock EXE is **not a supported
+patcher input**.
 
-| Property | Required value |
+| Reference property | Canonical value (not an accepted input) |
 | --- | --- |
-| Executable | Original REND32A `CART.EXE` |
-| Size | `1,109,095` bytes |
-| SHA-256 | `e22effeb75105a3155212eb25d88b2e2cd127d521b72d0fa122adbd32e7a721c` |
+| Reference EXE | Original REND32A `CART.EXE` |
 | Format | DOS/32A Linear Executable (LE), 32-bit x86 |
 | LE header file offset | `0x6E68` |
 | Code object 1 file offset | `0x4BE20` |
@@ -63,34 +63,31 @@ raw_file_offset = guest_address + 0x3BE20
 
 For example, the instruction at raw `0x80ACF` executes at guest `0x44CAF`.
 Do **not** apply this translation to the LE header, other objects, or
-arbitrary executable versions. For both ICRWide builds, these canonical
-raw offsets remain unchanged. For both IncreasedHeapSize builds, add
+arbitrary executable versions. For both supported IncreasedHeapSize builds, add
 `0x21E34` **only to raw file offsets**, not to guest addresses or
 relative CALL displacement calculations.
 
-### Verified additional input builds
+### Accepted input builds
 
 | Build | Size | Input SHA-256 | Raw file shift |
 | --- | ---: | --- | --- |
-| ICRWide CART (20260722001) | 1,109,095 | `d3329cde896725066436a20f4f67bf9c70fed59db1bc9947f3f3a5aa0d78889d` | `0` |
-| ICRWide INDYCAR (20260722001) | 1,109,095 | `2a97bf1f1d04201eeef144031851a2f35f38b7309c636ad421c1084572d562c3` | `0` |
 | IncreasedHeapSize CART | 1,247,899 | `b23574535c6b38dea2a7affa43ab70a5d3d6a66d59e2ab9ddbdbd2388672a401` | `0x21E34` |
 | IncreasedHeapSize INDYCAR | 1,247,899 | `de029d70844313e7afc7e94cce6357d832ff893ede4afeb6d9fa2bf41b28e35c` | `0x21E34` |
 
-Each build has a corresponding pinned SHA-256 for the fully reconstructed
-shared core patch. The input and core hashes are listed in
-`rend32a_multicar.py`. Only exact known originals are allowed; the
-patcher does not attempt to guess offsets for an unknown release. The larger
-IncreasedHeapSize binaries contain an additional DOS/4GW/BW prefix before
-the LE game image. They retain the relevant guest code and hook signatures.
+Each accepted build has a separate pinned SHA-256 for the fully reconstructed
+shared core patch. Input and core hashes are listed in
+`rend32a_multicar.py`. The patcher rejects stock REND32A, ICRWide and
+other builds even if some original instruction bytes match. It does not guess
+offsets for unknown releases. The IncreasedHeapSize builds contain an
+additional DOS/4GW/BW prefix before the LE game image while retaining the
+relevant guest code and hook signatures.
 
 
 ## 3. Stock-to-patched binary map
 
-The entries in this table show **canonical raw offsets** by comparing stock
-REND32A `CART.EXE` directly with generated `CART_MULTICAR.EXE`. Add the
-per-profile raw file shift to every offset in the table when using an
-IncreasedHeapSize build. There are no prerequisite patched
+The entries in this table show **canonical reference raw offsets** (before
+the larger IncreasedHeapSize prefix). Add `0x21E34` to every raw offset
+in the table for **either accepted IncreasedHeapSize build**. There are no prerequisite patched
 executables or separately installed assembly components.
 
 | Raw file offset | Guest address | Stock bytes/value | Patched bytes/value | Result |
@@ -353,7 +350,7 @@ byte[replacement_length] replacement_bytes
 
 The patcher:
 
-1. Identifies one of the **five exactly supported original executables** by
+1. Identifies one of the **two exactly supported IncreasedHeapSize executables** by
    full-file size and SHA-256.
 2. Applies the bounded, non-overlapping replacement runs at each canonical
    raw file offset plus that profile's verified shift. No proprietary bytes
@@ -369,24 +366,26 @@ The patcher:
    verifies the written output hash, and never overwrites the original
    executable.
 
-For the original stock CART input, the step-3 digest remains
-`cba955eab5ed03a83bebf9fa0553dca8b871e6d6405e6b5383c241a310b85be0`.
-Each newer profile has its own whole-file checkpoint. These are **integrity
-checkpoints**, not separately distributed files.
+Both accepted builds have their own complete-file integrity checkpoints;
+no stock executable or prebuilt patched executable is required.
 
-With the default extra names `irl` and `panoz`, the resulting executable
-has SHA-256:
-`6105d39d94862eb5483f64ba27f7c1e4a8e6ac029c935c4c9631ebd5a1ecdd3c`.
+With the default additional chassis names `irl` and `panoz`, the
+validated golden-output SHA-256 hashes are:
+
+| Input | Result SHA-256 |
+| --- | --- |
+| IncreasedHeapSize CART | `5cb3ee72f261f256249cd316b3c0425ba37539e021916783ee62eb7c194defe8` |
+| IncreasedHeapSize INDYCAR | `fa43698f2362c92090cfc2216868ce9bdb094ed05992eb18bb5a004c122c7799` |
 
 ## 8. Limitations and community testing
 
-- **Exact-input patch.** The patcher accepts only the five pinned input
-  SHA-256 hashes. Ordinary DOS, WINDY, patched EXEs and other builds are
-  rejected. No general offset auto-detection is attempted.
-- **Runtime compatibility.** Binary patch reconstruction and structural
-  validations succeeded for the four additional profiles. Complete in-game
-  testing (including wrapper usage, races, replay and wheel appearance) is
-  still required for each; a matching signature does not prove stability.
+- **Exact-input patch.** The patcher accepts only the two IncreasedHeapSize
+  input SHA-256 hashes. Original stock REND32A, ICRWide, ordinary DOS,
+  WINDY, patched EXEs and other builds are rejected. No general offset
+  auto-detection is attempted.
+- **Runtime compatibility.** The user reports successful operation of both
+  IncreasedHeapSize builds with Sharangad's wrapper. Further in-game testing
+  across carsets, races, replay, and wheel appearances remains valuable.
 - **Carset requirements.** The model files, textures and driver wrapper
   references must already exist. The patcher does not generate them.
 - **Model structure.** The wheel helper assumes F16 chassis roots with
@@ -404,11 +403,12 @@ has SHA-256:
 ### Variant-specific golden tests
 
 `test_rend32a_multicar.py` tests the patcher without bundled game files.
-When the tester supplies the five original input EXEs via the
-`ICR2_REND32A_FIXTURES` environment variable, the suite verifies
-each source digest, translated LE layout, core digest, final digest for
-`irl`/`panoz`, expected write count, and default output name. The reference
-stock final SHA-256 above remains unchanged. See the README for fixture names.
+When the tester supplies the two original IncreasedHeapSize EXEs via the
+`ICR2_REND32A_FIXTURES` environment variable, the suite verifies each
+source digest, translated LE layout, core digest, final digest for
+`irl`/`panoz`, expected write count, and default output name. If present,
+stock CART and ICRWide binaries are also checked for rejection. See the
+README for fixture names.
 
 Distribute the source patcher rather than proprietary patched
 `CART.EXE`/`INDYCAR.EXE` binaries or copyrighted 3DO assets.
