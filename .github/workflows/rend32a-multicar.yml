@@ -20,7 +20,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Compile Python
-        run: python -m py_compile icr2multicar_rend32a/rend32a_multicar.py
+        run: python -m py_compile icr2multicar_rend32a/rend32a_multicar.py icr2multicar_rend32a/diagnose_icrwide.py
       - name: Check command-line help
         run: python icr2multicar_rend32a/rend32a_multicar.py --help
       - name: Run source-only unit tests
