@@ -27,6 +27,15 @@ The **Display…** control reveals the detailed LOD, BSP, lighting, projection, 
 
 Editing still uses the original 3DO data, and saving remains an explicit validated **Save Copy** operation with the existing overwrite/backup safeguards.
 
+## Open standalone N3 .3D models
+
+You can now open a Papyrus/N3 `.3D` text file **directly**, without first
+loading any binary `.3do`. Select it from **File → Open…** or
+**File → Open standalone N3 .3D…**. The editor compiles a validated
+in-memory model; use **Save Copy** to create a binary `.3do`.
+Original labels and comments remain in the text source. See
+[N3_INTERCHANGE.md](N3_INTERCHANGE.md) for supported syntax and limitations.
+
 ## N3 .3D text interchange
 
 Choose **File → Export editable N3 .3D text** to obtain a Papyrus/N3
