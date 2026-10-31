@@ -427,6 +427,18 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
     available=set(_all_offsets(checked))
     label_for={entry.offset:entry.label for entry in template.statements
                if entry.offset in available and entry.offset>0}
+    # A user label like _20 may now refer to a compiled offset other than 20.
+    # Avoid generating a second _20 declaration for an anonymous node.
+    used=set(label_for.values()) | {entry.label for entry in template.statements}
+    for off in sorted(available):
+        if off not in label_for:
+            candidate=f"_{off}"
+            if candidate in used:
+                candidate=f"CAD_INLINE_{off}"
+                while candidate in used:
+                    candidate="_"+candidate
+            label_for[off]=candidate
+            used.add(candidate)
     annotations={entry.offset:entry for entry in template.statements
                  if entry.offset in available and entry.offset>0}
     output=["3D VERSION 3.0;",
@@ -453,7 +465,7 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
                          r"%\s*3D VERSION",stripped,re.I):
                     output.append(row)
         output.append(f"% ICR2_OFFSET: {off}")
-        label=label_for.get(off,f"_{off}")
+        label=label_for[off]
         suffix=entry.trailing.strip() if entry else ""
         output.append(f"{label}: {command};" + ((" "+suffix) if suffix else ""))
     # The normal Model parser intentionally ignores unreachable declarations.
