@@ -27,6 +27,34 @@ The **Display…** control reveals the detailed LOD, BSP, lighting, projection, 
 
 Editing still uses the original 3DO data, and saving remains an explicit validated **Save Copy** operation with the existing overwrite/backup safeguards.
 
+## Live .3D source editing
+
+The **.3D Source** tab contains an editable Papyrus/N3 text document,
+including named pointers, MIP declarations, geometry and `% comments`.
+Typing is parsed **after 650 ms of inactivity** on a background thread.
+A successful parse updates the 3D viewport and the Vertex, Polygon, Parts,
+Create and Raw panels. The editor never displays a half-parsed model:
+when a statement cannot be parsed it highlights the likely line and retains
+the most recently valid preview until the text is corrected.
+
+**Apply now** forces immediate validation, and **Find error** scrolls to the
+highlighted statement. **Save .3D…** saves the editable source, including
+unfinished work; **Save Copy** produces a binary `.3do` **only after the
+source successfully validates**. External MIPs are still loaded separately
+for textured previews. No parser or text editor can prove a complex BSP
+model looks correct in ICR2; verify the saved result in-game.
+
+Opening a `.3do` automatically generates editable N3 source text as well.
+Once you edit that source, the editor compiles a new working model, so
+original binary record offsets may be reallocated; a source-text recompile
+is **not** a byte-identical patch. For conservative original-offset changes,
+use the separate **File → Import N3 .3D onto current 3DO** workflow.
+
+Visual edits also update the text. Before switching away from Source, an
+unfinished text edit is validated; if invalid, fix the highlighted statement
+first. Parser errors should be resolved before making additional visual edits.
+The original `.3D` source file is never overwritten automatically.
+
 ## Open standalone N3 .3D models
 
 You can now open a Papyrus/N3 `.3D` text file **directly**, without first

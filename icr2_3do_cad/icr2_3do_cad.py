@@ -18,6 +18,7 @@ from dynamic_scene import ExternalResolver, Transform, gather_faces, RenderSprit
 from pmp_preview import load_pmp, PMPError
 from text_3d import export_text, import_text, parse_document, export_standalone_text
 from n3_compile import compile_n3_text
+from n3_source_editor import SourceEditor
 if TEXTURE_AVAILABLE:
     from PIL import Image, ImageTk
 
@@ -97,6 +98,9 @@ class Editor(tk.Tk):
         self.text_document = None  # N3 labels/comments stay in the .3D text, not in a binary 3DO.
         self.imported_pending = False
         self.standalone_n3_binary = None
+        self._source_invalid=False
+        self._source_sync_job=None
+        self._source_model_loading=False
         self.external_resolver=ExternalResolver()
         self.external_model_cache={}
         self._pmp_cache={}
@@ -325,13 +329,23 @@ class Editor(tk.Tk):
         self.configure(menu=bar)
         self.bind_all('<Control-o>',lambda event: self.open_file())
         self.bind_all('<Control-Shift-S>',lambda event: self.save_as())
-        self.bind_all('<Control-z>',lambda event: self.undo())
-        self.bind_all('<Control-y>',lambda event: self.redo())
+        self.bind_all('<Control-z>',self._undo_shortcut)
+        self.bind_all('<Control-y>',self._redo_shortcut)
         self.bind_all('<F4>',lambda event: self.show_report())
         self.bind_all('<KeyPress-f>',self._hotkey_frame)
         self.bind_all('<Shift-F>',self._hotkey_frame_selection)
         self.bind_all('<KeyPress-p>',lambda e:self._hotkey_tab(e,self.poly_page))
         self.bind_all('<KeyPress-v>',lambda e:self._hotkey_tab(e,self.vertex_page))
+
+    def _undo_shortcut(self,event):
+        if isinstance(event.widget,tk.Text):
+            return
+        self.undo()
+
+    def _redo_shortcut(self,event):
+        if isinstance(event.widget,tk.Text):
+            return
+        self.redo()
 
     def _hotkey_frame(self, event):
         if not isinstance(event.widget,(tk.Entry,ttk.Entry)):
@@ -562,6 +576,12 @@ class Editor(tk.Tk):
         self.notebook.add(self.geometry_page,text='Create')
         self.raw_page=tk.Frame(self.notebook,bg='#222a38',padx=8,pady=8)
         self.notebook.add(self.raw_page,text='Raw')
+        self.source_page=tk.Frame(self.notebook,bg='#222a38')
+        self.source_editor=SourceEditor(self.source_page,
+                         on_valid=self._accept_live_source,
+                         on_invalid=self._reject_live_source)
+        self.source_editor.pack(fill='both',expand=True)
+        self.notebook.add(self.source_page,text='.3D Source')
         self.notebook.bind('<<NotebookTabChanged>>',lambda e:self._change_edit_mode())
         ttk.Label(sidebar,text='VERTEX EDITOR',style='Header.TLabel').pack(anchor='w')
         ttk.Label(sidebar,textvariable=self.selection_label,style='Sub.TLabel',wraplength=290).pack(anchor='w',pady=(4,12))
@@ -783,6 +803,7 @@ class Editor(tk.Tk):
         self.refresh_dynamic_list()
         self.redraw()
         self.status.set(f'DYNAMIC @{placement.offset}: placement updated (external mesh unchanged)')
+        self._notify_visual_model_edited()
 
     def reset_dynamic_transform(self):
         if not self.model or self.selected_dynamic not in self.model.dynamics:return
@@ -795,6 +816,7 @@ class Editor(tk.Tk):
             self.redo_stack.clear()
         self.refresh_dynamic_list()
         self.redraw()
+        self._notify_visual_model_edited()
 
     def _bind_polygon_scroll(self,widget):
         def scroll(event):
@@ -1204,6 +1226,11 @@ class Editor(tk.Tk):
         self._commit_new_geometry([refs[a],refs[b],apex])
 
     def _change_edit_mode(self):
+        if (self.model and self.notebook.select()!=str(self.source_page)
+             and hasattr(self,'source_editor') and self.source_editor.pending):
+            if not self.source_editor.apply_now():
+                self.after_idle(lambda:self.notebook.select(self.source_page))
+                return
         if self.model and self.notebook.select()==str(self.geometry_page):
             if self.selected_poly in self.model.polygons:
                 self.geometry_anchor.set(str(self.selected_poly))
@@ -1394,6 +1421,7 @@ class Editor(tk.Tk):
                 self.refresh_raw()
                 self.redraw()
                 self.status.set(f'Updated {len(edits)} POLY color(s) to {color}. Save edited 3DO to persist.')
+                self._notify_visual_model_edited()
             self._refresh_poly_color_control()
         except (ValueError,KeyError) as exc:
             messagebox.showerror('Invalid polygon color',str(exc))
@@ -1516,6 +1544,7 @@ class Editor(tk.Tk):
         self.refresh_dynamic_list()
         self.refresh_raw()
         self.redraw()
+        self._notify_visual_model_edited()
 
     def commit_polygon_split(self):
         if not self.model:return
@@ -1650,6 +1679,7 @@ class Editor(tk.Tk):
         self.bsp_mode.set('Rebuilt planes')
         self.redraw()
         self.status.set(f'Plane {off}: {action}  (POLY {self.selected_poly})')
+        self._notify_visual_model_edited()
 
     def _select_plane_offset(self,off):
         if off not in self.poly_plane_offsets:return
@@ -1702,6 +1732,7 @@ class Editor(tk.Tk):
 
     def export_n3_text(self):
         """Write N3 text without losing standalone pointer/annotation mappings."""
+        if self.model and not self._ensure_live_source_current():return
         if not self.model:
             messagebox.showinfo('Open a model', 'Open a 3DO or N3 .3D model before exporting.')
             return
@@ -1751,6 +1782,127 @@ class Editor(tk.Tk):
             messagebox.showinfo('N3 export saved',
                 'Exported the annotated .3D text. Keep it to preserve pointer names '
                 'and comments, which cannot be stored in the binary .3DO.')
+
+    def _load_source_editor(self):
+        """Populate the Source tab on opening either a binary or N3 model."""
+        if not self.model:return
+        try:
+            if self.text_document is not None:
+                source=self.text_document.original_text
+            else:
+                source=export_text(self.model)
+            self.source_editor.set_source(source,path=self.model.path.with_suffix('.3d'))
+            self._source_invalid=False
+        except (FormatError,ValueError,OverflowError) as exc:
+            self.source_editor.message.set(f'Cannot represent this 3DO as editable N3: {exc}')
+            self._source_invalid=True
+
+    def _reject_live_source(self,error,line):
+        self._source_invalid=True
+        self.status.set(f'.3D source error at line {line}: {error}. Last valid preview retained.')
+
+    def _accept_live_source(self,model,doc,text):
+        """Swap in a fully compiled model, never a partially invalid preview."""
+        self._source_model_loading=True
+        try:
+            old=self.model
+            self.model=model
+            self.text_document=doc
+            self.standalone_n3_binary=bytes(model.raw)
+            self.imported_pending=True
+            self._source_invalid=False
+            self.undo_stack.clear();self.redo_stack.clear()
+            self.poly_order=sorted(model.polygons)
+            self.vertex_order=sorted(model.vertices)
+            self.dynamic_order=sorted(model.dynamics)
+            self.selected=self.selected if self.selected in model.vertices else None
+            self.selected_poly=(self.selected_poly if self.selected_poly in model.polygons else None)
+            self.selected_dynamic=(self.selected_dynamic if self.selected_dynamic in model.dynamics else None)
+            self.external_model_cache.clear()
+            self.external_resolver.missing.clear()
+            self._texture_tile_cache.clear();self._texture_tile_cache_bytes=0
+            self._texture_photos.clear()
+            self.texture_manual={key:value for key,value in self.texture_manual.items()
+                                 if key[0]!='polygon' or key[1] in model.polygons}
+            self.header.set(model.path.name+' *')
+            self.stats.set(model.summary().replace('\n','  |  '))
+            self.listbox.delete(0,'end')
+            for off in self.vertex_order:
+                self.listbox.insert('end',self._vertex_list_text(off))
+            if model.switches:
+                threshold=max((a for switch in model.switches.values()
+                                 for a,_ in switch.branches),default=1)
+                self.lod_slider.configure(to=max(1,int(threshold*1.3)))
+            else:
+                self.lod_mode.set('All branches')
+                self.lod_slider.configure(to=1)
+            self.refresh_dynamic_list()
+            self.refresh_polygon_list()
+            self._refresh_polygon_inspector()
+            self.update_edit_panel()
+            self.refresh_raw()
+            self.refresh_geometry_targets()
+            # Preserve camera angle/zoom while editing text, unless this is
+            # the first model or the old camera was never framed.
+            if old is None:
+                self.frame_model()
+            else:
+                self.redraw()
+            self.status.set(f'N3 preview updated: {len(model.vertices)} vertices, '
+                            f'{len(model.polygons)} polygons.')
+        finally:
+            self._source_model_loading=False
+
+    def _notify_visual_model_edited(self):
+        """Schedule model -> text synchronization after a visual edit."""
+        if self._source_model_loading or not self.model or not hasattr(self,'source_editor'):
+            return
+        if self.source_editor.pending or self._source_invalid:
+            self.status.set('Unapplied/invalid N3 source: fix and apply the text '
+                            'before changing the model in other tabs.')
+            return
+        if self._source_sync_job is not None:
+            self.after_cancel(self._source_sync_job)
+        self._source_sync_job=self.after(140,self._synchronize_model_to_source)
+
+    def _synchronize_model_to_source(self):
+        self._source_sync_job=None
+        if not self.model or self.source_editor.pending or self._source_invalid:
+            return
+        try:
+            if self.standalone_n3_binary is not None and self.text_document is not None:
+                updated=export_standalone_text(self.model,self.text_document,
+                                               self.standalone_n3_binary)
+            else:
+                updated=export_text(self.model,self.text_document)
+        except (FormatError,ValueError,OverflowError) as exc:
+            self.source_editor.message.set(f'Visual edit cannot be represented in N3: {exc}')
+            self._source_invalid=True
+            return
+        if updated!=self.source_editor.get_source():
+            self.source_editor.set_source(updated,path=self.model.path.with_suffix('.3d'),
+                       status='Synchronized with the visual editor. N3 source updated.')
+        self._source_invalid=False
+
+    def _ensure_live_source_current(self):
+        """Block saving stale binaries while text is invalid or still parsing."""
+        if not hasattr(self,'source_editor'):
+            return True
+        if self.source_editor.pending and not self.source_editor.apply_now():
+            messagebox.showerror('Cannot save: invalid N3 source',
+                  'The Source tab has an error. Fix the highlighted statement '
+                  'or save the unfinished .3D text separately before writing a 3DO.')
+            self.notebook.select(self.source_page)
+            return False
+        if self._source_invalid:
+            messagebox.showerror('Cannot save: invalid N3 source',
+                     'Fix the highlighted .3D source error before saving a binary copy.')
+            self.notebook.select(self.source_page)
+            return False
+        if self._source_sync_job is not None:
+            self.after_cancel(self._source_sync_job)
+            self._synchronize_model_to_source()
+        return True
 
     def open_standalone_n3(self):
         filename=filedialog.askopenfilename(title='Open standalone Papyrus N3 .3D',
@@ -1803,6 +1955,7 @@ class Editor(tk.Tk):
         self.refresh_raw()
         self.refresh_geometry_targets()
         self.frame_model()
+        self._load_source_editor()
         self.status.set(f'Imported {Path(filename).name}: validated against original 3DO record topology; '
                         'Save Copy writes the edited binary.')
         messagebox.showinfo('N3 import validated',
@@ -1898,6 +2051,7 @@ class Editor(tk.Tk):
                             'Use Save Copy to write .3DO; keep .3D for comments and labels.')
         else:
             self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
+        self._load_source_editor()
         return True
 
     def open_car_appearance(self):
@@ -2045,6 +2199,7 @@ class Editor(tk.Tk):
                 self.undo_stack.append(('uv',self.selected,before,after))
                 self.redo_stack=[]
             self.update_edit_panel();self.redraw()
+            if before!=after:self._notify_visual_model_edited()
         except (ValueError,FormatError) as e:
             messagebox.showerror('Invalid UV coordinates',str(e))
 
@@ -2073,6 +2228,7 @@ class Editor(tk.Tk):
                 self.undo_stack.append((self.selected,before,after))
                 self.redo_stack=[]
             self.update_edit_panel();self.redraw()
+            if before!=after:self._notify_visual_model_edited()
         except (ValueError,FormatError) as e:
             messagebox.showerror('Invalid coordinate',str(e))
 
@@ -2107,6 +2263,7 @@ class Editor(tk.Tk):
         self._texture_photos.clear()
         self.refresh_polygon_list();self._refresh_polygon_inspector()
         self.refresh_raw();self.redraw()
+        self._notify_visual_model_edited()
 
     def undo(self):
         if not self.model or not self.undo_stack:return
@@ -2128,12 +2285,14 @@ class Editor(tk.Tk):
             self.model.restore_plane_edit(ref,before)
             self.redo_stack.append(record)
             self._refresh_polygon_inspector();self.redraw()
+            self._notify_visual_model_edited()
             return
         if len(record)==4 and record[0]=='dynamic':
             _,ref,before,after=record
             self.model.set_dynamic(ref,*before)
             self.redo_stack.append(record)
             self.choose_dynamic(ref)
+            self._notify_visual_model_edited()
             return
         if len(record)==4:
             _,ref,before,after=record
@@ -2142,6 +2301,7 @@ class Editor(tk.Tk):
             ref,before,after=record
             self.model.set_vertex(ref,before)
         self.redo_stack.append(record);self.choose(ref)
+        self._notify_visual_model_edited()
 
     def redo(self):
         if not self.model or not self.redo_stack:return
@@ -2163,12 +2323,14 @@ class Editor(tk.Tk):
             self.model.restore_plane_edit(ref,after)
             self.undo_stack.append(record)
             self._refresh_polygon_inspector();self.redraw()
+            self._notify_visual_model_edited()
             return
         if len(record)==4 and record[0]=='dynamic':
             _,ref,before,after=record
             self.model.set_dynamic(ref,*after)
             self.undo_stack.append(record)
             self.choose_dynamic(ref)
+            self._notify_visual_model_edited()
             return
         if len(record)==4:
             _,ref,before,after=record
@@ -2177,6 +2339,7 @@ class Editor(tk.Tk):
             ref,before,after=record
             self.model.set_vertex(ref,after)
         self.undo_stack.append(record);self.choose(ref)
+        self._notify_visual_model_edited()
 
     def reset_edits(self):
         if self.model and self.model.dirty:
@@ -2199,6 +2362,7 @@ class Editor(tk.Tk):
             self.update_edit_panel()
             self._refresh_polygon_inspector()
             self.redraw()
+        self._notify_visual_model_edited()
 
     def _basis(self):
         # Display transform reflects Y, so +Y now points in the opposite
@@ -2859,6 +3023,8 @@ class Editor(tk.Tk):
 
     def start_pick(self,event):
         if not self.model:return
+        if self.notebook.select()==str(self.source_page):
+            return
         if self.notebook.select() in (str(self.poly_page),str(self.geometry_page)):
             self.pick_polygon(event)
             if self.notebook.select()==str(self.geometry_page) and self.selected_poly is not None:
@@ -2926,6 +3092,7 @@ class Editor(tk.Tk):
         self._drag=None
         self.update_edit_panel()
         self.finish_view_motion()
+        if before!=after:self._notify_visual_model_edited()
 
     def start_orbit(self,event):
         self._orb=(event.x,event.y,self.azimuth,self.elevation)
@@ -3166,6 +3333,7 @@ class Editor(tk.Tk):
 
     def save_as(self):
         if not self.model:return
+        if not self._ensure_live_source_current():return
         if not (self.model.dirty or self.imported_pending):
             if not messagebox.askyesno('No changes','No XYZ, UV, color, BSP or DYNAMIC edits. Save an identical copy?'):
                 return
@@ -3233,8 +3401,10 @@ class Editor(tk.Tk):
     def destroy(self):
         # Cancel outstanding Tk timers before deleting their Tcl callbacks.
         # This matters when GUI regression tests open and close many windows.
+        if hasattr(self,'source_editor'):
+            self.source_editor.close()
         for job in (getattr(self,'_initial_panes_job',None),
-                    self._pending_view_redraw,self._pending_refine):
+                    self._pending_view_redraw,self._pending_refine,self._source_sync_job):
             if job is not None:
                 try:
                     self.after_cancel(job)
@@ -3245,7 +3415,8 @@ class Editor(tk.Tk):
         super().destroy()
 
     def on_close(self):
-        if self.model and (self.model.dirty or self.imported_pending):
+        if self.model and (self.model.dirty or self.imported_pending or
+                           (hasattr(self,'source_editor') and self.source_editor.pending)):
             if not messagebox.askyesno('Unsaved 3DO edits',
                 'Close without saving your XYZ/UV/BSP changes?'):
                 return
