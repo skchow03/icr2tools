@@ -431,7 +431,7 @@ class Editor(tk.Tk):
                              borderwidth=0)
         main.pack(expand=True,fill='both')
         self._main_pane=main
-        self.after(180,self._initial_panes)
+        self._initial_panes_job=self.after(180,self._initial_panes)
         left=tk.Frame(main,bg='#131924')
         main.add(left,stretch='always',minsize=480)
         bar=tk.Frame(left,bg='#1b2533',padx=8,pady=4)
@@ -3082,6 +3082,20 @@ class Editor(tk.Tk):
         self._refresh_polygon_inspector()
         self.update_edit_panel();self.refresh_raw();self.refresh_geometry_targets();self.redraw()
         messagebox.showinfo('Saved',f'Saved {target}\n\n{report.describe()[:2600]}')
+
+    def destroy(self):
+        # Cancel outstanding Tk timers before deleting their Tcl callbacks.
+        # This matters when GUI regression tests open and close many windows.
+        for job in (getattr(self,'_initial_panes_job',None),
+                    self._pending_view_redraw,self._pending_refine):
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+        self._pending_view_redraw=None
+        self._pending_refine=None
+        super().destroy()
 
     def on_close(self):
         if self.model and self.model.dirty:
