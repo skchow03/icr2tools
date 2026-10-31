@@ -1,0 +1,4 @@
+# Local editor screenshots and temporary backups
+ui_preview_*.png
+screenshots/
+*.3do.bak
