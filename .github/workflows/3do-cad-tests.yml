@@ -1,0 +1,31 @@
+name: 3DO CAD regression tests
+
+on:
+  push:
+    paths:
+      - 'icr2_3do_cad/**'
+      - '.github/workflows/3do-cad-tests.yml'
+  pull_request:
+    paths:
+      - 'icr2_3do_cad/**'
+      - '.github/workflows/3do-cad-tests.yml'
+
+jobs:
+  unittest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install Tk, virtual display, and preview dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-tk xvfb
+          python -m pip install Pillow numpy
+      - name: Compile source and tests
+        working-directory: icr2_3do_cad
+        run: python -m compileall -q .
+      - name: Run regression tests
+        working-directory: icr2_3do_cad
+        run: xvfb-run -a python -m unittest discover -s tests -p 'test_*.py'
