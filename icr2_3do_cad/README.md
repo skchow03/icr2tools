@@ -17,6 +17,16 @@ On Windows, double-click `RUN_ME_WINDOWS.bat` instead. On some Linux systems ins
 
 Use **File → Open** for your own geometry 3DO or supported car-appearance/RECOLOR wrapper. The bundled `fixtures/` models also serve as repeatable examples and fallback external car parts.
 
+## UI workflow
+
+The upper toolbar keeps **Open**, **Save Copy**, **Undo**, and **Redo** available in every editing mode. Use the **Vertex**, **Polygon**, or **Part** selection buttons to decide what a click in the viewport selects; the right-hand panel shows the selected element and its relevant properties.
+
+Use the **3D**, **Top**, **Front**, and **Side** camera presets; **Frame All (F)** fits the entire model, while **Frame Selection (Shift+F)** centers and zooms on the selected vertex, polygon, or external part. Right-drag to orbit and scroll to zoom.
+
+The **Display…** control reveals the detailed LOD, BSP, lighting, projection, and texture preview settings. The top **Technical details** checkbox shows the underlying model statistics. In the Polygon tab, use **Show advanced splitting / BSP tools** for low-level split operations and plane edits.
+
+Editing still uses the original 3DO data, and saving remains an explicit validated **Save Copy** operation with the existing overwrite/backup safeguards.
+
 ## Capabilities
 
 - Edit existing vertices, polygon base palette colors, UV coordinates and polygon/BSP plane properties.
