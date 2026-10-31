@@ -1701,35 +1701,56 @@ class Editor(tk.Tk):
         self.status.set('No polygon hit. Right-drag to orbit or choose a polygon in the list.')
 
     def export_n3_text(self):
-        """Export an editable N3 document; preserve names/comments if imported."""
+        """Write N3 text without losing standalone pointer/annotation mappings."""
         if not self.model:
-            messagebox.showinfo('Open a model','Open a binary 3DO before exporting N3 text.')
+            messagebox.showinfo('Open a model', 'Open a 3DO or N3 .3D model before exporting.')
             return
+        standalone=(self.standalone_n3_binary is not None and self.text_document is not None)
         try:
-            text=(export_standalone_text(self.model,self.text_document,self.standalone_n3_binary)
-                  if self.standalone_n3_binary is not None and self.text_document is not None
-                  else export_text(self.model,self.text_document))
+            if standalone:
+                text=export_standalone_text(self.model,self.text_document,self.standalone_n3_binary)
+                # Standalone N3 labels (including 'nil') are not binary offsets.
+                # The original compiler's Document contains the correct mapping;
+                # parse_document(text) defaults to the legacy overlay rules and
+                # would reject perfectly valid standalone N3 declarations.
+                next_document=self.text_document
+            else:
+                text=export_text(self.model,self.text_document)
+                # Validate metadata *before* touching the destination file.
+                next_document=parse_document(text)
         except (FormatError,ValueError,OverflowError,OSError) as exc:
             messagebox.showerror('Cannot export .3D',str(exc))
             return
         source=self.model.path
-        out=filedialog.asksaveasfilename(title='Export annotated Papyrus N3 .3D',
+        out=filedialog.asksaveasfilename(title='Export Papyrus N3 .3D',
                  defaultextension='.3d',initialdir=str(source.parent),
-                 initialfile=source.stem+'.3d',filetypes=[('N3 .3D text','*.3d'),('All files','*.*')])
+                 initialfile=source.stem+'.3d',
+                 filetypes=[('N3 .3D text','*.3d'),('All files','*.*')])
         if not out:return
+        target=Path(out)
+        if standalone and target.resolve()==source.resolve():
+            messagebox.showerror('Choose a separate text file',
+                'The original standalone .3D is your annotated source. '
+                'Export to a different filename to avoid replacing it.')
+            return
         try:
-            Path(out).write_text(text,encoding='utf-8')
-            self.text_document=parse_document(text)
-        except (OSError,UnicodeError,FormatError) as exc:
+            # Atomic replacement prevents partial files if writing fails.
+            # For an unchanged standalone source, preserve CRLF exactly.
+            _atomic_write(target,text.encode('utf-8'))
+        except (OSError,UnicodeError) as exc:
             messagebox.showerror('Cannot write N3 text',str(exc))
             return
-        self.status.set(f'Exported {Path(out).name} with annotated record labels; '
-                        'keep this text file to preserve comments and pointer names.')
-        messagebox.showinfo('N3 export saved',
-             'Text exported. Keep the .3D as your annotated source.\n'
-             'Binary 3DO files cannot store label names or comments.\n\n'
-             'Import the edited .3D over the original opened 3DO to apply supported '
-             'coordinate, color, UV and plane edits.')
+        self.text_document=next_document
+        self.status.set(f'Exported {target.name}; N3 pointer labels and comments preserved.')
+        if standalone:
+            messagebox.showinfo('N3 export saved',
+                'Exported the standalone .3D model. Your original source remains unchanged.\n\n'
+                'To load the exported text, use File > Open. '
+                'Use Save Copy to generate a binary .3DO.')
+        else:
+            messagebox.showinfo('N3 export saved',
+                'Exported the annotated .3D text. Keep it to preserve pointer names '
+                'and comments, which cannot be stored in the binary .3DO.')
 
     def open_standalone_n3(self):
         filename=filedialog.askopenfilename(title='Open standalone Papyrus N3 .3D',
@@ -1812,7 +1833,9 @@ class Editor(tk.Tk):
                 return False
         try:
             if is_n3:
-                text=Path(path).read_text(encoding='utf-8-sig')
+                # Read bytes, not read_text(): universal newline conversion would
+                # discard the source's original CRLF line endings.
+                text=Path(path).read_bytes().decode('utf-8-sig')
                 obj,doc=compile_n3_text(text,Path(path))
             else:
                 obj=Model(path)
