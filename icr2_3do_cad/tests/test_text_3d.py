@@ -34,7 +34,8 @@ class N3TextRoundTripTests(unittest.TestCase):
         renamed="CUSTOM_VERTEX_FRONT_WING"
         text=text.replace(name+":",renamed+":",1)
         # Keep the annotation that binds the arbitrary friendly name to its binary offset.
-        text=re.sub(r"(?<![\w])"+re.escape(name)+r"(?=\s*[},;])",renamed,text)
+        # A vertex rename must update *every* reference, including plane triplets.
+        text=re.sub(r"(?<![\w])"+re.escape(name)+r"(?![\w])",renamed,text)
         text=text.replace(f"{renamed}: [<{target.xyz[0]}, {target.xyz[1]}, {target.xyz[2]}>",
                  f"{renamed}: [<{target.xyz[0]+9}, {target.xyz[1]}, {target.xyz[2]}>",1)
         # A comment on the named record should survive a subsequent .3D export.
