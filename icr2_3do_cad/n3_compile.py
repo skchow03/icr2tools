@@ -206,7 +206,14 @@ class Compiler:
             if code.strip().upper()=="NIL":
                 off=0
             else:
-                off=self._expression(code)
+                try:
+                    off=self._expression(code)
+                except FormatError as exc:
+                    if re.search(r"\bline\s+\d+\b",str(exc),re.I):
+                        raise
+                    match=re.search(r"(?m)^\s*"+re.escape(label)+r"\s*:",self.source)
+                    line=self.source.count("\n",0,match.start())+1 if match else 1
+                    raise FormatError(f"Label {label!r} (line {line}): {exc}") from exc
             self.offsets[label]=off
             return off
         finally:
