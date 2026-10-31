@@ -93,5 +93,67 @@ class N3TextRoundTripTests(unittest.TestCase):
         self.assertEqual(output.count("3D VERSION 3.0;"),1)
 
 
+    def test_texture_uv_edits(self):
+        model=Model(FIXTURES/"roadcar.3do")
+        vertex=next((v for v in model.vertices.values() if v.textured),None)
+        if vertex is None:
+            self.skipTest("No textured vertices in roadcar")
+        text=export_text(model)
+        prefix=f"_{vertex.offset}: [<{vertex.xyz[0]}, {vertex.xyz[1]}, {vertex.xyz[2]}>, T=<"
+        current=prefix+f"{vertex.uv[0]}, {vertex.uv[1]}>]"
+        changed=prefix+f"{vertex.uv[0]}, {(vertex.uv[1]+1)%65536}>]"
+        self.assertIn(current,text)
+        new,_=import_text(model,text.replace(current,changed,1))
+        self.assertEqual(new.vertices[vertex.offset].uv[1],(vertex.uv[1]+1)%65536)
+
+    def test_raw_plane_coefficients_import_exactly(self):
+        model=Model(FIXTURES/"roadcar.3do")
+        plane=next(iter(model.planes.values()))
+        text=export_text(model)
+        original=plane.equation
+        lo=(original[3] & 0xffffffff)
+        if lo>=2**31:lo-=2**32
+        hi=(original[3]>>32)
+        needle=f"_{plane.offset}: "
+        original_plane=f"({original[0]}, {original[1]}, {original[2]}, {lo}, {hi})"
+        self.assertIn(original_plane,text)
+        lines=text.splitlines()
+        for i,line in enumerate(lines):
+            if line.startswith(needle):
+                lines[i]=line.replace(original_plane,
+                         f"({original[0]+1}, {original[1]}, {original[2]}, {lo}, {hi})",1)
+                break
+        imported,_=import_text(model,"\n".join(lines)+"\n")
+        self.assertEqual(imported.planes[plane.offset].equation[0],original[0]+1)
+        self.assertEqual(model.planes[plane.offset].equation,original)
+
+    def test_dynamic_placement_xyz(self):
+        model=Model(FIXTURES/"indycar.3do")
+        if not model.dynamics:
+            self.skipTest("No DYNAMIC placements in fixture")
+        obj=next(iter(model.dynamics.values()))
+        lines=export_text(model).splitlines()
+        for i,line in enumerate(lines):
+            if line.startswith(f"_{obj.offset}: DYNAMIC "):
+                lines[i]=line.replace(f"DYNAMIC {obj.xyz[0]},",
+                                      f"DYNAMIC {obj.xyz[0]+17},",1)
+                break
+        new,_=import_text(model,"\n".join(lines)+"\n")
+        self.assertEqual(new.dynamics[obj.offset].xyz[0],obj.xyz[0]+17)
+        self.assertEqual(model.dynamics[obj.offset].xyz,obj.xyz)
+
+    def test_dangling_pointer_is_rejected(self):
+        model=Model(FIXTURES/"roadcar.3do")
+        text=export_text(model)
+        lines=text.splitlines()
+        index=next((i for i,line in enumerate(lines)
+                    if re.match(r"^_\d+: LIST \{_",line)),None)
+        if index is None:
+            self.skipTest("No nonempty LIST in fixture")
+        lines[index]=re.sub(r"(?<!\w)_\d+(?=[,}])","NONEXISTENT_PTR",lines[index],count=1)
+        with self.assertRaises(FormatError):
+            import_text(model,"\n".join(lines)+"\n")
+
+
 if __name__=="__main__":
     unittest.main()

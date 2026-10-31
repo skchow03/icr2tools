@@ -27,6 +27,26 @@ The **Display…** control reveals the detailed LOD, BSP, lighting, projection, 
 
 Editing still uses the original 3DO data, and saving remains an explicit validated **Save Copy** operation with the existing overwrite/backup safeguards.
 
+## N3 .3D text interchange
+
+Choose **File → Export editable N3 .3D text** to obtain a Papyrus/N3
+`.3D` source file similar to the output of
+[3do23d](https://github.com/skchow03/3do23d).
+You can annotate the file with `% comment` lines and rename record labels
+to meaningful identifiers. Keep each `% ICR2_OFFSET: N` identity comment
+above its declaration so the CAD importer can still find the matching binary
+record, even after renaming pointers.
+
+To reimport, **open the original `.3DO`**, then choose
+**File → Import N3 .3D onto current 3DO**. Imported values appear in the
+editor immediately; use **Save Copy** to write a validated binary. Labels and
+comments remain in the `.3D` text source, not inside `.3DO`.
+
+For now this round-trip handles existing records and value edits. Adding or
+deleting geometry or changing BSP/LIST pointer topology in text requires a
+full compiler; the importer rejects those edits rather than guessing.
+See [N3_INTERCHANGE.md](N3_INTERCHANGE.md) for supported edits and limitations.
+
 ## Capabilities
 
 - Edit existing vertices, polygon base palette colors, UV coordinates and polygon/BSP plane properties.
