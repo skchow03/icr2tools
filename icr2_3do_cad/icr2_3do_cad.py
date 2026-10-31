@@ -16,6 +16,7 @@ from car_appearance import read_car_appearance, locate_base_geometry, Appearance
 from texture_preview import ENABLED as TEXTURE_AVAILABLE, load_mip, TextureError, rasterize_polygon
 from dynamic_scene import ExternalResolver, Transform, gather_faces, RenderSprite, degrees_to_papyrus, papyrus_to_degrees
 from pmp_preview import load_pmp, PMPError
+from text_3d import export_text, import_text, parse_document
 if TEXTURE_AVAILABLE:
     from PIL import Image, ImageTk
 
@@ -92,6 +93,8 @@ class Editor(tk.Tk):
         self.minsize(850,580)
         self.configure(background='#171d29')
         self.model = None
+        self.text_document = None  # N3 labels/comments stay in the .3D text, not in a binary 3DO.
+        self.imported_pending = False
         self.external_resolver=ExternalResolver()
         self.external_model_cache={}
         self._pmp_cache={}
@@ -243,6 +246,9 @@ class Editor(tk.Tk):
         filemenu.add_command(label='Open 3DO…     Ctrl+O',command=self.open_file)
         filemenu.add_command(label='Save As…       Ctrl+Shift+S',command=self.save_as)
         filemenu.add_separator()
+        filemenu.add_command(label='Export editable N3 .3D text…',command=self.export_n3_text)
+        filemenu.add_command(label='Import N3 .3D onto current 3DO…',command=self.import_n3_text)
+        filemenu.add_separator()
         filemenu.add_command(label='Load individual car RECOLOR 3DO…',command=self.open_car_appearance)
         filemenu.add_command(label='Clear individual car RECOLOR preview',command=self.clear_car_appearance)
         filemenu.add_separator()
@@ -363,7 +369,7 @@ class Editor(tk.Tk):
     def _update_selection_summary(self):
         if not hasattr(self,'context_title') or not hasattr(self,'notebook'):
             return
-        self.unsaved_state.set('Unsaved changes' if self.model and self.model.dirty else 'No edits')
+        self.unsaved_state.set('Unsaved changes' if self.model and (self.model.dirty or self.imported_pending) else 'No edits')
         if not self.model:
             label='Nothing selected'
             detail='Open a 3DO model to begin.'
@@ -1691,6 +1697,88 @@ class Editor(tk.Tk):
                 return
         self.status.set('No polygon hit. Right-drag to orbit or choose a polygon in the list.')
 
+    def export_n3_text(self):
+        """Export an editable N3 document; preserve names/comments if imported."""
+        if not self.model:
+            messagebox.showinfo('Open a model','Open a binary 3DO before exporting N3 text.')
+            return
+        try:
+            text=export_text(self.model,self.text_document)
+        except (FormatError,ValueError,OverflowError,OSError) as exc:
+            messagebox.showerror('Cannot export .3D',str(exc))
+            return
+        source=self.model.path
+        out=filedialog.asksaveasfilename(title='Export annotated Papyrus N3 .3D',
+                 defaultextension='.3d',initialdir=str(source.parent),
+                 initialfile=source.stem+'.3d',filetypes=[('N3 .3D text','*.3d'),('All files','*.*')])
+        if not out:return
+        try:
+            Path(out).write_text(text,encoding='utf-8')
+            self.text_document=parse_document(text)
+        except (OSError,UnicodeError,FormatError) as exc:
+            messagebox.showerror('Cannot write N3 text',str(exc))
+            return
+        self.status.set(f'Exported {Path(out).name} with annotated record labels; '
+                        'keep this text file to preserve comments and pointer names.')
+        messagebox.showinfo('N3 export saved',
+             'Text exported. Keep the .3D as your annotated source.\n'
+             'Binary 3DO files cannot store label names or comments.\n\n'
+             'Import the edited .3D over the original opened 3DO to apply supported '
+             'coordinate, color, UV and plane edits.')
+
+    def import_n3_text(self):
+        """Patch a loaded binary 3DO using annotated N3 text."""
+        if not self.model:
+            messagebox.showinfo('Open a source 3DO first',
+                'Open the binary .3DO this text was exported from, then choose Import N3 .3D.')
+            return
+        if self.model.dirty or self.imported_pending:
+            if not messagebox.askyesno('Replace unsaved edits?',
+                  'Importing .3D text replaces unsaved changes in the current model. Continue?'):
+                return
+        filename=filedialog.askopenfilename(title='Import annotated N3 .3D text',
+                    initialdir=str(self.model.path.parent),
+                    filetypes=[('Papyrus N3 text','*.3d'),('All files','*.*')])
+        if not filename:return
+        try:
+            text=Path(filename).read_text(encoding='utf-8-sig')
+            # For an already edited model, import against its current raw state,
+            # and never partially modify the displayed model on parse errors.
+            original_raw=self.model.raw
+            checked,doc=import_text(self.model,text)
+        except (OSError,UnicodeError,FormatError,ValueError,OverflowError) as exc:
+            messagebox.showerror('N3 import rejected',str(exc))
+            return
+        self.model=checked
+        self.text_document=doc
+        self.imported_pending=(checked.raw!=original_raw) or self.imported_pending
+        self.selected=None
+        self.selected_poly=None
+        self.selected_dynamic=None
+        self.undo_stack.clear()
+        self.redo_stack.clear()
+        self.poly_order=sorted(checked.polygons)
+        self.vertex_order=sorted(checked.vertices)
+        self.dynamic_order=sorted(checked.dynamics)
+        self.header.set(checked.path.name+(' *' if self.imported_pending else ''))
+        self.stats.set(checked.summary().replace('\n','  |  '))
+        self.listbox.delete(0,'end')
+        for ref in self.vertex_order:
+            self.listbox.insert('end',self._vertex_list_text(ref))
+        self.refresh_dynamic_list()
+        self.refresh_polygon_list()
+        self._refresh_polygon_inspector()
+        self.update_edit_panel()
+        self.refresh_raw()
+        self.refresh_geometry_targets()
+        self.frame_model()
+        self.status.set(f'Imported {Path(filename).name}: validated against original 3DO record topology; '
+                        'Save Copy writes the edited binary.')
+        messagebox.showinfo('N3 import validated',
+            'Imported and validated the text edits in memory.\n'
+            'Save Copy to write a new binary .3DO.\n\n'
+            'Keep your .3D file for pointer names and comments; they are not stored in .3DO.')
+
     def open_file(self):
         path=filedialog.askopenfilename(title='Open ICR2 3DO',filetypes=[('Papyrus 3DO','*.3do'),('All files','*.*')])
         if path: self.load_file(path)
@@ -1704,7 +1792,7 @@ class Editor(tk.Tk):
             appearance=None
         if appearance is not None:
             return self.load_car_appearance(path,appearance=appearance)
-        if self.model and self.model.dirty:
+        if self.model and (self.model.dirty or self.imported_pending):
             if not messagebox.askyesno('Discard edits?', 'Discard unsaved vertex / UV edits and load another model?'):
                 return False
         try:
@@ -1713,6 +1801,8 @@ class Editor(tk.Tk):
             messagebox.showerror('Unable to open 3DO',str(e))
             return False
         self.model=obj
+        self.text_document=None
+        self.imported_pending=False
         self.draft_vertices=[]
         self.geometry_drafts.set('No draft vertices (not stored in 3DO until used)')
         self.external_model_cache.clear()
@@ -3026,7 +3116,7 @@ class Editor(tk.Tk):
 
     def save_as(self):
         if not self.model:return
-        if not self.model.dirty:
+        if not (self.model.dirty or self.imported_pending):
             if not messagebox.askyesno('No changes','No XYZ, UV, color, BSP or DYNAMIC edits. Save an identical copy?'):
                 return
         try:
@@ -3070,6 +3160,7 @@ class Editor(tk.Tk):
         self.status.set(f'Saved {target.name}: {report.updated_vertices} vertices, {report.updated_planes} planes rebuilt; '
                         f'{report.updated_dynamics} placements; {report.updated_polygon_colors} colors; {len(report.warnings)} warning(s).')
         self.model=checked
+        self.imported_pending=False
         self.undo_stack=[];self.redo_stack=[]
         self.header.set(target.name)
         self.stats.set(checked.summary().replace('\n','  |  '))
@@ -3098,7 +3189,7 @@ class Editor(tk.Tk):
         super().destroy()
 
     def on_close(self):
-        if self.model and self.model.dirty:
+        if self.model and (self.model.dirty or self.imported_pending):
             if not messagebox.askyesno('Unsaved 3DO edits',
                 'Close without saving your XYZ/UV/BSP changes?'):
                 return
