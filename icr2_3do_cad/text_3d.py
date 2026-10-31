@@ -183,7 +183,7 @@ def _without_comment(line):
     return line,""
 
 
-def parse_document(text: str) -> Document:
+def parse_document(text: str, *, require_offsets: bool = True) -> Document:
     """Parse N3 commands while preserving comments and all original label names."""
     if not re.search(r"(?im)^\s*3D\s+VERSION\s+3\.0\s*;",text):
         raise FormatError("Expected a Papyrus N3 '3D VERSION 3.0;' text file")
@@ -232,8 +232,10 @@ def parse_document(text: str) -> Document:
             if match:
                 off=int(match.group(1))
         if off is None:
-            raise FormatError(f"Label {label!r} lacks '% ICR2_OFFSET: N' annotation; "
-                              "load an annotated CAD export or use original _offset labels")
+            if require_offsets:
+                raise FormatError(f"Label {label!r} lacks '% ICR2_OFFSET: N' annotation; "
+                                  "load an annotated CAD export or use original _offset labels")
+            off=-(len(statements)+1)  # temporary ID; compiler assigns actual body offsets
         trailing=command_rows[-1][1]+("\n" if command_rows[-1][2].endswith("\n") else "")
         statements.append(Statement(off,label,m.group(2).strip(),prefix,trailing))
         prefix=""
@@ -246,7 +248,7 @@ def parse_document(text: str) -> Document:
         raise FormatError("No N3 records found")
     seen=set()
     for entry in statements:
-        if entry.offset in seen:
+        if entry.offset in seen and require_offsets:
             raise FormatError(f"Duplicate 3DO record offset {entry.offset}")
         seen.add(entry.offset)
     return Document(statements,prologue,prefix,text)
@@ -409,3 +411,60 @@ def export_text(model: Model, template: Document | None = None) -> str:
     if template.epilogue:
         ret.append(template.epilogue.rstrip("\r\n"))
     return "\n".join(line for line in ret if line is not None)+"\n"
+
+
+def export_standalone_text(model: Model, template: Document, source_binary: bytes) -> str:
+    """Preserve the original N3 source verbatim until the CAD model is edited.
+
+    After geometry/attribute editing, write a canonical, annotated N3 tree
+    with the original labels and comments attached to the matching records.
+    Inline nodes are expanded into named records with generated offset labels.
+    """
+    binary=model.build_modified_bytes()[0]
+    if binary==source_binary:
+        return template.original_text
+    checked=Model(model.path,raw_data=binary)
+    available=set(_all_offsets(checked))
+    label_for={entry.offset:entry.label for entry in template.statements
+               if entry.offset in available and entry.offset>0}
+    annotations={entry.offset:entry for entry in template.statements
+                 if entry.offset in available and entry.offset>0}
+    output=["3D VERSION 3.0;",
+            "% Exported from a standalone N3 source by ICR2 3DO CAD.",
+            f"% ICR2_ROOT: {checked.root_offset}"]
+    header=template.statements[0].before if template.statements else ""
+    for row in header.splitlines():
+        stripped=row.strip()
+        if stripped.startswith("%") and not ID_LINE.fullmatch(stripped) and not re.match(
+                r"%\s*ICR2_ROOT:",stripped,re.I):
+            output.append(row)
+    output.extend(["", "nil: NIL;", ""])
+    for off in _all_offsets(checked):
+        command=_command(checked,off)
+        command=re.sub(r'"[^"]*"|(?<![A-Za-z_0-9])_(\d+)\b',
+             lambda m:m.group(0) if m.group(0).startswith('"')
+                       else label_for.get(int(m.group(1)),m.group(0)),command)
+        entry=annotations.get(off)
+        if entry:
+            for row in entry.before.splitlines():
+                stripped=row.strip()
+                if stripped.startswith("%") and not ID_LINE.fullmatch(stripped) and not re.match(
+                         r"%\s*ICR2_ROOT:",stripped,re.I) and not re.match(
+                         r"%\s*3D VERSION",stripped,re.I):
+                    output.append(row)
+        output.append(f"% ICR2_OFFSET: {off}")
+        label=label_for.get(off,f"_{off}")
+        suffix=entry.trailing.strip() if entry else ""
+        output.append(f"{label}: {command};" + ((" "+suffix) if suffix else ""))
+    # The normal Model parser intentionally ignores unreachable declarations.
+    # Keep them in the text source rather than silently dropping annotations.
+    for entry in template.statements:
+        if entry.offset not in available and entry.offset!=0:
+            for row in entry.before.splitlines():
+                if row.strip().startswith("%") and not ID_LINE.fullmatch(row.strip()):
+                    output.append(row)
+            output.append(f"{entry.label}: {entry.command};")
+    for row in template.epilogue.splitlines():
+        if row.strip().startswith("%"):
+            output.append(row)
+    return "\n".join(output)+"\n"

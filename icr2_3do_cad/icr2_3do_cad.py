@@ -16,7 +16,8 @@ from car_appearance import read_car_appearance, locate_base_geometry, Appearance
 from texture_preview import ENABLED as TEXTURE_AVAILABLE, load_mip, TextureError, rasterize_polygon
 from dynamic_scene import ExternalResolver, Transform, gather_faces, RenderSprite, degrees_to_papyrus, papyrus_to_degrees
 from pmp_preview import load_pmp, PMPError
-from text_3d import export_text, import_text, parse_document
+from text_3d import export_text, import_text, parse_document, export_standalone_text
+from n3_compile import compile_n3_text
 if TEXTURE_AVAILABLE:
     from PIL import Image, ImageTk
 
@@ -95,6 +96,7 @@ class Editor(tk.Tk):
         self.model = None
         self.text_document = None  # N3 labels/comments stay in the .3D text, not in a binary 3DO.
         self.imported_pending = False
+        self.standalone_n3_binary = None
         self.external_resolver=ExternalResolver()
         self.external_model_cache={}
         self._pmp_cache={}
@@ -248,6 +250,7 @@ class Editor(tk.Tk):
         filemenu.add_separator()
         filemenu.add_command(label='Export editable N3 .3D text…',command=self.export_n3_text)
         filemenu.add_command(label='Import N3 .3D onto current 3DO…',command=self.import_n3_text)
+        filemenu.add_command(label='Open standalone N3 .3D…',command=self.open_standalone_n3)
         filemenu.add_separator()
         filemenu.add_command(label='Load individual car RECOLOR 3DO…',command=self.open_car_appearance)
         filemenu.add_command(label='Clear individual car RECOLOR preview',command=self.clear_car_appearance)
@@ -1703,7 +1706,9 @@ class Editor(tk.Tk):
             messagebox.showinfo('Open a model','Open a binary 3DO before exporting N3 text.')
             return
         try:
-            text=export_text(self.model,self.text_document)
+            text=(export_standalone_text(self.model,self.text_document,self.standalone_n3_binary)
+                  if self.standalone_n3_binary is not None and self.text_document is not None
+                  else export_text(self.model,self.text_document))
         except (FormatError,ValueError,OverflowError,OSError) as exc:
             messagebox.showerror('Cannot export .3D',str(exc))
             return
@@ -1726,11 +1731,16 @@ class Editor(tk.Tk):
              'Import the edited .3D over the original opened 3DO to apply supported '
              'coordinate, color, UV and plane edits.')
 
+    def open_standalone_n3(self):
+        filename=filedialog.askopenfilename(title='Open standalone Papyrus N3 .3D',
+                filetypes=[('Papyrus N3 text','*.3d'),('All files','*.*')])
+        if filename:
+            self.load_file(filename)
+
     def import_n3_text(self):
-        """Patch a loaded binary 3DO using annotated N3 text."""
-        if not self.model:
-            messagebox.showinfo('Open a source 3DO first',
-                'Open the binary .3DO this text was exported from, then choose Import N3 .3D.')
+        """Patch binary model or load standalone N3 when no original is open."""
+        if not self.model or self.model.path.suffix.lower()=='.3d':
+            self.open_standalone_n3()
             return
         if self.model.dirty or self.imported_pending:
             if not messagebox.askyesno('Replace unsaved edits?',
@@ -1780,29 +1790,40 @@ class Editor(tk.Tk):
             'Keep your .3D file for pointer names and comments; they are not stored in .3DO.')
 
     def open_file(self):
-        path=filedialog.askopenfilename(title='Open ICR2 3DO',filetypes=[('Papyrus 3DO','*.3do'),('All files','*.*')])
+        path=filedialog.askopenfilename(title='Open Papyrus 3DO or N3 .3D',
+            filetypes=[('3DO and N3 model files','*.3do *.3d'),
+                       ('Papyrus 3DO binary','*.3do'),
+                       ('Papyrus N3 text','*.3d'),('All files','*.*')])
         if path: self.load_file(path)
 
     def load_file(self,path):
-        # Individual car 3DOs contain an appearance wrapper, not local mesh.
-        # Handle them before the usual no-geometry parser path.
-        try:
-            appearance=read_car_appearance(path)
-        except (OSError,AppearanceError):
-            appearance=None
-        if appearance is not None:
-            return self.load_car_appearance(path,appearance=appearance)
+        is_n3=Path(path).suffix.lower()=='.3d'
+        if not is_n3:
+            # Individual car 3DOs contain an appearance wrapper, not local mesh.
+            try:
+                appearance=read_car_appearance(path)
+            except (OSError,AppearanceError):
+                appearance=None
+            if appearance is not None:
+                return self.load_car_appearance(path,appearance=appearance)
         if self.model and (self.model.dirty or self.imported_pending):
-            if not messagebox.askyesno('Discard edits?', 'Discard unsaved vertex / UV edits and load another model?'):
+            if not messagebox.askyesno('Discard edits?',
+                    'Discard unsaved edits and load another model?'):
                 return False
         try:
-            obj=Model(path)
-        except (OSError,FormatError,ValueError) as e:
-            messagebox.showerror('Unable to open 3DO',str(e))
+            if is_n3:
+                text=Path(path).read_text(encoding='utf-8-sig')
+                obj,doc=compile_n3_text(text,Path(path))
+            else:
+                obj=Model(path)
+                doc=None
+        except (OSError,UnicodeError,FormatError,ValueError,OverflowError) as e:
+            messagebox.showerror('Unable to open Papyrus model',str(e))
             return False
         self.model=obj
-        self.text_document=None
-        self.imported_pending=False
+        self.text_document=doc
+        self.standalone_n3_binary=bytes(obj.raw) if is_n3 else None
+        self.imported_pending=is_n3
         self.draft_vertices=[]
         self.geometry_drafts.set('No draft vertices (not stored in 3DO until used)')
         self.external_model_cache.clear()
@@ -1849,7 +1870,11 @@ class Editor(tk.Tk):
         self.refresh_geometry_targets()
         self.refresh_polygon_list()
         warning=' | '.join(obj.warnings)
-        self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
+        if is_n3:
+            self.status.set(f'Opened standalone {Path(path).name} (compiled in memory). '
+                            'Use Save Copy to write .3DO; keep .3D for comments and labels.')
+        else:
+            self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
         return True
 
     def open_car_appearance(self):
@@ -2136,7 +2161,9 @@ class Editor(tk.Tk):
                 return
             if self.model.topology_history:
                 source_path=self.model.path
-                self.model=Model(source_path)
+                self.model=(Model(source_path,raw_data=self.standalone_n3_binary)
+                            if source_path.suffix.lower()=='.3d' and self.standalone_n3_binary is not None
+                            else Model(source_path))
                 self.poly_order=sorted(self.model.polygons)
                 self.vertex_order=sorted(self.model.vertices)
                 self.selected=None;self.selected_poly=None
@@ -3138,6 +3165,10 @@ class Editor(tk.Tk):
                     filetypes=[('Papyrus 3DO','*.3do')])
         if not out:return
         target=Path(out)
+        if target.suffix.lower()!='.3do':
+            messagebox.showerror('Choose a .3DO output',
+                'Save Copy writes binary .3DO files only. It must not overwrite your editable .3D text.')
+            return
         if target.resolve()==source.resolve():
             if not messagebox.askyesno('Overwrite original?',
                   'This is the source 3DO. Overwrite it? A .bak copy will be created first.'):
@@ -3161,6 +3192,8 @@ class Editor(tk.Tk):
                         f'{report.updated_dynamics} placements; {report.updated_polygon_colors} colors; {len(report.warnings)} warning(s).')
         self.model=checked
         self.imported_pending=False
+        # Keep source text/baseline across binary saves so future exports
+        # retain human labels and comments. Reset now reads the saved .3DO.
         self.undo_stack=[];self.redo_stack=[]
         self.header.set(target.name)
         self.stats.set(checked.summary().replace('\n','  |  '))
