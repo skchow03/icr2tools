@@ -99,6 +99,30 @@ class LiveSourceTests(unittest.TestCase):
         self.assertIn("POLY",data)
         self.assertEqual(len(self.editor.model.polygons),len(source_model.polygons))
 
+
+    def test_binary_generated_source_can_be_edited_and_recompiled(self):
+        binary=ROOT/"fixtures"/"roadcar.3do"
+        if not binary.exists():self.skipTest("Binary roadcar fixture unavailable")
+        with patch("icr2_3do_cad.messagebox.askyesno",return_value=True):
+            self.assertTrue(self.editor.load_file(binary))
+        original=self.editor.model
+        vertex=next(iter(original.vertices.values()))
+        raw=f"_{vertex.offset}: [<{vertex.xyz[0]}, {vertex.xyz[1]}, {vertex.xyz[2]}"
+        pane=self.editor.source_editor
+        current=pane.get_source()
+        self.assertIn(raw,current)
+        changed=raw.replace(f"[<{vertex.xyz[0]},",f"[<{vertex.xyz[0]+9},")
+        pane.text.delete("1.0","end")
+        pane.text.insert("1.0",current.replace(raw,changed,1))
+        pane.text.edit_modified(True)
+        pane._edited()
+        self.assertTrue(pane.apply_now(),pane.message.get())
+        self.assertFalse(self.editor._source_invalid)
+        self.assertIsNot(self.editor.model,original)
+        self.assertIn((vertex.xyz[0]+9,vertex.xyz[1],vertex.xyz[2]),
+                      {v.xyz for v in self.editor.model.vertices.values()})
+        self.assertEqual(len(self.editor.model.polygons),len(original.polygons))
+
     def test_parser_error_line_locator(self):
         self.assertEqual(find_error_line(SOURCE,"Label 'body' (line 7): bad polygon"),7)
         self.assertEqual(find_error_line(SOURCE,"In label 'body': bad polygon"),7)
