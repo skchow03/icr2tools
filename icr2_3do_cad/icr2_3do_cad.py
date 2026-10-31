@@ -441,10 +441,12 @@ class Editor(tk.Tk):
         for caption,which in (('Vertex','vertex_page'),('Polygon','poly_page'),('Part','component_page')):
             ttk.Button(quick,text=caption,
                        command=lambda name=which:self.notebook.select(getattr(self,name))).pack(side='left',padx=(0,3))
-        ttk.Label(quick,text='View:',style='Sub.TLabel').pack(side='left',padx=(9,3))
+        camera_row=tk.Frame(bar,bg='#1b2533');camera_row.pack(fill='x',pady=(4,0))
+        ttk.Label(camera_row,text='View:',style='Sub.TLabel').pack(side='left',padx=(0,4))
         for caption,name in (('3D','Three-quarter'),('Top','Top'),('Front','Front'),('Side','Side')):
-            ttk.Button(quick,text=caption,command=lambda preset=name:self.set_camera_view(preset)).pack(side='left',padx=(0,2))
-        ttk.Button(quick,text='Display…',command=self._toggle_view_settings_from_button).pack(side='right')
+            ttk.Button(camera_row,text=caption,
+                       command=lambda preset=name:self.set_camera_view(preset)).pack(side='left',padx=(0,2))
+        ttk.Button(camera_row,text='Display…',command=self._toggle_view_settings_from_button).pack(side='right')
         framing=tk.Frame(bar,bg='#1b2533');framing.pack(fill='x',pady=(4,0))
         ttk.Button(framing,text='Frame All (F)',command=self.frame_model).pack(side='left',padx=(0,4))
         self.frame_selected_button=ttk.Button(framing,text='Frame Selection (Shift+F)',command=self.frame_selection)
