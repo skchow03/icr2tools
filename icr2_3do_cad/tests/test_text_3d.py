@@ -114,14 +114,18 @@ class N3TextRoundTripTests(unittest.TestCase):
         lo=(original[3] & 0xffffffff)
         if lo>=2**31:lo-=2**32
         hi=(original[3]>>32)
+        # Read legacy five-coefficient overlay files, but do not export that
+        # binary-only syntax as a normal Papyrus N3 source representation.
         needle=f"_{plane.offset}: "
         original_plane=f"({original[0]}, {original[1]}, {original[2]}, {lo}, {hi})"
-        self.assertIn(original_plane,text)
+        self.assertNotIn(original_plane,text)
         lines=text.splitlines()
         for i,line in enumerate(lines):
             if line.startswith(needle):
-                lines[i]=line.replace(original_plane,
-                         f"({original[0]+1}, {original[1]}, {original[2]}, {lo}, {hi})",1)
+                start=line.index("(",len(needle))
+                end=line.index(")",start)+1
+                modified=f"({original[0]+1}, {original[1]}, {original[2]}, {lo}, {hi})"
+                lines[i]=line[:start]+modified+line[end:]
                 break
         imported,_=import_text(model,"\n".join(lines)+"\n")
         self.assertEqual(imported.planes[plane.offset].equation[0],original[0]+1)

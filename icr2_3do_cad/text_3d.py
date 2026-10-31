@@ -81,8 +81,10 @@ def _angle_back(tenths):
 
 
 def _plane(model, off, tag):
-    a, b, c = (i32(model.body, off + j) for j in (4, 8, 12))
-    lo, hi = struct.unpack_from("<ii", model.body, off + 16)
+    # N3 source describes FACE/BSP via 3 ordered vertices, never the
+    # binary-only five-integer coefficient tuple.
+    from n3_plane_points import plane_expression
+    operand=plane_expression(model,off)
     children = [i32(model.body, off + j) for j in {
         5: (24,), 6: (24, 28), 7: (24, 28, 32),
         8: (24, 28, 32), 9: (24, 28, 32, 36),
@@ -92,7 +94,7 @@ def _plane(model, off, tag):
         children = [children[0], children[2], children[1]]
     if tag == 9:
         children = [children[0], children[3], children[2], children[1]]
-    return f"({a}, {b}, {c}, {lo}, {hi}), {_join_refs(children, model)}"
+    return f"{operand}, {_join_refs(children, model)}"
 
 
 def _command(model: Model, off: int) -> str:
@@ -333,20 +335,60 @@ def _apply_edits(model, doc):
             struct.pack_into("<i",raw,model.body_start+off+(8 if kind==2 else 4),color)
             continue
         if kind in (5,6,7,8,9,10):
-            name={5:"FACE",6:"FACE2",7:"BSPF",8:"BSPA",9:"BSP2",10:"BSPN"}[kind]
+            name={5:"FACE",6:"FACE2",7:"BSPF",8:"BSPA",
+                  9:"BSP2",10:"BSPN"}[kind]
             if not command.upper().startswith(name+" "):
-                raise FormatError(f"Plane {s.label}: cannot change FACE/BSP command flavor")
-            plane=RAW_PLANE.fullmatch(command[len(name):].strip())
-            baseline=RAW_PLANE.fullmatch(current[len(name):].strip())
-            if not plane or not baseline:
-                raise FormatError(f"Plane {s.label}: expected five raw signed coefficients")
-            if _normalize(plane.group(6),labels)!=_normalize(baseline.group(6),
-                                    {f"_{x}":x for x in expected}):
+                raise FormatError(f"Plane {s.label}: cannot change FACE/BSP flavor")
+            # Legacy overlay sources may still use raw five-field tuples.
+            # Accept them on import, but never emit them on export.
+            legacy=RAW_PLANE.fullmatch(command[len(name):].strip())
+            if legacy:
+                baseline_children=_split_csv(current[len(name):].strip())[1:]
+                if _normalize(legacy.group(6),labels)!=_normalize(
+                       ", ".join(baseline_children),
+                       {f"_{x}":x for x in expected}):
+                    raise FormatError(f"Plane {s.label}: BSP child pointers may not change")
+                coeff=list(map(int,legacy.groups()[:5]))
+                if any(not INT32_LO<=v<=INT32_HI for v in coeff):
+                    raise FormatError(f"Plane {s.label}: coefficient exceeds signed 32-bit")
+                struct.pack_into("<5i",raw,model.body_start+off+4,*coeff)
+                continue
+            fields=_split_csv(command[len(name):].strip())
+            baseline=_split_csv(current[len(name):].strip())
+            if len(fields)!=len(baseline):
+                raise FormatError(f"Plane {s.label}: wrong number of child pointers")
+            if _normalize(", ".join(fields[1:]),labels)!=_normalize(
+                ", ".join(baseline[1:]),{f"_{x}":x for x in expected}):
                 raise FormatError(f"Plane {s.label}: BSP child pointers may not change")
-            coefficients=list(map(int,plane.groups()[:5]))
-            if any(not INT32_LO<=v<=INT32_HI for v in coefficients):
-                raise FormatError(f"Plane {s.label}: coefficient outside signed 32-bit range")
-            struct.pack_into("<5i",raw,model.body_start+off+4,*coefficients)
+            # Untouched triplets (even if original vertex coordinates were edited)
+            # must not rewrite/re-scale any binary FACE/BSP coefficient.
+            if _normalize(fields[0],labels)==_normalize(
+                    baseline[0],{f"_{x}":x for x in expected}):
+                continue
+            operand=fields[0]
+            if not operand.startswith("(") or not operand.endswith(")"):
+                raise FormatError(f"Plane {s.label}: expected 3 point references")
+            points=_split_csv(operand[1:-1])
+            if len(points)!=3:
+                raise FormatError(f"Plane {s.label}: three vertices or [<X,Y,Z>] points required")
+            from three_do import equation_from_triplet
+            coords=[]
+            for operand in points:
+                if operand in labels:
+                    ptr=labels[operand]
+                    if ptr not in model.vertices:
+                        raise FormatError(f"Plane {s.label}: {operand} is not a vertex")
+                    coords.append(struct.unpack_from("<3i",raw,model.body_start+ptr+4))
+                    continue
+                vertex=VERTEX_RE.fullmatch(operand)
+                if not vertex:
+                    raise FormatError(f"Plane {s.label}: invalid vertex {operand!r}")
+                coords.append(tuple(int(value) for value in vertex.groups()[:3]))
+            if any(not INT32_LO<=value<=INT32_HI for xyz in coords for value in xyz):
+                raise FormatError(f"Plane {s.label}: coordinate overflow")
+            rebuilt=equation_from_triplet(coords,model.planes[off].equation,
+                                          preserve_facing=False)
+            struct.pack_into("<3iq",raw,model.body_start+off+4,*rebuilt)
             continue
         if kind==15:
             m=DYNAMIC_RE.fullmatch(command)
