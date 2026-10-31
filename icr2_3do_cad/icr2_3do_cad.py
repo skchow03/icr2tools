@@ -208,6 +208,13 @@ class Editor(tk.Tk):
         self.stats=tk.StringVar(value='3DO body-relative offsets shown throughout')
         self.status=tk.StringVar(value='Click a vertex to select. Right-drag orbit, mouse wheel zoom.')
         self.selection_label=tk.StringVar(value='No vertex selected')
+        self.context_title=tk.StringVar(value='Nothing selected')
+        self.context_detail=tk.StringVar(value='Open a 3DO to begin.')
+        self.unsaved_state=tk.StringVar(value='No edits')
+        self.show_header_details=tk.BooleanVar(value=False)
+        self.show_view_settings=tk.BooleanVar(value=False)
+        self.show_advanced_polygon=tk.BooleanVar(value=False)
+        self._model_extent=1.0
         self._drag=None
         self._setup_style()
         self._setup_menu()
@@ -293,6 +300,11 @@ class Editor(tk.Tk):
                                  command=self.redraw)
         view.add_separator()
         view.add_command(label='Frame entire model     F',command=self.frame_model)
+        view.add_command(label='Frame selected     Shift+F',command=self.frame_selection)
+        camera_menu=tk.Menu(view,tearoff=0)
+        for label in ('Three-quarter','Top','Front','Side'):
+            camera_menu.add_command(label=label,command=lambda name=label:self.set_camera_view(name))
+        view.add_cascade(label='Camera presets',menu=camera_menu)
         view.add_command(label='Polygon editing mode     P',command=lambda:self.notebook.select(self.poly_page))
         view.add_command(label='DYNAMIC component mode',command=lambda:self.notebook.select(self.component_page))
         view.add_command(label='Vertex editing mode       V',command=lambda:self.notebook.select(self.vertex_page))
@@ -308,12 +320,83 @@ class Editor(tk.Tk):
         self.bind_all('<Control-y>',lambda event: self.redo())
         self.bind_all('<F4>',lambda event: self.show_report())
         self.bind_all('<KeyPress-f>',self._hotkey_frame)
+        self.bind_all('<Shift-F>',self._hotkey_frame_selection)
         self.bind_all('<KeyPress-p>',lambda e:self._hotkey_tab(e,self.poly_page))
         self.bind_all('<KeyPress-v>',lambda e:self._hotkey_tab(e,self.vertex_page))
 
     def _hotkey_frame(self, event):
         if not isinstance(event.widget,(tk.Entry,ttk.Entry)):
             self.frame_model()
+
+    def _hotkey_frame_selection(self,event):
+        if not isinstance(event.widget,(tk.Entry,ttk.Entry,ttk.Combobox,tk.Text)):
+            self.frame_selection()
+
+    def _toggle_view_settings_from_button(self):
+        self.show_view_settings.set(not self.show_view_settings.get())
+        self.toggle_view_settings()
+
+    def _toggle_polygon_advanced_from_button(self):
+        self.show_advanced_polygon.set(not self.show_advanced_polygon.get())
+        self.toggle_polygon_advanced()
+
+    def toggle_header_details(self):
+        if self.show_header_details.get():
+            self.diagnostics_frame.pack(fill='x',pady=(3,0))
+        else:
+            self.diagnostics_frame.pack_forget()
+
+    def toggle_view_settings(self):
+        if self.show_view_settings.get():
+            self.view_options.pack(fill='x',pady=(6,0))
+        else:
+            self.view_options.pack_forget()
+
+    def toggle_polygon_advanced(self):
+        if self.show_advanced_polygon.get():
+            self.poly_advanced_container.pack(fill='x',pady=(4,8))
+            self.poly_advanced_button.configure(text='Hide advanced splitting / BSP tools')
+        else:
+            self.poly_advanced_container.pack_forget()
+            self.poly_advanced_button.configure(text='Show advanced splitting / BSP tools')
+
+    def _update_selection_summary(self):
+        if not hasattr(self,'context_title') or not hasattr(self,'notebook'):
+            return
+        self.unsaved_state.set('Unsaved changes' if self.model and self.model.dirty else 'No edits')
+        if not self.model:
+            label='Nothing selected'
+            detail='Open a 3DO model to begin.'
+            can_frame=False
+        else:
+            page=self.notebook.select()
+            if page in (str(self.poly_page),str(self.geometry_page)) and self.selected_poly in self.model.polygons:
+                poly=self.model.polygons[self.selected_poly]
+                label=f'Polygon @{poly.offset}'
+                detail=f'{len(poly.unique_refs)} vertices  •  palette {self._color_label(poly)}  •  group {poly.group}'
+                can_frame=True
+            elif page==str(self.component_page) and self.selected_dynamic in self.model.dynamics:
+                part=self.model.dynamics[self.selected_dynamic]
+                label=f'Part: {part.name}.3do'
+                detail=f'DYNAMIC @{self.selected_dynamic}  •  placement in parent model'
+                can_frame=True
+            elif page==str(self.vertex_page) and self.selected in self.model.vertices:
+                vertex=self.model.vertices[self.selected]
+                label=f'Vertex @{self.selected}'
+                detail=f'X {vertex.xyz[0]:,}   Y {vertex.xyz[1]:,}   Z {vertex.xyz[2]:,}'
+                can_frame=True
+            else:
+                label='Nothing selected'
+                detail='Click a visible element, or select it from the list.'
+                can_frame=False
+        self.context_title.set(label)
+        self.context_detail.set(detail)
+        if hasattr(self,'frame_selected_button'):
+            self.frame_selected_button.configure(state='normal' if can_frame else 'disabled')
+        if hasattr(self,'toolbar_save'):
+            self.toolbar_save.configure(state='normal' if self.model else 'disabled')
+            self.toolbar_undo.configure(state='normal' if self.undo_stack else 'disabled')
+            self.toolbar_redo.configure(state='normal' if self.redo_stack else 'disabled')
 
     def _hotkey_tab(self,event,page):
         if isinstance(event.widget,(tk.Entry,ttk.Entry,ttk.Combobox,tk.Text)):
@@ -325,20 +408,51 @@ class Editor(tk.Tk):
         top.pack(side='top',fill='x')
         tk.Label(top,textvariable=self.header,bg='#151b25',fg='#eef5ff',
                  font=('Segoe UI',14,'bold'),anchor='w').pack(anchor='w')
-        tk.Label(top,textvariable=self.stats,bg='#151b25',fg='#94a6ba',
-                 anchor='w',font=('Segoe UI',9)).pack(anchor='w',pady=(2,0))
-        tk.Label(top,textvariable=self.appearance_info,bg='#151b25',fg='#accfbe',
-                 anchor='w',font=('Segoe UI',9)).pack(anchor='w',pady=(1,0))
+        tk.Checkbutton(top,text='Technical details',variable=self.show_header_details,
+                       command=self.toggle_header_details,bg='#151b25',fg='#94a6ba',
+                       activebackground='#151b25',activeforeground='#eef5ff',
+                       selectcolor='#151b25').pack(anchor='e')
+        self.diagnostics_frame=tk.Frame(top,bg='#151b25')
+        tk.Label(self.diagnostics_frame,textvariable=self.stats,bg='#151b25',fg='#94a6ba',
+                 anchor='w',font=('Segoe UI',9)).pack(anchor='w')
+        tk.Label(self.diagnostics_frame,textvariable=self.appearance_info,bg='#151b25',fg='#accfbe',
+                 anchor='w',font=('Segoe UI',9)).pack(anchor='w')
+        toolbar=tk.Frame(self,bg='#1b2533',padx=10,pady=5)
+        toolbar.pack(side='top',fill='x')
+        ttk.Button(toolbar,text='Open…',command=self.open_file).pack(side='left',padx=(0,4))
+        self.toolbar_save=ttk.Button(toolbar,text='Save Copy…',command=self.save_as)
+        self.toolbar_save.pack(side='left',padx=(0,10))
+        self.toolbar_undo=ttk.Button(toolbar,text='Undo',command=self.undo)
+        self.toolbar_undo.pack(side='left',padx=(0,4))
+        self.toolbar_redo=ttk.Button(toolbar,text='Redo',command=self.redo)
+        self.toolbar_redo.pack(side='left',padx=(0,10))
+        ttk.Label(toolbar,textvariable=self.unsaved_state,style='Sub.TLabel').pack(side='right',padx=6)
         main=tk.PanedWindow(self,orient='horizontal',bg='#10141d',sashwidth=6,
                              borderwidth=0)
         main.pack(expand=True,fill='both')
         self._main_pane=main
-        self.after(180,self._initial_panes)
+        self._initial_panes_job=self.after(180,self._initial_panes)
         left=tk.Frame(main,bg='#131924')
         main.add(left,stretch='always',minsize=480)
-        bar=tk.Frame(left,bg='#1b2533',padx=10,pady=7)
+        bar=tk.Frame(left,bg='#1b2533',padx=8,pady=4)
         bar.pack(fill='x')
-        line1=tk.Frame(bar,bg='#1b2533');line1.pack(fill='x')
+        quick=tk.Frame(bar,bg='#1b2533');quick.pack(fill='x')
+        ttk.Label(quick,text='Select:',style='Sub.TLabel').pack(side='left',padx=(0,4))
+        for caption,which in (('Vertex','vertex_page'),('Polygon','poly_page'),('Part','component_page')):
+            ttk.Button(quick,text=caption,
+                       command=lambda name=which:self.notebook.select(getattr(self,name))).pack(side='left',padx=(0,3))
+        camera_row=tk.Frame(bar,bg='#1b2533');camera_row.pack(fill='x',pady=(4,0))
+        ttk.Label(camera_row,text='View:',style='Sub.TLabel').pack(side='left',padx=(0,4))
+        for caption,name in (('3D','Three-quarter'),('Top','Top'),('Front','Front'),('Side','Side')):
+            ttk.Button(camera_row,text=caption,
+                       command=lambda preset=name:self.set_camera_view(preset)).pack(side='left',padx=(0,2))
+        ttk.Button(camera_row,text='Display…',command=self._toggle_view_settings_from_button).pack(side='right')
+        framing=tk.Frame(bar,bg='#1b2533');framing.pack(fill='x',pady=(4,0))
+        ttk.Button(framing,text='Frame All (F)',command=self.frame_model).pack(side='left',padx=(0,4))
+        self.frame_selected_button=ttk.Button(framing,text='Frame Selection (Shift+F)',command=self.frame_selection)
+        self.frame_selected_button.pack(side='left')
+        self.view_options=tk.Frame(bar,bg='#1b2533')
+        line1=tk.Frame(self.view_options,bg='#1b2533');line1.pack(fill='x')
         tk.Label(line1,text='LOD',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,6))
         self.lod_combo=ttk.Combobox(line1,textvariable=self.lod_mode,
              values=['SWITCH DISTANCE','All branches'],state='readonly',width=19)
@@ -350,7 +464,7 @@ class Editor(tk.Tk):
              state='readonly',width=21)
         self.bsp_combo.pack(side='left')
         self.bsp_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        lineview=tk.Frame(bar,bg='#1b2533');lineview.pack(fill='x',pady=(7,0))
+        lineview=tk.Frame(self.view_options,bg='#1b2533');lineview.pack(fill='x',pady=(7,0))
         tk.Label(lineview,text='Projection',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,6))
         self.projection_combo=ttk.Combobox(lineview,textvariable=self.projection,
             values=['Orthographic','Perspective (depth)'],state='readonly',width=20)
@@ -364,7 +478,7 @@ class Editor(tk.Tk):
             bg='#1b2533',fg='#c9d8ec',selectcolor='#1b2533',
             activebackground='#1b2533',activeforeground='#c9d8ec',
             command=self.redraw).pack(side='left',padx=(16,0))
-        linequality=tk.Frame(bar,bg='#1b2533');linequality.pack(fill='x',pady=(5,0))
+        linequality=tk.Frame(self.view_options,bg='#1b2533');linequality.pack(fill='x',pady=(5,0))
         tk.Label(linequality,text='Texture detail',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,7))
         quality_combo=ttk.Combobox(linequality,textvariable=self.texture_quality,
              values=['Fast (50%)','Balanced (75%)','Full (100%)'],
@@ -373,7 +487,7 @@ class Editor(tk.Tk):
         quality_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
         tk.Label(linequality,text='Motion preview renders faster; refines when idle',
             bg='#1b2533',fg='#91a6bb').pack(side='left',padx=10)
-        line2=tk.Frame(bar,bg='#1b2533');line2.pack(fill='x',pady=(7,0))
+        line2=tk.Frame(self.view_options,bg='#1b2533');line2.pack(fill='x',pady=(7,0))
         tk.Label(line2,text='SWITCH distance (raw units)',bg='#1b2533',fg='#c9d8ec').pack(side='left')
         self.lod_slider=ttk.Scale(line2,from_=0,to=1200000,
              variable=self.lod_distance,command=self._slider_distance)
@@ -382,7 +496,7 @@ class Editor(tk.Tk):
         self.lod_entry.pack(side='left')
         self.lod_entry.bind('<Return>',self._apply_distance_entry)
         self.lod_entry.bind('<FocusOut>',self._apply_distance_entry)
-        tk.Label(bar,textvariable=self.preview_stats,bg='#1b2533',fg='#a9bed5',
+        tk.Label(self.view_options,textvariable=self.preview_stats,bg='#1b2533',fg='#a9bed5',
                  anchor='w',font=('Consolas',9)).pack(fill='x',pady=(5,0))
         self.canvas=tk.Canvas(left,bg='#131924',highlightthickness=0,confine=True)
         self.canvas.pack(fill='both',expand=True)
@@ -402,6 +516,12 @@ class Editor(tk.Tk):
         self.canvas.bind('<Double-Button-1>',lambda e:self.frame_model())
         sidebar_shell=tk.Frame(main,bg='#222a38')
         main.add(sidebar_shell,minsize=370,width=410)
+        context=tk.Frame(sidebar_shell,bg='#222a38',padx=10,pady=7)
+        context.pack(fill='x')
+        tk.Label(context,textvariable=self.context_title,bg='#222a38',fg='#f2f7ff',
+                 font=('Segoe UI',11,'bold'),anchor='w').pack(anchor='w')
+        tk.Label(context,textvariable=self.context_detail,bg='#222a38',fg='#96a7bb',
+                 font=('Segoe UI',9),anchor='w',wraplength=370,justify='left').pack(anchor='w')
         self.notebook=ttk.Notebook(sidebar_shell)
         self.notebook.pack(fill='both',expand=True)
         sidebar=tk.Frame(self.notebook,bg='#222a38',padx=12,pady=12)
@@ -416,8 +536,8 @@ class Editor(tk.Tk):
         self.poly_canvas_window=self.poly_canvas.create_window((0,0),window=self.poly_contents,anchor='nw')
         self.poly_contents.bind('<Configure>',lambda e:self.poly_canvas.configure(scrollregion=self.poly_canvas.bbox('all')))
         self.poly_canvas.bind('<Configure>',lambda e:self.poly_canvas.itemconfigure(self.poly_canvas_window,width=e.width))
-        self.notebook.add(self.vertex_page,text='Verts')
-        self.notebook.add(self.poly_page,text='Polys/BSP')
+        self.notebook.add(self.vertex_page,text='Vertex')
+        self.notebook.add(self.poly_page,text='Polygon')
         self.component_page=tk.Frame(self.notebook,bg='#222a38',padx=10,pady=10)
         self.notebook.add(self.component_page,text='Parts')
         self.geometry_page=tk.Frame(self.notebook,bg='#222a38')
@@ -430,7 +550,7 @@ class Editor(tk.Tk):
         self.geometry_window=self.geometry_canvas.create_window((0,0),window=self.geometry_contents,anchor='nw')
         self.geometry_contents.bind('<Configure>',lambda e:self.geometry_canvas.configure(scrollregion=self.geometry_canvas.bbox('all')))
         self.geometry_canvas.bind('<Configure>',lambda e:self.geometry_canvas.itemconfigure(self.geometry_window,width=e.width))
-        self.notebook.add(self.geometry_page,text='Geometry')
+        self.notebook.add(self.geometry_page,text='Create')
         self.raw_page=tk.Frame(self.notebook,bg='#222a38',padx=8,pady=8)
         self.notebook.add(self.raw_page,text='Raw')
         self.notebook.bind('<<NotebookTabChanged>>',lambda e:self._change_edit_mode())
@@ -496,6 +616,7 @@ class Editor(tk.Tk):
         # Wheel events over any polygon inspector control scroll its sidebar;
         # the viewport keeps its own mousewheel zoom behavior.
         self._bind_polygon_scroll(self.poly_contents)
+        self._update_selection_summary()
         bottom=tk.Label(self,textvariable=self.status,bg='#151b25',fg='#afc2d8',
                         anchor='w',font=('Segoe UI',9),padx=12,pady=8)
         bottom.pack(side='bottom',fill='x')
@@ -756,8 +877,13 @@ class Editor(tk.Tk):
         sc2.pack(side='right',fill='y')
         self.poly_vertex_tree.configure(yscrollcommand=sc2.set)
         self.poly_vertex_tree.bind('<Double-1>',self._open_vertex_from_polygon)
+        self.poly_advanced_button=ttk.Button(sidebar,text='Show advanced splitting / BSP tools',
+                                              command=self._toggle_polygon_advanced_from_button)
+        self.poly_advanced_button.pack(fill='x',pady=(5,6))
+        self.poly_advanced_container=tk.Frame(sidebar,bg='#222a38')
+        advanced=self.poly_advanced_container
         # Split already-established polygon vertices, no new vertex records.
-        existingframe=ttk.LabelFrame(sidebar,text='Split between existing vertices (no new vertices)')
+        existingframe=ttk.LabelFrame(advanced,text='Split between existing vertices (no new vertices)')
         existingframe.pack(fill='x',pady=(6,8))
         ttk.Label(existingframe,text='Choose two nonadjacent numbered vertices; cut follows their diagonal.',
                   style='Sub.TLabel',wraplength=360).pack(anchor='w',padx=5,pady=(4,4))
@@ -777,7 +903,7 @@ class Editor(tk.Tk):
         ttk.Label(existingframe,textvariable=self.existing_split_hint,style='Sub.TLabel',
                   wraplength=365,justify='left').pack(anchor='w',padx=5,pady=(0,4))
         # Split tool: cut from an interpolated point on each selected edge.
-        splitframe=ttk.LabelFrame(sidebar,text='Split selected polygon (adds vertices)')
+        splitframe=ttk.LabelFrame(advanced,text='Split selected polygon (adds vertices)')
         splitframe.pack(fill='x',pady=(6,10))
         ttk.Label(splitframe,text='Edge #n means vertex #n → next vertex.',
                   style='Sub.TLabel',wraplength=310).pack(anchor='w',padx=5,pady=(4,4))
@@ -801,20 +927,20 @@ class Editor(tk.Tk):
                    command=self.commit_polygon_split).pack(fill='x',padx=5,pady=5)
         ttk.Label(splitframe,textvariable=self.split_hint,style='Sub.TLabel',
                   wraplength=375,justify='left').pack(anchor='w',padx=5,pady=(0,4))
-        ttk.Label(sidebar,text='Target FACE/BSP plane',style='TLabel').pack(anchor='w')
-        self.poly_plane_combo=ttk.Combobox(sidebar,textvariable=self.poly_selected_plane,
+        ttk.Label(advanced,text='Target FACE/BSP plane',style='TLabel').pack(anchor='w')
+        self.poly_plane_combo=ttk.Combobox(advanced,textvariable=self.poly_selected_plane,
                                             state='readonly',width=35)
         self.poly_plane_combo.pack(fill='x',pady=(4,3))
         self.poly_plane_combo.bind('<<ComboboxSelected>>',lambda e:self.update_poly_plane_panel())
-        ttk.Label(sidebar,textvariable=self.poly_plane_info,style='Sub.TLabel',
+        ttk.Label(advanced,textvariable=self.poly_plane_info,style='Sub.TLabel',
                   wraplength=385,justify='left').pack(anchor='w',pady=(2,7))
-        ttk.Label(sidebar,text='Planes may intentionally be noncoplanar with the polygon. '
+        ttk.Label(advanced,text='Planes may intentionally be noncoplanar with the polygon. '
                                 'Choose any 3 distinct, noncollinear vertices; the maximum '
                                 'deviation is shown as a diagnostic, not a restriction.',
                   style='Sub.TLabel',wraplength=385,justify='left').pack(anchor='w',pady=(0,7))
-        ttk.Label(sidebar,text='Manual plane: 3 ordered vertices (P1 → P2 → P3)',
+        ttk.Label(advanced,text='Manual plane: 3 ordered vertices (P1 → P2 → P3)',
                   style='TLabel').pack(anchor='w')
-        triplet=ttk.Frame(sidebar);triplet.pack(fill='x',pady=(4,7))
+        triplet=ttk.Frame(advanced);triplet.pack(fill='x',pady=(4,7))
         self.poly_ref_combos=[]
         for i,label in enumerate(('P1','P2','P3')):
             frm=ttk.Frame(triplet);frm.pack(side='left',fill='x',expand=True,padx=(0,3))
@@ -823,17 +949,17 @@ class Editor(tk.Tk):
                              width=12,state='readonly')
             cmb.pack(fill='x')
             self.poly_ref_combos.append(cmb)
-        actions=ttk.Frame(sidebar);actions.pack(fill='x')
+        actions=ttk.Frame(advanced);actions.pack(fill='x')
         ttk.Button(actions,text='Auto calculate',command=self.auto_polygon_plane).pack(
                    side='left',fill='x',expand=True,padx=(0,3))
         ttk.Button(actions,text='Use P1/P2/P3',command=self.manual_polygon_plane).pack(
                    side='left',fill='x',expand=True)
-        actions2=ttk.Frame(sidebar);actions2.pack(fill='x',pady=(5,0))
+        actions2=ttk.Frame(advanced);actions2.pack(fill='x',pady=(5,0))
         ttk.Button(actions2,text='Flip plane orientation',command=self.flip_polygon_plane).pack(
                    side='left',fill='x',expand=True,padx=(0,3))
         ttk.Button(actions2,text='Clear override',command=self.clear_polygon_plane).pack(
                    side='left',fill='x',expand=True)
-        ttk.Label(sidebar,textvariable=self.poly_edit_status,style='Sub.TLabel',
+        ttk.Label(advanced,textvariable=self.poly_edit_status,style='Sub.TLabel',
                   wraplength=385,justify='left').pack(anchor='w',pady=(6,7))
 
 
@@ -2015,6 +2141,58 @@ class Editor(tk.Tk):
             verts=clipped
         return [self._screen_from_view(*v) for v in verts]
 
+    def set_camera_view(self, view):
+        """Change viewing direction without changing model geometry."""
+        presets={'Three-quarter':(35,25),'Top':(0,89),'Front':(0,0),'Side':(90,0)}
+        if view not in presets:
+            raise ValueError(f'Unknown camera view: {view}')
+        azimuth,elevation=presets[view]
+        self.azimuth=math.radians(azimuth)
+        self.elevation=math.radians(elevation)
+        self.redraw()
+        self.status.set(f'{view} camera view • Right-drag to orbit')
+
+    def frame_selection(self):
+        """Center and zoom the current selection without changing model data."""
+        if not self.model:return
+        page=self.notebook.select()
+        points=[]
+        if page in (str(self.poly_page),str(self.geometry_page)) and self.selected_poly in self.model.polygons:
+            poly=self.model.polygons[self.selected_poly]
+            points=[self.model.vertices[ref].xyz for ref in poly.unique_refs]
+        elif page==str(self.vertex_page) and self.selected in self.model.vertices:
+            points=[self.model.vertices[self.selected].xyz]
+        elif page==str(self.component_page) and self.selected_dynamic in self.model.dynamics:
+            placement=self.model.dynamics[self.selected_dynamic]
+            points=[placement.xyz]
+            try:
+                faces,_=gather_faces(self.model,None,(0.,0.,1e9),'off',
+                                     self.external_resolver,cache=self.external_model_cache)
+                for face in faces:
+                    if face.placement!=self.selected_dynamic:
+                        continue
+                    if isinstance(face,RenderSprite):
+                        sprite=face.source.pmp_sprites[face.offset]
+                        points.append(face.transform.apply(face.source.vertices[sprite.vertex_ref].xyz))
+                    else:
+                        polygon=face.source.polygons[face.offset]
+                        points.extend(face.transform.apply(face.source.vertices[ref].xyz)
+                                      for ref in polygon.unique_refs)
+            except (FormatError,ValueError,OverflowError,OSError):
+                pass
+        if not points:
+            self.status.set('Select a visible vertex, polygon or part before framing it.')
+            return
+        lo=[min(p[i] for p in points) for i in range(3)]
+        hi=[max(p[i] for p in points) for i in range(3)]
+        self.center=tuple((a+b)/2 for a,b in zip(lo,hi))
+        span=max(hi[i]-lo[i] for i in range(3))
+        self.extent=max(1.0,span*1.5,self._model_extent*0.08)
+        self.zoom=1.0
+        self.pan=(0.0,0.0)
+        self.redraw()
+        self.status.set('Framed current selection • F frames the entire model.')
+
     def frame_model(self):
         if not self.model:
             self.center=(0,0,0); self.extent=1;self.redraw();return
@@ -2040,6 +2218,7 @@ class Editor(tk.Tk):
         hi=[max(p[i] for p in points) for i in range(3)]
         self.center=tuple((a+b)/2 for a,b in zip(lo,hi))
         self.extent=max(hi[i]-lo[i] for i in range(3)) or 1
+        self._model_extent=self.extent
         self.zoom=1;self.pan=(0.0,0.0)
         self.redraw()
 
@@ -2128,6 +2307,7 @@ class Editor(tk.Tk):
         if not hasattr(self,'canvas'):return
         _redraw_start=perf_counter()
         c=self.canvas
+        self._update_selection_summary()
         c.delete('all')
         w=max(c.winfo_width(),20);h=max(c.winfo_height(),20)
         self.scale=min(w,h)*0.76/(self.extent or 1)*self.zoom
@@ -2902,6 +3082,20 @@ class Editor(tk.Tk):
         self._refresh_polygon_inspector()
         self.update_edit_panel();self.refresh_raw();self.refresh_geometry_targets();self.redraw()
         messagebox.showinfo('Saved',f'Saved {target}\n\n{report.describe()[:2600]}')
+
+    def destroy(self):
+        # Cancel outstanding Tk timers before deleting their Tcl callbacks.
+        # This matters when GUI regression tests open and close many windows.
+        for job in (getattr(self,'_initial_panes_job',None),
+                    self._pending_view_redraw,self._pending_refine):
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except tk.TclError:
+                    pass
+        self._pending_view_redraw=None
+        self._pending_refine=None
+        super().destroy()
 
     def on_close(self):
         if self.model and self.model.dirty:

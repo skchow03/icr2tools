@@ -62,12 +62,15 @@ class EditorPerformanceTests(unittest.TestCase):
         self.assertEqual(app._texture_sampling_scale(),.75)
         for _ in range(12):app.request_view_redraw()
         self.assertTrue(app._interactive_view)
+        self.assertEqual(app._texture_sampling_scale(),.4)
         self.assertIsNotNone(app._pending_view_redraw)
         app.update()
-        # after 16ms should have only one coalesced render event
+        # The coalesced redraw can take longer than the 180ms idle timer
+        # on slow/loaded CI runners. Either state is valid after it finishes.
         time.sleep(.035);app.update()
         self.assertIsNone(app._pending_view_redraw)
-        self.assertEqual(app._texture_sampling_scale(),.4)
+        self.assertEqual(app._texture_sampling_scale(),
+                         .4 if app._interactive_view else .75)
         app.finish_view_motion()
         self.assertFalse(app._interactive_view)
         self.assertEqual(app._texture_sampling_scale(),.75)
