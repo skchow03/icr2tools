@@ -18,6 +18,7 @@ from dynamic_scene import ExternalResolver, Transform, gather_faces, RenderSprit
 from pmp_preview import load_pmp, PMPError
 from text_3d import export_text, import_text, parse_document, export_standalone_text
 from n3_compile import compile_n3_text
+from vertex_labels import names_for_vertices, declaration_label, rename_vertex_in_source
 from n3_source_editor import SourceEditor
 if TEXTURE_AVAILABLE:
     from PIL import Image, ImageTk
@@ -98,6 +99,8 @@ class Editor(tk.Tk):
         self.text_document = None  # N3 labels/comments stay in the .3D text, not in a binary 3DO.
         self.imported_pending = False
         self.standalone_n3_binary = None
+        self._original_n3_source=False
+        self.vertex_pointer_names={}
         self._source_invalid=False
         self._source_sync_job=None
         self._source_model_loading=False
@@ -202,6 +205,8 @@ class Editor(tk.Tk):
         self.show_faces=tk.BooleanVar(value=True)
         self.show_edges=tk.BooleanVar(value=True)
         self.show_points=tk.BooleanVar(value=True)
+        self.vertex_label_mode=tk.StringVar(value='Off')
+        self.pointer_name_var=tk.StringVar(value='')
         self.show_axes=tk.BooleanVar(value=True)
         self.lod_mode=tk.StringVar(value='SWITCH DISTANCE')
         self.lod_distance=tk.DoubleVar(value=0)
@@ -281,6 +286,12 @@ class Editor(tk.Tk):
         for title, var in [('Filled polygons',self.show_faces),('Polygon edges',self.show_edges),
                            ('Vertex dots',self.show_points),('Axes',self.show_axes)]:
             view.add_checkbutton(label=title,variable=var,command=self.redraw)
+        vertex_labels_menu=tk.Menu(view,tearoff=0)
+        for mode,title in [('Off','Off'),('Names','Pointer names (offset fallback)'),
+                           ('Offsets','Body offset numbers')]:
+            vertex_labels_menu.add_radiobutton(label=title,
+                      variable=self.vertex_label_mode,value=mode,command=self.redraw)
+        view.add_cascade(label='Vertex labels',menu=vertex_labels_menu)
         view.add_checkbutton(label='Number selected polygon vertices',
                              variable=self.poly_vertex_labels,command=self.redraw)
         view.add_checkbutton(label='Show selected polygon even if BSP-hidden (dashed)',
@@ -405,7 +416,8 @@ class Editor(tk.Tk):
                 can_frame=True
             elif page==str(self.vertex_page) and self.selected in self.model.vertices:
                 vertex=self.model.vertices[self.selected]
-                label=f'Vertex @{self.selected}'
+                named=self.vertex_pointer_names.get(self.selected)
+                label=f'{named}  •  Vertex @{self.selected}' if named else f'Vertex @{self.selected}'
                 detail=f'X {vertex.xyz[0]:,}   Y {vertex.xyz[1]:,}   Z {vertex.xyz[2]:,}'
                 can_frame=True
             else:
@@ -474,6 +486,12 @@ class Editor(tk.Tk):
         ttk.Button(framing,text='Frame All (F)',command=self.frame_model).pack(side='left',padx=(0,4))
         self.frame_selected_button=ttk.Button(framing,text='Frame Selection (Shift+F)',command=self.frame_selection)
         self.frame_selected_button.pack(side='left')
+        labels_row=tk.Frame(bar,bg='#1b2533');labels_row.pack(fill='x',pady=(4,0))
+        ttk.Label(labels_row,text='Vertex labels:',style='Sub.TLabel').pack(side='left',padx=(0,5))
+        self.vertex_labels_combo=ttk.Combobox(labels_row,textvariable=self.vertex_label_mode,
+                           values=('Off','Names','Offsets'),state='readonly',width=12)
+        self.vertex_labels_combo.pack(side='left')
+        self.vertex_labels_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
         self.view_options=tk.Frame(bar,bg='#1b2533')
         line1=tk.Frame(self.view_options,bg='#1b2533');line1.pack(fill='x')
         tk.Label(line1,text='LOD',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,6))
@@ -584,7 +602,17 @@ class Editor(tk.Tk):
         self.notebook.add(self.source_page,text='.3D Source')
         self.notebook.bind('<<NotebookTabChanged>>',lambda e:self._change_edit_mode())
         ttk.Label(sidebar,text='VERTEX EDITOR',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(sidebar,textvariable=self.selection_label,style='Sub.TLabel',wraplength=290).pack(anchor='w',pady=(4,12))
+        ttk.Label(sidebar,textvariable=self.selection_label,style='Sub.TLabel',wraplength=290).pack(anchor='w',pady=(4,8))
+        pointer=ttk.LabelFrame(sidebar,text='Pointer name (.3D source)')
+        pointer.pack(fill='x',pady=(0,10))
+        pointer_row=ttk.Frame(pointer);pointer_row.pack(fill='x',padx=5,pady=5)
+        self.pointer_entry=ttk.Entry(pointer_row,textvariable=self.pointer_name_var)
+        self.pointer_entry.pack(side='left',fill='x',expand=True,padx=(0,5))
+        self.pointer_entry.bind('<Return>',lambda e:self.apply_vertex_pointer_name())
+        self.pointer_apply=ttk.Button(pointer_row,text='Rename',command=self.apply_vertex_pointer_name)
+        self.pointer_apply.pack(side='right')
+        ttk.Label(pointer,text='Names survive XYZ/UV edits, but are not stored in binary .3DO.',
+                  style='Sub.TLabel',wraplength=345,justify='left').pack(anchor='w',padx=5,pady=(0,5))
         f=ttk.Frame(sidebar)
         f.pack(fill='x')
         for i,name in enumerate('XYZ'):
@@ -1525,6 +1553,7 @@ class Editor(tk.Tk):
 
     def _sync_topology_model(self,model,selected_poly=None):
         self.model=model
+        self._refresh_vertex_pointer_names()
         self.poly_order=sorted(model.polygons)
         self.vertex_order=sorted(model.vertices)
         self.dynamic_order=sorted(model.dynamics)
@@ -1806,8 +1835,11 @@ class Editor(tk.Tk):
         self._source_model_loading=True
         try:
             old=self.model
+            prior_label=(declaration_label(old,self.text_document,self.selected)
+                         if old is not None and self.selected in old.vertices else None)
             self.model=model
             self.text_document=doc
+            self._refresh_vertex_pointer_names()
             self.standalone_n3_binary=bytes(model.raw)
             self.imported_pending=True
             self._source_invalid=False
@@ -1815,7 +1847,11 @@ class Editor(tk.Tk):
             self.poly_order=sorted(model.polygons)
             self.vertex_order=sorted(model.vertices)
             self.dynamic_order=sorted(model.dynamics)
-            self.selected=self.selected if self.selected in model.vertices else None
+            new_offset=next((stmt.offset for stmt in doc.statements
+                              if prior_label and stmt.label==prior_label
+                              and stmt.offset in model.vertices),None)
+            self.selected=(new_offset if new_offset is not None else
+                           self.selected if self.selected in model.vertices else None)
             self.selected_poly=(self.selected_poly if self.selected_poly in model.polygons else None)
             self.selected_dynamic=(self.selected_dynamic if self.selected_dynamic in model.dynamics else None)
             self.external_model_cache.clear()
@@ -1869,6 +1905,7 @@ class Editor(tk.Tk):
         self._source_sync_job=None
         if not self.model or self.source_editor.pending or self._source_invalid:
             return
+        self._refresh_vertex_pointer_names()
         try:
             if self.standalone_n3_binary is not None and self.text_document is not None:
                 updated=export_standalone_text(self.model,self.text_document,
@@ -1934,6 +1971,8 @@ class Editor(tk.Tk):
             return
         self.model=checked
         self.text_document=doc
+        self._original_n3_source=True
+        self._refresh_vertex_pointer_names()
         self.imported_pending=(checked.raw!=original_raw) or self.imported_pending
         self.selected=None
         self.selected_poly=None
@@ -1998,6 +2037,8 @@ class Editor(tk.Tk):
             return False
         self.model=obj
         self.text_document=doc
+        self._original_n3_source=is_n3
+        self._refresh_vertex_pointer_names()
         self.standalone_n3_binary=bytes(obj.raw) if is_n3 else None
         self.imported_pending=is_n3
         self.draft_vertices=[]
@@ -2129,11 +2170,46 @@ class Editor(tk.Tk):
         self.redraw()
         self.status.set('Car RECOLOR/MIP preview cleared; geometry and edits unchanged')
 
+    def _refresh_vertex_pointer_names(self):
+        """Associate N3 names by declaration offsets, never by coordinates."""
+        self.vertex_pointer_names=names_for_vertices(
+            self.model,self.text_document,original_n3=self._original_n3_source)
+
+    def apply_vertex_pointer_name(self):
+        """Rename a vertex symbol and its references in editable N3 source."""
+        if not self.model or self.selected not in self.model.vertices:
+            return
+        if not self._ensure_live_source_current():
+            return
+        source=self.source_editor.get_source()
+        try:
+            doc=self.text_document or parse_document(source)
+            old=declaration_label(self.model,doc,self.selected)
+            proposed=self.pointer_name_var.get().strip()
+            changed=rename_vertex_in_source(source,doc,old,proposed)
+            if changed==source:
+                return
+            new_model,new_doc=compile_n3_text(changed,self.source_editor.source_path)
+        except (FormatError,ValueError,OverflowError,UnicodeError) as exc:
+            messagebox.showerror('Invalid pointer name',str(exc))
+            return
+        self.source_editor.set_source(changed,path=self.source_editor.source_path,
+                          status='Pointer renamed; source and preview synchronized.')
+        self._accept_live_source(new_model,new_doc,changed)
+        new_offset=next((stmt.offset for stmt in new_doc.statements
+                          if stmt.label==proposed and stmt.offset in new_model.vertices),None)
+        if new_offset is not None:
+            self.choose(new_offset)
+        self.status.set(f'Vertex pointer renamed {old} → {proposed}. '
+                        'Store your name in .3D, not binary .3DO.')
+
     def _vertex_list_text(self,ref):
         v=self.model.vertices[ref]
         star='*' if v.modified or v.uv_modified else ' '
         uvtag=' UV' if v.textured else ''
-        return f'{star} {ref:>6}  {v.xyz[0]:>8} {v.xyz[1]:>8} {v.xyz[2]:>8}{uvtag}'
+        name=self.vertex_pointer_names.get(ref)
+        return (f'{star} {ref:>6}  {name:<18.18}  {v.xyz[0]:>8} {v.xyz[1]:>8} {v.xyz[2]:>8}{uvtag}'
+                if name else f'{star} {ref:>6}  {v.xyz[0]:>8} {v.xyz[1]:>8} {v.xyz[2]:>8}{uvtag}')
 
     def update_edit_panel(self):
         if not self.model:
@@ -2141,12 +2217,18 @@ class Editor(tk.Tk):
         n=len(self.model.modified_vertices)+len(self.model.modified_uvs)
         self.modified_label.configure(text=f'{n} edits',fg='#ffb862' if n else '#8fa3bb')
         if self.selected is None:
+            self.pointer_name_var.set('')
+            self.pointer_apply.configure(state='disabled')
             self.selection_label.set('Click a vertex or select from list')
             for v in self.posvars+self.uvvars:v.set('')
             self.uv_apply.configure(state='disabled')
         else:
             v=self.model.vertices[self.selected]
+            self.pointer_name_var.set(self.vertex_pointer_names.get(self.selected,''))
+            self.pointer_apply.configure(state='normal')
             self.selection_label.set(f'Vertex at body offset {v.offset}' +
+                                     (f' • {self.vertex_pointer_names[self.selected]}'
+                                      if self.selected in self.vertex_pointer_names else '') +
                                      ('  •  UV mapped' if v.textured else '  •  no UV') +
                                      ('  •  modified' if (v.modified or v.uv_modified) else '') +
                                      ('  •  LOD anchor' if v.offset in self.model.lod_anchors else ''))
@@ -2350,6 +2432,7 @@ class Editor(tk.Tk):
                 self.model=(Model(source_path,raw_data=self.standalone_n3_binary)
                             if source_path.suffix.lower()=='.3d' and self.standalone_n3_binary is not None
                             else Model(source_path))
+                self._refresh_vertex_pointer_names()
                 self.poly_order=sorted(self.model.polygons)
                 self.vertex_order=sorted(self.model.vertices)
                 self.selected=None;self.selected_poly=None
@@ -2607,6 +2690,37 @@ class Editor(tk.Tk):
             self._interactive_view=False
             self.redraw()
 
+    def _vertex_preview_label(self,ref):
+        if self.vertex_label_mode.get()=='Names':
+            return self.vertex_pointer_names.get(ref,str(ref))
+        return str(ref)
+
+    def _draw_vertex_labels(self,w,h):
+        """Draw legible active-vertex labels without a pathological Tk slowdown."""
+        mode=self.vertex_label_mode.get()
+        if mode=='Off' or not self.model:return
+        occupied=set()
+        shown=0
+        # The selected marker receives its own label and is never culled.
+        for ref in sorted(self.active_vertices):
+            if ref==self.selected:continue
+            v=self.model.vertices.get(ref)
+            if v is None:continue
+            x,y,_=self._project(v.xyz)
+            if not (4<x<w-4 and 20<y<h-20):continue
+            # One label per small screen region avoids stacks at UV seams.
+            cell=(int(x//54),int(y//17))
+            if cell in occupied:continue
+            occupied.add(cell)
+            self.canvas.create_text(x+6,y-7,text=self._vertex_preview_label(ref),
+                      fill='#d6e4fc',anchor='sw',font=('Consolas',9),
+                      tags=('vertex_label',f'vertex_label_{ref}'))
+            shown+=1
+            if shown>=650:break
+        if len(self.active_vertices)>shown:
+            self.preview_stats.set(self.preview_stats.get()+
+                     f'  •  vertex labels: {shown}/{len(self.active_vertices)} (screen-space limited)')
+
     def redraw(self):
         if not hasattr(self,'canvas'):return
         _redraw_start=perf_counter()
@@ -2841,12 +2955,15 @@ class Editor(tk.Tk):
                 rad=2.3 if len(self.model.vertices)<2500 else 1.7
                 color='#ffae62' if v.modified else '#b8cced'
                 c.create_oval(x-rad,y-rad,x+rad,y+rad,fill=color,outline='',tags='dot')
+        self._draw_vertex_labels(w,h)
         if self.selected is not None and self.selected in self.model.vertices:
             x,y,_=self._project(self.model.vertices[self.selected].xyz)
             c.create_oval(x-8,y-8,x+8,y+8,outline='#fff0a0',width=2)
             c.create_line(x-13,y,x+13,y,fill='#fff0a0',width=1)
             c.create_line(x,y-13,x,y+13,fill='#fff0a0',width=1)
-            c.create_text(x+12,y-16,text=str(self.selected),fill='#fff0a0',anchor='sw',
+            c.create_text(x+12,y-16,text=self._vertex_preview_label(self.selected)
+                           if self.vertex_label_mode.get()!='Off' else str(self.selected),
+                           fill='#fff0a0',anchor='sw',
                           font=('Consolas',10,'bold'))
         c.create_text(16,12,text=f'{self.projection.get().upper()}  •  Z UP  •  +Y REVERSED IN VIEW  •  RAW 3DO COORDINATES',
                       fill='#95a9c4',font=('Consolas',9),anchor='nw')
