@@ -187,3 +187,9 @@ python -m unittest discover -s tests -p "test_*.py"
 GUI tests require a display. On headless Linux, use `xvfb-run -a python -m unittest discover -s tests -p "test_*.py"`. Texture tests need Pillow and NumPy.
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for technical constraints and [AGENTS.md](AGENTS.md) for contributor guidance. Version-by-version notes, experimental smoke scripts and old screenshots are recoverable in Git history instead of cluttering the active source directory.
+
+## Performance profiling
+
+Set `ICR2_CAD_PROFILE=1` to record load, compile, viewport and live-source
+performance in a JSON report. See [PERFORMANCE.md](PERFORMANCE.md) for a
+repeatable RENO.3D benchmark and interpretation notes.

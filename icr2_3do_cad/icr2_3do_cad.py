@@ -20,6 +20,8 @@ from text_3d import export_text, import_text, parse_document, export_standalone_
 from n3_compile import compile_n3_text
 from vertex_labels import names_for_vertices, declaration_label, rename_vertex_in_source
 from n3_source_editor import SourceEditor
+from performance_profile import from_environment, profiled
+CAD_PROFILE=from_environment()
 if TEXTURE_AVAILABLE:
     from PIL import Image, ImageTk
 
@@ -2027,14 +2029,18 @@ class Editor(tk.Tk):
             if is_n3:
                 # Read bytes, not read_text(): universal newline conversion would
                 # discard the source's original CRLF line endings.
-                text=Path(path).read_bytes().decode('utf-8-sig')
-                obj,doc=compile_n3_text(text,Path(path))
+                with CAD_PROFILE.measure("load.read_n3"):
+                    text=Path(path).read_bytes().decode('utf-8-sig')
+                with CAD_PROFILE.measure("load.compile_n3"):
+                    obj,doc=compile_n3_text(text,Path(path))
             else:
-                obj=Model(path)
+                with CAD_PROFILE.measure("load.parse_3do"):
+                    obj=Model(path)
                 doc=None
         except (OSError,UnicodeError,FormatError,ValueError,OverflowError) as e:
             messagebox.showerror('Unable to open Papyrus model',str(e))
             return False
+        _load_ui_started=perf_counter()
         self.model=obj
         self.text_document=doc
         self._original_n3_source=is_n3
@@ -2094,6 +2100,9 @@ class Editor(tk.Tk):
         else:
             self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
         self._load_source_editor()
+        CAD_PROFILE.record("load.populate_ui",perf_counter()-_load_ui_started)
+        if CAD_PROFILE.enabled:
+            CAD_PROFILE.write(os.environ.get("ICR2_CAD_PROFILE_OUTPUT","cad_performance.json"))
         return True
 
     def open_car_appearance(self):
@@ -2659,6 +2668,9 @@ class Editor(tk.Tk):
         return quality
 
     def request_view_redraw(self):
+        if CAD_PROFILE.enabled:
+            CAD_PROFILE.record("viewport.redraw_requests",0)
+
         # Coalesce motion events; schedule a high-quality idle pass.
         self._interactive_view=True
         if self._pending_view_redraw is None:
@@ -2971,6 +2983,7 @@ class Editor(tk.Tk):
         c.create_text(16,h-16,text=f'AZ {math.degrees(self.azimuth):.0f}°   EL {math.degrees(self.elevation):.0f}°   ZOOM {self.zoom:.2f}×  •  {"LIT" if self.lighting.get() else "UNLIT"}  •  {self.palette_source}',
                       fill='#8194aa',font=('Consolas',9),anchor='sw')
         self.last_render_seconds=perf_counter()-_redraw_start
+        CAD_PROFILE.record("viewport.redraw",self.last_render_seconds)
         if self.show_textures.get() and texture_count:
             self.preview_stats.set(self.preview_stats.get()+
                 f'  •  draw {self.last_render_seconds*1000:.0f} ms'
@@ -3538,6 +3551,13 @@ class Editor(tk.Tk):
             if not messagebox.askyesno('Unsaved 3DO edits',
                 'Close without saving your XYZ/UV/BSP changes?'):
                 return
+        if CAD_PROFILE.enabled:
+            try:
+                report=CAD_PROFILE.write(os.environ.get(
+                    "ICR2_CAD_PROFILE_OUTPUT","cad_performance.json"))
+                print(f"CAD profiling report: {report}")
+            except OSError as exc:
+                print(f"Could not write CAD profiling report: {exc}")
         self.destroy()
 
     def show_help(self):
@@ -3599,6 +3619,23 @@ class Editor(tk.Tk):
             'complete Papyrus BSP draw order are not implemented. Test in game.\n'
             'When overwriting source 3DO, an existing .bak may also be replaced\n'
             'with confirmation. The new output is validated before replacing.')
+
+
+# Instrument expensive UI operations without modifying their implementations.
+# Timers are inert unless ICR2_CAD_PROFILE=1.
+for _method,_stage in (
+    ("_load_source_editor","load.source_tab"),
+    ("refresh_polygon_list","ui.polygon_list"),
+    ("refresh_geometry_targets","ui.geometry_targets"),
+    ("refresh_raw","ui.raw_inspector"),
+    ("refresh_dynamic_list","ui.dynamic_list"),
+    ("_accept_live_source","source.apply_compiled"),
+    ("_synchronize_model_to_source","source.sync_model"),
+    ("_draw_vertex_labels","viewport.vertex_labels"),
+    ("draw_pmp_sprite","viewport.pmp_sprite"),
+):
+    if hasattr(Editor,_method):
+        setattr(Editor,_method,profiled(CAD_PROFILE,_stage)(getattr(Editor,_method)))
 
 
 def main():

@@ -13,6 +13,8 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
 from n3_compile import compile_n3_text
+from performance_profile import from_environment
+SOURCE_PROFILE=from_environment()
 from three_do import FormatError
 
 LEX_RE = re.compile(
@@ -179,7 +181,8 @@ class SourceEditor(ttk.Frame):
         self.message.set("Parsing .3D and updating preview…")
         def work():
             try:
-                model,doc=compile_n3_text(source,path)
+                with SOURCE_PROFILE.measure('source.background_compile'):
+                    model,doc=compile_n3_text(source,path)
                 result=(rev,source,model,doc,None)
             except (FormatError,ValueError,OverflowError,UnicodeError) as exc:
                 result=(rev,source,None,None,str(exc))
