@@ -19,6 +19,13 @@ import struct
 from three_do import FormatError, Model, INT32_LO, INT32_HI, INT64_LO, INT64_HI, i32, i64
 
 ID_LINE = re.compile(r"^\s*%\s*ICR2_OFFSET\s*:\s*(\d+)\s*$", re.I)
+VERSION_HEADER = re.compile(r"^[ \t]*3D[ \t]+VERSION[ \t]+3\.0[ \t]*;?[ \t]*$", re.I)
+
+
+def _is_version_header(line):
+    """Recognize N3 headers regardless of CRLF, BOM, or trailing % comments."""
+    raw, _ = _without_comment(line.lstrip("\ufeff"))
+    return VERSION_HEADER.fullmatch(raw.rstrip("\r\n")) is not None
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9-]*$")
 AUTO_ID = re.compile(r"^_(\d+)$")
 NUM = r"[-+]?\d+"
@@ -190,8 +197,9 @@ def _without_comment(line):
 
 def parse_document(text: str, *, require_offsets: bool = True) -> Document:
     """Parse N3 commands while preserving comments and all original label names."""
-    if not re.search(r"(?im)^[ \t]*3D[ \t]+VERSION[ \t]+3\.0[ \t]*;?[ \t]*$",text):
-        raise FormatError("Expected a Papyrus N3 '3D VERSION 3.0;' text file")
+    if not any(_is_version_header(line) for line in text.splitlines()):
+        raise FormatError("Expected a Papyrus N3 '3D VERSION 3.0' text header "
+                          "(semicolon optional; check file encoding and contents)")
     rows=text.splitlines(keepends=True)
     statements=[]
     pending=""
@@ -215,7 +223,7 @@ def parse_document(text: str, *, require_offsets: bool = True) -> Document:
             if raw.lstrip().startswith('%') or (not raw.strip() and comment):
                 prefix+=row
                 continue
-            if re.match(r"^[ \t]*3D[ \t]+VERSION[ \t]+3\.0[ \t]*;?[ \t]*$",raw,re.I):
+            if _is_version_header(raw):
                 prefix+=row
                 continue
         command_rows.append((raw,comment,row))
