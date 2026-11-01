@@ -84,6 +84,10 @@ def _split(value: str) -> list[str]:
             if ch in "([{<":
                 stack.append(ch)
             elif ch in ")]}>":
+                # Track N3 uses SWITCH DISTANCE (anchor) > {branches}.
+                # This '>' is an operator, not the closing angle of <x,y,z>.
+                if ch==">" and (not stack or stack[-1]!="<"):
+                    continue
                 if not stack or stack.pop()!=matching[ch]:
                     raise FormatError("Unbalanced parentheses/brackets in N3 expression")
             elif ch==',' and not stack:

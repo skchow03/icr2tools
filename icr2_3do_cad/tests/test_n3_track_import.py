@@ -40,7 +40,10 @@ sec0_s0_HI: FACE
       nil,
     ObjectList_L0_0,
     DetailO_0-0,
-    DetailN_0-0
+    DetailN_0-0,
+    SWITCH DISTANCE ([<0,0,170000>])
+      > {(1800000 ? nil), (0 ?
+        POLY <36> {DetailP_0-1, DetailP_0-0, DetailP_0-2})}
   };
 sec0_l0: LIST {
   sec0_s0_HI, nil, nil, nil,
@@ -69,6 +72,8 @@ class TrackStyleN3Tests(unittest.TestCase):
         self.assertEqual(len(model.dynamics),1)
         self.assertGreaterEqual(len(model.polygons),3)
         self.assertGreaterEqual(len(model.planes),2)
+        self.assertEqual(len(model.switches),1)
+        self.assertEqual(next(iter(model.switches.values())).branches[0][0],1800000)
         self.assertEqual(model.mip_names,["walls"])
         self.assertEqual(model.external_names,["stand100"])
         hashes=[s for s in document.statements if s.label=="hash"]
