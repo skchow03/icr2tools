@@ -2,3 +2,6 @@
 ui_preview_*.png
 screenshots/
 *.3do.bak
+
+# Local profiling measurements (may describe machine-specific timings)
+cad_performance*.json
