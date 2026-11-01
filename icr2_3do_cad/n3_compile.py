@@ -10,6 +10,7 @@ The original text is retained separately because a 3DO has no label/comment data
 from __future__ import annotations
 
 from dataclasses import replace
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 import math
 import re
 import struct
@@ -25,6 +26,34 @@ IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
 COLOR = re.compile(r"^(?:<\s*("+NUM+r")\s*>|([A-Za-z_][A-Za-z_0-9]*)\.c|("+NUM+r"))$",re.I)
 PLANE5 = re.compile(r"^\(\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*\)$")
 DOUBLE_QUOTE = re.compile(r'^"([^"]+)"$')
+XYZ_TOKEN = re.compile(r"\[\s*<\s*("+NUM+r")\s*,\s*("+NUM+r")\s*,\s*("+NUM+r")\s*>", re.S)
+SCALE_HINT = re.compile(r"(?m)^\s*%\s*ICR2_COORD_SCALE\s*:\s*([^\r\n]+?)\s*$")
+DEFAULT_FRACTIONAL_SCALE = Decimal(6000)  # legacy 3d23do /s=6000: feet -> Papyrus units
+
+
+def _source_coordinate_scale(source, statements):
+    """Preserve integer Papyrus coordinates; scale fractional XYZ inputs.
+
+    A source comment % ICR2_COORD_SCALE: N explicitly overrides the default.
+    No inferred unit can be guaranteed for every hand-authored N3 file.
+    """
+    hints=SCALE_HINT.findall(source)
+    if len(hints)>1:
+        raise FormatError("Only one % ICR2_COORD_SCALE: N declaration is allowed")
+    if hints:
+        try:
+            scale=Decimal(hints[0].strip())
+        except InvalidOperation as exc:
+            raise FormatError("Invalid ICR2_COORD_SCALE: expected a positive number") from exc
+        if not scale.is_finite() or not (Decimal(0)<scale<=Decimal(1000000)):
+            raise FormatError("ICR2_COORD_SCALE must be positive and at most 1000000")
+        return scale
+    for statement in statements:
+        for match in XYZ_TOKEN.finditer(statement.command):
+            if any(Decimal(v)!=Decimal(v).to_integral_value() for v in match.groups()):
+                return DEFAULT_FRACTIONAL_SCALE
+    return Decimal(1)
+
 
 
 def _i32(value, what):
@@ -98,6 +127,7 @@ class Compiler:
         self.path=path
         # Arbitrary labels need no offset annotation in a standalone .3D file.
         self.document=parse_document(text,require_offsets=False)
+        self.coordinate_scale=_source_coordinate_scale(text,self.document.statements)
         self.decls={entry.label:entry for entry in self.document.statements}
         self.body=bytearray(b"\x00\x00\x00\x00")  # legal null/NIL child pointer
         self.offsets={}
@@ -126,11 +156,22 @@ class Compiler:
     def _record(self,kind,*values):
         return self._allocate(_flavor(kind)+struct.pack("<"+"i"*len(values),*values))
 
+    def _coordinate(self,value):
+        try:
+            numeric=int((Decimal(value)*self.coordinate_scale).to_integral_value(
+                rounding=ROUND_HALF_EVEN))
+        except (InvalidOperation,OverflowError) as exc:
+            raise FormatError(f"Invalid scaled XYZ coordinate {value!r}") from exc
+        if not INT32_LO<=numeric<=INT32_HI:
+            raise FormatError(f"XYZ coordinate {value} × {self.coordinate_scale} "
+                              "exceeds signed 32-bit 3DO range")
+        return numeric
+
     def _vector(self,value):
         match=VEC.fullmatch(value.strip())
         if not match:
             raise FormatError("Expected a coordinate [<X,Y,Z>] expression")
-        x,y,z=(_i32(v,"Vertex coordinate") for v in match.groups()[:3])
+        x,y,z=(self._coordinate(v) for v in match.groups()[:3])
         uv=None
         if match.group(4) is not None:
             uv=(_u16(match.group(4),"Texture U"),_u16(match.group(5),"Texture V"))
@@ -320,7 +361,7 @@ class Compiler:
             ext=re.fullmatch(r'EXTERN\s+"([^"]+)"',external,re.I)
             if not ext:raise FormatError("DYNAMIC requires an EXTERN name")
             idx=self._file(ext.group(1),self.externals)
-            return self._record(15,*[_i32(n,"DYNAMIC XYZ") for n in (x,y,z)],
+            return self._record(15,*[self._coordinate(n) for n in (x,y,z)],
                                 *[self._angle(n) for n in angles],-(idx+1))
         superobj=re.match(r"^SUPEROBJ\s+(.+)$",code,re.I|re.S)
         if superobj:
@@ -394,6 +435,7 @@ class Compiler:
             raise FormatError("Papyrus 3DO resource names must be ASCII") from err
         raw=header+name_table+bytes(self.body)
         checked=Model(self.path,raw_data=raw)
+        checked.n3_coordinate_scale=self.coordinate_scale
         # Rewrite annotations for the new compiled offsets. A label can
         # legitimately denote NIL at 0; that has no separately editable record.
         remapped=Document(

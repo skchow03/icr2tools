@@ -215,7 +215,8 @@ class SourceEditor(ttk.Frame):
             self.on_invalid(error,lineno)
         else:
             self.message.set(f"Valid N3 • {len(model.vertices)} vertices • "
-                             f"{len(model.polygons)} polygons • live preview")
+                             f"{len(model.polygons)} polygons • XYZ ×"
+                             f"{getattr(model,'n3_coordinate_scale',1)} • live preview")
             self.on_valid(model,doc,source)
 
     def apply_now(self):

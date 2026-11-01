@@ -2088,8 +2088,9 @@ class Editor(tk.Tk):
         self.refresh_polygon_list()
         warning=' | '.join(obj.warnings)
         if is_n3:
-            self.status.set(f'Opened standalone {Path(path).name} (compiled in memory). '
-                            'Use Save Copy to write .3DO; keep .3D for comments and labels.')
+            self.status.set(f'Opened standalone {Path(path).name} (compiled in memory; '
+                            f'XYZ scale ×{obj.n3_coordinate_scale}). '
+                            'Use Save Copy for .3DO; keep .3D for labels/comments.')
         else:
             self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
         self._load_source_editor()

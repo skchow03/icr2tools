@@ -5,6 +5,26 @@ The CAD editor now exposes **File > Export editable N3 .3D text** and
 N3 \`3D VERSION 3.0;\` command family (as in
 [skchow03/3do23d](https://github.com/skchow03/3do23d)).
 
+## Fractional N3 coordinates and compile scale
+
+The standalone N3 compiler accepts fractional vertex XYZ coordinates. A
+model with fractional XYZ coordinates is interpreted using **6,000 Papyrus
+units per input unit** by default, following the classic `3d23do /s=6000`
+feet conversion. Integer-only models remain unscaled, preserving existing
+workflows. The scale applies to both vertex XYZ and DYNAMIC XYZ, **not**
+texture UVs, polygon colors or rotation angles.
+
+For files authored in other units, add a source comment before the vertex
+declarations: `% ICR2_COORD_SCALE: 19685` for meters, or
+`% ICR2_COORD_SCALE: 1` for already-scaled Papyrus units. The 6,000
+default is a convention, not a guarantee that every fractional source uses
+feet. The model dimensions should be checked against the originating tool.
+
+Coordinate values are rounded to the nearest signed 32-bit Papyrus integer
+*after* applying the scale. When a visual editor change rewrites an N3
+source, it may normalize the text into raw Papyrus integer units; keep the
+original file if you want to preserve its fractional authoring notation.
+
 ## FACE/BSP plane syntax
 
 Papyrus N3 text defines a FACE/BSP plane using **three ordered points**,
