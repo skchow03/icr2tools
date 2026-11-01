@@ -1553,6 +1553,7 @@ class Editor(tk.Tk):
 
     def _sync_topology_model(self,model,selected_poly=None):
         self.model=model
+        self._refresh_vertex_pointer_names()
         self.poly_order=sorted(model.polygons)
         self.vertex_order=sorted(model.vertices)
         self.dynamic_order=sorted(model.dynamics)
@@ -2431,6 +2432,7 @@ class Editor(tk.Tk):
                 self.model=(Model(source_path,raw_data=self.standalone_n3_binary)
                             if source_path.suffix.lower()=='.3d' and self.standalone_n3_binary is not None
                             else Model(source_path))
+                self._refresh_vertex_pointer_names()
                 self.poly_order=sorted(self.model.polygons)
                 self.vertex_order=sorted(self.model.vertices)
                 self.selected=None;self.selected_poly=None
