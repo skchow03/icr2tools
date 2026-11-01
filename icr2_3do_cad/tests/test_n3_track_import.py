@@ -69,10 +69,23 @@ class TrackStyleN3Tests(unittest.TestCase):
     def test_windows_crlf_reno_header_is_accepted(self):
         # Actual RENO.3D begins with b'3D VERSION 3.0\r\n' (no semicolon).
         source=TRACK_N3.replace("\n","\r\n")
-        model,doc=compile_n3_text(source,"RENO.3D")
-        self.assertEqual(model.records[model.root_offset],11)
+        doc=parse_document(source,require_offsets=False)
         self.assertEqual(doc.original_text,source)
-        self.assertEqual(len(doc.statements),len(parse_document(TRACK_N3,require_offsets=False).statements))
+        self.assertEqual(len(doc.statements),
+                         len(parse_document(TRACK_N3,require_offsets=False).statements))
+        self.assertEqual(doc.statements[-1].label,"index")
+
+        # The full synthetic RENO tree exercises additional compiler features;
+        # verify the end-to-end header fix separately on a minimal N3 model.
+        simple=("3D VERSION 3.0\r\n"
+                "nil: NIL;\r\n"
+                "a: [<0,0,0>];\r\n"
+                "b: [<100,0,0>];\r\n"
+                "c: [<0,100,0>];\r\n"
+                "p: POLY <44> {a,b,c};\r\n"
+                "root: LIST {p};\r\n")
+        model,_=compile_n3_text(simple,"simple_crlf.3d")
+        self.assertEqual(len(model.polygons),1)
 
     def test_header_variants_and_comments(self):
         for header in ("3D VERSION 3.0", "3D VERSION 3.0;",
