@@ -27,6 +27,32 @@ The **Display…** control reveals the detailed LOD, BSP, lighting, projection, 
 
 Editing still uses the original 3DO data, and saving remains an explicit validated **Save Copy** operation with the existing overwrite/backup safeguards.
 
+## Vertex pointer names and viewport labels
+
+Opening a human-authored **.3D** preserves vertex declaration names such as
+`front_left` or `b2`. The Vertex inspector displays each name as an editable
+**Pointer name** attribute, and the vertex list and selection header show it
+alongside the current binary body offset. To rename a vertex, select it and
+use **Rename**; the editor changes the declaration and all references in
+the .3D source without rewriting comments or quoted filenames.
+
+Use **Vertex labels → Off / Names / Offsets** on the viewport toolbar,
+or **View → Vertex labels**, to control on-screen labeling. In Names mode,
+unnamed vertices fall back to their numeric offsets. For large models,
+on-screen labels are spaced apart and capped to avoid unreadable overlapping
+text; the selected vertex is always identifiable.
+
+Pointer names remain attached to the source declaration through vertex
+XYZ and texture UV changes, undo/redo, and normal source recompilation.
+They are **not** matched by coordinate, since texture seams can duplicate
+XYZ positions. New or deleted vertex declarations update the available
+names. A binary .3DO has no authored pointer names, so they initially
+remain blank when opening a .3DO directly, although you may assign names
+in the inspector for subsequent .3D exports.
+
+**Keep your annotated .3D source.** The binary .3DO format does not store
+pointer names, so reopening only the .3DO cannot recover them.
+
 ## Live .3D source editing
 
 The **.3D Source** tab contains an editable Papyrus/N3 text document,
