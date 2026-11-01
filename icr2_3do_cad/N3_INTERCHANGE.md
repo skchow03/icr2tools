@@ -5,6 +5,33 @@ The CAD editor now exposes **File > Export editable N3 .3D text** and
 N3 \`3D VERSION 3.0;\` command family (as in
 [skchow03/3do23d](https://github.com/skchow03/3do23d)).
 
+## FACE/BSP plane syntax
+
+Papyrus N3 text defines a FACE/BSP plane using **three ordered points**,
+not the five binary coefficient fields. The exporter now prefers existing
+polygon vertex pointers that define exactly the same oriented plane:
+
+```text
+o1: BSPF (b2, b0, c0), nil, fr, o0;
+```
+
+When there is no exact pointer match, it uses a three-point integer
+construction (derived from `3do23d/plane.py`) and writes explicit N3
+coordinates, for example:
+
+```text
+o1: BSPF ([<37, 27, 0>], [<-10, 27, 0>], [<0, 27, 14>]), nil, fr, o0;
+```
+
+If an original binary plane cannot be expressed by **three exact
+in-range integer points**, the export fails with an explanation rather
+than silently substituting an incorrect plane. A recompiled 3DO can
+still use different coefficient *magnitudes* even when the mathematical
+plane is identical, so check complex scenery visibility in-game.
+
+Legacy five-number overlays can still be imported for compatibility,
+but they are never emitted as canonical N3 source.
+
 ## Open a standalone .3D (no source binary required)
 
 Use **File > Open…** and select any supported Papyrus/N3 `.3D`, or select
