@@ -18,7 +18,7 @@ from three_do import FormatError
 LEX_RE = re.compile(
     r'(?P<comment>%[^\n]*)|(?P<string>"[^"\n]*")|'
     r'(?P<keyword>\b(?:3D|VERSION|NIL|POLY|LINE|LIST|FACE2?|BSPF|BSPA|BSP2|BSPN|MATERIAL|GROUP|MIP|SWITCH|DISTANCE|DYNAMIC|EXTERN|SUPEROBJ|PMP2|SRB|RECOLOR|DYNO|DATA)\b)|'
-    r'(?P<label>^[ \t]*[A-Za-z_][A-Za-z_0-9]*(?=[ \t]*:))',
+    r'(?P<label>^[ \t]*[A-Za-z_][A-Za-z_0-9-]*(?=[ \t]*:))',
     re.I | re.M,
 )
 
@@ -28,12 +28,12 @@ def find_error_line(source: str, error: str) -> int:
     m=re.search(r'\bline\s+(\d+)\b', error, re.I)
     if m:
         return max(1,int(m.group(1)))
-    m=re.search(r"(?:in|at)\s+(?:record|label)\s+['\"]?([A-Za-z_][\w]*)", error, re.I)
+    m=re.search(r"(?:in|at)\s+(?:record|label)\s+['\"]?([A-Za-z_][\w-]*)", error, re.I)
     if m:
         token=m.group(1)
         match=re.search(r'(?m)^\s*'+re.escape(token)+r'\s*:',source)
         if match:return source.count("\n",0,match.start())+1
-    m=re.search(r'(?:unresolved N3 pointer|unknown plane vertex):?\s*[\'"]?([A-Za-z_][\w]*)',error,re.I)
+    m=re.search(r'(?:unresolved N3 pointer|unknown plane vertex):?\s*[\'"]?([A-Za-z_][\w-]*)',error,re.I)
     if m:
         token=m.group(1)
         match=re.search(r'(?<![\w])'+re.escape(token)+r'(?![\w])',source)

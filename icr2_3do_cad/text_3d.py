@@ -19,7 +19,7 @@ import struct
 from three_do import FormatError, Model, INT32_LO, INT32_HI, INT64_LO, INT64_HI, i32, i64
 
 ID_LINE = re.compile(r"^\s*%\s*ICR2_OFFSET\s*:\s*(\d+)\s*$", re.I)
-IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9-]*$")
 AUTO_ID = re.compile(r"^_(\d+)$")
 NUM = r"[-+]?\d+"
 VERTEX_RE = re.compile(r"^\[\s*<\s*(" + NUM + r")\s*,\s*(" + NUM +
@@ -155,7 +155,10 @@ def _command(model: Model, off: int) -> str:
         pairs=[f"{i32(b,off+8+8*j)}: {i32(b,off+12+8*j)}" for j in range(count)]
         return "RECOLOR ("+", ".join(pairs)+")"
     if kind == 17:
-        return "DATA {"+", ".join(str(i32(b,off+j)) for j in (4,8,12,16))+"}"
+        # Original standalone N3 track DATA may contain a long hash table.
+        # Retain its full body when the compiler supplied its size metadata.
+        count=getattr(model,"n3_data_lengths",{}).get(off,4)
+        return "DATA {"+", ".join(str(i32(b,off+4*j)) for j in range(1,count+1))+"}"
     raise FormatError(f"Cannot export {kind} record at @{off} to compatible N3 text")
 
 
@@ -187,7 +190,7 @@ def _without_comment(line):
 
 def parse_document(text: str, *, require_offsets: bool = True) -> Document:
     """Parse N3 commands while preserving comments and all original label names."""
-    if not re.search(r"(?im)^\s*3D\s+VERSION\s+3\.0\s*;",text):
+    if not re.search(r"(?im)^[ \t]*3D[ \t]+VERSION[ \t]+3\.0[ \t]*;?[ \t]*$",text):
         raise FormatError("Expected a Papyrus N3 '3D VERSION 3.0;' text file")
     rows=text.splitlines(keepends=True)
     statements=[]
@@ -212,7 +215,7 @@ def parse_document(text: str, *, require_offsets: bool = True) -> Document:
             if raw.lstrip().startswith('%') or (not raw.strip() and comment):
                 prefix+=row
                 continue
-            if re.match(r"^\s*3D\s+VERSION\s+3\.0\s*;\s*$",raw,re.I):
+            if re.match(r"^[ \t]*3D[ \t]+VERSION[ \t]+3\.0[ \t]*;?[ \t]*$",raw,re.I):
                 prefix+=row
                 continue
         command_rows.append((raw,comment,row))
@@ -221,7 +224,7 @@ def parse_document(text: str, *, require_offsets: bool = True) -> Document:
         combined="\n".join(r[0] for r in command_rows)
         if combined.count(";")!=1 or not combined.rstrip().endswith(";"):
             raise FormatError(f"Only one N3 command per statement is supported (near line {lineno})")
-        m=re.match(r"^\s*([A-Za-z_][A-Za-z_0-9]*)\s*:\s*(.*?)\s*;\s*$",combined,re.S)
+        m=re.match(r"^\s*([A-Za-z_][A-Za-z_0-9-]*)\s*:\s*(.*?)\s*;\s*$",combined,re.S)
         if not m:
             raise FormatError(f"Could not parse N3 declaration near line {lineno}")
         label=m.group(1)
@@ -503,7 +506,11 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
             output.append(row)
     output.extend(["", "nil: NIL;", ""])
     for off in _all_offsets(checked):
-        command=_command(checked,off)
+        entry=annotations.get(off)
+        # Track source DATA/hash records are variable-length and opaque to
+        # the generic Model traversal. Use the original full declaration.
+        command=(entry.command if entry and checked.records.get(off)==17 and
+                 entry.command.upper().startswith("DATA ") else _command(checked,off))
         command=re.sub(r'"[^"]*"|(?<![A-Za-z_0-9])_(\d+)\b',
              lambda m:m.group(0) if m.group(0).startswith('"')
                        else label_for.get(int(m.group(1)),m.group(0)),command)
