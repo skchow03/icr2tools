@@ -485,12 +485,21 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
                  if entry.offset in available and entry.offset>0}
     output=["3D VERSION 3.0;",
             "% Exported from a standalone N3 source by ICR2 3DO CAD.",
+            "% ICR2_COORD_SCALE: 1",
+            "% Canonical source uses raw Papyrus XYZ units.",
             f"% ICR2_ROOT: {checked.root_offset}"]
+    # All canonicalized XYZ coordinates in this output are raw 3DO integers.
+    # Do not carry a fractional source's old multiplier forward: that would
+    # silently scale coordinates twice on the next import.
+    def keep_annotation(row):
+        stripped=row.strip()
+        return (stripped.startswith("%") and
+                not ID_LINE.fullmatch(stripped) and
+                not re.match(r"%\s*ICR2_(?:ROOT|COORD_SCALE)\s*:",stripped,re.I))
     header=template.statements[0].before if template.statements else ""
     for row in header.splitlines():
         stripped=row.strip()
-        if stripped.startswith("%") and not ID_LINE.fullmatch(stripped) and not re.match(
-                r"%\s*ICR2_ROOT:",stripped,re.I):
+        if keep_annotation(row):
             output.append(row)
     output.extend(["", "nil: NIL;", ""])
     for off in _all_offsets(checked):
@@ -502,9 +511,7 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
         if entry:
             for row in entry.before.splitlines():
                 stripped=row.strip()
-                if stripped.startswith("%") and not ID_LINE.fullmatch(stripped) and not re.match(
-                         r"%\s*ICR2_ROOT:",stripped,re.I) and not re.match(
-                         r"%\s*3D VERSION",stripped,re.I):
+                if keep_annotation(row) and not re.match(r"%\s*3D VERSION",stripped,re.I):
                     output.append(row)
         output.append(f"% ICR2_OFFSET: {off}")
         label=label_for[off]
@@ -515,10 +522,10 @@ def export_standalone_text(model: Model, template: Document, source_binary: byte
     for entry in template.statements:
         if entry.offset not in available and entry.offset!=0:
             for row in entry.before.splitlines():
-                if row.strip().startswith("%") and not ID_LINE.fullmatch(row.strip()):
+                if keep_annotation(row):
                     output.append(row)
             output.append(f"{entry.label}: {entry.command};")
     for row in template.epilogue.splitlines():
-        if row.strip().startswith("%"):
+        if keep_annotation(row):
             output.append(row)
     return "\n".join(output)+"\n"
