@@ -101,6 +101,26 @@ unfinished text edit is validated; if invalid, fix the highlighted statement
 first. Parser errors should be resolved before making additional visual edits.
 The original `.3D` source file is never overwritten automatically.
 
+## Large track .3D files (RENO-style)
+
+The standalone N3 loader also accepts track files using a `3D VERSION 3.0`
+header **without** a trailing semicolon, hyphenated names such as
+`DetailP_0-1`, nested FACE/BSP/MATERIAL/LIST trees, large `DATA`
+hash tables and a final `index: LIST { ... };` root.
+
+The editor compiles the model in memory; a complete track may have tens of
+thousands of N3 source lines, so initial compilation, annotation and first
+viewport rendering can be substantially slower than for a car or building.
+Vertex pointer names remain attached to the original declarations.
+
+The generic 3DO binary parser does not expose the length of track hash-table
+DATA records. When editing an original standalone track source, its full
+named `DATA` declarations are retained in edited .3D exports rather than
+silently truncating them to four integers. Continue keeping the original
+source and test any separately compiled 3DO in-game. Track-specific drawing
+order, surfaces and external MIP/3DO resources are not automatically fixed
+by loading a text source.
+
 ## Open standalone N3 .3D models
 
 You can now open a Papyrus/N3 `.3D` text file **directly**, without first

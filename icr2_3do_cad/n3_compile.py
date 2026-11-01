@@ -22,8 +22,8 @@ NUM = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 VEC = re.compile(r"^\[\s*<\s*("+NUM+r")\s*,\s*("+NUM+r")\s*,\s*("+NUM+
                  r")\s*>\s*(?:,\s*T\s*=\s*<\s*("+NUM+r")\s*,\s*("+NUM+
                  r")\s*>)?\s*(?:,\s*[cC]\s*=\s*<\s*("+NUM+r")\s*>)?\s*\]$",re.S)
-IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*$")
-COLOR = re.compile(r"^(?:<\s*("+NUM+r")\s*>|([A-Za-z_][A-Za-z_0-9]*)\.c|("+NUM+r"))$",re.I)
+IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9-]*$")
+COLOR = re.compile(r"^(?:<\s*("+NUM+r")\s*>|([A-Za-z_][A-Za-z_0-9-]*)\.c|("+NUM+r"))$",re.I)
 PLANE5 = re.compile(r"^\(\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*\)$")
 DOUBLE_QUOTE = re.compile(r'^"([^"]+)"$')
 XYZ_TOKEN = re.compile(r"\[\s*<\s*("+NUM+r")\s*,\s*("+NUM+r")\s*,\s*("+NUM+r")\s*>", re.S)
@@ -84,6 +84,10 @@ def _split(value: str) -> list[str]:
             if ch in "([{<":
                 stack.append(ch)
             elif ch in ")]}>":
+                # Track N3 uses SWITCH DISTANCE (anchor) > {branches}.
+                # This '>' is an operator, not the closing angle of <x,y,z>.
+                if ch==">" and (not stack or stack[-1]!="<"):
+                    continue
                 if not stack or stack.pop()!=matching[ch]:
                     raise FormatError("Unbalanced parentheses/brackets in N3 expression")
             elif ch==',' and not stack:
@@ -138,6 +142,7 @@ class Compiler:
         self._anonymous=0
         self.geometry=0
         self.vertex_uv={}  # Track whether every textured pointer carries UV data.
+        self.data_lengths={}  # Track N3 DATA payloads may exceed four words.
 
     def _file(self,name,table):
         if len(name.encode('ascii','strict'))>8:
@@ -219,6 +224,8 @@ class Compiler:
 
     def _node(self,expression):
         expression=expression.strip()
+        if expression in self.decls:
+            return self._named(expression)
         if IDENT.fullmatch(expression):
             return self._named(expression)
         if expression.lower()=='nil':
@@ -390,8 +397,13 @@ class Compiler:
         data=re.match(r"^DATA\s+(\{.*\})$",code,re.I|re.S)
         if data:
             numbers=_brace(data.group(1))
-            if len(numbers)!=4:raise FormatError("DATA requires four integers")
-            return self._record(17,*[_i32(x,"DATA parameter") for x in numbers])
+            if not numbers or any(not x for x in numbers):
+                raise FormatError("DATA requires one or more integer values")
+            if len(numbers)>250000:
+                raise FormatError("DATA exceeds safe maximum of 250,000 integers")
+            off=self._record(17,*[_i32(x,"DATA parameter") for x in numbers])
+            self.data_lengths[off]=len(numbers)
+            return off
         recolor=re.match(r"^RECOLOR\s*\((.*)\)$",code,re.I|re.S)
         if recolor:
             fields=_split(recolor.group(1))
@@ -436,6 +448,7 @@ class Compiler:
         raw=header+name_table+bytes(self.body)
         checked=Model(self.path,raw_data=raw)
         checked.n3_coordinate_scale=self.coordinate_scale
+        checked.n3_data_lengths=self.data_lengths
         # Rewrite annotations for the new compiled offsets. A label can
         # legitimately denote NIL at 0; that has no separately editable record.
         remapped=Document(

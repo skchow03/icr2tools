@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import re
 
-IDENTIFIER=re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+IDENTIFIER=re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
 AUTO_OFFSET=re.compile(r"^_\d+$")
 RESERVED={
     "NIL","3D","VERSION","POLY","LINE","LIST","FACE","FACE2","BSPF",
     "BSPA","BSP2","BSPN","MATERIAL","MIP","GROUP","DYNAMIC","EXTERN",
     "SUPEROBJ","SWITCH","DISTANCE","PMP2","SRB","RECOLOR","DYNO","DATA","ROOT"
 }
-TOKEN=re.compile(r'%[^\n]*|"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_]*')
+TOKEN=re.compile(r'%[^\n]*|"(?:[^"]|"")*"|[A-Za-z_][A-Za-z0-9_-]*')
 
 
 def names_for_vertices(model,document,*,original_n3):
@@ -59,7 +59,7 @@ def rename_vertex_in_source(source,document,old_label,new_label):
     name=new_label.strip()
     if not IDENTIFIER.fullmatch(name) or name.upper() in RESERVED:
         raise ValueError("Pointer name must be an identifier (letters, digits, "
-                         "underscores; start with letter or underscore) "
+                         "underscores or hyphens; start with letter or underscore) "
                          "and cannot be an N3 keyword.")
     if document is None:
         raise ValueError("N3 source metadata unavailable for renaming.")
