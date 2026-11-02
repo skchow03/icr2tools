@@ -188,7 +188,7 @@ def make_mesh(model, palette=None, atlas=None) -> MeshData:
         normalized = ((original - center) / scale).astype(np.float32)
         rect = (atlas.polygon_rects.get(polygon_offset, (0, 0, 0, 0))
                 if atlas is not None and polygon.kind == 2 else (0, 0, 0, 0))
-        uvs = [model.vertices[r].uv for r in refs]
+        uvs = [getattr(model.vertices[r], 'uv', None) for r in refs]
         if any(uv is None for uv in uvs):
             rect = (0, 0, 0, 0)
         start_vertex = len(triangles)
