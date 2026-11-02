@@ -71,11 +71,22 @@ def run(path):
     window.show()
     started = perf_counter()
     result = {"ok": False, "error": "timed out"}
+    reload_state = {"started":False, "completed":False, "vbo":None}
+    def reload_completed(*args):
+        reload_state["completed"] = True
     def check():
         elapsed = perf_counter() - started
         view = window.viewer
+        if (dynamic_test and window._info and view._vao is not None
+                and view._frame_count >= 3 and not reload_state["started"]):
+            reload_state["started"] = True
+            reload_state["vbo"] = view._vbo
+            window.reload_mips()
+            window.worker.ready.connect(reload_completed)
         if (window._info and view._vao is not None and
-                view._frame_count >= 8 and elapsed >= 1.25):
+                view._frame_count >= 8 and elapsed >= 1.25 and
+                (not dynamic_test or
+                 (reload_state["completed"] and not window.worker.isRunning()))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -92,6 +103,10 @@ def run(path):
                    view._mesh.polygon_count <= len(view._model.polygons) or
                    view._visibility_info.get("instances_visited", 0) != 6)):
                 result["error"] = "DYNAMIC child geometry/BSP order missing in GPU draw"
+            elif (dynamic_test and
+                  (reload_state["vbo"] != view._vbo or
+                   not reload_state["completed"])):
+                result["error"] = "MIP reload unexpectedly rebuilt the GPU vertex buffer"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:
@@ -118,6 +133,7 @@ def run(path):
                     f"upload {view.upload_ms:.1f} ms; "
                     f"MIP faces {len(view._atlas.polygon_rects)}; "
                     f"external instances {view._scene.loaded_instances}; "
+                    f"MIP hot reload {reload_state['completed']}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
