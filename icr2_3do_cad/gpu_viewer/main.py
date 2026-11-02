@@ -169,13 +169,17 @@ class LoadWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, path, palette_path, texture_folder=None,
-                 fallback_mip=None, *, objects_folder=None, existing_model=None):
+                 fallback_mip=None, *, objects_folder=None,
+                 mip_overrides=None, object_overrides=None,
+                 existing_model=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
         self.texture_folder = texture_folder
         self.fallback_mip = fallback_mip
         self.objects_folder = objects_folder
+        self.mip_overrides = dict(mip_overrides or {})
+        self.object_overrides = dict(object_overrides or {})
         self.existing_model = existing_model
 
     def run(self):
@@ -197,11 +201,13 @@ class LoadWorker(QThread):
             parse_ms = (perf_counter() - t0) * 1000
             # Resolve and transform each nested instance once. BSP and
             # RES selection remain per-source-model and per-placement.
-            scene = build_scene(model, objects_folder=self.objects_folder)
+            scene = build_scene(model, objects_folder=self.objects_folder,
+                                object_overrides=self.object_overrides)
             palette = load_palette(self.palette_path)
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
-                                fallback_mip=self.fallback_mip)
+                                fallback_mip=self.fallback_mip,
+                                mip_overrides=self.mip_overrides)
             mesh = make_mesh(scene.geometry,
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
@@ -223,10 +229,58 @@ class LoadWorker(QThread):
                 "external_warnings": scene.warnings,
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
+                "recolor_pairs": scene.recolor_pairs,
+                "material_names": tuple(sorted(set(
+                    scene.geometry.polygon_materials.values()),
+                    key=str.casefold)),
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
             self.ready.emit(mesh, stats, model, atlas, palette, scene)
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+class TextureReloadWorker(QThread):
+    """Read changed MIP bytes on a worker, without reloading car/3DO models."""
+    ready = Signal(object, object, object)
+    failed = Signal(str)
+
+    def __init__(self, scene, mesh, palette, model_path, texture_folder,
+                 fallback_mip, mip_overrides, previous_atlas):
+        super().__init__()
+        self.scene = scene
+        self.mesh = mesh
+        self.palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        self.model_path = model_path
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.mip_overrides = dict(mip_overrides)
+        self.previous_atlas = previous_atlas
+
+    def run(self):
+        try:
+            atlas = build_atlas(
+                self.scene.geometry, self.model_path,
+                texture_folder=self.texture_folder,
+                fallback_mip=self.fallback_mip,
+                mip_overrides=self.mip_overrides)
+            # Texture edits normally change only indexed pixels. VBO and BSP
+            # index ordering remain completely untouched in the fast path.
+            mesh = None
+            if atlas.polygon_rects != self.previous_atlas.polygon_rects:
+                mesh = make_mesh(
+                    self.scene.geometry,
+                    self.palette.astype(np.float32) / 255.0, atlas)
+            stats = {
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
+            }
+            self.ready.emit(atlas, mesh, stats)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -447,6 +501,17 @@ class GLViewport(QOpenGLWidget):
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 256, 1, 0, GL_RGB,
                      GL_UNSIGNED_BYTE, self._palette)
+
+    def set_atlas(self, atlas):
+        """Replace MIP pixel texture only: preserve VAO/VBO and BSP EBO."""
+        self._atlas = atlas
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_texture_assets()
+            finally:
+                self.doneCurrent()
+        self.update()
 
     def set_palette(self, palette):
         """Swap the 256-color lookup without retessellating/reuploading XYZ."""
