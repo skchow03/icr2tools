@@ -29,6 +29,26 @@ def camera_in_model_units(center, scale, target, azimuth, elevation, distance):
     )
 
 
+
+def origin_view_target(center, scale, azimuth, elevation, distance):
+    """Target for a perspective view whose eye is EXACTLY raw XYZ (0,0,0).
+
+    Mesh vertices use (raw-center)/scale. camera_view() takes a target
+    plus a spherical direction times distance. Cancel that offset rather
+    than setting target=(0,0,0), which is only the normalized bounding-box
+    center and generally NOT the Papyrus coordinate origin.
+    """
+    if not math.isfinite(scale) or scale <= 0:
+        raise ValueError("Invalid mesh scale")
+    if not math.isfinite(distance) or distance <= 0:
+        raise ValueError("Invalid camera distance")
+    direction = np.array((
+        math.cos(elevation) * math.sin(azimuth),
+        -math.cos(elevation) * math.cos(azimuth),
+        math.sin(elevation),
+    ), dtype=np.float64)
+    return -np.asarray(center, dtype=np.float64) / scale - distance * direction
+
 def ordered_bsp_indices(model, mesh, camera, distance=0.0):
     """Return (uint32 indices, visible polygon IDs, traversal statistics).
 
