@@ -467,13 +467,24 @@ class Model:
             uv=struct.unpack_from('<HH',self.body,off+16) if textured else None
             self.vertices[off]=Vertex(off,coords,coords,textured,uv,uv)
         for material_offset, (name, child_offset) in self.materials.items():
-            # A material applies to all descendant POLY[T] records, including
-            # nested LIST/BSP children, without rewriting source record order.
+            # MATERIAL scopes behave like nested texture overrides. The
+            # nearest enclosing named MATERIAL owns each POLY[T]; a parent
+            # material must NOT claim polygons beneath a nested MATERIAL.
+            # Previously the outer root was parsed first and setdefault()
+            # assigned its MIP to *every* descendant, preventing the inner
+            # skyindex/page03b assignments from ever taking effect.
+            #
+            # A GROUP-only MATERIAL (MIP index -1) does not name a new
+            # texture and is therefore transparent to the parent scope.
             pending_material=[child_offset]; seen_material=set()
             while pending_material:
                 current=pending_material.pop()
                 if current in seen_material:continue
                 seen_material.add(current)
+                if current != material_offset and current in self.materials:
+                    # The nested wrapper will independently assign its own
+                    # textured descendants, including through LIST/BSP nodes.
+                    continue
                 if current in self.polygons and self.polygons[current].kind==2:
                     self.polygon_materials.setdefault(current,name)
                 pending_material.extend(self.children.get(current,[]))
