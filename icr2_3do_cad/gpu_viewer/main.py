@@ -632,6 +632,7 @@ class Window(QMainWindow):
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
+        self.objects_folder = None
         self.fallback_mip = None
         self.model_path = None
         self._preserve_view = False
@@ -681,6 +682,11 @@ class Window(QMainWindow):
         self.lod_spin.setValue(0)
         self.lod_spin.valueChanged.connect(self._lod_changed)
         bspbar.addWidget(self.lod_spin)
+        self.auto_lod = QCheckBox("Auto per anchor")
+        self.auto_lod.setChecked(True)
+        self.auto_lod.toggled.connect(self._lod_changed)
+        bspbar.addWidget(self.auto_lod)
+        self.lod_spin.setEnabled(False)
         self.all_lods = QCheckBox("All LOD branches (diagnostic)")
         self.all_lods.toggled.connect(self._lod_changed)
         bspbar.addWidget(self.all_lods)
@@ -701,6 +707,9 @@ class Window(QMainWindow):
         folder_button = QPushButton("MIP folder…")
         folder_button.clicked.connect(self.choose_mip_folder)
         assetsbar.addWidget(folder_button)
+        objects_button = QPushButton("3DO objects folder…")
+        objects_button.clicked.connect(self.choose_objects_folder)
+        assetsbar.addWidget(objects_button)
         fallback_button = QPushButton("Fallback MIP…")
         fallback_button.clicked.connect(self.choose_fallback_mip)
         assetsbar.addWidget(fallback_button)
@@ -784,6 +793,17 @@ class Window(QMainWindow):
             self.texture_folder = Path(directory)
             self._reload_texture_assets()
 
+    def choose_objects_folder(self):
+        if self._busy():
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with external .3DO objects",
+            str(self.objects_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
+        if directory:
+            self.objects_folder = Path(directory)
+            self._reload_texture_assets()
+
     def choose_fallback_mip(self):
         if self._busy():
             return
@@ -811,9 +831,12 @@ class Window(QMainWindow):
         self._update_polygon_status()
 
     def _lod_changed(self, *args):
-        self.lod_spin.setEnabled(not self.all_lods.isChecked())
+        self.lod_spin.setEnabled(not (self.all_lods.isChecked()
+                                      or self.auto_lod.isChecked()))
         self.viewer.lod_distance = (
-            None if self.all_lods.isChecked() else self.lod_spin.value()
+            None if self.all_lods.isChecked()
+            else 'auto' if self.auto_lod.isChecked()
+            else self.lod_spin.value()
         )
         self.viewer.invalidate_visibility()
 
@@ -842,7 +865,9 @@ class Window(QMainWindow):
             self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
         elif offset not in self.viewer._visible_set:
             self.polygon_status.setText(f"@{offset}: EXCLUDED by BSP or selected LOD")
-        elif offset not in self.viewer._mesh.polygon_ranges:
+        elif (self.viewer._scene is None or
+              self.viewer._scene.polygon_lookup.get((0, offset))
+              not in self.viewer._mesh.polygon_ranges):
             self.polygon_status.setText(f"@{offset}: selected by BSP, but degenerate / not meshed")
         else:
             self.polygon_status.setText(
@@ -850,7 +875,9 @@ class Window(QMainWindow):
 
     def _set_perspective(self, checked):
         self.viewer.perspective = checked
-        self.viewer.update()
+        # Orthographic BSP must use parallel-ray direction rather than the
+        # finite perspective camera position. Reevaluate on every toggle.
+        self.viewer.invalidate_visibility()
 
     def _toggle_benchmark(self, checked):
         if checked:
@@ -889,14 +916,15 @@ class Window(QMainWindow):
         self.stats_label.setText("Loading geometry and MIP atlas…")
         self.worker = LoadWorker(
             path, self.palette_path, self.texture_folder, self.fallback_mip,
+            objects_folder=self.objects_folder,
             existing_model=(self.viewer._model if reuse_model else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats, model, atlas, palette):
+    def _loaded(self, mesh, stats, model, atlas, palette, scene):
         self._info = stats
-        self.viewer.set_mesh(mesh, model, atlas, palette,
+        self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=self._preserve_view)
         self._preserve_view = False
         self.palette_status.setText(
@@ -917,7 +945,9 @@ class Window(QMainWindow):
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
-            f"external placements {stats['external_objects']:,} (not drawn)")
+            f"external instances {stats['dynamic_instances']:,} loaded | "
+            f"RES switches {stats['switches']:,} | "
+            f"{len(stats['external_warnings'])} missing/problematic objects")
         self.stats_label.setText(
             f"Parse {stats['parse_ms']:.0f} ms  |  "
             f"Mesh {stats['mesh_ms']:.0f} ms  |  "
@@ -927,7 +957,9 @@ class Window(QMainWindow):
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
         self.statusBar().showMessage(
-            "BSP painter mode | Left-drag orbit | Shift-left/middle pan | Wheel zoom | F frame")
+            ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
+            if stats['external_warnings'] else
+            "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
@@ -963,6 +995,9 @@ class Window(QMainWindow):
                 "mip_textures_missing": list(self._info.get("missing_textures", ())),
                 "mip_load_errors": list(self._info.get("texture_errors", ())),
                 "palette_basename": self.palette_path.name,
+                "dynamic_instances": self._info.get("dynamic_instances", 0),
+                "external_warnings": list(self._info.get("external_warnings", ())),
+                "switches_in_models": self._info.get("switches", 0),
                 "render_mode": self.viewer.render_mode,
                 "lod_distance": self.viewer.lod_distance,
                 "bsp_selected_polygons": len(self.viewer._visible_set),
