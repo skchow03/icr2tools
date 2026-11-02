@@ -10,6 +10,7 @@ import os
 import shutil
 import struct
 import tempfile
+import numpy as np
 import faulthandler
 faulthandler.enable()
 from pathlib import Path
@@ -89,6 +90,7 @@ def run(path):
     started = perf_counter()
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
+    origin = {"tested": False}
     live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
             "valid_sent":False, "valid_seen":False,
             "vbo":None, "azimuth":None, "source":None}
@@ -143,11 +145,49 @@ def run(path):
                   not window._source_invalid and not pane.pending and
                   window.worker is not None and not window.worker.isRunning()):
                 live["valid_seen"] = True
+        if dynamic_test and live["valid_seen"] and not origin["tested"]:
+            # Exercise the actual user-visible camera preset and its GL view:
+            # model origin must become the perspective EYE, even when the
+            # base mesh was centered/scaled around a different bounding box.
+            prior = (view.target.copy(), view.distance, view.half_height,
+                     view.azimuth, view.elevation, view.perspective, view._vbo)
+            window.origin_button.setChecked(True)
+            if not (view.origin_mode and view.perspective and
+                    window.perspective_toggle.isChecked() and
+                    not window.perspective_toggle.isEnabled()):
+                result["error"] = "Origin toggle did not enter perspective eye mode"
+            else:
+                view.azimuth += .7
+                view.elevation = .3
+                view.invalidate_visibility()
+                raw_eye = view._camera_eye_model()
+                view_matrix, _, _ = view._camera_view_matrix()
+                raw_origin_in_gpu = -np.asarray(view._mesh.center)/view._mesh.scale
+                in_eye_space = view_matrix @ np.append(raw_origin_in_gpu, 1.0)
+                if (max(abs(v) for v in raw_eye) > 1e-7 or
+                    not np.allclose(in_eye_space[:3], (0,0,0), atol=1e-9) or
+                    view._vbo != prior[6]):
+                    result["error"] = "Origin mode eye is not at raw model XYZ 0,0,0"
+            # Exiting via the toggle must restore exactly the previous
+            # orbit target, distance, orientation and perspective mode.
+            window.origin_button.setChecked(False)
+            if (view.origin_mode or
+                not np.array_equal(view.target, prior[0]) or
+                (view.distance, view.half_height, view.azimuth,
+                 view.elevation, view.perspective) != prior[1:6] or
+                not window.perspective_toggle.isEnabled()):
+                result["error"] = "Origin toggle failed to restore exterior view"
+            origin["tested"] = True
+            if result["error"] != "timed out":
+                timer.stop()
+                window.close()
+                app.quit()
+                return
         if (window._info and view._vao is not None and
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
                  (reload_state["completed"] and not window.worker.isRunning()
-                  and live["valid_seen"]))):
+                  and live["valid_seen"] and origin["tested"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -208,6 +248,7 @@ def run(path):
                     f"external instances {view._scene.loaded_instances}; "
                     f"MIP hot reload {reload_state['completed']}; "
                     f"N3 invalid/valid preview {live['invalid_seen']}/{live['valid_seen']}; "
+                    f"origin camera {origin['tested']}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
