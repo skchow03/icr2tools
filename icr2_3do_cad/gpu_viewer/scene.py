@@ -174,13 +174,13 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                 poly = scene.polygon_lookup.get((instance_id, old))
                 if poly is None:
                     continue
+                if instance_id == 0:
+                    root_visible.add(old)
                 span = mesh.polygon_ranges.get(poly)
                 if span is None:
                     continue
                 spans.append(span)
                 stats['mesh_polygons'] += 1
-                if instance_id == 0:
-                    root_visible.add(old)
             elif kind in ('dynamic', 'external'):
                 child = scene.links.get((instance_id, kind, old))
                 if child is not None:
