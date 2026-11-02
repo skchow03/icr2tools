@@ -76,7 +76,7 @@ def run(path):
         elif elapsed > 45:
             result["error"] = (
                 f"timeout loading or drawing: {window.stats_label.text()} | "
-                f"ctx={view._ctx is not None}, "
+                f"ctx={view._program is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
             timer.stop()

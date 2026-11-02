@@ -1,11 +1,12 @@
 """Experimental GPU viewport for ICR2 track and car geometry.
 
 Standalone read-only prototype: uses the production N3/3DO parser, but NOT
-Tkinter's per-polygon renderer. Requires PySide6, moderngl and numpy.
+Tkinter's per-polygon renderer. Requires PySide6, PyOpenGL and numpy.
 """
 from __future__ import annotations
 
 import argparse
+import ctypes
 import json
 import math
 from pathlib import Path
@@ -21,7 +22,19 @@ if str(CAD_ROOT) not in sys.path:
     sys.path.insert(0, str(CAD_ROOT))
 
 try:
-    import moderngl
+    from OpenGL.GL import (
+        GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
+        GL_DEPTH_TEST, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_VERTEX_SHADER,
+        glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
+        glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
+        glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
+        glDrawArrays, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
+        glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
+        glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
+        glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
+        glViewport,
+    )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
     from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
     from PySide6.QtWidgets import (
@@ -41,8 +54,8 @@ from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 
 VERTEX_SHADER = """
 #version 330 core
-in vec3 in_pos;
-in vec3 in_color;
+layout(location = 0) in vec3 in_pos;
+layout(location = 1) in vec3 in_color;
 uniform mat4 u_mvp;
 out vec3 v_color;
 void main() {
@@ -163,9 +176,9 @@ class GLViewport(QOpenGLWidget):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setMouseTracking(True)
         self.setAcceptDrops(False)
-        self._ctx = None
+        self._program = None
+        self._uniform = None
         self._resources_released = False
-        self._shader = None
         self._vbo = None
         self._vao = None
         self._mesh = None
@@ -183,40 +196,50 @@ class GLViewport(QOpenGLWidget):
         self.frameSwapped.connect(self._on_frame_swapped)
 
     def initializeGL(self):
+        """Qt owns the active FBO. PyOpenGL operates on it without wrapping."""
+        self._resources_released = False
+        self.context().aboutToBeDestroyed.connect(self.shutdown_gl)
+        vertex_shader = glCreateShader(GL_VERTEX_SHADER)
+        fragment_shader = glCreateShader(GL_FRAGMENT_SHADER)
         try:
-            self._ctx = moderngl.create_context(require=330)
-            self._resources_released = False
-            # Qt can destroy/re-create QOpenGLWidget contexts during native
-            # teardown. Release our VAO/VBO/program while its context is alive.
-            self.context().aboutToBeDestroyed.connect(self.shutdown_gl)
-            self._shader = self._ctx.program(
-                vertex_shader=VERTEX_SHADER, fragment_shader=FRAGMENT_SHADER)
-            self._ctx.enable(moderngl.DEPTH_TEST)
-            if self._mesh is not None:
-                self._upload_mesh()
-        except Exception as exc:
-            self._ctx = None
-            self.statsChanged.emit(f"OpenGL initialization failed: {exc}")
-            raise
+            for shader, source in ((vertex_shader, VERTEX_SHADER),
+                                   (fragment_shader, FRAGMENT_SHADER)):
+                glShaderSource(shader, source)
+                glCompileShader(shader)
+                if not glGetShaderiv(shader, GL_COMPILE_STATUS):
+                    raise RuntimeError(glGetShaderInfoLog(shader))
+            program = glCreateProgram()
+            glAttachShader(program, vertex_shader)
+            glAttachShader(program, fragment_shader)
+            glLinkProgram(program)
+            if not glGetProgramiv(program, GL_LINK_STATUS):
+                raise RuntimeError(glGetProgramInfoLog(program))
+            self._program = program
+            self._uniform = glGetUniformLocation(program, "u_mvp")
+        finally:
+            glDeleteShader(vertex_shader)
+            glDeleteShader(fragment_shader)
+        glEnable(GL_DEPTH_TEST)
+        if self._mesh is not None:
+            self._upload_mesh()
 
     def shutdown_gl(self):
-        """Release only resources owned by ModernGL while Qt's GL context lives.
-
-        QOpenGLWidget owns its framebuffer; release only our own shader and
-        buffer objects. This may be called both from close and from Qt's
-        aboutToBeDestroyed signal.
-        """
-        if self._ctx is None or self._resources_released:
+        """Delete our VBO/VAO/shader before Qt destroys its GL context."""
+        if self._resources_released:
             return
         self._resources_released = True
+        if self._program is None:
+            return
         self.makeCurrent()
         try:
-            for name in ("_vao", "_vbo", "_shader"):
-                resource = getattr(self, name, None)
-                if resource is not None:
-                    resource.release()
-                    setattr(self, name, None)
-            self._ctx.finish()
+            if self._vao is not None:
+                glDeleteVertexArrays(1, [self._vao])
+                self._vao = None
+            if self._vbo is not None:
+                glDeleteBuffers(1, [self._vbo])
+                self._vbo = None
+            glDeleteProgram(self._program)
+            self._program = None
         finally:
             self.doneCurrent()
 
@@ -225,7 +248,7 @@ class GLViewport(QOpenGLWidget):
         self._frametimes.clear()
         self._frame_count = 0
         self.frame_all()
-        if self._ctx is not None:
+        if self._program is not None:
             self.makeCurrent()
             try:
                 self._upload_mesh()
@@ -234,55 +257,65 @@ class GLViewport(QOpenGLWidget):
         self.update()
 
     def _upload_mesh(self):
-        if self._ctx is None or self._shader is None:
+        if self._program is None:
             return
         started = perf_counter()
-        # Geometry is only re-uploaded when opening a new model, never
-        # during orbit, pan, zoom, or continuous-FPS benchmarking.
+        # Rebuild only on open. Camera movement never uploads geometry.
         if self._vao is not None:
-            self._vao.release()
+            glDeleteVertexArrays(1, [self._vao])
             self._vao = None
         if self._vbo is not None:
-            self._vbo.release()
+            glDeleteBuffers(1, [self._vbo])
             self._vbo = None
         if self._mesh is not None and self._mesh.vertices.size:
-            self._vbo = self._ctx.buffer(
-                np.ascontiguousarray(self._mesh.vertices, dtype=np.float32).tobytes())
-            self._vao = self._ctx.vertex_array(
-                self._shader, [(self._vbo, "3f 3f", "in_pos", "in_color")])
-            # A one-time finish makes upload timing honest. Never use this
-            # inside paintGL, where it would stall rendering each frame.
-            self._ctx.finish()
-        self.upload_ms = (perf_counter() - started) * 1000
+            payload = np.ascontiguousarray(
+                self._mesh.vertices, dtype=np.float32).tobytes()
+            self._vao = int(glGenVertexArrays(1))
+            self._vbo = int(glGenBuffers(1))
+            glBindVertexArray(self._vao)
+            glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
+            glBufferData(GL_ARRAY_BUFFER, len(payload), payload, GL_STATIC_DRAW)
+            glEnableVertexAttribArray(0)
+            glVertexAttribPointer(
+                0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+            glEnableVertexAttribArray(1)
+            glVertexAttribPointer(
+                1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+            glBindVertexArray(0)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+            # One synchronization at load time; never in the render loop.
+            glFinish()
+        self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
 
     def paintGL(self):
-        if self._ctx is None:
+        if self._program is None:
             return
-        # QOpenGLWidget has already made its Qt-owned FBO current.
-        # Do NOT bind 0, call ctx.screen.use(), or wrap Qt's FBO in a
-        # ModernGL Framebuffer: doing so can interfere with Qt teardown.
-        w = max(1, int(self.width() * self.devicePixelRatioF()))
-        h = max(1, int(self.height() * self.devicePixelRatioF()))
-        self._ctx.viewport = (0, 0, w, h)
-        self._ctx.enable(moderngl.DEPTH_TEST)
-        self._ctx.disable(moderngl.CULL_FACE)
-        self._ctx.clear(0.065, 0.09, 0.135, 1.0, depth=1.0)
+        # QOpenGLWidget makes its Qt-owned framebuffer current before
+        # paintGL. Raw GL operates on it without taking ownership of it.
+        w=max(1,int(self.width()*self.devicePixelRatioF()))
+        h=max(1,int(self.height()*self.devicePixelRatioF()))
+        glViewport(0,0,w,h)
+        glEnable(GL_DEPTH_TEST)
+        glClearColor(0.065,0.09,0.135,1.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self._vao is None:
             return
-        aspect = w / h
-        near = 0.001
-        far = max(100.0, 40.0 * self.distance)
-        view, _, _ = camera_view(self.azimuth, self.elevation,
-                                 self.distance, self.target)
+        aspect=w/h
+        near=0.001
+        far=max(100.0,40.0*self.distance)
+        view,_,_=camera_view(self.azimuth,self.elevation,self.distance,self.target)
         if self.perspective:
-            projection = perspective_projection(aspect, near, far)
+            projection=perspective_projection(aspect,near,far)
         else:
-            projection = ortho_projection(self.half_height, aspect, near, far)
-        matrix = np.asarray(projection @ view, dtype=np.float32)
-        # GLSL uses column-major matrices.
-        self._shader["u_mvp"].write(matrix.T.tobytes())
-        self._vao.render(mode=moderngl.TRIANGLES)
+            projection=ortho_projection(self.half_height,aspect,near,far)
+        matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
+        glUseProgram(self._program)
+        glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        glBindVertexArray(self._vao)
+        glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+        glBindVertexArray(0)
+        glUseProgram(0)
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -474,7 +507,7 @@ class Window(QMainWindow):
             mesh = self.viewer._mesh
             payload = {
                 "schema": 1,
-                "renderer": "GPU prototype; Qt/OpenGL flat-colour depth test",
+                "renderer": "GPU prototype; Qt/PyOpenGL flat-colour depth test",
                 "source_basename": self._info["file"],
                 "parse_ms": round(self._info["parse_ms"], 3),
                 "mesh_build_ms": round(mesh.build_ms, 3),

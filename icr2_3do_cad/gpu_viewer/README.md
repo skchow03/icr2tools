@@ -3,7 +3,7 @@
 This is **a separate performance prototype**, not a replacement for the
 Tkinter 3DO CAD editor. It reuses its production N3 compiler and 3DO Model
 parser and displays local polygon geometry using PySide6 QOpenGLWidget +
-ModernGL (OpenGL 3.3).
+PyOpenGL (OpenGL 3.3).
 
 ## Windows setup
 

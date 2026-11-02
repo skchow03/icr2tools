@@ -196,7 +196,7 @@ repeatable RENO.3D benchmark and interpretation notes.
 
 ## Experimental OpenGL GPU viewer
 
-A separate read-only Qt/ModernGL viewer for large tracks is available in
+A separate read-only Qt/PyOpenGL viewer for large tracks is available in
 [gpu_viewer/](gpu_viewer/README.md). It reuses the `.3D`/`.3DO` compiler but
 batches local flat-color geometry into one GPU buffer, with fast orbit/pan/zoom,
 Top/Front/Side views and a continuous FPS benchmark. It does not yet support
