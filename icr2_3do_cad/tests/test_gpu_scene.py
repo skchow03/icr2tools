@@ -41,7 +41,9 @@ class OrthographicBSPTests(unittest.TestCase):
     def test_parallel_ray_side_is_independent_of_finite_camera_distance(self):
         src = """3D VERSION 3.0;
 nil: NIL;
-a: [<0,0,0>]; b: [<100,0,0>]; c: [<0,100,0>];
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
 p: POLY <44> {a,b,c};
 root: FACE (a,b,c), p;
 """
