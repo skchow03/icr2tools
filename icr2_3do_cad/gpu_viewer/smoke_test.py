@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QSurfaceFormat
+from PySide6.QtGui import QSurfaceFormat, QTextCursor
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from gpu_viewer.main import Window
@@ -88,6 +89,9 @@ def run(path):
     started = perf_counter()
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
+    live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
+            "valid_sent":False, "valid_seen":False,
+            "vbo":None, "azimuth":None, "source":None}
     def reload_completed(*args):
         reload_state["completed"] = True
     def check():
@@ -99,10 +103,51 @@ def run(path):
             reload_state["vbo"] = view._vbo
             window.reload_mips()
             window.worker.ready.connect(reload_completed)
+        if (dynamic_test and reload_state["completed"] and
+                not window.worker.isRunning()):
+            pane = window.source_pane
+            if not live["opened"]:
+                live["opened"] = True
+                window.source_toggle.setChecked(True)
+            elif pane.ready and not live["invalid_sent"]:
+                live["source"] = pane.get_source()
+                live["vbo"] = view._vbo
+                live["azimuth"] = view.azimuth
+                # Viewport's F/R shortcuts must not swallow actual text
+                # typed into the N3 editor.
+                pane.editor.setFocus()
+                pane.editor.moveCursor(QTextCursor.MoveOperation.End)
+                QTest.keyClicks(pane.editor, "FR")
+                if not pane.get_source().endswith("FR"):
+                    result["error"] = "F/R viewport shortcuts intercepted N3 editor input"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                pane.editor.setPlainText(live["source"] + "\nBROKEN: FACE INVALID;\n")
+                pane.apply_now()
+                live["invalid_sent"] = True
+            elif (live["invalid_sent"] and not live["valid_sent"] and
+                  window._source_invalid and not pane.pending):
+                if view._vbo != live["vbo"]:
+                    result["error"] = "Invalid source changed the GPU vertex buffer"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                live["invalid_seen"] = True
+                pane.editor.setPlainText(live["source"] + "\n% Live N3 source preview smoke\n")
+                pane.apply_now()
+                live["valid_sent"] = True
+            elif (live["valid_sent"] and window._source_applied and
+                  not window._source_invalid and not pane.pending and
+                  window.worker is not None and not window.worker.isRunning()):
+                live["valid_seen"] = True
         if (window._info and view._vao is not None and
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
-                 (reload_state["completed"] and not window.worker.isRunning()))):
+                 (reload_state["completed"] and not window.worker.isRunning()
+                  and live["valid_seen"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -118,7 +163,7 @@ def run(path):
                   (view._scene.appearance is None or
                    view._scene.appearance.geometry_name != 'roadcar' or
                    view._scene.recolor_pairs != 1 or
-                   view._model.path.name != 'roadcar.3do' or
+                   view._model.path.stem.casefold() != 'roadcar' or
                    window.material_combo.itemData(0) != '__car_body__')):
                 result["error"] = "Individual-car MATERIAL->RECOLOR wrapper did not load its base car"
             elif (dynamic_test and
@@ -130,6 +175,11 @@ def run(path):
                   (reload_state["vbo"] != view._vbo or
                    not reload_state["completed"])):
                 result["error"] = "MIP reload unexpectedly rebuilt the GPU vertex buffer"
+            elif dynamic_test and (
+                    not live["invalid_seen"] or not live["valid_seen"] or
+                    abs(view.azimuth - live["azimuth"]) > 1e-9 or
+                    not view._scene.appearance):
+                result["error"] = "Live source compile did not preserve camera/appearance"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:
@@ -157,6 +207,7 @@ def run(path):
                     f"MIP faces {len(view._atlas.polygon_rects)}; "
                     f"external instances {view._scene.loaded_instances}; "
                     f"MIP hot reload {reload_state['completed']}; "
+                    f"N3 invalid/valid preview {live['invalid_seen']}/{live['valid_seen']}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
@@ -168,6 +219,7 @@ def run(path):
         elif elapsed > 45:
             result["error"] = (
                 f"timeout loading or drawing: {window.stats_label.text()} | "
+                f"source {window.source_pane.status.text()} | live {live} | "
                 f"ctx={view._program is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
