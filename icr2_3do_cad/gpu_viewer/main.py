@@ -25,7 +25,11 @@ try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
         GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_VERTEX_SHADER,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
+        GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
+        GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
+        GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
         glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
@@ -33,7 +37,9 @@ try:
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
         glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
-        glViewport,
+        glViewport, glGenTextures, glDeleteTextures, glBindTexture,
+        glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
+        glUniform1i,
     )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
     from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
@@ -52,26 +58,55 @@ except ImportError as exc:
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
+from gpu_viewer.textures import build_atlas, load_palette
 
 
 VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_color;
+layout(location = 2) in float in_index;
+layout(location = 3) in vec2 in_uv;
+layout(location = 4) in vec4 in_rect;
 uniform mat4 u_mvp;
 out vec3 v_color;
+flat out int v_index;
+out vec2 v_uv;
+flat out vec4 v_rect;
 void main() {
     gl_Position = u_mvp * vec4(in_pos, 1.0);
     v_color = in_color;
+    v_index = int(in_index + 0.5);
+    v_uv = in_uv;
+    v_rect = in_rect;
 }
 """
 
 FRAGMENT_SHADER = """
 #version 330 core
 in vec3 v_color;
+flat in int v_index;
+in vec2 v_uv;
+flat in vec4 v_rect;
+uniform usampler2D u_mips;
+uniform sampler2D u_palette;
+uniform int u_textures;
+uniform int u_repeat;
 out vec4 fragColor;
 void main() {
-    fragColor = vec4(v_color, 1.0);
+    int index = clamp(v_index, 0, 255);
+    if (u_textures != 0 && v_rect.z >= 1.0 && v_rect.w >= 1.0) {
+        ivec2 size_px = ivec2(v_rect.zw);
+        ivec2 texel = ivec2(floor(v_uv + vec2(0.5)));
+        if (u_repeat != 0) {
+            texel = ivec2((texel.x % size_px.x + size_px.x) % size_px.x,
+                          (texel.y % size_px.y + size_px.y) % size_px.y);
+        } else {
+            texel = clamp(texel, ivec2(0), size_px - ivec2(1));
+        }
+        index = int(texelFetch(u_mips, ivec2(v_rect.xy) + texel, 0).r);
+    }
+    fragColor = vec4(texelFetch(u_palette, ivec2(index, 0), 0).rgb, 1.0);
 }
 """
 
@@ -129,12 +164,17 @@ def perspective_projection(aspect, near, far):
 
 
 class LoadWorker(QThread):
-    ready = Signal(object, object, object)
+    ready = Signal(object, object, object, object, object)
     failed = Signal(str)
 
-    def __init__(self, path):
+    def __init__(self, path, palette_path, texture_folder=None,
+                 fallback_mip=None, *, existing_model=None):
         super().__init__()
         self.path = Path(path)
+        self.palette_path = Path(palette_path)
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.existing_model = existing_model
 
     def run(self):
         try:
@@ -142,7 +182,9 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            if self.path.suffix.lower() == ".3d":
+            if self.existing_model is not None:
+                model = self.existing_model
+            elif self.path.suffix.lower() == ".3d":
                 text = self.path.read_text(encoding="utf-8-sig")
                 model, _ = compile_n3_text(
                     text, self.path, associate_planes=False)
@@ -151,8 +193,11 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            palette = read_palette(CAD_ROOT / "gamepal.pcx")
-            mesh = make_mesh(model, palette)
+            palette = load_palette(self.palette_path)
+            atlas = build_atlas(model, self.path,
+                                texture_folder=self.texture_folder,
+                                fallback_mip=self.fallback_mip)
+            mesh = make_mesh(model, palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
                 "parse_ms": parse_ms,
@@ -162,10 +207,16 @@ class LoadWorker(QThread):
                 "model_planes": len(model.planes),
                 "external_objects": len(model.dynamics),
                 "mips": len(model.mip_names),
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
-            self.ready.emit(mesh, stats, model)
+            self.ready.emit(mesh, stats, model, atlas, palette)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
