@@ -790,17 +790,32 @@ class Model:
     def dirty(self):
         return bool(self.modified_vertices or self.modified_uvs or self.modified_polygon_colors or self.plane_edits or self.modified_dynamics or self.topology_history)
 
-    def switched_polygons(self, distance: float | None, camera,
-                          bsp_mode: str = 'off', events: list | None = None):
+    def switched_polygons(self, distance: float | None | str, camera,
+                          bsp_mode: str = 'off', events: list | None = None,
+                          *, view_direction=None):
         """Return (visible polygon offsets, stats, selected LOD branches).
 
         `distance=None`: all switch branches for historical full-geometry view.
-        `bsp_mode`: off, original, rebuilt. Orthographic camera on the visible
-        side is approximated by a position along the view direction.
+        `distance="auto"`: evaluate each RES against its own anchor vertex
+        using this model's *local-space* camera position.
+        `view_direction`: optional world-to-eye parallel-ray direction in
+        model coordinates for orthographic BSP tests. Perspective retains the
+        actual finite-camera plane evaluation unchanged.
+        `bsp_mode`: off, original, rebuilt.
         This is an inspection tool, not a byte-identical ICR2 rasterizer.
         """
         if bsp_mode not in ('off', 'original', 'rebuilt'):
             raise ValueError(f'Invalid BSP mode {bsp_mode}')
+        if distance is not None and distance != 'auto':
+            if not isinstance(distance, (int, float)) or not math.isfinite(distance):
+                raise ValueError('LOD distance must be finite, None or auto')
+        if view_direction is not None:
+            if len(view_direction) != 3 or not all(math.isfinite(x) for x in view_direction):
+                raise ValueError('Invalid orthographic camera direction')
+            magnitude=math.sqrt(dot(view_direction,view_direction))
+            if magnitude < 1e-12:
+                raise ValueError('Degenerate orthographic camera direction')
+            view_direction=tuple(float(v)/magnitude for v in view_direction)
         equations={p.offset:p.equation for p in self.planes.values()}
         if bsp_mode=='rebuilt' and (self.modified_vertices or self.plane_edits):
             data,_=self.build_modified_bytes()
@@ -849,7 +864,16 @@ class Model:
                 if distance is None:
                     picks=[p for _,p in sw.branches]
                 else:
-                    chosen=sw.choose(distance)
+                    if distance == 'auto':
+                        anchor=self.vertices.get(sw.anchor)
+                        # Malformed/missing anchor cannot safely be guessed.
+                        # All parsed RES anchors are expected to be present.
+                        if anchor is None:
+                            raise FormatError(f'RES @{node} has no anchor @{sw.anchor}')
+                        selected_distance=math.dist(camera,anchor.xyz)
+                    else:
+                        selected_distance=distance
+                    chosen=sw.choose(selected_distance)
                     if chosen:
                         lod.append((node,chosen[0],chosen[1]))
                     picks=[chosen[1]] if chosen else []
@@ -860,9 +884,23 @@ class Model:
                 eq=equations[node]
                 # Camera side of plane: positive is front-facing. In-plane
                 # tolerance is deliberately small relative to its normal.
-                val=dot(eq[:3],camera)+eq[3]
                 norm=math.sqrt(dot(eq[:3],eq[:3]))
-                sign=1 if val>=-norm*0.01 else -1
+                if view_direction is not None:
+                    # Orthographic rays are PARALLEL, so a finite-eye BSP
+                    # test changes at different zoom levels even though the
+                    # on-screen view direction stays fixed. Use a directional
+                    # test at infinity, falling back to the actual camera
+                    # for near-edge-on partitions (a single side cannot
+                    # exactly represent a plane crossing the viewport).
+                    directional=dot(eq[:3],view_direction)
+                    if abs(directional) > norm*1e-8:
+                        sign=1 if directional > 0 else -1
+                    else:
+                        val=dot(eq[:3],camera)+eq[3]
+                        sign=1 if val>=-norm*0.01 else -1
+                else:
+                    val=dot(eq[:3],camera)+eq[3]
+                    sign=1 if val>=-norm*0.01 else -1
                 node_tests+=1
                 if kind==5:  # FACE: its only subtree is one-sided
                     if sign<0:
