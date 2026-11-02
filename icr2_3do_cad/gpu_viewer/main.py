@@ -766,6 +766,8 @@ class Window(QMainWindow):
         self._source_queued = None
         self._source_export_worker = None
         self._source_export_model = None
+        self._source_applied = False
+        self._last_valid_source_text = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -941,6 +943,185 @@ class Window(QMainWindow):
     def _repeat_toggled(self, checked):
         self.viewer.texture_repeat = checked
         self.viewer.update()
+
+    def _toggle_source(self, checked):
+        self.source_tabs.setVisible(checked)
+        if checked:
+            self.editor_splitter.setSizes([780, 480])
+            self.source_tabs.setCurrentIndex(0)
+            self._ensure_source_loaded()
+
+    def _ensure_source_loaded(self):
+        if self.source_pane.ready or self.viewer._model is None:
+            return
+        if self._source_export_worker and self._source_export_worker.isRunning():
+            return
+        model = self.viewer._model
+        self._source_export_model = model
+        self.source_pane.status.setText('Preparing editable .3D source on worker…')
+        worker = SourceExportWorker(model, self.model_path)
+        self._source_export_worker = worker
+        worker.ready.connect(
+            lambda text, path, candidate=model:
+                self._source_exported(candidate, text, path))
+        worker.failed.connect(
+            lambda err, candidate=model: self._source_export_failed(candidate, err))
+        worker.start()
+
+    def _source_exported(self, candidate, text, path):
+        if candidate is not self.viewer._model or self.source_pane.ready:
+            return
+        self.source_pane.set_source(
+            text, path,
+            status=(f'Editable source for {candidate.path.name}. '
+                    'Valid changes update the GPU preview without saving.'))
+        self._source_invalid = False
+
+    def _source_export_failed(self, candidate, error):
+        if candidate is self.viewer._model:
+            self.source_pane.status.setText(
+                f'Cannot generate editable source: {error}')
+            self._source_invalid = True
+
+    def _source_requested(self, revision, source):
+        # Keep only the latest revision while the previous worker runs.
+        self._source_queued = (revision, source)
+        self._pump_source()
+
+    def _pump_source(self):
+        if self._source_queued is None:
+            return
+        if self.worker is not None and self.worker.isRunning():
+            QTimer.singleShot(80, self._pump_source)
+            return
+        if not self.source_pane.ready or self.viewer._model is None:
+            return
+        revision, source = self._source_queued
+        if revision != self.source_pane.revision:
+            self._source_queued = None
+            return
+        self._source_queued = None
+        self._source_busy_revision = revision
+        self.worker = LoadWorker(
+            self.model_path, self.palette_path, self.texture_folder,
+            self.fallback_mip, objects_folder=self.objects_folder,
+            mip_overrides=self.mip_overrides, object_overrides=self.object_overrides,
+            body_mip=self.body_mip, source_text=source,
+            source_path=self.source_pane.source_path,
+            appearance_override=self.viewer._scene.appearance)
+        self.worker.ready.connect(
+            lambda mesh, stats, model, atlas, palette, scene, rev=revision:
+                self._source_compiled(rev, source, mesh, stats, model, atlas, palette, scene))
+        self.worker.failed.connect(
+            lambda error, rev=revision: self._source_compile_failed(rev, error))
+        self.worker.start()
+
+    def _source_compiled(self, rev, source, mesh, stats, model, atlas, palette, scene):
+        self._source_busy_revision = None
+        if rev == self.source_pane.revision:
+            # Commit one complete candidate, never a partially parsed tree.
+            self._preserve_view = True
+            self._loaded(mesh, stats, model, atlas, palette, scene,
+                         from_source=True)
+            self._source_applied = True
+            self._last_valid_source_text = source
+            self.source_pane.mark_valid(rev, model)
+            self._source_invalid = False
+        if self._source_queued is not None:
+            QTimer.singleShot(40, self._pump_source)
+
+    def _source_compile_failed(self, rev, error):
+        self._source_busy_revision = None
+        if rev == self.source_pane.revision:
+            self._source_invalid = True
+            self.source_pane.mark_error(rev, error)
+        if self._source_queued is not None:
+            QTimer.singleShot(40, self._pump_source)
+
+    def _save_source(self):
+        if not self.source_pane.ready:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self, 'Save editable N3 source',
+            str(self.source_pane.source_path.with_name(
+                self.source_pane.source_path.stem + '_edited.3d')),
+            'Papyrus N3 (*.3d);;All files (*)')
+        if not path:
+            return
+        target = Path(path)
+        if target.suffix.lower() != '.3d':
+            QMessageBox.warning(self, 'Invalid source extension',
+                                'Save N3 source with a .3D extension.')
+            return
+        if target.resolve() == self.source_pane.source_path.resolve():
+            reply = QMessageBox.question(
+                self, 'Overwrite original N3 source?',
+                'This will overwrite the original editable .3D file. Continue?',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if reply != QMessageBox.StandardButton.Yes:
+                return
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(
+                prefix='.' + target.name + '.', suffix='.tmp', dir=target.parent)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(self.source_pane.get_source().encode('utf-8'))
+                os.replace(temporary, target)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        except (OSError, UnicodeError) as error:
+            QMessageBox.warning(self, 'Save failed', str(error))
+            return
+        self.source_pane.status.setText(
+            f'Saved {target.name}.' +
+            (' Source is not currently valid; GPU preview still shows last valid model.'
+             if self._source_invalid or self.source_pane.pending else ''))
+
+    def _export_compiled_source(self):
+        if not self.source_pane.ready or self.viewer._model is None:
+            return
+        if self.source_pane.pending or self._source_invalid or self._source_queued is not None:
+            QMessageBox.warning(
+                self, 'Cannot export an unvalidated model',
+                'Resolve the N3 source error or Apply now successfully before '
+                'exporting a compiled binary. Save .3D as… can retain unfinished text.')
+            return
+        target, _ = QFileDialog.getSaveFileName(
+            self, 'Export compiled 3DO',
+            str(self.source_pane.source_path.with_name(
+                self.source_pane.source_path.stem + '_edited.3do')),
+            'Papyrus 3DO (*.3do);;All files (*)')
+        if not target:
+            return
+        dest = Path(target)
+        if dest.suffix.lower() != '.3do':
+            QMessageBox.warning(self, 'Invalid binary extension', 'Choose a .3DO file.')
+            return
+        if dest.resolve() == self.viewer._model.path.resolve() or (
+                self.model_path is not None and
+                dest.resolve() == self.model_path.resolve()):
+            QMessageBox.warning(
+                self, 'Original binary protected',
+                'Choose another filename. Original geometry and appearance '
+                '3DOs must remain untouched.')
+            return
+        try:
+            fd, temporary = tempfile.mkstemp(
+                prefix='.' + dest.name + '.', suffix='.tmp', dir=dest.parent)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(self.viewer._model.raw)
+                os.replace(temporary, dest)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        except OSError as error:
+            QMessageBox.warning(self, 'Export failed', str(error))
+            return
+        self.source_pane.status.setText(f'Exported last valid model as {dest.name}.')
 
     def _busy(self):
         if self.worker and self.worker.isRunning():
