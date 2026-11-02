@@ -58,6 +58,27 @@ once with a building or fixtures/roadcar.3do.
   VGA palette trailer (e.g. `sunny.pcx`). The bundled `gamepal.pcx` is used
   on startup; **Default palette** restores it. Palette changes recolor
   both plain polygons and MIPs instantly, without rebuilding geometry.
+- **Individual car 3DO**: open a per-driver `.3do` directly, such as
+  `cit74.3do`. It may contain no polygon geometry itself: its root MATERIAL
+  points to a shared carshape (often `indycar.3do`), and a separate
+  unreferenced RECOLOR table maps the shared shape's palette indices onto
+  the driver's colors. RECOLOR is applied to *flat polygon indices*, not to
+  the livery's indexed MIP pixels. The car status line reports mappings.
+- **Car shape ref / Assign carshape 3DO…**: if the shared model is in a
+  different directory or has a custom filename, select the external reference
+  and manually choose the shape. Clear shape override reverts to automatic
+  lookup. This never modifies the car file.
+- **Livery material / Assign livery MIP…**: select a MATERIAL name (often the
+  driver/car 3DO basename) and explicitly choose its livery `.mip` file.
+  This overrides automatic filename lookup, including when the filename is
+  different. Clear livery override returns to automatic lookup.
+- **Reload MIPs (R)**: rereads the changed MIP from disk on a background
+  worker, without reopening the carshape or resetting the view. For an
+  unchanged atlas layout, only the GPU's integer texture is reuploaded:
+  geometry, BSP indices and camera are retained. If a MIP's dimensions/layout
+  change, the worker rebuilds the UV attributes before replacing the VBO.
+  Saving edits to the MIP in your image/conversion tool then pressing R
+  previews a revised livery. No file writing or automatic file watcher.
 - **3DO objects folder…**: optionally choose a folder containing the model's
   DYNAMIC/external `.3do` references. Models beside the parent and common
   adjacent object directories are also searched automatically. Nested child
@@ -117,7 +138,11 @@ with the missing files counted in the UI. The atlas is capped at 4096x4096;
 assets that exceed available capacity fall back to flat color.
 
 The single expanded VBO includes the geometry of inactive LOD branches and
-resolved external models. The camera-dependent index list includes only
+resolved external models. For individual-car RECOLOR wrappers, validated
+palette-index remappings are inherited from wrapper to child polygons before
+mesh creation; livery MIP pixels are *not* recolored. The wrapper's MATERIAL
+filename is resolved relative to its original wrapper directory, even if the
+shared shape lives elsewhere. The camera-dependent index list includes only
 selected branches and emits child polygons at their parent's insertion site.
 Repeated model files are parsed once and instantiated independently. An
 optional external 3DO search folder can be selected in the UI.
@@ -142,6 +167,8 @@ resolution, visibility and benchmark procedure are used on the same machine.
 ## Intentional limitations
 
 This **does not yet** include editing, picking, source tabs or PMP sprites.
+Per-driver RECOLOR tables and livery MIP overrides are read-only previews;
+the viewer does not save them back into carset archives.
 It displays local and referenced DYNAMIC/child 3DO polygon geometry with
 indexed palette colors and optional 8-bit MIP texture sampling.
 Track-only LINE commands are **not rendered**, and exact Papyrus game
