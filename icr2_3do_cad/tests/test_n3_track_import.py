@@ -17,7 +17,8 @@ from three_do import Model
 TRACK_N3="""3D VERSION 3.0
 % SURF_ED: synthetic track index
 __TSO0: DYNAMIC 0, 0, 0, 0, 0, 0, 1, EXTERN "stand100";
-ObjectList_L0_0: LIST { __TSO0 };
+ObjectList_L0_0: LIST {  };
+ObjectList_L0_1: LIST { __TSO0 };
 DetailP_0-1: [<0, 0, 0>];
 DetailP_0-0: [<1000, 0, 0>];
 DetailP_0-2: [<0, 1000, 0>];
@@ -38,7 +39,7 @@ sec0_s0_HI: FACE
           [<0,1000,0>, T=<0,128>]
         },
       nil,
-    ObjectList_L0_0,
+    ObjectList_L0_0, ObjectList_L0_1,
     DetailO_0-0,
     DetailN_0-0,
     SWITCH DISTANCE ([<0,0,170000>])
@@ -138,6 +139,47 @@ index: LIST {sec0_s0_HI};
         self.assertEqual(model.records[model.root_offset],11)
         self.assertTrue(any(kind==4 for kind in model.records.values()))
         self.assertFalse(any("invalid MIP index -1" in w for w in model.warnings))
+
+
+    def test_empty_object_list_from_reno_line_42_is_not_nil(self):
+        # Actual RENO.3D line 42: ObjectList_L0_0: LIST {  };
+        # RENO has 66 such intentional empty lists.
+        from n3_compile import _brace, _group_prefix_nodes
+        from three_do import i32
+        self.assertEqual(_brace("{  }"),[])
+        self.assertEqual(_brace("{\n\t  }"),[])
+        self.assertEqual(_group_prefix_nodes([]),[])
+        model,doc=compile_n3_text(TRACK_N3,"RENO.3D")
+        offset=next(st.offset for st in doc.statements if st.label=="ObjectList_L0_0")
+        self.assertGreater(offset,0)
+        self.assertEqual(model.records[offset],11)
+        self.assertEqual(i32(model.body,offset+4),0)
+        self.assertEqual(model.children[offset],[])
+
+    def test_66_empty_lists_and_bad_comma_syntax(self):
+        from three_do import i32,FormatError
+        empties="".join(f"ObjectList_L{i}_0: LIST {{  }};\n" for i in range(66))
+        source=("3D VERSION 3.0;\n"
+                "a: [<0,0,0>];\n"
+                "b: [<100,0,0>];\n"
+                "c: [<0,100,0>];\n"
+                "poly: POLY <44> {a,b,c};\n"
+                +empties+
+                "root: LIST {poly, ObjectList_L0_0, ObjectList_L65_0};\n")
+        model,doc=compile_n3_text(source,"empty_track_lists.3d")
+        offsets=[st.offset for st in doc.statements if st.label.startswith("ObjectList_")]
+        self.assertEqual(len(offsets),66)
+        # The binary Model traverses reachable records only; standalone
+        # compiler still allocates all 66 named declarations.
+        self.assertTrue(all(i32(model.body,o)==-2147483637 and
+                            i32(model.body,o+4)==0 for o in offsets))
+        self.assertIn(offsets[0],model.records)
+        self.assertIn(offsets[-1],model.records)
+        for bad in ("LIST {,}", "LIST {poly,}", "LIST {,poly}", "LIST {poly,,poly}"):
+            with self.subTest(bad=bad),self.assertRaises(FormatError):
+                compile_n3_text(source.replace(
+                    "LIST {poly, ObjectList_L0_0, ObjectList_L65_0}",bad),
+                    "bad_list.3d")
 
     def test_compile_track_hierarchy_hash_data_and_root_index(self):
         model,document=compile_n3_text(TRACK_N3,"RENO.3D")

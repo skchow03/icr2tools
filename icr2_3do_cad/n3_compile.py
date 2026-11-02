@@ -159,7 +159,13 @@ def _brace(value, opener="{", closer="}"):
     value=value.strip()
     if not value.startswith(opener) or not value.endswith(closer):
         raise FormatError(f"Expected {opener}...{closer} in N3 expression")
-    return _split(value[1:-1])
+    interior=value[len(opener):len(value)-len(closer)]
+    # N3 track files use LIST { } for an empty object list, distinct
+    # from NIL. _split("") produces [""], which the prefix parser
+    # incorrectly treats as an invalid (blank) child.
+    if not interior.strip():
+        return []
+    return _split(interior)
 
 
 def _flavor(kind):
