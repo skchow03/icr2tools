@@ -151,7 +151,7 @@ def run(path):
                   (view._scene.appearance is None or
                    view._scene.appearance.geometry_name != 'roadcar' or
                    view._scene.recolor_pairs != 1 or
-                   view._model.path.name != 'roadcar.3do' or
+                   view._model.path.stem.casefold() != 'roadcar' or
                    window.material_combo.itemData(0) != '__car_body__')):
                 result["error"] = "Individual-car MATERIAL->RECOLOR wrapper did not load its base car"
             elif (dynamic_test and
