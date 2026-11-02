@@ -1011,6 +1011,11 @@ class Window(QMainWindow):
             self.statusBar().showMessage(
                 "Livery MIPs reloaded; UV atlas layout changed, rebuilt VBO")
         self._show_mip_stats(stats)
+        self.car_status.setText(
+            f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
+            f" | referenced carshape(s): "
+            f"{len(self.viewer._model.external_names)}"
+            f" | active livery overrides: {len(self.mip_overrides)}")
         if stats['missing_textures'] or stats['texture_errors']:
             self.statusBar().showMessage(
                 "MIP issues: " + "; ".join(
