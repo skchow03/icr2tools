@@ -1133,8 +1133,8 @@ class Window(QMainWindow):
         if self._busy():
             return
         next_path = Path(path)
-        if not reuse_model and (self.model_path is None or
-                                self.model_path.resolve() != next_path.resolve()):
+        if not reuse_model and self.model_path is not None and (
+                self.model_path.resolve() != next_path.resolve()):
             # Assignments belong to the open asset, not a previous car.
             self.mip_overrides.clear()
             self.object_overrides.clear()
