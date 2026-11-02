@@ -849,6 +849,14 @@ class Window(QMainWindow):
             button.clicked.connect(
                 lambda checked=False, mode=name: self.viewer.set_view(mode))
             toolbar.addWidget(button)
+        self.origin_button = QPushButton("Origin (0,0,0)")
+        self.origin_button.setCheckable(True)
+        self.origin_button.setToolTip(
+            "Place camera at raw Papyrus XYZ (0,0,0). "
+            "Drag to look around; mouse wheel changes FOV, not position. "
+            "Frame All or untoggle to return to exterior orbit.")
+        self.origin_button.toggled.connect(self.viewer.set_origin_mode)
+        toolbar.addWidget(self.origin_button)
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
         toolbar.addWidget(self.perspective_toggle)
@@ -986,6 +994,7 @@ class Window(QMainWindow):
         reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
+        self.viewer.originModeChanged.connect(self._origin_mode_changed)
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
@@ -1420,6 +1429,22 @@ class Window(QMainWindow):
         else:
             self.polygon_status.setText(
                 f"@{offset}: SELECTED by BSP (may still be covered by another polygon)")
+
+    def _origin_mode_changed(self, enabled):
+        # Frame All also leaves the origin preset; keep toolbar and Qt
+        # perspective state synchronized without triggering an extra toggle.
+        self.origin_button.blockSignals(True)
+        self.origin_button.setChecked(enabled)
+        self.origin_button.blockSignals(False)
+        self.perspective_toggle.blockSignals(True)
+        self.perspective_toggle.setChecked(self.viewer.perspective)
+        self.perspective_toggle.setEnabled(not enabled)
+        self.perspective_toggle.blockSignals(False)
+        self.statusBar().showMessage(
+            "Camera at raw XYZ (0,0,0) | Drag to look | Wheel adjusts FOV | "
+            "Pan disabled | Frame All exits origin view"
+            if enabled else
+            "Exterior camera restored | Left-drag orbit | Shift-left/middle pan")
 
     def _set_perspective(self, checked):
         self.viewer.perspective = checked
