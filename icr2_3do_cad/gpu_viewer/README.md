@@ -1,9 +1,10 @@
-# Experimental GPU Viewer (read-only)
+# Experimental GPU Viewer with live N3 source editing
 
-This is **a separate performance prototype**, not a replacement for the
-Tkinter 3DO CAD editor. It reuses its production N3 compiler and 3DO Model
-parser and displays local polygon geometry using PySide6 QOpenGLWidget +
-PyOpenGL (OpenGL 3.3).
+This remains a **separate performance prototype**, not a replacement for the
+Tkinter 3DO CAD editor. It reuses the production N3 compiler, 3DO Model
+parser, CPU source export and scene traversal, rendering geometry through
+PySide6 QOpenGLWidget + PyOpenGL (OpenGL 3.3). Binary 3DO and texture
+assets are read-only unless the user explicitly exports a *new* file.
 
 ## Windows setup
 
@@ -40,7 +41,31 @@ once with a building or fixtures/roadcar.3do.
   direction*, so zooming does not spuriously flip front/back visibility.
   For near-edge-on planes the finite-eye sign is used as an approximation.
 - Frame All (F): recenter and fit the model
-- Open: load a different .3D or .3do without restarting
+- Open: load a different .3D or .3do without restarting. If source edits
+  are unsaved, the viewer requests confirmation before discarding them.
+- **.3D Source**: open the side-by-side N3 source tab. For a loaded .3D
+  file it retains the original text and comments; for a binary .3do it
+  generates editable N3 declarations using the same exporter as CPU CAD.
+  Source generation is lazy and runs on a background thread. The GPU
+  viewport stays visible and interactive beside the editor.
+- **Live updates**: after 650 ms without typing, the existing N3 compiler
+  runs on a worker and rebuilds geometry/atlases if the new source is valid.
+  Only the latest text revision may replace the GPU model. Invalid source
+  highlights its error line and retains the last valid scene and camera.
+  **Apply now** compiles immediately. Colors, XYZ, UV, plane definitions,
+  LIST/BSP, DYNAMIC and RES edits are subject to the same N3 compiler rules
+  as the CPU editor.
+- **Save .3D as…** saves the editable text to a chosen .3D path. It also
+  permits explicitly saving unfinished/invalid source for later editing.
+  It never silently overwrites the original file. **Export compiled .3DO…**
+  writes the most recently validated compiled model to a *different*
+  binary path; invalid or still-pending edits cannot be exported. Camera
+  movement, source typing and live preview do not write any file.
+- **Individual-car source**: with a driver wrapper like his21.3do open,
+  the Source tab edits and recompiles the underlying indycar.3do base
+  geometry, *not* the MATERIAL/RECOLOR appearance wrapper itself. RECOLOR
+  and its selected body MIP remain applied to the live preview, along
+  with independently referenced DYNAMIC wheel/helmet geometry.
 - **Render**: **Papyrus BSP painter** (default) walks original FACE/FACE2/
   BSPF/BSPA/BSP2/BSPN nodes from the actual camera position and paints
   selected polygon triangles in the model's back-to-front order, with GPU
