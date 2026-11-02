@@ -30,8 +30,8 @@ def write_car_wrapper(path, mappings, *, mip_name='race74', model_name='roadcar'
     root = len(body)
     body.extend(struct.pack('<4i', -(1<<31)+4, 0, 0, -1))
     data = (struct.pack('<5i', len(body), root, 1, 0, 1) +
-            mip_name.encode('ascii').ljust(8,b'\\x00') +
-            model_name.encode('ascii').ljust(8,b'\\x00') + body)
+            mip_name.encode('ascii').ljust(8,b'\x00') +
+            model_name.encode('ascii').ljust(8,b'\x00') + body)
     path.write_bytes(data)
 
 
