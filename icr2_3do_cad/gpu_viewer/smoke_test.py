@@ -54,6 +54,8 @@ def run(path):
                         colors.add(image.pixelColor(x, y).rgb())
                 if len(colors) < 2:
                     result["error"] = "Frame contains only background; geometry invisible"
+                    timer.stop()
+                    window.close()
                     app.quit()
                     return
                 screenshot = Path(os.environ.get(
@@ -68,6 +70,8 @@ def run(path):
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
+            timer.stop()
+            window.close()
             app.quit()
         elif elapsed > 45:
             result["error"] = (
@@ -75,6 +79,8 @@ def run(path):
                 f"ctx={view._ctx is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
+            timer.stop()
+            window.close()
             app.quit()
     timer = QTimer()
     timer.timeout.connect(check)

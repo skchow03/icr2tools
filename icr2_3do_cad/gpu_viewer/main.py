@@ -164,6 +164,7 @@ class GLViewport(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(False)
         self._ctx = None
+        self._resources_released = False
         self._shader = None
         self._vbo = None
         self._vao = None
@@ -186,6 +187,10 @@ class GLViewport(QOpenGLWidget):
     def initializeGL(self):
         try:
             self._ctx = moderngl.create_context(require=330)
+            self._resources_released = False
+            # Qt can destroy/re-create QOpenGLWidget contexts during native
+            # teardown. Release our VAO/VBO/program while its context is alive.
+            self.context().aboutToBeDestroyed.connect(self.shutdown_gl)
             self._shader = self._ctx.program(
                 vertex_shader=VERTEX_SHADER, fragment_shader=FRAGMENT_SHADER)
             self._ctx.enable(moderngl.DEPTH_TEST)
@@ -195,6 +200,27 @@ class GLViewport(QOpenGLWidget):
             self._ctx = None
             self.statsChanged.emit(f"OpenGL initialization failed: {exc}")
             raise
+
+    def shutdown_gl(self):
+        """Release only resources owned by ModernGL while Qt's GL context lives.
+
+        The detected framebuffer is *owned by QOpenGLWidget*. Never call
+        release() on that wrapper: doing so would delete Qt's framebuffer.
+        This may be invoked both on close and from aboutToBeDestroyed.
+        """
+        if self._ctx is None or self._resources_released:
+            return
+        self._resources_released = True
+        self.makeCurrent()
+        try:
+            for name in ("_vao", "_vbo", "_shader"):
+                resource = getattr(self, name, None)
+                if resource is not None:
+                    resource.release()
+                    setattr(self, name, None)
+            self._ctx.finish()
+        finally:
+            self.doneCurrent()
 
     def set_mesh(self, mesh: MeshData):
         self._mesh = mesh
@@ -446,8 +472,10 @@ class Window(QMainWindow):
         QMessageBox.critical(self, "Cannot load Papyrus model", message)
 
     def closeEvent(self, event):
+        self._timer.stop()
         if self.worker is not None and self.worker.isRunning():
             self.worker.wait()
+        self.viewer.shutdown_gl()
         if self.report_path and self._info and self.viewer._mesh is not None:
             mesh = self.viewer._mesh
             payload = {
