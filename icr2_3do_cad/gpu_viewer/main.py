@@ -59,7 +59,7 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
-from gpu_viewer.visibility import camera_in_model_units
+from gpu_viewer.visibility import camera_in_model_units, origin_view_target
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
@@ -156,8 +156,8 @@ def ortho_projection(half_height, aspect, near, far):
     return matrix
 
 
-def perspective_projection(aspect, near, far):
-    factor = 1.0 / math.tan(math.radians(60.0) / 2.0)
+def perspective_projection(aspect, near, far, fov_degrees=60.0):
+    factor = 1.0 / math.tan(math.radians(fov_degrees) / 2.0)
     matrix = np.zeros((4, 4), dtype=np.float64)
     matrix[0, 0] = factor / max(aspect, 0.01)
     matrix[1, 1] = factor
@@ -342,6 +342,7 @@ class TextureReloadWorker(QThread):
 class GLViewport(QOpenGLWidget):
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
+    originModeChanged = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -380,6 +381,9 @@ class GLViewport(QOpenGLWidget):
         self.distance = 4.0
         self.half_height = 1.6
         self.perspective = False
+        self.origin_mode = False
+        self.origin_fov = 60.0
+        self._saved_external_view = None
         self._drag = None
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
@@ -462,8 +466,10 @@ class GLViewport(QOpenGLWidget):
         self._visibility_info = {}
         self._frametimes.clear()
         self._frame_count = 0
-        if not preserve_view:
+        if not preserve_view and not self.origin_mode:
             self.frame_all()
+        # If origin view is enabled while opening another model, keep the
+        # eye pinned to that model's (0,0,0), not its bounding-box center.
         if self._program is not None:
             self.makeCurrent()
             try:
@@ -597,13 +603,29 @@ class GLViewport(QOpenGLWidget):
         else:
             self.invalidate_visibility()
 
+    def _camera_eye_model(self):
+        """Unscaled Papyrus eye used for BSP and automatic RES switches."""
+        if self.origin_mode:
+            return (0.0, 0.0, 0.0)
+        return camera_in_model_units(
+            self._mesh.center, self._mesh.scale, self.target,
+            self.azimuth, self.elevation, self.distance)
+
+    def _camera_view_matrix(self):
+        """The origin preset rotates the VIEW DIRECTION, not the eye."""
+        target = self.target
+        if self.origin_mode and self._mesh is not None:
+            target = origin_view_target(
+                self._mesh.center, self._mesh.scale, self.azimuth,
+                self.elevation, self.distance)
+        return camera_view(
+            self.azimuth, self.elevation, self.distance, target)
+
     def _refresh_visibility(self):
         """Active GL context required. Never reparses or retessellates."""
         if self._model is None or self._mesh is None or self._vao is None:
             return
-        eye = camera_in_model_units(
-            self._mesh.center, self._mesh.scale, self.target,
-            self.azimuth, self.elevation, self.distance)
+        eye = self._camera_eye_model()
         direction = None
         if not self.perspective:
             direction = (
@@ -653,9 +675,11 @@ class GLViewport(QOpenGLWidget):
         aspect=w/h
         near=0.001
         far=max(100.0,40.0*self.distance)
-        view,_,_=camera_view(self.azimuth,self.elevation,self.distance,self.target)
+        view,_,_=self._camera_view_matrix()
         if self.perspective:
-            projection=perspective_projection(aspect,near,far)
+            projection=perspective_projection(
+                aspect, near, far,
+                self.origin_fov if self.origin_mode else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
@@ -686,7 +710,33 @@ class GLViewport(QOpenGLWidget):
             if duration > 0.25:
                 self.fps = (len(self._frametimes) - 1) / duration
 
+    def set_origin_mode(self, enabled):
+        """Lock the real camera to model XYZ 0,0,0 for skybox inspection."""
+        enabled = bool(enabled)
+        if self.origin_mode == enabled:
+            return
+        if enabled:
+            self._saved_external_view = (
+                self.target.copy(), self.distance, self.half_height,
+                self.perspective, self.azimuth, self.elevation)
+            self.origin_mode = True
+            self.perspective = True
+            self.azimuth = 0.0       # Looking toward +Y from the origin
+            self.elevation = 0.0     # Level horizon rather than a top view
+            self.origin_fov = 60.0
+        else:
+            self.origin_mode = False
+            if self._saved_external_view is not None:
+                (target, self.distance, self.half_height, self.perspective,
+                 self.azimuth, self.elevation) = self._saved_external_view
+                self.target = target.copy()
+            self._saved_external_view = None
+        self.originModeChanged.emit(self.origin_mode)
+        self.invalidate_visibility()
+
     def frame_all(self):
+        if self.origin_mode:
+            self.set_origin_mode(False)
         self.target[:] = 0
         self.distance = 4.0
         self.half_height = 1.6
@@ -706,9 +756,15 @@ class GLViewport(QOpenGLWidget):
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
-        self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
-        self.distance = min(1000.0, max(.001, self.distance * multiplier))
-        self.invalidate_visibility()
+        if self.origin_mode:
+            # Do not dolly away from (0,0,0). Wheel adjusts field of view,
+            # letting skybox authors examine details while stationary.
+            self.origin_fov = min(110.0, max(20.0, self.origin_fov * multiplier))
+            self.update()
+        else:
+            self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
+            self.distance = min(1000.0, max(.001, self.distance * multiplier))
+            self.invalidate_visibility()
         event.accept()
 
     def mousePressEvent(self, event):
@@ -729,10 +785,11 @@ class GLViewport(QOpenGLWidget):
         if button == Qt.MouseButton.MiddleButton or (
             event.modifiers() & Qt.KeyboardModifier.ShiftModifier
         ):
-            _, right, up = camera_view(self.azimuth, self.elevation,
-                                       self.distance, self.target)
-            world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
-            self.target += (-dx * right + dy * up) * world_per_pixel
+            if not self.origin_mode:
+                _, right, up = self._camera_view_matrix()
+                world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
+                self.target += (-dx * right + dy * up) * world_per_pixel
+            # Origin view deliberately disables pan: eye must stay at 0,0,0.
         else:
             self.azimuth -= dx * .006
             self.elevation = max(-math.pi/2, min(math.pi/2,
