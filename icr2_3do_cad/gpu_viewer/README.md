@@ -59,19 +59,26 @@ once with a building or fixtures/roadcar.3do.
   on startup; **Default palette** restores it. Palette changes recolor
   both plain polygons and MIPs instantly, without rebuilding geometry.
 - **Individual car 3DO**: open a per-driver `.3do` directly, such as
-  `cit74.3do`. It may contain no polygon geometry itself: its root MATERIAL
-  points to a shared carshape (often `indycar.3do`), and a separate
-  unreferenced RECOLOR table maps the shared shape's palette indices onto
-  the driver's colors. RECOLOR is applied to *flat polygon indices*, not to
-  the livery's indexed MIP pixels. The car status line reports mappings.
-- **Car shape ref / Assign carshape 3DO…**: if the shared model is in a
-  different directory or has a custom filename, select the external reference
-  and manually choose the shape. Clear shape override reverts to automatic
-  lookup. This never modifies the car file.
-- **Livery material / Assign livery MIP…**: select a MATERIAL name (often the
-  driver/car 3DO basename) and explicitly choose its livery `.mip` file.
-  This overrides automatic filename lookup, including when the filename is
-  different. Clear livery override returns to automatic lookup.
+  `cit74.3do`. As in the CPU editor, the root MATERIAL references a
+  **RECOLOR record at body offset zero**, not a renderable child. The GPU
+  loader reads it using the existing `car_appearance` decoder and opens
+  the referenced base geometry (e.g. `indycar.3do`) separately. It maps
+  only *base car* polygon color indices, preserving independent wheel and
+  helmet colors and textures. The livery's indexed MIP pixels are unchanged.
+- **Car geometry / Assign carshape 3DO…**: on an individual-car wrapper,
+  this lists the actual named base shape, not the wheel/helmet DYNAMIC
+  references. Use it to locate the base `.3do` manually if necessary.
+  Missing base geometry is reported in the status bar rather than silently
+  showing a blank car. Clear shape override restores automatic lookup.
+- **Texture target / Assign livery MIP…**: **Car body** is first and
+  selected by default when root POLY[T] faces exist. It assigns a MIP
+  *only to the base car's textured polygons*, never wheel1, wheel2 or
+  helmet. Other materials are listed explicitly as **External/material**
+  for advanced texture overrides. The wrapper's MATERIAL MIP is automatically
+  applied to the body, with lookup relative to the wrapper directory.
+  Clear livery override restores automatic lookup. Opening another model
+  clears model-specific texture/geometry overrides so prior cars do not
+  carry over unexpected wheel assignments.
 - **Reload MIPs (R)**: rereads the changed MIP from disk on a background
   worker, without reopening the carshape or resetting the view. For an
   unchanged atlas layout, only the GPU's integer texture is reuploaded:
@@ -138,11 +145,11 @@ with the missing files counted in the UI. The atlas is capped at 4096x4096;
 assets that exceed available capacity fall back to flat color.
 
 The single expanded VBO includes the geometry of inactive LOD branches and
-resolved external models. For individual-car RECOLOR wrappers, validated
-palette-index remappings are inherited from wrapper to child polygons before
-mesh creation; livery MIP pixels are *not* recolored. The wrapper's MATERIAL
-filename is resolved relative to its original wrapper directory, even if the
-shared shape lives elsewhere. The camera-dependent index list includes only
+resolved external models. For individual-car RECOLOR wrappers, the
+`car_appearance` decoder loads the shared base model separately; remappings
+affect that model's polygons only, not the external DYNAMIC wheels/helmet.
+The wrapper's MATERIAL filename is resolved relative to the original
+wrapper directory, even if the shared shape lives elsewhere. The camera-dependent index list includes only
 selected branches and emits child polygons at their parent's insertion site.
 Repeated model files are parsed once and instantiated independently. An
 optional external 3DO search folder can be selected in the UI.
