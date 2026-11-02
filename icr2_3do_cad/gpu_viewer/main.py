@@ -39,7 +39,8 @@ try:
     from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
-        QMainWindow, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
+        QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
+        QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -477,6 +478,8 @@ class Window(QMainWindow):
         self.load_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         self.stats_label = QLabel("No model loaded")
+        self.visibility_label = QLabel("BSP status will appear here")
+        self.polygon_status = QLabel("Enter a polygon body offset to inspect")
         root = QWidget()
         layout = QVBoxLayout(root)
         toolbar = QHBoxLayout()
@@ -499,12 +502,40 @@ class Window(QMainWindow):
         toolbar.addWidget(self.benchmark_toggle)
         toolbar.addStretch()
         layout.addLayout(toolbar)
+        bspbar = QHBoxLayout()
+        bspbar.addWidget(QLabel("Render:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Papyrus BSP painter", "painter")
+        self.mode_combo.addItem("BSP selection + GPU depth", "depth")
+        self.mode_combo.addItem("All polygons + GPU depth", "all")
+        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        bspbar.addWidget(self.mode_combo)
+        bspbar.addWidget(QLabel("LOD distance (game units):"))
+        self.lod_spin = QSpinBox()
+        self.lod_spin.setRange(0, 2000000000)
+        self.lod_spin.setSingleStep(10000)
+        self.lod_spin.setValue(0)
+        self.lod_spin.valueChanged.connect(self._lod_changed)
+        bspbar.addWidget(self.lod_spin)
+        self.all_lods = QCheckBox("All LOD branches (diagnostic)")
+        self.all_lods.toggled.connect(self._lod_changed)
+        bspbar.addWidget(self.all_lods)
+        bspbar.addWidget(QLabel("Polygon @"))
+        self.polygon_edit = QLineEdit()
+        self.polygon_edit.setPlaceholderText("decimal or 0x...")
+        self.polygon_edit.setMaximumWidth(135)
+        self.polygon_edit.textChanged.connect(self._update_polygon_status)
+        bspbar.addWidget(self.polygon_edit)
+        layout.addLayout(bspbar)
         layout.addWidget(self.load_label)
         layout.addWidget(self.viewer, stretch=1)
         layout.addWidget(self.stats_label)
+        layout.addWidget(self.visibility_label)
+        layout.addWidget(self.polygon_status)
         self.setCentralWidget(root)
         QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
+        self.viewer.visibilityChanged.connect(self._visibility_updated)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -514,6 +545,48 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _mode_changed(self, index):
+        self.viewer.set_render_mode(self.mode_combo.currentData())
+        self._update_polygon_status()
+
+    def _lod_changed(self, *args):
+        self.lod_spin.setEnabled(not self.all_lods.isChecked())
+        self.viewer.lod_distance = (
+            None if self.all_lods.isChecked() else self.lod_spin.value()
+        )
+        self.viewer.invalidate_visibility()
+
+    def _visibility_updated(self, message):
+        self.visibility_label.setText(message)
+        self._update_polygon_status()
+
+    def _update_polygon_status(self, *args):
+        text = self.polygon_edit.text().strip()
+        model = self.viewer._model
+        if not text:
+            self.polygon_status.setText("Enter a polygon body offset to inspect")
+            return
+        try:
+            offset = int(text, 16 if text.lower().startswith('0x') else 10)
+        except ValueError:
+            self.polygon_status.setText("Enter a decimal or 0x hexadecimal offset")
+            return
+        if model is None:
+            self.polygon_status.setText("Load a model first")
+        elif offset not in model.polygons:
+            self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
+        elif self.viewer.render_mode == 'all':
+            self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
+        elif self.viewer._visibility_dirty:
+            self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
+        elif offset not in self.viewer._visible_set:
+            self.polygon_status.setText(f"@{offset}: EXCLUDED by BSP or selected LOD")
+        elif offset not in self.viewer._mesh.polygon_ranges:
+            self.polygon_status.setText(f"@{offset}: selected by BSP, but degenerate / not meshed")
+        else:
+            self.polygon_status.setText(
+                f"@{offset}: SELECTED by BSP (may still be covered by another polygon)")
 
     def _set_perspective(self, checked):
         self.viewer.perspective = checked
@@ -558,9 +631,9 @@ class Window(QMainWindow):
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats):
+    def _loaded(self, mesh, stats, model):
         self._info = stats
-        self.viewer.set_mesh(mesh)
+        self.viewer.set_mesh(mesh, model)
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
@@ -574,7 +647,7 @@ class Window(QMainWindow):
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
         self.statusBar().showMessage(
-            "Left-drag orbit | Shift-left / middle-drag pan | Wheel zoom | F frame")
+            "BSP painter mode | Left-drag orbit | Shift-left/middle pan | Wheel zoom | F frame")
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
@@ -603,6 +676,10 @@ class Window(QMainWindow):
                 "skipped_polygons": mesh.skipped_polygons,
                 "fan_fallbacks": mesh.fan_fallbacks,
                 "vertex_buffer_bytes": mesh.size_bytes,
+                "render_mode": self.viewer.render_mode,
+                "lod_distance": self.viewer.lod_distance,
+                "bsp_selected_polygons": len(self.viewer._visible_set),
+                "bsp_draw_indices": self.viewer._index_count,
             }
             try:
                 target = Path(self.report_path)
