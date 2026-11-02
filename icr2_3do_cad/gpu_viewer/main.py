@@ -169,8 +169,6 @@ class GLViewport(QOpenGLWidget):
         self._vbo = None
         self._vao = None
         self._mesh = None
-        self._fbo = None
-        self._fbo_id = None
         self.upload_ms = None
         self.azimuth = math.radians(35)
         self.elevation = math.radians(28)
@@ -204,9 +202,9 @@ class GLViewport(QOpenGLWidget):
     def shutdown_gl(self):
         """Release only resources owned by ModernGL while Qt's GL context lives.
 
-        The detected framebuffer is *owned by QOpenGLWidget*. Never call
-        release() on that wrapper: doing so would delete Qt's framebuffer.
-        This may be invoked both on close and from aboutToBeDestroyed.
+        QOpenGLWidget owns its framebuffer; release only our own shader and
+        buffer objects. This may be called both from close and from Qt's
+        aboutToBeDestroyed signal.
         """
         if self._ctx is None or self._resources_released:
             return
@@ -261,13 +259,9 @@ class GLViewport(QOpenGLWidget):
     def paintGL(self):
         if self._ctx is None:
             return
-        # Qt renders to its own FBO, not necessarily GL framebuffer zero.
-        # Detect and use the widget's currently owned framebuffer.
-        fbo_id = int(self.defaultFramebufferObject())
-        if self._fbo is None or fbo_id != self._fbo_id:
-            self._fbo_id = fbo_id
-            self._fbo = self._ctx.detect_framebuffer(glo=fbo_id)
-        self._fbo.use()
+        # QOpenGLWidget has already made its Qt-owned FBO current.
+        # Do NOT bind 0, call ctx.screen.use(), or wrap Qt's FBO in a
+        # ModernGL Framebuffer: doing so can interfere with Qt teardown.
         w = max(1, int(self.width() * self.devicePixelRatioF()))
         h = max(1, int(self.height() * self.devicePixelRatioF()))
         self._ctx.viewport = (0, 0, w, h)
