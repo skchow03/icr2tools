@@ -7,7 +7,7 @@ The preview is depth-tested flat colour; it is NOT ICR2's BSP/painter renderer.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
 from pathlib import Path
 from time import perf_counter
@@ -26,6 +26,9 @@ class MeshData:
     scale: float
     build_ms: float
     fan_fallbacks: int = 0
+    # Original 3DO polygon offset -> (first triangle vertex, vertex count).
+    # An OpenGL element buffer reorders these ranges without changing XYZ/RGB.
+    polygon_ranges: dict[int, tuple[int, int]] = field(default_factory=dict)
 
     @property
     def size_bytes(self) -> int:
@@ -157,6 +160,7 @@ def make_mesh(model, palette=None) -> MeshData:
     good_polygons = 0
     skipped = 0
     fallbacks = 0
+    polygon_ranges = {}
     for polygon in model.polygons.values():
         refs = polygon.unique_refs
         if len(refs) < 3:
@@ -181,14 +185,16 @@ def make_mesh(model, palette=None) -> MeshData:
             tint = 0.35 + (pal_index % 9) / 20.0
             rgb = np.array((tint, tint, tint), dtype=np.float32)
         normalized = ((original - center) / scale).astype(np.float32)
+        start_vertex = len(triangles)
         for a, b, c in face_tris:
             for i in (a, b, c):
                 x, y, z = normalized[i]
                 triangles.append((float(x), float(y), float(z),
                                   float(rgb[0]), float(rgb[1]), float(rgb[2])))
+        polygon_ranges[polygon.offset] = (start_vertex, len(triangles) - start_vertex)
     data = np.ascontiguousarray(np.asarray(triangles, dtype=np.float32).reshape(-1, 6))
     return MeshData(
         data, good_polygons, len(triangles)//3, skipped,
         tuple(map(float, center)), scale, (perf_counter()-started)*1000,
-        fallbacks,
+        fallbacks, polygon_ranges,
     )
