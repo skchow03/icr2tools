@@ -36,13 +36,26 @@ def run(path):
     def check():
         elapsed = perf_counter() - started
         view = window.viewer
-        if window._info and view._vao is not None and view._frame_count >= 4:
+        if (window._info and view._vao is not None and
+                view._frame_count >= 8 and elapsed >= 1.25):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
             elif view._mesh.triangle_count < 1:
                 result["error"] = "No local triangles drawn"
+            elif view.fps <= 0:
+                result["error"] = "No measured Qt frame-swapped FPS"
             else:
+                # Verify an actual rendered model, not merely a clear-color
+                # framebuffer. Sample a coarse grid to avoid expensive reads.
+                colors = set()
+                for y in range(0, image.height(), max(1, image.height() // 32)):
+                    for x in range(0, image.width(), max(1, image.width() // 32)):
+                        colors.add(image.pixelColor(x, y).rgb())
+                if len(colors) < 2:
+                    result["error"] = "Frame contains only background; geometry invisible"
+                    app.quit()
+                    return
                 screenshot = Path(os.environ.get(
                     "GPU_SMOKE_SCREENSHOT", "gpu_viewer_smoke.png"))
                 image.save(str(screenshot))
