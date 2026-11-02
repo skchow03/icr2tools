@@ -91,7 +91,7 @@ class GPUCarWrapperParityTests(unittest.TestCase):
             for nm in ('sfront', 'srear', 'helmet'):
                 make_wheel_child(folder / (nm+'.3do'))
             model, scene, app = load_car_or_model(wrapper)
-            self.assertGreater(scene.loaded_instances, 0)
+            self.assertGreater(scene.loaded_instances, 0, (scene.warnings, model.path, scene.root.path))
             for (inst,off),poly_id in scene.polygon_lookup.items():
                 orig = scene.instances[inst].model.polygons[off].color
                 expected = app.map_color(orig) if inst == 0 else orig
@@ -148,7 +148,9 @@ class GPUCarWrapperParityTests(unittest.TestCase):
             # own MIPs; only insist all root car faces use the new body MIP.
             self.assertTrue(
                 set(scene.geometry.body_polygons).issubset(atlas.polygon_rects))
-            self.assertEqual(atlas.loaded_names, ('body.mip',))
+            self.assertIn('body.mip', atlas.loaded_names)
+            # Existing wheel textures must still load independently.
+            self.assertIn('wheel1.mip', atlas.loaded_names)
 
 
 if __name__ == '__main__':
