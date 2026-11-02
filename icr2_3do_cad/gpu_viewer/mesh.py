@@ -161,7 +161,7 @@ def make_mesh(model, palette=None) -> MeshData:
     skipped = 0
     fallbacks = 0
     polygon_ranges = {}
-    for polygon in model.polygons.values():
+    for polygon_offset, polygon in model.polygons.items():
         refs = polygon.unique_refs
         if len(refs) < 3:
             skipped += 1
@@ -191,7 +191,7 @@ def make_mesh(model, palette=None) -> MeshData:
                 x, y, z = normalized[i]
                 triangles.append((float(x), float(y), float(z),
                                   float(rgb[0]), float(rgb[1]), float(rgb[2])))
-        polygon_ranges[polygon.offset] = (start_vertex, len(triangles) - start_vertex)
+        polygon_ranges[polygon_offset] = (start_vertex, len(triangles) - start_vertex)
     data = np.ascontiguousarray(np.asarray(triangles, dtype=np.float32).reshape(-1, 6))
     return MeshData(
         data, good_polygons, len(triangles)//3, skipped,
