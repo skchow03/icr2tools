@@ -28,14 +28,18 @@ jobs:
       - name: Install Mesa software OpenGL and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-xinput0
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-xinput0 libxcb-icccm4 libxcb-keysyms1 libxcb-randr0 libxcb-shape0 libxcb-xfixes0 libxcb-render0 libxcb-shm0 libxcb-sync1 libx11-xcb1
       - name: Install viewer dependencies
         run: python -m pip install -r icr2_3do_cad/gpu_viewer/requirements.txt
+      - name: Inspect Qt XCB platform dependencies
+        run: |
+          find /opt/hostedtoolcache/Python/3.11.17/x64/lib/python3.11/site-packages/PySide6 -name libqxcb.so -exec ldd {} \; || true
       - name: Verify 3.3 context, GPU buffers and actual framebuffer
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"
           QT_QPA_PLATFORM: xcb
           QT_OPENGL: desktop
+          QT_DEBUG_PLUGINS: "1"
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python icr2_3do_cad/gpu_viewer/smoke_test.py \
