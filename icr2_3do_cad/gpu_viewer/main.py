@@ -609,6 +609,11 @@ class Window(QMainWindow):
         self.worker = None
         self._info = {}
         self.report_path = report_path
+        self.palette_path = CAD_ROOT / "gamepal.pcx"
+        self.texture_folder = None
+        self.fallback_mip = None
+        self.model_path = None
+        self._preserve_view = False
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -616,6 +621,8 @@ class Window(QMainWindow):
         self.stats_label = QLabel("No model loaded")
         self.visibility_label = QLabel("BSP status will appear here")
         self.polygon_status = QLabel("Enter a polygon body offset to inspect")
+        self.palette_status = QLabel("Palette: bundled gamepal.pcx")
+        self.texture_status = QLabel("MIPs: no model loaded")
         root = QWidget()
         layout = QVBoxLayout(root)
         toolbar = QHBoxLayout()
@@ -663,11 +670,37 @@ class Window(QMainWindow):
         self.polygon_edit.textChanged.connect(self._update_polygon_status)
         bspbar.addWidget(self.polygon_edit)
         layout.addLayout(bspbar)
+        assetsbar = QHBoxLayout()
+        palette_button = QPushButton("Open PCX palette…")
+        palette_button.clicked.connect(self.open_palette_dialog)
+        assetsbar.addWidget(palette_button)
+        default_button = QPushButton("Default palette")
+        default_button.clicked.connect(self.restore_palette)
+        assetsbar.addWidget(default_button)
+        folder_button = QPushButton("MIP folder…")
+        folder_button.clicked.connect(self.choose_mip_folder)
+        assetsbar.addWidget(folder_button)
+        fallback_button = QPushButton("Fallback MIP…")
+        fallback_button.clicked.connect(self.choose_fallback_mip)
+        assetsbar.addWidget(fallback_button)
+        reset_mip = QPushButton("Clear fallback")
+        reset_mip.clicked.connect(self.clear_fallback_mip)
+        assetsbar.addWidget(reset_mip)
+        self.show_textures = QCheckBox("Textures")
+        self.show_textures.setChecked(True)
+        self.show_textures.toggled.connect(self._textures_toggled)
+        assetsbar.addWidget(self.show_textures)
+        self.repeat_uv = QCheckBox("Repeat UV")
+        self.repeat_uv.toggled.connect(self._repeat_toggled)
+        assetsbar.addWidget(self.repeat_uv)
+        layout.addLayout(assetsbar)
         layout.addWidget(self.load_label)
         layout.addWidget(self.viewer, stretch=1)
         layout.addWidget(self.stats_label)
         layout.addWidget(self.visibility_label)
         layout.addWidget(self.polygon_status)
+        layout.addWidget(self.palette_status)
+        layout.addWidget(self.texture_status)
         self.setCentralWidget(root)
         QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
@@ -681,6 +714,76 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _textures_toggled(self, checked):
+        self.viewer.textures_enabled = checked
+        self.viewer.update()
+
+    def _repeat_toggled(self, checked):
+        self.viewer.texture_repeat = checked
+        self.viewer.update()
+
+    def _busy(self):
+        if self.worker and self.worker.isRunning():
+            QMessageBox.information(self, "Loading", "Finish the current load first.")
+            return True
+        return False
+
+    def _apply_palette(self, path):
+        if self._busy():
+            return
+        try:
+            palette = load_palette(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Invalid PCX palette", str(exc))
+            return
+        self.palette_path = Path(path)
+        self.palette_status.setText(f"Palette: {self.palette_path.name} (256 colors)")
+        self.viewer.set_palette(palette)
+
+    def open_palette_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open 256-color PCX palette",
+            str(self.palette_path.parent),
+            "PCX palette (*.pcx *.PCX);;All files (*)")
+        if path:
+            self._apply_palette(path)
+
+    def restore_palette(self):
+        self._apply_palette(CAD_ROOT / "gamepal.pcx")
+
+    def choose_mip_folder(self):
+        if self._busy():
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with .MIP textures",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
+        if directory:
+            self.texture_folder = Path(directory)
+            self._reload_texture_assets()
+
+    def choose_fallback_mip(self):
+        if self._busy():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose MIP for unassigned POLY [T] faces",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus MIP (*.mip *.MIP);;All files (*)")
+        if path:
+            self.fallback_mip = Path(path)
+            self._reload_texture_assets()
+
+    def clear_fallback_mip(self):
+        if self._busy():
+            return
+        self.fallback_mip = None
+        self._reload_texture_assets()
+
+    def _reload_texture_assets(self):
+        if self.model_path is not None and self.viewer._model is not None:
+            self.load(self.model_path, reuse_model=True)
 
     def _mode_changed(self, index):
         self.viewer.set_render_mode(self.mode_combo.currentData())
@@ -756,20 +859,40 @@ class Window(QMainWindow):
         if path:
             self.load(Path(path))
 
-    def load(self, path):
-        if self.worker and self.worker.isRunning():
-            QMessageBox.information(self, "Loading", "Finish the current load first.")
+    def load(self, path, *, reuse_model=False):
+        if self._busy():
             return
+        self.model_path = Path(path)
+        self._preserve_view = reuse_model
         self.load_label.setText(f"Loading {Path(path).name}… (background worker)")
-        self.stats_label.setText("Parsing model and building triangle buffer…")
-        self.worker = LoadWorker(path)
+        self.stats_label.setText("Loading geometry and MIP atlas…")
+        self.worker = LoadWorker(
+            path, self.palette_path, self.texture_folder, self.fallback_mip,
+            existing_model=(self.viewer._model if reuse_model else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats, model):
+    def _loaded(self, mesh, stats, model, atlas, palette):
         self._info = stats
-        self.viewer.set_mesh(mesh, model)
+        self.viewer.set_mesh(mesh, model, atlas, palette,
+                             preserve_view=self._preserve_view)
+        self._preserve_view = False
+        self.palette_status.setText(
+            f"Palette: {self.palette_path.name} (256 colors)")
+        self.texture_status.setText(
+            f"MIPs: {stats['texture_count']} loaded | "
+            f"{stats['textured_faces']}/{stats['textured_candidates']} "
+            f"POLY [T] faces mapped | atlas "
+            f"{stats['atlas_shape'][1]}x{stats['atlas_shape'][0]} | "
+            f"{len(stats['missing_textures'])} missing | "
+            f"{len(stats['texture_errors'])} errors")
+        if stats['missing_textures'] or stats['texture_errors']:
+            details = (list(stats['missing_textures'][:5]) +
+                       list(stats['texture_errors'][:3]))
+            self.statusBar().showMessage(
+                "MIP diagnostics: " + "; ".join(details))
+
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
@@ -812,6 +935,13 @@ class Window(QMainWindow):
                 "skipped_polygons": mesh.skipped_polygons,
                 "fan_fallbacks": mesh.fan_fallbacks,
                 "vertex_buffer_bytes": mesh.size_bytes,
+                "mip_atlas_bytes": (self.viewer._atlas.size_bytes
+                                    if self.viewer._atlas else 0),
+                "mip_textures_loaded": self._info.get("texture_count", 0),
+                "mip_textured_polygons": self._info.get("textured_faces", 0),
+                "mip_textures_missing": list(self._info.get("missing_textures", ())),
+                "mip_load_errors": list(self._info.get("texture_errors", ())),
+                "palette_basename": self.palette_path.name,
                 "render_mode": self.viewer.render_mode,
                 "lod_distance": self.viewer.lod_distance,
                 "bsp_selected_polygons": len(self.viewer._visible_set),
