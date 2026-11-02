@@ -58,7 +58,7 @@ except ImportError as exc:
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 from gpu_viewer.visibility import camera_in_model_units
-from gpu_viewer.scene import build_scene, ordered_scene_indices
+from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 
 
@@ -170,7 +170,7 @@ class LoadWorker(QThread):
 
     def __init__(self, path, palette_path, texture_folder=None,
                  fallback_mip=None, *, objects_folder=None,
-                 mip_overrides=None, object_overrides=None,
+                 mip_overrides=None, object_overrides=None, body_mip=None,
                  existing_model=None):
         super().__init__()
         self.path = Path(path)
@@ -180,6 +180,7 @@ class LoadWorker(QThread):
         self.objects_folder = objects_folder
         self.mip_overrides = dict(mip_overrides or {})
         self.object_overrides = dict(object_overrides or {})
+        self.body_mip = body_mip
         self.existing_model = existing_model
 
     def run(self):
@@ -188,26 +189,31 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            if self.existing_model is not None:
-                model = self.existing_model
+            if self.path.suffix.lower() == ".3do":
+                model, scene, appearance = load_car_or_model(
+                    self.path, existing_model=self.existing_model,
+                    objects_folder=self.objects_folder,
+                    object_overrides=self.object_overrides,
+                    fixtures_folder=CAD_ROOT / 'fixtures')
             elif self.path.suffix.lower() == ".3d":
-                text = self.path.read_text(encoding="utf-8-sig")
-                model, _ = compile_n3_text(
-                    text, self.path, associate_planes=False)
-            elif self.path.suffix.lower() == ".3do":
-                model = Model(self.path, associate_planes=False)
+                if self.existing_model is not None:
+                    model = self.existing_model
+                else:
+                    text = self.path.read_text(encoding="utf-8-sig")
+                    model, _ = compile_n3_text(
+                        text, self.path, associate_planes=False)
+                scene = build_scene(model, objects_folder=self.objects_folder,
+                                    object_overrides=self.object_overrides)
+                appearance = None
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            # Resolve and transform each nested instance once. BSP and
-            # RES selection remain per-source-model and per-placement.
-            scene = build_scene(model, objects_folder=self.objects_folder,
-                                object_overrides=self.object_overrides)
             palette = load_palette(self.palette_path)
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip,
-                                mip_overrides=self.mip_overrides)
+                                mip_overrides=self.mip_overrides,
+                                body_mip=self.body_mip)
             mesh = make_mesh(scene.geometry,
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
@@ -230,6 +236,10 @@ class LoadWorker(QThread):
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
                 "recolor_pairs": scene.recolor_pairs,
+                "appearance_geometry": (appearance.geometry_name if appearance else ""),
+                "appearance_mip": (appearance.texture_name if appearance else ""),
+                "geometry_file": model.path.name,
+                "body_textured_faces": len(scene.geometry.body_polygons),
                 "material_names": tuple(sorted(set(
                     scene.geometry.polygon_materials.values()),
                     key=str.casefold)),
@@ -247,7 +257,7 @@ class TextureReloadWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, scene, mesh, palette, model_path, texture_folder,
-                 fallback_mip, mip_overrides, previous_atlas):
+                 fallback_mip, mip_overrides, body_mip, previous_atlas):
         super().__init__()
         self.scene = scene
         self.mesh = mesh
@@ -256,6 +266,7 @@ class TextureReloadWorker(QThread):
         self.texture_folder = texture_folder
         self.fallback_mip = fallback_mip
         self.mip_overrides = dict(mip_overrides)
+        self.body_mip = body_mip
         self.previous_atlas = previous_atlas
 
     def run(self):
@@ -264,7 +275,8 @@ class TextureReloadWorker(QThread):
                 self.scene.geometry, self.model_path,
                 texture_folder=self.texture_folder,
                 fallback_mip=self.fallback_mip,
-                mip_overrides=self.mip_overrides)
+                mip_overrides=self.mip_overrides,
+                body_mip=self.body_mip)
             # Texture edits normally change only indexed pixels. VBO and BSP
             # index ordering remain completely untouched in the fast path.
             mesh = None
