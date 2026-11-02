@@ -49,7 +49,7 @@ def make_wheel_child(path):
     root = len(body)
     body.extend(struct.pack('<4i', -(1<<31)+4, 0, 0, poly))
     path.write_bytes(struct.pack('<5i', len(body), root, 1, 0, 0)
-                     + b'wheel1\\0\\0' + body)
+                     + b'wheel1'.ljust(8, bytes(1)) + body)
 
 
 class GPUCarWrapperParityTests(unittest.TestCase):
