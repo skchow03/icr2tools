@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QSurfaceFormat
+from PySide6.QtGui import QSurfaceFormat, QTextCursor
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from gpu_viewer.main import Window
@@ -112,6 +113,17 @@ def run(path):
                 live["source"] = pane.get_source()
                 live["vbo"] = view._vbo
                 live["azimuth"] = view.azimuth
+                # Viewport's F/R shortcuts must not swallow actual text
+                # typed into the N3 editor.
+                pane.editor.setFocus()
+                pane.editor.moveCursor(QTextCursor.MoveOperation.End)
+                QTest.keyClicks(pane.editor, "FR")
+                if not pane.get_source().endswith("FR"):
+                    result["error"] = "F/R viewport shortcuts intercepted N3 editor input"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
                 pane.editor.setPlainText(live["source"] + "\nBROKEN: FACE INVALID;\n")
                 pane.apply_now()
                 live["invalid_sent"] = True
