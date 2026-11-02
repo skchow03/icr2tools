@@ -102,6 +102,43 @@ class TrackStyleN3Tests(unittest.TestCase):
             parse_document(TRACK_N3.replace("3D VERSION 3.0","3D VERSION 2.0",1),
                            require_offsets=False)
 
+    def test_reno_style_nested_bspa_prefix_nodes(self):
+        """A BSPA is a prefix operator; its first operand may be another BSPA."""
+        from n3_compile import _split, _group_prefix_nodes
+        tokens=_split("BSPA (a,b,c), BSPA (a,b,c), "
+                      "LIST {p}, LIST {p}, NIL, LIST {p}, "
+                      "LIST {p}, poly")
+        grouped=_group_prefix_nodes(tokens)
+        self.assertEqual(len(grouped),2)
+        self.assertTrue(grouped[0].startswith("BSPA (a,b,c), BSPA (a,b,c)"))
+        self.assertEqual(grouped[1],"poly")
+
+    def test_group_only_material_and_nested_bspa_compile(self):
+        source="""3D VERSION 3.0
+nil: NIL;
+a: [<0,0,0>];
+b: [<1000,0,0>];
+c: [<0,1000,0>];
+p: POLY <44> {a,b,c};
+sec0_s0_HI: FACE
+    (a,b,c),
+    LIST {
+       BSPA (a,b,c),
+         BSPA (a,b,c),
+           LIST {p}, LIST {p}, nil,
+         MATERIAL GROUP = 30,
+           LIST { POLY <47> {a,b,c} },
+         LIST { p },
+       p
+    };
+index: LIST {sec0_s0_HI};
+"""
+        model,_=compile_n3_text(source,"nested_track.3D")
+        self.assertEqual(len(model.planes),3)
+        self.assertEqual(model.records[model.root_offset],11)
+        self.assertTrue(any(kind==4 for kind in model.records.values()))
+        self.assertFalse(any("invalid MIP index -1" in w for w in model.warnings))
+
     def test_compile_track_hierarchy_hash_data_and_root_index(self):
         model,document=compile_n3_text(TRACK_N3,"RENO.3D")
         self.assertEqual(model.records[model.root_offset],11)

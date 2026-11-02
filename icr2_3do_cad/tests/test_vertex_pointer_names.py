@@ -53,7 +53,7 @@ _4: [<0,0,0>];
         with self.assertRaises(ValueError):
             rename_vertex_in_source(source,doc,"front_left","root")
         with self.assertRaises(ValueError):
-            rename_vertex_in_source(source,doc,"front_left","bad-name")
+            rename_vertex_in_source(source,doc,"front_left","bad.name")
         with self.assertRaises(ValueError):
             rename_vertex_in_source(source,doc,"front_left","front_left_extra")
 
