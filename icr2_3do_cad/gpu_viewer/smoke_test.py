@@ -42,6 +42,16 @@ def _make_smoke_child(path):
     path.write_bytes(struct.pack('<5i', len(body), root, 0, 0, 0) + body)
 
 
+def _make_car_wrapper(path):
+    """Actual MATERIAL child=0 RECOLOR wrapper, like cit74.3do."""
+    body = bytearray(struct.pack('<4i', -(1<<31)+14, 1, 44, 155))
+    root = len(body)
+    body.extend(struct.pack('<4i', -(1<<31)+4, 0, 0, 0))
+    names = b'car74\\0\\0\\0' + b'roadcar\\0'
+    path.write_bytes(struct.pack('<5i', len(body), root, 1, 0, 1) +
+                     names + body)
+
+
 def run(path):
     # The stock roadcar references wheels and helmet files not shipped with
     # fixtures. Supply synthetic children in a temporary folder to make the
@@ -54,7 +64,13 @@ def run(path):
         shutil.copyfile(source, local)
         for name in ('SFRONT.3DO', 'SREAR.3DO', 'HELMET.3DO'):
             _make_smoke_child(local.parent / name)
-        path = local
+        # Open the synthetic individual-car wrapper, NOT the base geometry.
+        # This exercises the exact empty-viewport failure from cit74.3do.
+        wrapper = local.parent / 'car74.3do'
+        _make_car_wrapper(wrapper)
+        shutil.copyfile(ROOT / 'fixtures' / 'ind96.mip',
+                        local.parent / 'car74.mip')
+        path = wrapper
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
@@ -62,7 +78,7 @@ def run(path):
     QSurfaceFormat.setDefaultFormat(fmt)
     app = QApplication([sys.argv[0]])
     window = Window(path, benchmark=True)
-    # roadcar has POLY [T] but no MATERIAL; exercise explicit MIP fallback.
+    # Also exercise the historical global fallback for geometry-only models.
     window.fallback_mip = ROOT / "fixtures" / "ind96.mip"
     # Ensure QOpenGLWidget is deleted while QApplication/GLX remain alive;
     # PySide6 6.12 can bus-error during interpreter-finalization otherwise.
@@ -98,6 +114,13 @@ def run(path):
                   view._atlas_texture is None or
                   view._palette_texture is None):
                 result["error"] = "Indexed MIP atlas / palette was not uploaded"
+            elif (dynamic_test and
+                  (view._scene.appearance is None or
+                   view._scene.appearance.geometry_name != 'roadcar' or
+                   view._scene.recolor_pairs != 1 or
+                   view._model.path.name != 'roadcar.3do' or
+                   window.material_combo.itemData(0) != '__car_body__')):
+                result["error"] = "Individual-car MATERIAL->RECOLOR wrapper did not load its base car"
             elif (dynamic_test and
                   (view._scene.loaded_instances != 5 or
                    view._mesh.polygon_count <= len(view._model.polygons) or
