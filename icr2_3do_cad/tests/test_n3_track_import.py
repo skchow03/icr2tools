@@ -175,7 +175,8 @@ index: LIST {sec0_s0_HI};
                             i32(model.body,o+4)==0 for o in offsets))
         self.assertIn(offsets[0],model.records)
         self.assertIn(offsets[-1],model.records)
-        for bad in ("LIST {,}", "LIST {poly,}", "LIST {,poly}", "LIST {poly,,poly}"):
+        for bad in ("LIST {,}", "LIST {,poly}", "LIST {poly,,poly}",
+                    "LIST {poly,,}"):
             with self.subTest(bad=bad),self.assertRaises(FormatError):
                 compile_n3_text(source.replace(
                     "LIST {poly, ObjectList_L0_0, ObjectList_L65_0}",bad),
@@ -227,6 +228,51 @@ root: POLY <44> {a,b,c};
             with self.subTest(bad=bad),self.assertRaisesRegex(
                     FormatError,"Expected a coordinate"):
                 compiler._vector(bad)
+
+
+    def test_reno_section_5_trailing_list_separator(self):
+        """RENO sec5_s0_HI has a comma after its final DYNO in a LIST."""
+        source="""3D VERSION 3.0;
+nil: NIL;
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
+p: POLY <44> {a,b,c};
+DetailList_5-0H: LIST {p};
+sec5_s0_HI: FACE (a,b,c), LIST {
+    BSPA (a,b,c), LIST {p}, LIST {p}, NIL,
+    DetailList_5-0H,
+    DYNO { 3975781, 4373961, -150000, 390000 } ,
+};
+index: LIST {sec5_s0_HI};
+"""
+        model,doc=compile_n3_text(source,"RENO_section5.3D")
+        self.assertEqual(model.records[model.root_offset],11)
+        self.assertTrue(any(entry.label=="sec5_s0_HI" for entry in doc.statements))
+        self.assertEqual(len(model.planes),2)
+        self.assertTrue(any(kind==12 for kind in model.records.values()))
+
+    def test_list_separator_variants_keep_children(self):
+        from n3_compile import _brace, _group_prefix_nodes
+        assert _brace("{p, }",allow_trailing_comma=True)==["p"]
+        assert _brace("{p,}",allow_trailing_comma=True)==["p"]
+        assert _brace("{p,}") == ["p", ""]
+        assert _brace("{p,,}",allow_trailing_comma=True)==["p", ""]
+        self.assertEqual(_group_prefix_nodes(
+            _brace("{p, DYNO {1,2,3,4},}",allow_trailing_comma=True)),
+            ["p", "DYNO {1,2,3,4}"])
+
+        source="""3D VERSION 3.0;
+nil: NIL;
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
+p: POLY <44> {a,b,c};
+root: LIST {p,};
+"""
+        model,_=compile_n3_text(source,"trailing_list.3D")
+        self.assertEqual(model.records[model.root_offset],11)
+        self.assertEqual(len(model.children[model.root_offset]),1)
 
     def test_compile_track_hierarchy_hash_data_and_root_index(self):
         model,document=compile_n3_text(TRACK_N3,"RENO.3D")

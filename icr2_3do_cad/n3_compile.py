@@ -155,17 +155,21 @@ def _group_prefix_nodes(fields):
     return grouped
 
 
-def _brace(value, opener="{", closer="}"):
+def _brace(value, opener="{", closer="}", *, allow_trailing_comma=False):
     value=value.strip()
     if not value.startswith(opener) or not value.endswith(closer):
         raise FormatError(f"Expected {opener}...{closer} in N3 expression")
     interior=value[len(opener):len(value)-len(closer)]
-    # N3 track files use LIST { } for an empty object list, distinct
-    # from NIL. _split("") produces [""], which the prefix parser
-    # incorrectly treats as an invalid (blank) child.
+    # N3 tracks contain both empty LIST { } declarations and LISTs
+    # terminated by a separator after their last child. nooRok's N3
+    # tokenizer treats commas as optional separators; for CAD editing,
+    # allow the harmless final separator only for LIST expressions.
     if not interior.strip():
         return []
-    return _split(interior)
+    fields=_split(interior)
+    if allow_trailing_comma and len(fields)>1 and fields[-1]=="":
+        fields.pop()
+    return fields
 
 
 def _flavor(kind):
@@ -373,7 +377,8 @@ class Compiler:
             return self._record(1,color,len(refs)-1,*refs)
         list_match=re.match(r"^LIST\s*(\{.*\})$",code,re.I|re.S)
         if list_match:
-            refs=[self._node(x) for x in _group_prefix_nodes(_brace(list_match.group(1)))]
+            refs=[self._node(x) for x in _group_prefix_nodes(
+                _brace(list_match.group(1),allow_trailing_comma=True))]
             return self._record(11,len(refs),*refs)
         face=re.match(r"^(FACE2?|BSPF|BSPA|BSP2|BSPN)\s+(.+)$",code,re.I|re.S)
         if face:

@@ -36,6 +36,27 @@ Malformed UV expressions still produce an explicit coordinate error, including
 a short excerpt of the offending expression, rather than blaming the enclosing
 FACE/BSP's plane vertices.
 
+## Optional trailing separators in track LISTs
+
+Trk23D may write a comma after the final object in a LIST, for example:
+
+```text
+sec5_s0_HI: FACE (a,b,c), LIST {
+    DetailList_5-0H,
+    DYNO { 3975781, 4373961, -150000, 390000 },
+};
+```
+
+This is supported in the importer, consistent with the permissive comma
+tokenization used by [nooRok's icr2_3dto3do](https://github.com/nooRok/icr2_3dto3do).
+A **single final comma** is ignored when building a LIST's child pointers.
+It does **not** create a NIL child or an empty child, and is retained in
+the original authored source if no rewrite is needed.
+
+The exception is limited to LISTs; incomplete interior operands such as
+`LIST {a,,b}` and `LIST {,a}` remain errors. DATA and DYNO payload
+validation continues to require their expected values.
+
 ## Empty track object lists
 
 Track source generators can emit declarations such as
