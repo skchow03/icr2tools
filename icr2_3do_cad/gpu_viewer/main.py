@@ -9,6 +9,8 @@ import argparse
 import ctypes
 import json
 import math
+import os
+import tempfile
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -46,7 +48,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
-        QVBoxLayout, QWidget,
+        QSplitter, QTabWidget, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -60,6 +62,7 @@ from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 from gpu_viewer.visibility import camera_in_model_units
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
+from gpu_viewer.source_tab import SourcePane
 
 
 VERTEX_SHADER = """
@@ -171,7 +174,8 @@ class LoadWorker(QThread):
     def __init__(self, path, palette_path, texture_folder=None,
                  fallback_mip=None, *, objects_folder=None,
                  mip_overrides=None, object_overrides=None, body_mip=None,
-                 existing_model=None):
+                 existing_model=None, source_text=None, source_path=None,
+                 appearance_override=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
@@ -182,6 +186,9 @@ class LoadWorker(QThread):
         self.object_overrides = dict(object_overrides or {})
         self.body_mip = body_mip
         self.existing_model = existing_model
+        self.source_text = source_text
+        self.source_path = Path(source_path) if source_path is not None else None
+        self.appearance_override = appearance_override
 
     def run(self):
         try:
@@ -189,7 +196,16 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            if self.path.suffix.lower() == ".3do":
+            if self.source_text is not None:
+                # Compile candidate text off the UI thread. Do not overwrite
+                # the last valid model until this AND the mesh/atlas succeed.
+                model, _ = compile_n3_text(
+                    self.source_text, self.source_path, associate_planes=False)
+                appearance = self.appearance_override
+                scene = build_scene(model, objects_folder=self.objects_folder,
+                                    object_overrides=self.object_overrides,
+                                    appearance=appearance)
+            elif self.path.suffix.lower() == ".3do":
                 model, scene, appearance = load_car_or_model(
                     self.path, existing_model=self.existing_model,
                     objects_folder=self.objects_folder,
