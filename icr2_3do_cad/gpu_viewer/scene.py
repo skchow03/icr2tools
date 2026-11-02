@@ -15,6 +15,7 @@ import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
 from gpu_viewer.car import recolor_table, recolor_index
+from car_appearance import read_car_appearance, locate_base_geometry, AppearanceError
 from three_do import Model
 
 
@@ -38,6 +39,7 @@ class GPUScene:
     geometry: SimpleNamespace
     warnings: tuple[str, ...]
     recolor_pairs: int = 0
+    appearance: object | None = None
 
     @property
     def loaded_instances(self):
@@ -45,7 +47,7 @@ class GPUScene:
 
 
 def build_scene(root, *, objects_folder=None, object_overrides=None,
-                max_depth=4, max_instances=2000):
+                appearance=None, max_depth=4, max_instances=2000):
     """Resolve instances including inactive LOD/BSP branches (no GL calls).
 
     Reusing a child 3DO file is cheap: the parsed Model is cached, while each
@@ -56,7 +58,9 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                  for name, path in (object_overrides or {}).items()}
     cache = {}
     root_key = Path(root.path).resolve()
-    root_recolor = recolor_table(root)
+    # The CPU editor treats a standalone driver file as *appearance* over
+    # separately opened base geometry, not as a renderable model itself.
+    root_recolor = appearance.mapping if appearance is not None else recolor_table(root)
     instances = [Instance(root, Transform(), 0, frozenset((root_key,)),
                           recolor_layers=((root_recolor,) if root_recolor else ()))]
     links = {}
@@ -118,8 +122,11 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
             local_recolor = recolor_table(child)
-            layers = instance.recolor_layers + (
-                (local_recolor,) if local_recolor else ())
+            # A driver's RECOLOR belongs to the base car, not its external
+            # wheels or helmet. Match the CPU editor's effective_color().
+            inherited = (() if appearance is not None and parent_id == 0
+                         else instance.recolor_layers)
+            layers = inherited + ((local_recolor,) if local_recolor else ())
             instances.append(Instance(
                 child, transform, instance.depth+1,
                 instance.ancestry | frozenset((key,)), texture_override,
@@ -130,6 +137,7 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
     polygon_materials = {}
     polygon_sources = {}
     polygon_lookup = {}
+    body_polygons = set()
     next_vertex = 1
     next_polygon = 1
     for instance_id, instance in enumerate(instances):
@@ -146,22 +154,33 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             polygons[next_polygon] = SimpleNamespace(
                 unique_refs=refs, kind=polygon.kind,
                 color=recolor_index(polygon.color, instance.recolor_layers))
+            if instance_id == 0 and polygon.kind == 2:
+                body_polygons.add(next_polygon)
             local_material = instance.model.polygon_materials.get(old)
-            name = local_material or instance.texture_override
+            # The wrapper MIP has priority for BODY only. External wheel
+            # materials are independent and must not inherit its paint.
+            if instance_id == 0 and appearance is not None and appearance.texture_name:
+                name = appearance.texture_name
+            else:
+                name = local_material or instance.texture_override
             if name:
                 polygon_materials[next_polygon] = name
-                polygon_sources[next_polygon] = (
-                    instance.model.path if local_material
-                    else (instance.texture_source or instance.model.path))
+                if instance_id == 0 and appearance is not None and appearance.texture_name:
+                    polygon_sources[next_polygon] = appearance.path
+                else:
+                    polygon_sources[next_polygon] = (
+                        instance.model.path if local_material
+                        else (instance.texture_source or instance.model.path))
             polygon_lookup[instance_id, old] = next_polygon
             next_polygon += 1
     geometry = SimpleNamespace(
         vertices=vertices, polygons=polygons,
         polygon_materials=polygon_materials,
-        polygon_sources=polygon_sources)
+        polygon_sources=polygon_sources,
+        body_polygons=frozenset(body_polygons))
     return GPUScene(root, instances, links, polygon_lookup,
                     geometry, tuple(dict.fromkeys(warnings)),
-                    len(root_recolor))
+                    len(root_recolor), appearance)
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
@@ -220,3 +239,61 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
         cursor += count
     stats['triangles'] = cursor // 3
     return indices, frozenset(root_visible), stats
+
+
+def load_car_or_model(path, *, existing_model=None, objects_folder=None,
+                      object_overrides=None, fixtures_folder=None):
+    """Mirror CPU editor's read_car_appearance + locate_base_geometry flow.
+
+    Individual car wrappers point their MATERIAL to a RECOLOR at offset 0;
+    they DO NOT have a traversable child pointer to the shared geometry.
+    Return (model, scene, appearance) while keeping source files immutable.
+    If the base shape is unavailable, preserve the wrapper and a clear
+    warning so the UI can offer 'Assign carshape 3DO…'.
+    """
+    path = Path(path)
+    if path.suffix.casefold() != '.3do':
+        raise ValueError('Expected a 3DO model')
+    try:
+        appearance = read_car_appearance(path)
+    except AppearanceError:
+        appearance = None
+    if appearance is None:
+        if existing_model is not None and existing_model.path.resolve() == path.resolve():
+            model = existing_model
+        else:
+            model = Model(path, associate_planes=False)
+        return model, build_scene(model, objects_folder=objects_folder,
+                                  object_overrides=object_overrides), None
+
+    overrides = {str(k).casefold(): Path(v) for k,v in (object_overrides or {}).items()}
+    wanted = appearance.geometry_name
+    chosen = overrides.get(wanted.casefold())
+    warnings = []
+    if chosen is not None and not chosen.is_file():
+        warnings.append(f'Assigned carshape is missing: {chosen}')
+        chosen = None
+    if chosen is None:
+        extra = [d for d in (objects_folder, fixtures_folder) if d is not None]
+        chosen = locate_base_geometry(appearance, extra_dirs=extra)
+        if chosen is None and wanted:
+            chosen = ExternalResolver(objects_folder).find(wanted, appearance.path)
+    if chosen is not None:
+        if existing_model is not None and existing_model.path.resolve() == chosen.resolve():
+            model = existing_model
+        else:
+            model = Model(chosen, associate_planes=False)
+        scene = build_scene(model, objects_folder=objects_folder,
+                            object_overrides=object_overrides,
+                            appearance=appearance)
+    else:
+        model = Model(path, associate_planes=False)
+        scene = build_scene(model, objects_folder=objects_folder,
+                            object_overrides=object_overrides)
+        scene.appearance = appearance
+        scene.recolor_pairs = len(appearance.mapping)
+        warnings.append(
+            f'Carshape {wanted}.3do not found; choose Assign carshape 3DO')
+    if warnings:
+        scene.warnings = tuple(dict.fromkeys((*scene.warnings, *warnings)))
+    return model, scene, appearance
