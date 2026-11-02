@@ -47,7 +47,7 @@ def _make_car_wrapper(path):
     body = bytearray(struct.pack('<4i', -(1<<31)+14, 1, 44, 155))
     root = len(body)
     body.extend(struct.pack('<4i', -(1<<31)+4, 0, 0, 0))
-    names = b'car74\\0\\0\\0' + b'roadcar\\0'
+    names = b'car74'.ljust(8, bytes(1)) + b'roadcar'.ljust(8, bytes(1))
     path.write_bytes(struct.pack('<5i', len(body), root, 1, 0, 1) +
                      names + body)
 
