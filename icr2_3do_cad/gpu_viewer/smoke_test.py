@@ -31,6 +31,8 @@ def run(path):
     QSurfaceFormat.setDefaultFormat(fmt)
     app = QApplication([sys.argv[0]])
     window = Window(path, benchmark=True)
+    # roadcar has POLY [T] but no MATERIAL; exercise explicit MIP fallback.
+    window.fallback_mip = ROOT / "fixtures" / "ind96.mip"
     # Ensure QOpenGLWidget is deleted while QApplication/GLX remain alive;
     # PySide6 6.12 can bus-error during interpreter-finalization otherwise.
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
@@ -50,6 +52,10 @@ def run(path):
                 result["error"] = "No local triangles drawn"
             elif view._index_count < 1 or not view._visible_set:
                 result["error"] = "BSP painter did not upload visible polygon indices"
+            elif (not view._atlas.polygon_rects or
+                  view._atlas_texture is None or
+                  view._palette_texture is None):
+                result["error"] = "Indexed MIP atlas / palette was not uploaded"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:
@@ -74,6 +80,7 @@ def run(path):
                     f"GPU smoke passed: {view._mesh.polygon_count} polygons; "
                     f"{view._mesh.triangle_count} triangles; "
                     f"upload {view.upload_ms:.1f} ms; "
+                    f"MIP faces {len(view._atlas.polygon_rects)}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )

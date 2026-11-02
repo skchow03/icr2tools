@@ -4,6 +4,8 @@ No Qt, ModernGL, display server, or proprietary RENO.3D asset is required.
 """
 import ast
 from pathlib import Path
+import shutil
+import tempfile
 from types import SimpleNamespace
 import unittest
 
@@ -11,6 +13,7 @@ import numpy as np
 
 from gpu_viewer.mesh import make_mesh, read_palette, triangulate
 from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
+from gpu_viewer.textures import build_atlas, find_texture, load_palette
 from n3_compile import compile_n3_text
 from three_do import Model
 
@@ -61,13 +64,13 @@ class ModelMeshTests(unittest.TestCase):
         mesh=make_mesh(model, read_palette(CAD_ROOT/"gamepal.pcx"))
         self.assertGreater(mesh.polygon_count,0)
         self.assertGreater(mesh.triangle_count,0)
-        self.assertEqual(mesh.vertices.shape,(mesh.triangle_count*3,6))
+        self.assertEqual(mesh.vertices.shape,(mesh.triangle_count*3,13))
         self.assertEqual(mesh.vertices.dtype,np.float32)
         self.assertTrue(mesh.vertices.flags.c_contiguous)
         self.assertTrue(np.isfinite(mesh.vertices).all())
         self.assertLessEqual(abs(mesh.vertices[:,:3]).max(),1.01)
-        self.assertTrue(((mesh.vertices[:,3:]>=0) &
-                         (mesh.vertices[:,3:]<=1)).all())
+        self.assertTrue(((mesh.vertices[:,3:6]>=0) &
+                         (mesh.vertices[:,3:6]<=1)).all())
         self.assertEqual(mesh.size_bytes,mesh.vertices.nbytes)
 
     def test_flattened_model_does_not_mutate_binary_or_vertices(self):
@@ -166,6 +169,67 @@ root: FACE (a,b,c), p;
             (0.1, 0.2, 0), 0, 0, 4)
         self.assertEqual(eye, (4100000.0, 1200000.0, -100000.0))
 
+    def test_strict_pcx_palette_trailer_matches_existing_reader(self):
+        path = CAD_ROOT/"gamepal.pcx"
+        raw = load_palette(path)
+        self.assertEqual(raw.shape, (256, 3))
+        self.assertEqual(raw.dtype, np.uint8)
+        self.assertEqual(raw[2].tolist(), [227, 0, 0])
+        np.testing.assert_allclose(
+            raw.astype(np.float32) / 255.0, read_palette(path), atol=1e-7)
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d)/"wrong.pcx"
+            bad.write_bytes(b"not a valid VGA PCX")
+            with self.assertRaises(ValueError):
+                load_palette(bad)
+
+    def test_case_insensitive_mip_resolution_and_indexed_atlas(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            shutil.copyfile(CAD_ROOT/"fixtures"/"ind96.mip",
+                            folder/"MyMiP.MIP")
+            self.assertEqual(
+                find_texture("mymip", folder/"test.3do", folder),
+                folder/"MyMiP.MIP")
+            points = [(0, 0, 0), (100, 0, 0), (0, 100, 0)]
+            uv = [(0, 0), (127, 0), (0, 164)]
+            vertices = {i:SimpleNamespace(xyz=p, uv=uv[i])
+                        for i, p in enumerate(points)}
+            polygon = SimpleNamespace(unique_refs=(0,1,2), color=43, kind=2)
+            model = SimpleNamespace(vertices=vertices,
+                                    polygons={8:polygon},
+                                    polygon_materials={8:"mymip"})
+            atlas = build_atlas(model, folder/"test.3do",
+                                texture_folder=folder)
+            self.assertEqual(atlas.loaded_names, ("MyMiP.MIP",))
+            self.assertEqual(atlas.textured_polygons, 1)
+            self.assertEqual(atlas.missing_names, ())
+            self.assertEqual(len(atlas.polygon_rects), 1)
+            x, y, w, h = atlas.polygon_rects[8]
+            self.assertEqual((w,h), (128,165))
+            self.assertEqual(atlas.pixels[y,x],
+                             np.asarray(atlas.pixels)[y,x])
+            mesh = make_mesh(model, read_palette(CAD_ROOT/"gamepal.pcx"),
+                             atlas)
+            self.assertEqual(mesh.vertices.shape,(3,13))
+            self.assertEqual(mesh.vertices[0,6], 43)
+            self.assertEqual(tuple(mesh.vertices[1,7:9]), (127,0))
+            self.assertEqual(tuple(mesh.vertices[2,9:13]), (x,y,w,h))
+            self.assertTrue(np.isfinite(mesh.vertices).all())
+
+    def test_missing_mip_falls_back_without_hiding_polygons(self):
+        vertices = {i:SimpleNamespace(xyz=p, uv=(0,0))
+                    for i,p in enumerate(((0,0,0),(100,0,0),(0,100,0)))}
+        poly = SimpleNamespace(unique_refs=(0,1,2), color=44, kind=2)
+        model = SimpleNamespace(vertices=vertices, polygons={8:poly},
+                                polygon_materials={8:"missing_asset_01"})
+        atlas = build_atlas(model, CAD_ROOT/"nothing.3do")
+        self.assertEqual(atlas.missing_names, ("missing_asset_01",))
+        self.assertEqual(atlas.polygon_rects, {})
+        mesh = make_mesh(model, atlas=atlas)
+        self.assertEqual(mesh.vertices.shape, (3,13))
+        self.assertTrue((mesh.vertices[:,9:13] == 0).all())
+
     def test_qt_module_compiles_without_importing_optional_libraries(self):
         path=CAD_ROOT/"gpu_viewer"/"main.py"
         ast.parse(path.read_text(encoding="utf8"),filename=str(path))
@@ -173,7 +237,7 @@ root: FACE (a,b,c), p;
     def test_empty_geometry_mesh_is_valid(self):
         model=SimpleNamespace(vertices={},polygons={})
         mesh=make_mesh(model)
-        self.assertEqual(mesh.vertices.shape,(0,6))
+        self.assertEqual(mesh.vertices.shape,(0,13))
         self.assertEqual(mesh.triangle_count,0)
 
 

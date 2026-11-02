@@ -25,7 +25,11 @@ try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
         GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_VERTEX_SHADER,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
+        GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
+        GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
+        GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
         glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
@@ -33,7 +37,9 @@ try:
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
         glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
-        glViewport,
+        glViewport, glGenTextures, glDeleteTextures, glBindTexture,
+        glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
+        glUniform1i,
     )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
     from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
@@ -52,26 +58,55 @@ except ImportError as exc:
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
+from gpu_viewer.textures import build_atlas, load_palette
 
 
 VERTEX_SHADER = """
 #version 330 core
 layout(location = 0) in vec3 in_pos;
 layout(location = 1) in vec3 in_color;
+layout(location = 2) in float in_index;
+layout(location = 3) in vec2 in_uv;
+layout(location = 4) in vec4 in_rect;
 uniform mat4 u_mvp;
 out vec3 v_color;
+flat out int v_index;
+out vec2 v_uv;
+flat out vec4 v_rect;
 void main() {
     gl_Position = u_mvp * vec4(in_pos, 1.0);
     v_color = in_color;
+    v_index = int(in_index + 0.5);
+    v_uv = in_uv;
+    v_rect = in_rect;
 }
 """
 
 FRAGMENT_SHADER = """
 #version 330 core
 in vec3 v_color;
+flat in int v_index;
+in vec2 v_uv;
+flat in vec4 v_rect;
+uniform usampler2D u_mips;
+uniform sampler2D u_palette;
+uniform int u_textures;
+uniform int u_repeat;
 out vec4 fragColor;
 void main() {
-    fragColor = vec4(v_color, 1.0);
+    int index = clamp(v_index, 0, 255);
+    if (u_textures != 0 && v_rect.z >= 1.0 && v_rect.w >= 1.0) {
+        ivec2 size_px = ivec2(v_rect.zw);
+        ivec2 texel = ivec2(floor(v_uv + vec2(0.5)));
+        if (u_repeat != 0) {
+            texel = ivec2((texel.x % size_px.x + size_px.x) % size_px.x,
+                          (texel.y % size_px.y + size_px.y) % size_px.y);
+        } else {
+            texel = clamp(texel, ivec2(0), size_px - ivec2(1));
+        }
+        index = int(texelFetch(u_mips, ivec2(v_rect.xy) + texel, 0).r);
+    }
+    fragColor = vec4(texelFetch(u_palette, ivec2(index, 0), 0).rgb, 1.0);
 }
 """
 
@@ -129,12 +164,17 @@ def perspective_projection(aspect, near, far):
 
 
 class LoadWorker(QThread):
-    ready = Signal(object, object, object)
+    ready = Signal(object, object, object, object, object)
     failed = Signal(str)
 
-    def __init__(self, path):
+    def __init__(self, path, palette_path, texture_folder=None,
+                 fallback_mip=None, *, existing_model=None):
         super().__init__()
         self.path = Path(path)
+        self.palette_path = Path(palette_path)
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.existing_model = existing_model
 
     def run(self):
         try:
@@ -142,7 +182,9 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            if self.path.suffix.lower() == ".3d":
+            if self.existing_model is not None:
+                model = self.existing_model
+            elif self.path.suffix.lower() == ".3d":
                 text = self.path.read_text(encoding="utf-8-sig")
                 model, _ = compile_n3_text(
                     text, self.path, associate_planes=False)
@@ -151,8 +193,11 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            palette = read_palette(CAD_ROOT / "gamepal.pcx")
-            mesh = make_mesh(model, palette)
+            palette = load_palette(self.palette_path)
+            atlas = build_atlas(model, self.path,
+                                texture_folder=self.texture_folder,
+                                fallback_mip=self.fallback_mip)
+            mesh = make_mesh(model, palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
                 "parse_ms": parse_ms,
@@ -162,10 +207,16 @@ class LoadWorker(QThread):
                 "model_planes": len(model.planes),
                 "external_objects": len(model.dynamics),
                 "mips": len(model.mip_names),
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
-            self.ready.emit(mesh, stats, model)
+            self.ready.emit(mesh, stats, model, atlas, palette)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -182,6 +233,15 @@ class GLViewport(QOpenGLWidget):
         self.setAcceptDrops(False)
         self._program = None
         self._uniform = None
+        self._texture_uniform = None
+        self._repeat_uniform = None
+        self._atlas_texture = None
+        self._palette_texture = None
+        self._atlas = None
+        self._palette = None
+        self.textures_enabled = True
+        self.texture_repeat = False
+        self.texture_upload_ms = None
         self._resources_released = False
         self._vbo = None
         self._ebo = None
@@ -228,6 +288,12 @@ class GLViewport(QOpenGLWidget):
                 raise RuntimeError(glGetProgramInfoLog(program))
             self._program = program
             self._uniform = glGetUniformLocation(program, "u_mvp")
+            self._texture_uniform = glGetUniformLocation(program, "u_textures")
+            self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
+            glUseProgram(program)
+            glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
+            glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
+            glUseProgram(0)
         finally:
             glDeleteShader(vertex_shader)
             glDeleteShader(fragment_shader)
@@ -235,6 +301,7 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         if self._mesh is not None:
             self._upload_mesh()
+            self._upload_texture_assets()
 
     def shutdown_gl(self):
         """Delete our VBO/VAO/shader before Qt destroys its GL context."""
@@ -254,24 +321,34 @@ class GLViewport(QOpenGLWidget):
             if self._ebo is not None:
                 glDeleteBuffers(1, [self._ebo])
                 self._ebo = None
+            textures = [tex for tex in (self._atlas_texture, self._palette_texture)
+                        if tex is not None]
+            if textures:
+                glDeleteTextures(len(textures), textures)
+            self._atlas_texture = self._palette_texture = None
             glDeleteProgram(self._program)
             self._program = None
         finally:
             self.doneCurrent()
 
-    def set_mesh(self, mesh: MeshData, model):
+    def set_mesh(self, mesh: MeshData, model, atlas, palette,
+                 *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self._atlas = atlas
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
         self._visible_set = frozenset()
         self._visibility_info = {}
         self._frametimes.clear()
         self._frame_count = 0
-        self.frame_all()
+        if not preserve_view:
+            self.frame_all()
         if self._program is not None:
             self.makeCurrent()
             try:
                 self._upload_mesh()
+                self._upload_texture_assets()
             finally:
                 self.doneCurrent()
         self.update()
@@ -302,10 +379,16 @@ class GLViewport(QOpenGLWidget):
             glBufferData(GL_ARRAY_BUFFER, len(payload), payload, GL_STATIC_DRAW)
             glEnableVertexAttribArray(0)
             glVertexAttribPointer(
-                0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+                0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
             glEnableVertexAttribArray(1)
             glVertexAttribPointer(
-                1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+                1, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(12))
+            for location, length, offset in ((2, 1, 24), (3, 2, 28),
+                                             (4, 4, 36)):
+                glEnableVertexAttribArray(location)
+                glVertexAttribPointer(
+                    location, length, GL_FLOAT, GL_FALSE, 52,
+                    ctypes.c_void_p(offset))
             # Element buffer stays attached to the VAO. Upload only integer
             # indices when BSP visibility changes, never the XYZ/RGB VBO.
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
@@ -316,6 +399,53 @@ class GLViewport(QOpenGLWidget):
             glFinish()
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+
+    def _upload_texture_assets(self):
+        """OpenGL texture setup is GUI-thread-only; never called on orbit."""
+        if self._program is None or self._atlas is None or self._palette is None:
+            return
+        started = perf_counter()
+        if self._atlas_texture is None:
+            self._atlas_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        pixels = np.ascontiguousarray(self._atlas.pixels, dtype=np.uint8)
+        h, w = pixels.shape
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, w, h, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+        self._upload_palette()
+        self.texture_upload_ms = (perf_counter() - started) * 1000
+
+    def _upload_palette(self):
+        if self._program is None or self._palette is None:
+            return
+        if self._palette_texture is None:
+            self._palette_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 256, 1, 0, GL_RGB,
+                     GL_UNSIGNED_BYTE, self._palette)
+
+    def set_palette(self, palette):
+        """Swap the 256-color lookup without retessellating/reuploading XYZ."""
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_palette()
+            finally:
+                self.doneCurrent()
+        self.update()
 
     def invalidate_visibility(self):
         """Reevaluate only the BSP indices at the next draw, not the mesh."""
@@ -391,6 +521,12 @@ class GLViewport(QOpenGLWidget):
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        glUniform1i(self._texture_uniform, int(self.textures_enabled))
+        glUniform1i(self._repeat_uniform, int(self.texture_repeat))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode != 'all' and self._visibility_dirty:
             self._refresh_visibility()
         glBindVertexArray(self._vao)
@@ -473,6 +609,11 @@ class Window(QMainWindow):
         self.worker = None
         self._info = {}
         self.report_path = report_path
+        self.palette_path = CAD_ROOT / "gamepal.pcx"
+        self.texture_folder = None
+        self.fallback_mip = None
+        self.model_path = None
+        self._preserve_view = False
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -480,6 +621,8 @@ class Window(QMainWindow):
         self.stats_label = QLabel("No model loaded")
         self.visibility_label = QLabel("BSP status will appear here")
         self.polygon_status = QLabel("Enter a polygon body offset to inspect")
+        self.palette_status = QLabel("Palette: bundled gamepal.pcx")
+        self.texture_status = QLabel("MIPs: no model loaded")
         root = QWidget()
         layout = QVBoxLayout(root)
         toolbar = QHBoxLayout()
@@ -527,11 +670,37 @@ class Window(QMainWindow):
         self.polygon_edit.textChanged.connect(self._update_polygon_status)
         bspbar.addWidget(self.polygon_edit)
         layout.addLayout(bspbar)
+        assetsbar = QHBoxLayout()
+        palette_button = QPushButton("Open PCX palette…")
+        palette_button.clicked.connect(self.open_palette_dialog)
+        assetsbar.addWidget(palette_button)
+        default_button = QPushButton("Default palette")
+        default_button.clicked.connect(self.restore_palette)
+        assetsbar.addWidget(default_button)
+        folder_button = QPushButton("MIP folder…")
+        folder_button.clicked.connect(self.choose_mip_folder)
+        assetsbar.addWidget(folder_button)
+        fallback_button = QPushButton("Fallback MIP…")
+        fallback_button.clicked.connect(self.choose_fallback_mip)
+        assetsbar.addWidget(fallback_button)
+        reset_mip = QPushButton("Clear fallback")
+        reset_mip.clicked.connect(self.clear_fallback_mip)
+        assetsbar.addWidget(reset_mip)
+        self.show_textures = QCheckBox("Textures")
+        self.show_textures.setChecked(True)
+        self.show_textures.toggled.connect(self._textures_toggled)
+        assetsbar.addWidget(self.show_textures)
+        self.repeat_uv = QCheckBox("Repeat UV")
+        self.repeat_uv.toggled.connect(self._repeat_toggled)
+        assetsbar.addWidget(self.repeat_uv)
+        layout.addLayout(assetsbar)
         layout.addWidget(self.load_label)
         layout.addWidget(self.viewer, stretch=1)
         layout.addWidget(self.stats_label)
         layout.addWidget(self.visibility_label)
         layout.addWidget(self.polygon_status)
+        layout.addWidget(self.palette_status)
+        layout.addWidget(self.texture_status)
         self.setCentralWidget(root)
         QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
@@ -545,6 +714,76 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _textures_toggled(self, checked):
+        self.viewer.textures_enabled = checked
+        self.viewer.update()
+
+    def _repeat_toggled(self, checked):
+        self.viewer.texture_repeat = checked
+        self.viewer.update()
+
+    def _busy(self):
+        if self.worker and self.worker.isRunning():
+            QMessageBox.information(self, "Loading", "Finish the current load first.")
+            return True
+        return False
+
+    def _apply_palette(self, path):
+        if self._busy():
+            return
+        try:
+            palette = load_palette(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Invalid PCX palette", str(exc))
+            return
+        self.palette_path = Path(path)
+        self.palette_status.setText(f"Palette: {self.palette_path.name} (256 colors)")
+        self.viewer.set_palette(palette)
+
+    def open_palette_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open 256-color PCX palette",
+            str(self.palette_path.parent),
+            "PCX palette (*.pcx *.PCX);;All files (*)")
+        if path:
+            self._apply_palette(path)
+
+    def restore_palette(self):
+        self._apply_palette(CAD_ROOT / "gamepal.pcx")
+
+    def choose_mip_folder(self):
+        if self._busy():
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with .MIP textures",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
+        if directory:
+            self.texture_folder = Path(directory)
+            self._reload_texture_assets()
+
+    def choose_fallback_mip(self):
+        if self._busy():
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose MIP for unassigned POLY [T] faces",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus MIP (*.mip *.MIP);;All files (*)")
+        if path:
+            self.fallback_mip = Path(path)
+            self._reload_texture_assets()
+
+    def clear_fallback_mip(self):
+        if self._busy():
+            return
+        self.fallback_mip = None
+        self._reload_texture_assets()
+
+    def _reload_texture_assets(self):
+        if self.model_path is not None and self.viewer._model is not None:
+            self.load(self.model_path, reuse_model=True)
 
     def _mode_changed(self, index):
         self.viewer.set_render_mode(self.mode_combo.currentData())
@@ -620,20 +859,40 @@ class Window(QMainWindow):
         if path:
             self.load(Path(path))
 
-    def load(self, path):
-        if self.worker and self.worker.isRunning():
-            QMessageBox.information(self, "Loading", "Finish the current load first.")
+    def load(self, path, *, reuse_model=False):
+        if self._busy():
             return
+        self.model_path = Path(path)
+        self._preserve_view = reuse_model
         self.load_label.setText(f"Loading {Path(path).name}… (background worker)")
-        self.stats_label.setText("Parsing model and building triangle buffer…")
-        self.worker = LoadWorker(path)
+        self.stats_label.setText("Loading geometry and MIP atlas…")
+        self.worker = LoadWorker(
+            path, self.palette_path, self.texture_folder, self.fallback_mip,
+            existing_model=(self.viewer._model if reuse_model else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats, model):
+    def _loaded(self, mesh, stats, model, atlas, palette):
         self._info = stats
-        self.viewer.set_mesh(mesh, model)
+        self.viewer.set_mesh(mesh, model, atlas, palette,
+                             preserve_view=self._preserve_view)
+        self._preserve_view = False
+        self.palette_status.setText(
+            f"Palette: {self.palette_path.name} (256 colors)")
+        self.texture_status.setText(
+            f"MIPs: {stats['texture_count']} loaded | "
+            f"{stats['textured_faces']}/{stats['textured_candidates']} "
+            f"POLY [T] faces mapped | atlas "
+            f"{stats['atlas_shape'][1]}x{stats['atlas_shape'][0]} | "
+            f"{len(stats['missing_textures'])} missing | "
+            f"{len(stats['texture_errors'])} errors")
+        if stats['missing_textures'] or stats['texture_errors']:
+            details = (list(stats['missing_textures'][:5]) +
+                       list(stats['texture_errors'][:3]))
+            self.statusBar().showMessage(
+                "MIP diagnostics: " + "; ".join(details))
+
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
@@ -676,6 +935,13 @@ class Window(QMainWindow):
                 "skipped_polygons": mesh.skipped_polygons,
                 "fan_fallbacks": mesh.fan_fallbacks,
                 "vertex_buffer_bytes": mesh.size_bytes,
+                "mip_atlas_bytes": (self.viewer._atlas.size_bytes
+                                    if self.viewer._atlas else 0),
+                "mip_textures_loaded": self._info.get("texture_count", 0),
+                "mip_textured_polygons": self._info.get("textured_faces", 0),
+                "mip_textures_missing": list(self._info.get("missing_textures", ())),
+                "mip_load_errors": list(self._info.get("texture_errors", ())),
+                "palette_basename": self.palette_path.name,
                 "render_mode": self.viewer.render_mode,
                 "lod_distance": self.viewer.lod_distance,
                 "bsp_selected_polygons": len(self.viewer._visible_set),
