@@ -48,6 +48,20 @@ once with a building or fixtures/roadcar.3do.
   to 0 (near); this is a **manual** model-unit value, not a simulation of
   ICR2's dynamically evaluated per-object LOD distances. Check **All LOD
   branches** to inspect every branch even though the game would not do so.
+- **Open PCX palette…**: load a normal indexed 8-bit PCX with a 256-color
+  VGA palette trailer (e.g. `sunny.pcx`). The bundled `gamepal.pcx` is used
+  on startup; **Default palette** restores it. Palette changes recolor
+  both plain polygons and MIPs instantly, without rebuilding geometry.
+- **MIP folder…**: choose a folder containing the model's named `.mip`
+  files. The loader also searches the model's directory and its `textures`,
+  `mip` and `mips` subfolders, without case-sensitive filename assumptions.
+  `MATERIAL` associations in the 3DO/N3 choose the texture for POLY [T]
+  faces. **Fallback MIP…** maps otherwise-unassigned textured polygons to
+  an explicitly chosen file; **Clear fallback** reverses this override.
+  Changing MIPs rebuilds the read-only mesh/atlas, not the source file.
+- **Textures**: toggle sampled MIP colors versus flat polygon palette colors.
+  **Repeat UV** optionally wraps raw texel UVs, which clamp by default.
+  The status line reports loaded/missing MIPs, mapped faces and atlas size.
 - **Polygon @**: type the polygon's **3DO body offset** in decimal or 0x
   hexadecimal (as displayed by the CAD structure inspector) to see whether
   it is selected by BSP and the chosen LOD. Selected does not necessarily
@@ -58,8 +72,8 @@ buffer upload stay on Qt's GUI thread.
 
 ## Architecture and what is measured
 
-mesh.py builds **one packed, interleaved float32 XYZ/RGB buffer**
-from original Papyrus polygons and the gamepal.pcx palette. It handles
+mesh.py builds **one packed, interleaved float32 XYZ/RGB/index/UV/atlas-rect
+buffer** from original Papyrus polygons and the selected PCX palette. It handles
 triangles, convex quads, and concave polygons through ear clipping;
 degenerate faces are skipped and fallback fans are explicitly counted.
 Large track coordinates are recentered/scaled for GPU float precision.
@@ -70,8 +84,18 @@ Orbit/pan/zoom updates the view matrix **and**, in BSP modes, re-evaluates
 the original BSP node side tests using the real camera location in unscaled
 Papyrus coordinates. A single `uint32` **element/index buffer** is reordered
 and uploaded only when view or LOD changes; it never retransfers polygon
-XYZ/RGB, reparses N3 or retessellates geometry. The continuous-redraw
+XYZ/RGB/UV, reparses N3 or retessellates geometry. The continuous-redraw
 benchmark reuses the cached index buffer while the camera is stationary.
+
+Texture assets are decoded once using the existing validated `texture_preview.load_mip`
+reader; their full-resolution **8-bit palette indices** are packed into a
+single GPU `GL_R8UI` atlas. The fragment shader selects nearest texels
+using original raw UV coordinates, then looks up their colors in a separate
+256x1 PCX palette texture. No per-polygon draw calls or color conversion
+during camera motion. The palette can be updated independently. Missing
+or malformed MIPs leave the associated polygons in their flat palette color,
+with the missing files counted in the UI. The atlas is capped at 4096x4096;
+assets that exceed available capacity fall back to flat color.
 
 The BSP painter path deliberately disables the normal OpenGL depth test:
 depth testing can reverse LIST sibling paint order and coincident face
@@ -92,12 +116,12 @@ resolution, visibility and benchmark procedure are used on the same machine.
 
 ## Intentional limitations
 
-This **does not yet** include editing, picking, source tabs, MIP texture
-sampling, PMP sprites or externally referenced DYNAMIC model geometry.
-It displays **local polygon geometry in flat indexed colors**, with ordinary
-GPU depth testing. Track-only LINE commands are **not rendered**, and exact Papyrus game
-rasterization, frustum/near-plane clipping, per-object LOD evaluation,
-texture transparency, material sampling and display budgets have not been
+This **does not yet** include editing, picking, source tabs, PMP sprites
+or externally referenced DYNAMIC model geometry. It displays local polygon
+geometry with indexed palette colors and optional 8-bit MIP texture sampling.
+Track-only LINE commands are **not rendered**, and exact Papyrus game
+rasterization, frustum/near-plane clipping, mip-level switching, per-object
+LOD evaluation, alpha/transparent texels, and display budgets have not been
 reconstructed. BSP side tests and painter ordering reuse the editor's
 existing reverse-engineered interpretation (not a verified reproduction
 of the original game executable). Overlapping scenery can still look
