@@ -30,24 +30,36 @@ def camera_in_model_units(center, scale, target, azimuth, elevation, distance):
 
 
 
-def origin_view_target(center, scale, azimuth, elevation, distance):
-    """Target for a perspective view whose eye is EXACTLY raw XYZ (0,0,0).
+HORIZON_PREVIEW_EYE = (0.0, 0.0, 10000.0)
 
-    Mesh vertices use (raw-center)/scale. camera_view() takes a target
-    plus a spherical direction times distance. Cancel that offset rather
-    than setting target=(0,0,0), which is only the normalized bounding-box
-    center and generally NOT the Papyrus coordinate origin.
+
+def fixed_eye_view_target(center, scale, eye_xyz, azimuth, elevation, distance):
+    """Target for a perspective eye fixed at *eye_xyz* in raw Papyrus units.
+
+    The renderer normalizes each vertex to (raw - center) / scale; the
+    camera_view target is then offset backward from the eye by its spherical
+    direction times distance. This keeps the physical eye fixed while
+    look direction changes. The BSP/RES eye is in the same raw coordinates.
     """
     if not math.isfinite(scale) or scale <= 0:
         raise ValueError("Invalid mesh scale")
     if not math.isfinite(distance) or distance <= 0:
         raise ValueError("Invalid camera distance")
+    eye = np.asarray(eye_xyz, dtype=np.float64)
+    if eye.shape != (3,) or not np.isfinite(eye).all():
+        raise ValueError("Expected three finite raw XYZ eye coordinates")
     direction = np.array((
         math.cos(elevation) * math.sin(azimuth),
         -math.cos(elevation) * math.cos(azimuth),
         math.sin(elevation),
     ), dtype=np.float64)
-    return -np.asarray(center, dtype=np.float64) / scale - distance * direction
+    return (eye - np.asarray(center, dtype=np.float64)) / scale - distance * direction
+
+
+def origin_view_target(center, scale, azimuth, elevation, distance):
+    """Compatibility helper for callers explicitly requesting raw XYZ zero."""
+    return fixed_eye_view_target(
+        center, scale, (0.0, 0.0, 0.0), azimuth, elevation, distance)
 
 def ordered_bsp_indices(model, mesh, camera, distance=0.0):
     """Return (uint32 indices, visible polygon IDs, traversal statistics).

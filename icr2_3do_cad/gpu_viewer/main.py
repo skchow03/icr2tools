@@ -59,7 +59,9 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
-from gpu_viewer.visibility import camera_in_model_units, origin_view_target
+from gpu_viewer.visibility import (
+    HORIZON_PREVIEW_EYE, camera_in_model_units, fixed_eye_view_target,
+)
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
@@ -606,18 +608,18 @@ class GLViewport(QOpenGLWidget):
     def _camera_eye_model(self):
         """Unscaled Papyrus eye used for BSP and automatic RES switches."""
         if self.origin_mode:
-            return (0.0, 0.0, 0.0)
+            return HORIZON_PREVIEW_EYE
         return camera_in_model_units(
             self._mesh.center, self._mesh.scale, self.target,
             self.azimuth, self.elevation, self.distance)
 
     def _camera_view_matrix(self):
-        """The origin preset rotates the VIEW DIRECTION, not the eye."""
+        """Horizon Preview changes look direction without moving its eye."""
         target = self.target
         if self.origin_mode and self._mesh is not None:
-            target = origin_view_target(
-                self._mesh.center, self._mesh.scale, self.azimuth,
-                self.elevation, self.distance)
+            target = fixed_eye_view_target(
+                self._mesh.center, self._mesh.scale, HORIZON_PREVIEW_EYE,
+                self.azimuth, self.elevation, self.distance)
         return camera_view(
             self.azimuth, self.elevation, self.distance, target)
 
@@ -711,7 +713,7 @@ class GLViewport(QOpenGLWidget):
                 self.fps = (len(self._frametimes) - 1) / duration
 
     def set_origin_mode(self, enabled):
-        """Lock the real camera to model XYZ 0,0,0 for skybox inspection."""
+        """Lock the real camera to raw XYZ 0,0,10000 for horizon inspection."""
         enabled = bool(enabled)
         if self.origin_mode == enabled:
             return
@@ -721,7 +723,7 @@ class GLViewport(QOpenGLWidget):
                 self.perspective, self.azimuth, self.elevation)
             self.origin_mode = True
             self.perspective = True
-            self.azimuth = 0.0       # Looking toward +Y from the origin
+            self.azimuth = 0.0       # Looking toward +Y from the driver eye
             self.elevation = 0.0     # Level horizon rather than a top view
             self.origin_fov = 60.0
         else:
@@ -789,7 +791,7 @@ class GLViewport(QOpenGLWidget):
                 _, right, up = self._camera_view_matrix()
                 world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
                 self.target += (-dx * right + dy * up) * world_per_pixel
-            # Origin view deliberately disables pan: eye must stay at 0,0,0.
+            # Horizon Preview disables pan: eye stays at raw 0,0,10000.
         else:
             self.azimuth -= dx * .006
             self.elevation = max(-math.pi/2, min(math.pi/2,
@@ -849,12 +851,13 @@ class Window(QMainWindow):
             button.clicked.connect(
                 lambda checked=False, mode=name: self.viewer.set_view(mode))
             toolbar.addWidget(button)
-        self.origin_button = QPushButton("Origin (0,0,0)")
+        self.origin_button = QPushButton("Horizon Preview")
         self.origin_button.setCheckable(True)
         self.origin_button.setToolTip(
-            "Place camera at raw Papyrus XYZ (0,0,0). "
-            "Drag to look around; mouse wheel changes FOV, not position. "
-            "Frame All or untoggle to return to exterior orbit.")
+            "Preview a horizon/skybox from raw Papyrus XYZ (0,0,10000), "
+            "the configured driver-eye viewpoint. Drag to look around; "
+            "mouse wheel changes FOV, not position. Frame All or untoggle "
+            "to return to the exterior orbit.")
         self.origin_button.toggled.connect(self.viewer.set_origin_mode)
         toolbar.addWidget(self.origin_button)
         self.perspective_toggle = QCheckBox("Perspective")
@@ -1441,8 +1444,8 @@ class Window(QMainWindow):
         self.perspective_toggle.setEnabled(not enabled)
         self.perspective_toggle.blockSignals(False)
         self.statusBar().showMessage(
-            "Camera at raw XYZ (0,0,0) | Drag to look | Wheel adjusts FOV | "
-            "Pan disabled | Frame All exits origin view"
+            "Horizon Preview | Camera raw XYZ (0,0,10000) | Drag to look | "
+            "Wheel adjusts FOV | Pan disabled | Frame All exits preview"
             if enabled else
             "Exterior camera restored | Left-drag orbit | Shift-left/middle pan")
 
