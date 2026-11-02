@@ -7,6 +7,9 @@ Run from repository root:
 Requires the optional gpu_viewer/requirements.txt dependencies.
 """
 import os
+import shutil
+import struct
+import tempfile
 import faulthandler
 faulthandler.enable()
 from pathlib import Path
@@ -23,7 +26,35 @@ from PySide6.QtWidgets import QApplication
 from gpu_viewer.main import Window
 
 
+def _make_smoke_child(path):
+    """Tiny real binary external 3DO to exercise DYNAMIC GPU draws."""
+    body = bytearray()
+    refs = []
+    for xyz in ((0,0,0), (20000,0,0), (0,20000,0)):
+        refs.append(len(body))
+        body.extend(struct.pack('<4i', 0, *xyz))
+    poly = len(body)
+    body.extend(struct.pack('<3i', -(1<<31)+1, 110, 2))
+    for ref in refs:
+        body.extend(struct.pack('<i', ref))
+    root = len(body)
+    body.extend(struct.pack('<3i', -(1<<31)+11, 1, poly))
+    path.write_bytes(struct.pack('<5i', len(body), root, 0, 0, 0) + body)
+
+
 def run(path):
+    # The stock roadcar references wheels and helmet files not shipped with
+    # fixtures. Supply synthetic children in a temporary folder to make the
+    # graphics test exercise nested resolution and actual GPU index draws.
+    scratch = tempfile.TemporaryDirectory()
+    source = Path(path)
+    dynamic_test = source.name.casefold() == 'roadcar.3do'
+    if dynamic_test:
+        local = Path(scratch.name) / source.name
+        shutil.copyfile(source, local)
+        for name in ('SFRONT.3DO', 'SREAR.3DO', 'HELMET.3DO'):
+            _make_smoke_child(local.parent / name)
+        path = local
     fmt = QSurfaceFormat()
     fmt.setVersion(3, 3)
     fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
@@ -56,6 +87,11 @@ def run(path):
                   view._atlas_texture is None or
                   view._palette_texture is None):
                 result["error"] = "Indexed MIP atlas / palette was not uploaded"
+            elif (dynamic_test and
+                  (view._scene.loaded_instances != 5 or
+                   view._mesh.polygon_count <= len(view._model.polygons) or
+                   view._visibility_info.get("instances_visited", 0) != 6)):
+                result["error"] = "DYNAMIC child geometry/BSP order missing in GPU draw"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:
@@ -81,6 +117,7 @@ def run(path):
                     f"{view._mesh.triangle_count} triangles; "
                     f"upload {view.upload_ms:.1f} ms; "
                     f"MIP faces {len(view._atlas.polygon_rects)}; "
+                    f"external instances {view._scene.loaded_instances}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
@@ -104,6 +141,7 @@ def run(path):
     print("Entering Qt event loop",flush=True)
     app.exec()
     print("Qt event loop exited",flush=True)
+    scratch.cleanup()
     if not result["ok"]:
         raise SystemExit(result["error"])
 
