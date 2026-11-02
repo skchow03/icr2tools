@@ -26,8 +26,13 @@ def recolor_table(model):
     magic = struct.pack('<i', TAG_RECOLOR)
     # Some custom carsets position the table elsewhere. Require a unique,
     # well-formed record so normal vertex/plane data is not interpreted.
-    candidate_offsets.extend(i for i in range(4, len(body)-7, 4)
-                             if body[i:i+4] == magic)
+    # bytes.find scans in C. In particular, avoid iterating every four
+    # bytes in enormous RENO.3D models merely to look for car RECOLOR.
+    position = body.find(magic, 4)
+    while position >= 0:
+        if position % 4 == 0:
+            candidate_offsets.append(position)
+        position = body.find(magic, position + 1)
     tables = []
     for offset in candidate_offsets:
         if body[offset:offset+4] != magic:
