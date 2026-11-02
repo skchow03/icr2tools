@@ -35,7 +35,10 @@ once with a building or fixtures/roadcar.3do.
 - Shift + left drag or middle drag: pan
 - Mouse wheel: zoom
 - 3D, Top, Front, Side buttons: standard orthographic views
-- Perspective: toggle orthographic/perspective projection
+- Perspective: toggle orthographic/perspective projection. Perspective BSP
+  uses the real finite camera; orthographic BSP uses the *parallel viewing
+  direction*, so zooming does not spuriously flip front/back visibility.
+  For near-edge-on planes the finite-eye sign is used as an approximation.
 - Frame All (F): recenter and fit the model
 - Open: load a different .3D or .3do without restarting
 - **Render**: **Papyrus BSP painter** (default) walks original FACE/FACE2/
@@ -44,14 +47,24 @@ once with a building or fixtures/roadcar.3do.
   depth testing disabled. **BSP selection + GPU depth** uses the same selected
   triangles with depth testing. **All polygons + GPU depth** ignores BSP/LOD
   and is the legacy full-geometry diagnostic mode.
-- **LOD distance (game units)**: chooses RES/SWITCH DISTANCE branches. Defaults
-  to 0 (near); this is a **manual** model-unit value, not a simulation of
-  ICR2's dynamically evaluated per-object LOD distances. Check **All LOD
-  branches** to inspect every branch even though the game would not do so.
+- **SWITCH DISTANCE / RES**: **Auto per anchor** (default) computes the
+  distance from the camera to the specific RES anchor in its local model
+  coordinates, including inside transformed DYNAMIC objects. Uncheck Auto
+  to enter a **manual** threshold in original model units. **All LOD branches**
+  ignores the distance and renders every alternate branch for inspection.
+  Auto uses Euclidean distance as an approximation of the engine's actual
+  switch logic, not a claim of exact in-game LOD thresholds.
 - **Open PCX palette…**: load a normal indexed 8-bit PCX with a 256-color
   VGA palette trailer (e.g. `sunny.pcx`). The bundled `gamepal.pcx` is used
   on startup; **Default palette** restores it. Palette changes recolor
   both plain polygons and MIPs instantly, without rebuilding geometry.
+- **3DO objects folder…**: optionally choose a folder containing the model's
+  DYNAMIC/external `.3do` references. Models beside the parent and common
+  adjacent object directories are also searched automatically. Nested child
+  models use their own BSP planes, camera-local coordinates and RES anchors.
+  Reused objects receive separate translated/rotated instances. Missing
+  models and cyclic references are reported without preventing the parent
+  from loading. No source objects are written.
 - **MIP folder…**: choose a folder containing the model's named `.mip`
   files. The loader also searches the model's directory and its `textures`,
   `mip` and `mips` subfolders, without case-sensitive filename assumptions.
@@ -78,11 +91,17 @@ triangles, convex quads, and concave polygons through ear clipping;
 degenerate faces are skipped and fallback fans are explicitly counted.
 Large track coordinates are recentered/scaled for GPU float precision.
 
-main.py uploads the XYZ/RGB vertex buffer **once when the file opens**.
-The parsed Model tree remains in memory for read-only plane traversal.
+main.py uploads the XYZ/RGB/UV vertex buffer **once when the file opens**.
+The worker discovers nested DYNAMIC and negative external references and
+flattens their transformed instances into the same GPU buffer, preserving
+their own polygon identifiers and material filenames. The parsed model trees
+remain in memory for read-only plane traversal.
 Orbit/pan/zoom updates the view matrix **and**, in BSP modes, re-evaluates
-the original BSP node side tests using the real camera location in unscaled
-Papyrus coordinates. A single `uint32` **element/index buffer** is reordered
+the original BSP node side tests using perspective's real camera location
+or orthographic's parallel camera direction in unscaled Papyrus coordinates.
+The parent's LIST/BSP event stream inserts child models at their original
+DYNAMIC sites; their local-space transformations are inverted for BSP tests.
+Each RES/SWITCH DISTANCE tests its own anchor in automatic mode. A single `uint32` **element/index buffer** is reordered
 and uploaded only when view or LOD changes; it never retransfers polygon
 XYZ/RGB/UV, reparses N3 or retessellates geometry. The continuous-redraw
 benchmark reuses the cached index buffer while the camera is stationary.
@@ -96,6 +115,12 @@ during camera motion. The palette can be updated independently. Missing
 or malformed MIPs leave the associated polygons in their flat palette color,
 with the missing files counted in the UI. The atlas is capped at 4096x4096;
 assets that exceed available capacity fall back to flat color.
+
+The single expanded VBO includes the geometry of inactive LOD branches and
+resolved external models. The camera-dependent index list includes only
+selected branches and emits child polygons at their parent's insertion site.
+Repeated model files are parsed once and instantiated independently. An
+optional external 3DO search folder can be selected in the UI.
 
 The BSP painter path deliberately disables the normal OpenGL depth test:
 depth testing can reverse LIST sibling paint order and coincident face
@@ -116,13 +141,15 @@ resolution, visibility and benchmark procedure are used on the same machine.
 
 ## Intentional limitations
 
-This **does not yet** include editing, picking, source tabs, PMP sprites
-or externally referenced DYNAMIC model geometry. It displays local polygon
-geometry with indexed palette colors and optional 8-bit MIP texture sampling.
+This **does not yet** include editing, picking, source tabs or PMP sprites.
+It displays local and referenced DYNAMIC/child 3DO polygon geometry with
+indexed palette colors and optional 8-bit MIP texture sampling.
 Track-only LINE commands are **not rendered**, and exact Papyrus game
-rasterization, frustum/near-plane clipping, mip-level switching, per-object
-LOD evaluation, alpha/transparent texels, and display budgets have not been
-reconstructed. BSP side tests and painter ordering reuse the editor's
+rasterization, frustum/near-plane clipping, mip-level switching, game-exact
+per-object LOD distance, alpha/transparent texels, and display budgets have
+not been reconstructed. A nearly edge-on orthographic BSP plane that spans
+the viewport cannot be represented perfectly by one global front/back
+decision; it falls back to the finite camera side for stability. BSP side tests and painter ordering reuse the editor's
 existing reverse-engineered interpretation (not a verified reproduction
 of the original game executable). Overlapping scenery can still look
 different from ICR2, particularly with transparency or external objects.

@@ -57,7 +57,8 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
-from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
+from gpu_viewer.visibility import camera_in_model_units
+from gpu_viewer.scene import build_scene, ordered_scene_indices
 from gpu_viewer.textures import build_atlas, load_palette
 
 
@@ -164,16 +165,17 @@ def perspective_projection(aspect, near, far):
 
 
 class LoadWorker(QThread):
-    ready = Signal(object, object, object, object, object)
+    ready = Signal(object, object, object, object, object, object)
     failed = Signal(str)
 
     def __init__(self, path, palette_path, texture_folder=None,
-                 fallback_mip=None, *, existing_model=None):
+                 fallback_mip=None, *, objects_folder=None, existing_model=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
         self.texture_folder = texture_folder
         self.fallback_mip = fallback_mip
+        self.objects_folder = objects_folder
         self.existing_model = existing_model
 
     def run(self):
@@ -193,11 +195,15 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
+            # Resolve and transform each nested instance once. BSP and
+            # RES selection remain per-source-model and per-placement.
+            scene = build_scene(model, objects_folder=self.objects_folder)
             palette = load_palette(self.palette_path)
-            atlas = build_atlas(model, self.path,
+            atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip)
-            mesh = make_mesh(model, palette.astype(np.float32) / 255.0, atlas)
+            mesh = make_mesh(scene.geometry,
+                             palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
                 "parse_ms": parse_ms,
@@ -213,10 +219,14 @@ class LoadWorker(QThread):
                 "textured_faces": len(atlas.polygon_rects),
                 "textured_candidates": atlas.textured_polygons,
                 "atlas_shape": atlas.pixels.shape,
+                "dynamic_instances": scene.loaded_instances,
+                "external_warnings": scene.warnings,
+                "switches": sum(len(inst.model.switches)
+                                for inst in scene.instances),
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
-            self.ready.emit(mesh, stats, model, atlas, palette)
+            self.ready.emit(mesh, stats, model, atlas, palette, scene)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -248,8 +258,9 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._model = None
+        self._scene = None
         self.render_mode = 'painter'  # painter | depth | all
-        self.lod_distance = 0  # Papyrus raw units; None inspects all LODs
+        self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self._visibility_dirty = True
         self._index_count = 0
         self._visible_set = frozenset()
@@ -331,10 +342,11 @@ class GLViewport(QOpenGLWidget):
         finally:
             self.doneCurrent()
 
-    def set_mesh(self, mesh: MeshData, model, atlas, palette,
+    def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
                  *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self._scene = scene
         self._atlas = atlas
         self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
@@ -473,8 +485,16 @@ class GLViewport(QOpenGLWidget):
         eye = camera_in_model_units(
             self._mesh.center, self._mesh.scale, self.target,
             self.azimuth, self.elevation, self.distance)
-        indices, visible, info = ordered_bsp_indices(
-            self._model, self._mesh, eye, self.lod_distance)
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation),
+            )
+        indices, visible, info = ordered_scene_indices(
+            self._scene, self._mesh, eye, self.lod_distance,
+            view_direction=direction)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
@@ -489,7 +509,8 @@ class GLViewport(QOpenGLWidget):
             f"renderable polygons | {info['triangles']:,} triangles | "
             f"{info['tested_planes']:,} plane tests | "
             f"{info['culled_nodes']:,} pruned nodes | "
-            f"{info['lod_selections']:,} LOD selections"
+            f"{info['lod_selections']:,} LOD selections | "
+            f"{info['instances_visited']:,} instances"
         )
 
     def paintGL(self):
@@ -611,6 +632,7 @@ class Window(QMainWindow):
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
+        self.objects_folder = None
         self.fallback_mip = None
         self.model_path = None
         self._preserve_view = False
@@ -660,6 +682,11 @@ class Window(QMainWindow):
         self.lod_spin.setValue(0)
         self.lod_spin.valueChanged.connect(self._lod_changed)
         bspbar.addWidget(self.lod_spin)
+        self.auto_lod = QCheckBox("Auto per anchor")
+        self.auto_lod.setChecked(True)
+        self.auto_lod.toggled.connect(self._lod_changed)
+        bspbar.addWidget(self.auto_lod)
+        self.lod_spin.setEnabled(False)
         self.all_lods = QCheckBox("All LOD branches (diagnostic)")
         self.all_lods.toggled.connect(self._lod_changed)
         bspbar.addWidget(self.all_lods)
@@ -680,6 +707,9 @@ class Window(QMainWindow):
         folder_button = QPushButton("MIP folder…")
         folder_button.clicked.connect(self.choose_mip_folder)
         assetsbar.addWidget(folder_button)
+        objects_button = QPushButton("3DO objects folder…")
+        objects_button.clicked.connect(self.choose_objects_folder)
+        assetsbar.addWidget(objects_button)
         fallback_button = QPushButton("Fallback MIP…")
         fallback_button.clicked.connect(self.choose_fallback_mip)
         assetsbar.addWidget(fallback_button)
@@ -763,6 +793,17 @@ class Window(QMainWindow):
             self.texture_folder = Path(directory)
             self._reload_texture_assets()
 
+    def choose_objects_folder(self):
+        if self._busy():
+            return
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with external .3DO objects",
+            str(self.objects_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
+        if directory:
+            self.objects_folder = Path(directory)
+            self._reload_texture_assets()
+
     def choose_fallback_mip(self):
         if self._busy():
             return
@@ -790,9 +831,12 @@ class Window(QMainWindow):
         self._update_polygon_status()
 
     def _lod_changed(self, *args):
-        self.lod_spin.setEnabled(not self.all_lods.isChecked())
+        self.lod_spin.setEnabled(not (self.all_lods.isChecked()
+                                      or self.auto_lod.isChecked()))
         self.viewer.lod_distance = (
-            None if self.all_lods.isChecked() else self.lod_spin.value()
+            None if self.all_lods.isChecked()
+            else 'auto' if self.auto_lod.isChecked()
+            else self.lod_spin.value()
         )
         self.viewer.invalidate_visibility()
 
@@ -821,7 +865,9 @@ class Window(QMainWindow):
             self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
         elif offset not in self.viewer._visible_set:
             self.polygon_status.setText(f"@{offset}: EXCLUDED by BSP or selected LOD")
-        elif offset not in self.viewer._mesh.polygon_ranges:
+        elif (self.viewer._scene is None or
+              self.viewer._scene.polygon_lookup.get((0, offset))
+              not in self.viewer._mesh.polygon_ranges):
             self.polygon_status.setText(f"@{offset}: selected by BSP, but degenerate / not meshed")
         else:
             self.polygon_status.setText(
@@ -829,7 +875,9 @@ class Window(QMainWindow):
 
     def _set_perspective(self, checked):
         self.viewer.perspective = checked
-        self.viewer.update()
+        # Orthographic BSP must use parallel-ray direction rather than the
+        # finite perspective camera position. Reevaluate on every toggle.
+        self.viewer.invalidate_visibility()
 
     def _toggle_benchmark(self, checked):
         if checked:
@@ -868,14 +916,15 @@ class Window(QMainWindow):
         self.stats_label.setText("Loading geometry and MIP atlas…")
         self.worker = LoadWorker(
             path, self.palette_path, self.texture_folder, self.fallback_mip,
+            objects_folder=self.objects_folder,
             existing_model=(self.viewer._model if reuse_model else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats, model, atlas, palette):
+    def _loaded(self, mesh, stats, model, atlas, palette, scene):
         self._info = stats
-        self.viewer.set_mesh(mesh, model, atlas, palette,
+        self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=self._preserve_view)
         self._preserve_view = False
         self.palette_status.setText(
@@ -896,7 +945,9 @@ class Window(QMainWindow):
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
-            f"external placements {stats['external_objects']:,} (not drawn)")
+            f"external instances {stats['dynamic_instances']:,} loaded | "
+            f"RES switches {stats['switches']:,} | "
+            f"{len(stats['external_warnings'])} missing/problematic objects")
         self.stats_label.setText(
             f"Parse {stats['parse_ms']:.0f} ms  |  "
             f"Mesh {stats['mesh_ms']:.0f} ms  |  "
@@ -906,7 +957,9 @@ class Window(QMainWindow):
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
         self.statusBar().showMessage(
-            "BSP painter mode | Left-drag orbit | Shift-left/middle pan | Wheel zoom | F frame")
+            ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
+            if stats['external_warnings'] else
+            "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
@@ -942,6 +995,9 @@ class Window(QMainWindow):
                 "mip_textures_missing": list(self._info.get("missing_textures", ())),
                 "mip_load_errors": list(self._info.get("texture_errors", ())),
                 "palette_basename": self.palette_path.name,
+                "dynamic_instances": self._info.get("dynamic_instances", 0),
+                "external_warnings": list(self._info.get("external_warnings", ())),
+                "switches_in_models": self._info.get("switches", 0),
                 "render_mode": self.viewer.render_mode,
                 "lod_distance": self.viewer.lod_distance,
                 "bsp_selected_polygons": len(self.viewer._visible_set),

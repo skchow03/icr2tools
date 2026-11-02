@@ -139,7 +139,10 @@ def build_atlas(model, model_path, *, texture_folder=None,
         textured_count += 1
         name = model.polygon_materials.get(off)
         if name:
-            path = find_texture(name, model_path, texture_folder)
+            # Nested DYNAMIC objects may keep their MIPs beside the child
+            # model, not beside the root RENO.3D / parent 3DO.
+            source = getattr(model, 'polygon_sources', {}).get(off, model_path)
+            path = find_texture(name, source, texture_folder)
             if path is None:
                 missing.add(name)
                 continue
