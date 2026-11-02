@@ -969,7 +969,11 @@ class Window(QMainWindow):
         worker.start()
 
     def _source_exported(self, candidate, text, path):
-        if candidate is not self.viewer._model or self.source_pane.ready:
+        if candidate is not self.viewer._model:
+            if self.source_toggle.isChecked():
+                QTimer.singleShot(80, self._ensure_source_loaded)
+            return
+        if self.source_pane.ready:
             return
         self.source_pane.set_source(
             text, path,
@@ -1392,6 +1396,21 @@ class Window(QMainWindow):
         if self._busy():
             return
         next_path = Path(path)
+        if not reuse_model and self.source_pane.dirty:
+            answer = QMessageBox.question(
+                self, 'Discard unsaved N3 edits?',
+                'Opening another model will discard unsaved .3D source text. '
+                'Save the source first if you want to keep it.',
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        if not reuse_model:
+            self._source_invalid = False
+            self._source_applied = False
+            self._last_valid_source_text = None
+            self._source_queued = None
+            self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
                 self.model_path.resolve() != next_path.resolve()):
             # Assignments belong to the open asset, not a previous car.
@@ -1409,12 +1428,19 @@ class Window(QMainWindow):
             mip_overrides=self.mip_overrides,
             object_overrides=self.object_overrides,
             body_mip=self.body_mip,
-            existing_model=(self.viewer._model if reuse_model else None))
+            existing_model=(self.viewer._model if reuse_model else None),
+            source_text=(self._last_valid_source_text
+                         if reuse_model and self._source_applied else None),
+            source_path=(self.source_pane.source_path
+                         if reuse_model and self._source_applied else None),
+            appearance_override=(self.viewer._scene.appearance
+                                 if reuse_model and self._source_applied else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats, model, atlas, palette, scene):
+    def _loaded(self, mesh, stats, model, atlas, palette, scene,
+                *, from_source=False):
         self._info = stats
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=self._preserve_view)
@@ -1480,6 +1506,8 @@ class Window(QMainWindow):
             ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
             if stats['external_warnings'] else
             "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
+        if not from_source and self.source_toggle.isChecked():
+            self._ensure_source_loaded()
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
@@ -1488,6 +1516,8 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         self._timer.stop()
+        if self._source_export_worker is not None and self._source_export_worker.isRunning():
+            self._source_export_worker.wait()
         if self.worker is not None and self.worker.isRunning():
             self.worker.wait()
         self.viewer.shutdown_gl()
