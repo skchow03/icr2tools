@@ -37,6 +37,21 @@ def make_real_car_wrapper(path, *, geometry='roadcar', livery='car74',
                      + names + body)
 
 
+def make_wheel_child(path):
+    """Synthetic wheel with an independent wheel1 MATERIAL and POLY[T]."""
+    body = bytearray()
+    refs = []
+    for xyz in ((0,0,0), (16000,0,0), (0,16000,0)):
+        refs.append(len(body))
+        body.extend(struct.pack('<4iHH', 0, *xyz, 0, 0))
+    poly = len(body)
+    body.extend(struct.pack('<4i3i', -(1<<31)+2, 0, 110, 2, *refs))
+    root = len(body)
+    body.extend(struct.pack('<4i', -(1<<31)+4, 0, 0, poly))
+    path.write_bytes(struct.pack('<5i', len(body), root, 1, 0, 0)
+                     + b'wheel1\\0\\0' + body)
+
+
 class GPUCarWrapperParityTests(unittest.TestCase):
     def test_true_material_recolor_wrapper_loads_its_base_3do(self):
         with tempfile.TemporaryDirectory() as d:
@@ -74,9 +89,7 @@ class GPUCarWrapperParityTests(unittest.TestCase):
             base = folder / 'roadcar.3do'
             shutil.copyfile(ROOT / 'fixtures' / 'roadcar.3do', base)
             for nm in ('sfront', 'srear', 'helmet'):
-                # These real-world assets are geometric fixtures with their
-                # own textured materials; just use stock binary children.
-                shutil.copyfile(ROOT / 'fixtures' / 'roadcar.3do', folder / (nm+'.3do'))
+                make_wheel_child(folder / (nm+'.3do'))
             model, scene, app = load_car_or_model(wrapper)
             self.assertGreater(scene.loaded_instances, 0)
             for (inst,off),poly_id in scene.polygon_lookup.items():
@@ -86,7 +99,7 @@ class GPUCarWrapperParityTests(unittest.TestCase):
             # Texture override targeted at body faces MUST not touch
             # children's atlas assignments even with identical MIP pixels.
             livery = folder / 'car74.mip'
-            wheels = folder / 'wheels.mip'
+            wheels = folder / 'wheel1.mip'
             shutil.copyfile(ROOT/'fixtures'/'ind96.mip', livery)
             shutil.copyfile(ROOT/'fixtures'/'ind96.mip', wheels)
             alt = folder / 'newbody.mip'
