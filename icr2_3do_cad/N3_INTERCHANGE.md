@@ -25,6 +25,18 @@ Coordinate values are rounded to the nearest signed 32-bit Papyrus integer
 source, it may normalize the text into raw Papyrus integer units; keep the
 original file if you want to preserve its fractional authoring notation.
 
+## Empty track object lists
+
+Track source generators can emit declarations such as
+`ObjectList_L0_0: LIST {  };` when a section has no scenery objects.
+This is a valid **zero-child LIST** node, not an invalid empty pointer
+and not a synonym for `NIL`. The editor retains the LIST's named
+declaration and writes an F11 record with child count 0, so references
+from other section trees continue to point to a LIST.
+
+An isolated `LIST {  }` is accepted, including whitespace/newlines.
+Malformed lists such as `LIST {a,}` or `LIST {,}` still produce errors.
+
 ## Nested track BSPA prefix syntax
 
 Tracks produced by Trk23D use prefix-operator syntax without braces around
