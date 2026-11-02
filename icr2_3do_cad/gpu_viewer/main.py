@@ -267,6 +267,32 @@ class LoadWorker(QThread):
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
+class SourceExportWorker(QThread):
+    """Generate editable source without blocking Qt/OpenGL for large models."""
+    ready = Signal(str, object)
+    failed = Signal(str)
+
+    def __init__(self, model, opened_path):
+        super().__init__()
+        self.model = model
+        self.opened_path = Path(opened_path)
+
+    def run(self):
+        try:
+            from text_3d import export_text
+            if self.opened_path.suffix.lower() == '.3d':
+                source = self.opened_path.read_text(encoding='utf-8-sig')
+                target = self.opened_path
+            else:
+                # For individual-car wrappers, export BASE geometry, not the
+                # zero-polygon MATERIAL->RECOLOR wrapper.
+                source = export_text(self.model)
+                target = self.model.path.with_suffix('.3d')
+            self.ready.emit(source, target)
+        except Exception as exc:
+            self.failed.emit(f'{type(exc).__name__}: {exc}')
+
+
 class TextureReloadWorker(QThread):
     """Read changed MIP bytes on a worker, without reloading car/3DO models."""
     ready = Signal(object, object, object)
@@ -735,6 +761,11 @@ class Window(QMainWindow):
         self.fallback_mip = None
         self.model_path = None
         self._preserve_view = False
+        self._source_invalid = False
+        self._source_busy_revision = None
+        self._source_queued = None
+        self._source_export_worker = None
+        self._source_export_model = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -762,6 +793,10 @@ class Window(QMainWindow):
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
         toolbar.addWidget(self.perspective_toggle)
+        self.source_toggle = QPushButton('.3D Source')
+        self.source_toggle.setCheckable(True)
+        self.source_toggle.toggled.connect(self._toggle_source)
+        toolbar.addWidget(self.source_toggle)
         self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
         self.benchmark_toggle.setChecked(benchmark)
         toolbar.addWidget(self.benchmark_toggle)
@@ -850,7 +885,31 @@ class Window(QMainWindow):
         carbar.addWidget(reload_button)
         layout.addLayout(carbar)
         layout.addWidget(self.load_label)
-        layout.addWidget(self.viewer, stretch=1)
+        self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.editor_splitter.addWidget(self.viewer)
+        self.source_tabs = QTabWidget()
+        self.source_pane = SourcePane()
+        self.source_tabs.addTab(self.source_pane, '.3D Source')
+        source_help = QLabel(
+            'Edit Papyrus N3 text; after a 650 ms pause, valid source '
+            'recompiles off the GUI thread and updates the GPU viewport.\\n\\n'
+            'An invalid edit retains the last valid model. '
+            'Use Apply now to compile immediately, and Save .3D as… '
+            'to save the source text. Export compiled .3DO… writes a '
+            'separate binary only after successful compilation.\\n\\n'
+            'When a car appearance wrapper is open, the source is for '
+            'its shared base geometry; the livery and RECOLOR remain '
+            'read-only overlays. The original source files are never '
+            'overwritten without explicit confirmation.')
+        source_help.setWordWrap(True)
+        source_help.setAlignment(Qt.AlignmentFlag.AlignTop)
+        source_help.setMargin(16)
+        self.source_tabs.addTab(source_help, 'Help')
+        self.editor_splitter.addWidget(self.source_tabs)
+        self.editor_splitter.setStretchFactor(0, 2)
+        self.editor_splitter.setStretchFactor(1, 1)
+        self.source_tabs.hide()
+        layout.addWidget(self.editor_splitter, stretch=1)
         layout.addWidget(self.stats_label)
         layout.addWidget(self.visibility_label)
         layout.addWidget(self.polygon_status)
@@ -862,6 +921,9 @@ class Window(QMainWindow):
         QShortcut(QKeySequence("R"), self, activated=self.reload_mips)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
+        self.source_pane.compileRequested.connect(self._source_requested)
+        self.source_pane.saveRequested.connect(self._save_source)
+        self.source_pane.exportRequested.connect(self._export_compiled_source)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
