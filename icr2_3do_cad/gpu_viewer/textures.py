@@ -119,7 +119,7 @@ def _pack(images, max_side):
 
 
 def build_atlas(model, model_path, *, texture_folder=None,
-                fallback_mip=None, max_side=4096):
+                fallback_mip=None, mip_overrides=None, max_side=4096):
     """Build the atlas for reachable POLY [T] records, with diagnostic counts.
 
     Referenced MATERIAL filenames take priority. The optional explicit
@@ -133,17 +133,22 @@ def build_atlas(model, model_path, *, texture_folder=None,
     errors = []
     textured_count = 0
     fallback = Path(fallback_mip) if fallback_mip else None
+    overrides = {str(name).casefold(): Path(path)
+                 for name, path in (mip_overrides or {}).items()}
     for off, polygon in model.polygons.items():
         if polygon.kind != 2:
             continue
         textured_count += 1
         name = model.polygon_materials.get(off)
         if name:
-            # Nested DYNAMIC objects may keep their MIPs beside the child
-            # model, not beside the root RENO.3D / parent 3DO.
-            source = getattr(model, 'polygon_sources', {}).get(off, model_path)
-            path = find_texture(name, source, texture_folder)
+            # Explicit car livery assignment wins over MATERIAL filename,
+            # but the source's original name remains the lookup key.
+            path = overrides.get(name.casefold())
             if path is None:
+                # For inherited MATERIAL, use wrapper's location.
+                source = getattr(model, 'polygon_sources', {}).get(off, model_path)
+                path = find_texture(name, source, texture_folder)
+            if path is None or not path.is_file():
                 missing.add(name)
                 continue
         elif fallback is not None:

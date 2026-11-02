@@ -169,13 +169,17 @@ class LoadWorker(QThread):
     failed = Signal(str)
 
     def __init__(self, path, palette_path, texture_folder=None,
-                 fallback_mip=None, *, objects_folder=None, existing_model=None):
+                 fallback_mip=None, *, objects_folder=None,
+                 mip_overrides=None, object_overrides=None,
+                 existing_model=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
         self.texture_folder = texture_folder
         self.fallback_mip = fallback_mip
         self.objects_folder = objects_folder
+        self.mip_overrides = dict(mip_overrides or {})
+        self.object_overrides = dict(object_overrides or {})
         self.existing_model = existing_model
 
     def run(self):
@@ -197,11 +201,13 @@ class LoadWorker(QThread):
             parse_ms = (perf_counter() - t0) * 1000
             # Resolve and transform each nested instance once. BSP and
             # RES selection remain per-source-model and per-placement.
-            scene = build_scene(model, objects_folder=self.objects_folder)
+            scene = build_scene(model, objects_folder=self.objects_folder,
+                                object_overrides=self.object_overrides)
             palette = load_palette(self.palette_path)
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
-                                fallback_mip=self.fallback_mip)
+                                fallback_mip=self.fallback_mip,
+                                mip_overrides=self.mip_overrides)
             mesh = make_mesh(scene.geometry,
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
@@ -223,10 +229,58 @@ class LoadWorker(QThread):
                 "external_warnings": scene.warnings,
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
+                "recolor_pairs": scene.recolor_pairs,
+                "material_names": tuple(sorted(set(
+                    scene.geometry.polygon_materials.values()),
+                    key=str.casefold)),
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
             self.ready.emit(mesh, stats, model, atlas, palette, scene)
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+class TextureReloadWorker(QThread):
+    """Read changed MIP bytes on a worker, without reloading car/3DO models."""
+    ready = Signal(object, object, object)
+    failed = Signal(str)
+
+    def __init__(self, scene, mesh, palette, model_path, texture_folder,
+                 fallback_mip, mip_overrides, previous_atlas):
+        super().__init__()
+        self.scene = scene
+        self.mesh = mesh
+        self.palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        self.model_path = model_path
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.mip_overrides = dict(mip_overrides)
+        self.previous_atlas = previous_atlas
+
+    def run(self):
+        try:
+            atlas = build_atlas(
+                self.scene.geometry, self.model_path,
+                texture_folder=self.texture_folder,
+                fallback_mip=self.fallback_mip,
+                mip_overrides=self.mip_overrides)
+            # Texture edits normally change only indexed pixels. VBO and BSP
+            # index ordering remain completely untouched in the fast path.
+            mesh = None
+            if atlas.polygon_rects != self.previous_atlas.polygon_rects:
+                mesh = make_mesh(
+                    self.scene.geometry,
+                    self.palette.astype(np.float32) / 255.0, atlas)
+            stats = {
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
+            }
+            self.ready.emit(atlas, mesh, stats)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -448,6 +502,17 @@ class GLViewport(QOpenGLWidget):
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 256, 1, 0, GL_RGB,
                      GL_UNSIGNED_BYTE, self._palette)
 
+    def set_atlas(self, atlas):
+        """Replace MIP pixel texture only: preserve VAO/VBO and BSP EBO."""
+        self._atlas = atlas
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_texture_assets()
+            finally:
+                self.doneCurrent()
+        self.update()
+
     def set_palette(self, palette):
         """Swap the 256-color lookup without retessellating/reuploading XYZ."""
         self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
@@ -633,6 +698,8 @@ class Window(QMainWindow):
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
         self.objects_folder = None
+        self.mip_overrides = {}
+        self.object_overrides = {}
         self.fallback_mip = None
         self.model_path = None
         self._preserve_view = False
@@ -645,6 +712,7 @@ class Window(QMainWindow):
         self.polygon_status = QLabel("Enter a polygon body offset to inspect")
         self.palette_status = QLabel("Palette: bundled gamepal.pcx")
         self.texture_status = QLabel("MIPs: no model loaded")
+        self.car_status = QLabel("Individual-car RECOLOR: not loaded")
         root = QWidget()
         layout = QVBoxLayout(root)
         toolbar = QHBoxLayout()
@@ -724,6 +792,31 @@ class Window(QMainWindow):
         self.repeat_uv.toggled.connect(self._repeat_toggled)
         assetsbar.addWidget(self.repeat_uv)
         layout.addLayout(assetsbar)
+        carbar = QHBoxLayout()
+        carbar.addWidget(QLabel("Car shape ref:"))
+        self.car_ref_combo = QComboBox()
+        self.car_ref_combo.setMinimumWidth(90)
+        carbar.addWidget(self.car_ref_combo)
+        shape_button = QPushButton("Assign carshape 3DO…")
+        shape_button.clicked.connect(self.choose_car_shape)
+        carbar.addWidget(shape_button)
+        clear_shape = QPushButton("Clear shape override")
+        clear_shape.clicked.connect(self.clear_car_shape)
+        carbar.addWidget(clear_shape)
+        carbar.addWidget(QLabel("Livery material:"))
+        self.material_combo = QComboBox()
+        self.material_combo.setMinimumWidth(100)
+        carbar.addWidget(self.material_combo)
+        livery_button = QPushButton("Assign livery MIP…")
+        livery_button.clicked.connect(self.choose_livery_mip)
+        carbar.addWidget(livery_button)
+        clear_livery = QPushButton("Clear livery override")
+        clear_livery.clicked.connect(self.clear_livery_mip)
+        carbar.addWidget(clear_livery)
+        reload_button = QPushButton("Reload MIPs (R)")
+        reload_button.clicked.connect(self.reload_mips)
+        carbar.addWidget(reload_button)
+        layout.addLayout(carbar)
         layout.addWidget(self.load_label)
         layout.addWidget(self.viewer, stretch=1)
         layout.addWidget(self.stats_label)
@@ -731,8 +824,10 @@ class Window(QMainWindow):
         layout.addWidget(self.polygon_status)
         layout.addWidget(self.palette_status)
         layout.addWidget(self.texture_status)
+        layout.addWidget(self.car_status)
         self.setCentralWidget(root)
         QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
+        QShortcut(QKeySequence("R"), self, activated=self.reload_mips)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
         self._timer = QTimer(self)
@@ -826,6 +921,111 @@ class Window(QMainWindow):
         if self.model_path is not None and self.viewer._model is not None:
             self.load(self.model_path, reuse_model=True)
 
+    def choose_car_shape(self):
+        if self._busy():
+            return
+        name = self.car_ref_combo.currentData()
+        if not name:
+            QMessageBox.information(
+                self, "No referenced carshape",
+                "Open an individual-car 3DO containing an external model reference.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Use a 3DO for {name}",
+            str(self.objects_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus 3DO (*.3do *.3DO);;All files (*)")
+        if path:
+            self.object_overrides[name.casefold()] = Path(path)
+            self._reload_texture_assets()
+
+    def clear_car_shape(self):
+        if self._busy():
+            return
+        name = self.car_ref_combo.currentData()
+        if name and name.casefold() in self.object_overrides:
+            self.object_overrides.pop(name.casefold())
+            self._reload_texture_assets()
+
+    def choose_livery_mip(self):
+        if self._busy():
+            return
+        name = self.material_combo.currentData()
+        if not name:
+            QMessageBox.information(
+                self, "No MIP material",
+                "Load a car 3DO with a MATERIAL MIP reference first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Choose MIP for material {name}",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus livery MIP (*.mip *.MIP);;All files (*)")
+        if path:
+            self.mip_overrides[name.casefold()] = Path(path)
+            self.reload_mips()
+
+    def clear_livery_mip(self):
+        if self._busy():
+            return
+        name = self.material_combo.currentData()
+        if name and name.casefold() in self.mip_overrides:
+            self.mip_overrides.pop(name.casefold())
+            self.reload_mips()
+
+    def reload_mips(self):
+        """Re-read car livery MIPs, keeping the model and camera in memory."""
+        if self._busy() or self.model_path is None:
+            return
+        scene = self.viewer._scene
+        if scene is None or self.viewer._mesh is None:
+            return
+        self.statusBar().showMessage("Reloading indexed MIP pixels…")
+        self.worker = TextureReloadWorker(
+            scene, self.viewer._mesh, self.viewer._palette,
+            self.model_path, self.texture_folder, self.fallback_mip,
+            self.mip_overrides, self.viewer._atlas)
+        self.worker.ready.connect(self._mips_reloaded)
+        self.worker.failed.connect(self._mip_reload_failed)
+        self.worker.start()
+
+    def _show_mip_stats(self, stats):
+        self.texture_status.setText(
+            f"MIPs: {stats['texture_count']} loaded | "
+            f"{stats['textured_faces']}/{stats['textured_candidates']} "
+            f"POLY [T] faces mapped | atlas "
+            f"{stats['atlas_shape'][1]}x{stats['atlas_shape'][0]} | "
+            f"{len(stats['missing_textures'])} missing | "
+            f"{len(stats['texture_errors'])} errors")
+
+    def _mips_reloaded(self, atlas, mesh, stats):
+        self._info.update(stats)
+        if mesh is None:
+            self.viewer.set_atlas(atlas)
+            self.statusBar().showMessage(
+                "Livery MIPs reloaded; original VBO, BSP and camera preserved")
+        else:
+            self.viewer.set_mesh(
+                mesh, self.viewer._model, atlas,
+                self.viewer._palette, self.viewer._scene, preserve_view=True)
+            self.statusBar().showMessage(
+                "Livery MIPs reloaded; UV atlas layout changed, rebuilt VBO")
+        self._show_mip_stats(stats)
+        self.car_status.setText(
+            f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
+            f" | referenced carshape(s): "
+            f"{len(self.viewer._model.external_names)}"
+            f" | active livery overrides: {len(self.mip_overrides)}")
+        if stats['missing_textures'] or stats['texture_errors']:
+            self.statusBar().showMessage(
+                "MIP issues: " + "; ".join(
+                    list(stats['missing_textures'][:5]) +
+                    list(stats['texture_errors'][:3])))
+
+    def _mip_reload_failed(self, message):
+        self.statusBar().showMessage("MIP reload failed; previous livery retained")
+        QMessageBox.warning(self, "MIP reload failed", message)
+
     def _mode_changed(self, index):
         self.viewer.set_render_mode(self.mode_combo.currentData())
         self._update_polygon_status()
@@ -917,6 +1117,8 @@ class Window(QMainWindow):
         self.worker = LoadWorker(
             path, self.palette_path, self.texture_folder, self.fallback_mip,
             objects_folder=self.objects_folder,
+            mip_overrides=self.mip_overrides,
+            object_overrides=self.object_overrides,
             existing_model=(self.viewer._model if reuse_model else None))
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
@@ -929,13 +1131,31 @@ class Window(QMainWindow):
         self._preserve_view = False
         self.palette_status.setText(
             f"Palette: {self.palette_path.name} (256 colors)")
-        self.texture_status.setText(
-            f"MIPs: {stats['texture_count']} loaded | "
-            f"{stats['textured_faces']}/{stats['textured_candidates']} "
-            f"POLY [T] faces mapped | atlas "
-            f"{stats['atlas_shape'][1]}x{stats['atlas_shape'][0]} | "
-            f"{len(stats['missing_textures'])} missing | "
-            f"{len(stats['texture_errors'])} errors")
+        self._show_mip_stats(stats)
+        self.car_status.setText(
+            f"Individual-car RECOLOR: {stats['recolor_pairs']} mappings"
+            f" | referenced carshape(s): {len(model.external_names)}"
+            f" | active livery overrides: {len(self.mip_overrides)}")
+        previous_ref = self.car_ref_combo.currentData()
+        self.car_ref_combo.blockSignals(True)
+        self.car_ref_combo.clear()
+        for name in dict.fromkeys(model.external_names):
+            self.car_ref_combo.addItem(name, name)
+        if previous_ref:
+            selected = self.car_ref_combo.findData(previous_ref)
+            if selected >= 0:
+                self.car_ref_combo.setCurrentIndex(selected)
+        self.car_ref_combo.blockSignals(False)
+        previous_material = self.material_combo.currentData()
+        self.material_combo.blockSignals(True)
+        self.material_combo.clear()
+        for name in stats['material_names']:
+            self.material_combo.addItem(name, name)
+        if previous_material:
+            selected = self.material_combo.findData(previous_material)
+            if selected >= 0:
+                self.material_combo.setCurrentIndex(selected)
+        self.material_combo.blockSignals(False)
         if stats['missing_textures'] or stats['texture_errors']:
             details = (list(stats['missing_textures'][:5]) +
                        list(stats['texture_errors'][:3]))
@@ -995,6 +1215,8 @@ class Window(QMainWindow):
                 "mip_textures_missing": list(self._info.get("missing_textures", ())),
                 "mip_load_errors": list(self._info.get("texture_errors", ())),
                 "palette_basename": self.palette_path.name,
+                "recolor_pairs": self._info.get("recolor_pairs", 0),
+                "material_names": list(self._info.get("material_names", ())),
                 "dynamic_instances": self._info.get("dynamic_instances", 0),
                 "external_warnings": list(self._info.get("external_warnings", ())),
                 "switches_in_models": self._info.get("switches", 0),
