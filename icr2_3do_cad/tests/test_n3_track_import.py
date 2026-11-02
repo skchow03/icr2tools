@@ -181,6 +181,53 @@ index: LIST {sec0_s0_HI};
                     "LIST {poly, ObjectList_L0_0, ObjectList_L65_0}",bad),
                     "bad_list.3d")
 
+
+    def test_lowercase_track_uv_compiles_inside_nested_bspa(self):
+        """RENO uses lowercase t= for all its 14,587 texture coordinates."""
+        source=TRACK_N3.replace("T=<", "t=<")
+        self.assertIn("t=<128,0>",source)
+        model,doc=compile_n3_text(source,"RENO_lowercase_uv.3D")
+        self.assertEqual(model.records[model.root_offset],11)
+        textured=[v for v in model.vertices.values() if v.textured]
+        self.assertGreaterEqual(len(textured),3)
+        self.assertIn((128,0),{v.uv for v in textured})
+        self.assertIn((0,128),{v.uv for v in textured})
+        self.assertIn("sec0_s0_HI",{st.label for st in doc.statements})
+
+    def test_exact_reno_vertex_text_and_mixed_uv_case(self):
+        """Actual RENO source line 4507 is legal with spaces and lowercase t."""
+        from n3_compile import Compiler
+        source="""3D VERSION 3.0;
+nil: NIL;
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
+root: POLY <44> {a,b,c};
+"""
+        compiler=Compiler(source,"reno_vertex.3d")
+        for text,expected in (
+            ("[< -3479697, 1865048, 102000 > , t= < 255, 255 >]",
+             ((-3479697,1865048,102000),(255,255),None)),
+            ("[< -3479697, 1865048, 120000 > , T= < 255, 192 >]",
+             ((-3479697,1865048,120000),(255,192),None)),
+            ("[<0,0,0>, t=<0,128>, c=<46>]",
+             ((0,0,0),(0,128),46)),
+        ):
+            with self.subTest(text=text):
+                self.assertEqual(compiler._vector(text),expected)
+
+    def test_malformed_texture_uv_still_rejected(self):
+        from n3_compile import Compiler
+        from three_do import FormatError
+        compiler=Compiler("3D VERSION 3.0;\na: [<0,0,0>];",
+                          "broken_uv.3d")
+        for bad in ("[<0,0,0>, t=<1>]",
+                    "[<0,0,0>, t=<1,2,3>]",
+                    "[<0,0,0>, tex=<1,2>]"):
+            with self.subTest(bad=bad),self.assertRaisesRegex(
+                    FormatError,"Expected a coordinate"):
+                compiler._vector(bad)
+
     def test_compile_track_hierarchy_hash_data_and_root_index(self):
         model,document=compile_n3_text(TRACK_N3,"RENO.3D")
         self.assertEqual(model.records[model.root_offset],11)

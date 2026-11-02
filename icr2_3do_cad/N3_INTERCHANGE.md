@@ -25,6 +25,17 @@ Coordinate values are rounded to the nearest signed 32-bit Papyrus integer
 source, it may normalize the text into raw Papyrus integer units; keep the
 original file if you want to preserve its fractional authoring notation.
 
+## Track texture vertex spelling (t= and T=)
+
+The N3 compiler accepts vertex UV attributes in either case. Track generators
+commonly write `[<X, Y, Z>, t=<U, V>]` (lowercase `t`), while the CAD editor
+normally emits uppercase `T=`. They have identical semantics. No coordinate
+or UV values are altered by this compatibility change.
+
+Malformed UV expressions still produce an explicit coordinate error, including
+a short excerpt of the offending expression, rather than blaming the enclosing
+FACE/BSP's plane vertices.
+
 ## Empty track object lists
 
 Track source generators can emit declarations such as

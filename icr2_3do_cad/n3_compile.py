@@ -21,7 +21,7 @@ from text_3d import Document, Statement, parse_document
 NUM = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)"
 VEC = re.compile(r"^\[\s*<\s*("+NUM+r")\s*,\s*("+NUM+r")\s*,\s*("+NUM+
                  r")\s*>\s*(?:,\s*T\s*=\s*<\s*("+NUM+r")\s*,\s*("+NUM+
-                 r")\s*>)?\s*(?:,\s*[cC]\s*=\s*<\s*("+NUM+r")\s*>)?\s*\]$",re.S)
+                 r")\s*>)?\s*(?:,\s*[cC]\s*=\s*<\s*("+NUM+r")\s*>)?\s*\]$",re.S|re.I)
 IDENT = re.compile(r"^[A-Za-z_][A-Za-z_0-9-]*$")
 COLOR = re.compile(r"^(?:<\s*("+NUM+r")\s*>|([A-Za-z_][A-Za-z_0-9-]*)\.c|("+NUM+r"))$",re.I)
 PLANE5 = re.compile(r"^\(\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*\)$")
@@ -238,7 +238,8 @@ class Compiler:
     def _vector(self,value):
         match=VEC.fullmatch(value.strip())
         if not match:
-            raise FormatError("Expected a coordinate [<X,Y,Z>] expression")
+            raise FormatError("Expected a coordinate [<X,Y,Z>] expression; "
+                              f"got {value.strip()[:120]!r}")
         x,y,z=(self._coordinate(v) for v in match.groups()[:3])
         uv=None
         if match.group(4) is not None:
