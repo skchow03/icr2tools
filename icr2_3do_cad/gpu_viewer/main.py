@@ -1036,8 +1036,7 @@ class Window(QMainWindow):
         self._show_mip_stats(stats)
         self.car_status.setText(
             f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
-            f" | referenced carshape(s): "
-            f"{len(self.viewer._model.external_names)}"
+            f" | base: {self._info.get('geometry_file','')}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
         if stats['missing_textures'] or stats['texture_errors']:
             self.statusBar().showMessage(
