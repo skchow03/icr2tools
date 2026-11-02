@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 from collections import OrderedDict
+from functools import lru_cache
 import math
 import os
 import tempfile
@@ -23,8 +24,17 @@ from n3_source_editor import SourceEditor
 from performance_profile import from_environment, profiled
 CAD_PROFILE=from_environment()
 if TEXTURE_AVAILABLE:
-    from PIL import Image, ImageTk
+    from PIL import Image, ImageDraw, ImageTk
 
+
+
+@lru_cache(maxsize=128)
+def _view_basis(az,el):
+    """Cache trig per camera pose, not once per vertex projection."""
+    right=(math.cos(az),math.sin(az),0)
+    up=(-math.sin(az)*math.sin(el),math.cos(az)*math.sin(el),math.cos(el))
+    toward=(math.sin(az)*math.cos(el),-math.cos(az)*math.cos(el),math.sin(el))
+    return right,up,toward
 
 
 def blend(a,b,t):
@@ -207,6 +217,7 @@ class Editor(tk.Tk):
         self.show_faces=tk.BooleanVar(value=True)
         self.show_edges=tk.BooleanVar(value=True)
         self.show_points=tk.BooleanVar(value=True)
+        self._point_raster_threshold=1200  # Large tracks use one RGBA overlay, not thousands of ovals.
         self.vertex_label_mode=tk.StringVar(value='Off')
         self.pointer_name_var=tk.StringVar(value='')
         self.show_axes=tk.BooleanVar(value=True)
@@ -1563,9 +1574,8 @@ class Editor(tk.Tk):
         self.selected_poly=(selected_poly if selected_poly in model.polygons else None)
         self.header.set(model.path.name+(' *' if model.dirty else ''))
         self.stats.set(model.summary().replace('\n','  |  '))
-        self.listbox.delete(0,'end')
-        for ref in self.vertex_order:
-            self.listbox.insert('end',self._vertex_list_text(ref))
+        with CAD_PROFILE.measure("ui.vertex_list"):
+            self._populate_vertex_list()
         self._texture_tile_cache.clear();self._texture_tile_cache_bytes=0
         self._texture_photos.clear()
         self._listed_preview_set=None
@@ -1986,9 +1996,8 @@ class Editor(tk.Tk):
         self.dynamic_order=sorted(checked.dynamics)
         self.header.set(checked.path.name+(' *' if self.imported_pending else ''))
         self.stats.set(checked.summary().replace('\n','  |  '))
-        self.listbox.delete(0,'end')
-        for ref in self.vertex_order:
-            self.listbox.insert('end',self._vertex_list_text(ref))
+        with CAD_PROFILE.measure("ui.vertex_list"):
+            self._populate_vertex_list()
         self.refresh_dynamic_list()
         self.refresh_polygon_list()
         self._refresh_polygon_inspector()
@@ -2082,9 +2091,8 @@ class Editor(tk.Tk):
             self.lod_slider.configure(to=1)
             self.lod_distance.set(0)
             self.lod_distance_text.set('0')
-        self.listbox.delete(0,'end')
-        for ref in self.vertex_order:
-            self.listbox.insert('end',self._vertex_list_text(ref))
+        with CAD_PROFILE.measure("ui.vertex_list"):
+            self._populate_vertex_list()
         self.refresh_dynamic_list()
         self.frame_model()
         self.update_edit_panel()
@@ -2212,6 +2220,14 @@ class Editor(tk.Tk):
             self.choose(new_offset)
         self.status.set(f'Vertex pointer renamed {old} → {proposed}. '
                         'Store your name in .3D, not binary .3DO.')
+
+    def _populate_vertex_list(self):
+        """Batch Tk insertion instead of one Tcl call per track vertex."""
+        self.listbox.delete(0,'end')
+        for start in range(0,len(self.vertex_order),512):
+            batch=(self._vertex_list_text(ref)
+                   for ref in self.vertex_order[start:start+512])
+            self.listbox.insert('end',*batch)
 
     def _vertex_list_text(self,ref):
         v=self.model.vertices[ref]
@@ -2461,11 +2477,7 @@ class Editor(tk.Tk):
         # Display transform reflects Y, so +Y now points in the opposite
         # screen direction from v0.4. Raw 3DO coordinates, drag edits and
         # saved data are NOT reflected or rewritten.
-        az,el=self.azimuth,self.elevation
-        right=(math.cos(az),math.sin(az),0)
-        up=(-math.sin(az)*math.sin(el),math.cos(az)*math.sin(el),math.cos(el))
-        toward=(math.sin(az)*math.cos(el),-math.cos(az)*math.cos(el),math.sin(el))
-        return right,up,toward
+        return _view_basis(self.azimuth,self.elevation)
 
     def _camera_distance(self):
         # In perspective view, mouse-wheel zoom is a camera dolly, not a
@@ -2702,6 +2714,38 @@ class Editor(tk.Tk):
         if self._interactive_view:
             self._interactive_view=False
             self.redraw()
+
+    def _draw_vertex_points(self,w,h):
+        """Large vertex sets become one transparent layer, not thousands of Tk ovals.
+
+        This changes display primitives only. Mouse picking still considers
+        every active vertex, and the selected vertex is drawn separately.
+        """
+        if not self.show_points.get():
+            return
+        many=(TEXTURE_AVAILABLE and
+              len(self.active_vertices)>=self._point_raster_threshold)
+        if many:
+            layer=Image.new('RGBA',(w,h),(0,0,0,0))
+            brush=ImageDraw.Draw(layer)
+        nverts=len(self.model.vertices)
+        for ref in self.active_vertices:
+            if ref==self.selected:continue
+            v=self.model.vertices[ref]
+            x,y,_=self._project(v.xyz)
+            if not -10<x<w+10 or not -10<y<h+10:continue
+            rad=2.3 if nverts<2500 else 1.7
+            if many:
+                color=(255,174,98,255) if v.modified else (184,204,237,255)
+                brush.ellipse((x-rad,y-rad,x+rad,y+rad),fill=color)
+            else:
+                color='#ffae62' if v.modified else '#b8cced'
+                self.canvas.create_oval(x-rad,y-rad,x+rad,y+rad,
+                                        fill=color,outline='',tags='dot')
+        if many:
+            photo=ImageTk.PhotoImage(layer,master=self)
+            self._texture_photos.append(photo)
+            self.canvas.create_image(0,0,image=photo,anchor='nw',tags='dot')
 
     def _vertex_preview_label(self,ref):
         if self.vertex_label_mode.get()=='Names':
@@ -2959,15 +3003,8 @@ class Editor(tk.Tk):
                 c.create_oval(sx-5,sy-5,sx+5,sy+5,fill='#47dfbd',outline='#004e40',width=2)
                 c.create_text(sx+9,sy-10,text=f'V{j}',fill='#83ffe1',anchor='sw',
                               font=('Consolas',10,'bold'))
-        if self.show_points.get():
-            for ref in self.active_vertices:
-                if ref==self.selected:continue
-                v=self.model.vertices[ref]
-                x,y,_=self._project(v.xyz)
-                if not -10<x<w+10 or not -10<y<h+10:continue
-                rad=2.3 if len(self.model.vertices)<2500 else 1.7
-                color='#ffae62' if v.modified else '#b8cced'
-                c.create_oval(x-rad,y-rad,x+rad,y+rad,fill=color,outline='',tags='dot')
+        with CAD_PROFILE.measure("viewport.vertex_points"):
+            self._draw_vertex_points(w,h)
         self._draw_vertex_labels(w,h)
         if self.selected is not None and self.selected in self.model.vertices:
             x,y,_=self._project(self.model.vertices[self.selected].xyz)

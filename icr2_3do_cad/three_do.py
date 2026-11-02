@@ -12,6 +12,9 @@ from typing import Iterable
 import math
 import struct
 
+from performance_profile import from_environment
+MODEL_PROFILE=from_environment()
+
 NAMES = {
     0: "NIL", 1: "POLY", 2: "POLY [T]", 3: "PMP", 4: "MATERIAL",
     5: "FACE", 6: "FACE2", 7: "BSPF", 8: "BSPA", 9: "BSP2",
@@ -339,8 +342,10 @@ class Model:
         ]
         self.dynamics: dict[int, DynamicPlacement] = {}
         # Negative pointers are external 3DO references, indexed from -1.
-        self._parse()
-        self._associate_planes()
+        with MODEL_PROFILE.measure("model.parse_records"):
+            self._parse()
+        with MODEL_PROFILE.measure("model.associate_planes"):
+            self._associate_planes()
 
     def _parse(self):
         pending = [self.root_offset]
@@ -486,22 +491,38 @@ class Model:
         return distances
 
     def _associate_planes(self):
-        # Coplanarity checked against the UNEDITED source. A global plane
-        # resemblance is NOT sufficient: only descendant surface polygons
-        # count as eligible auto-rebuild anchors.
+        """Map original BSP planes to eligible surface polygons.
+
+        On a large track, calling polygon_triplet() inside the plane loop
+        repeats O(polygons * planes) non-collinearity searches and XYZ tuple
+        construction. Original vertices do not change during association,
+        so prepare each polygon once and reuse it for every plane.
+
+        Retain the existing exact coplanarity threshold and candidate
+        ordering: this metadata controls conservative plane edits and must
+        not change the compiled 3DO or BSP traversal.
+        """
+        geometry=[]
+        for poly in self.polygons.values():
+            refs=poly.unique_refs
+            if len(refs)<3:
+                continue
+            if polygon_triplet(poly,self.vertices,original=True) is None:
+                continue
+            geometry.append((poly.offset,tuple(self.vertices[r].original for r in refs)))
         for pl in self.planes.values():
             a,b,c,d=pl.equation
             if (a,b,c)==(0,0,0):
                 continue
+            normal_length=math.hypot(a,b,c)
             candidates=[]
-            for poly in self.polygons.values():
-                if len(poly.unique_refs)<3:
-                    continue
-                if polygon_triplet(poly,self.vertices,original=True) is None:
-                    continue
-                pts=[self.vertices[r].original for r in poly.unique_refs]
-                if all(plane_distance(pl.equation, p)<=0.5 for p in pts):
-                    candidates.append(poly.offset)
+            for offset,points in geometry:
+                # Identical predicate to plane_distance(equation, point)<=0.5
+                # but the normal length is calculated once per plane rather
+                # than once per tested vertex. Reject at the first miss.
+                if all(abs((a*x+b*y+c*z+d)/normal_length)<=0.5
+                       for x,y,z in points):
+                    candidates.append(offset)
             pl.candidates=candidates
             local=self._descendant_poly_distances(pl.offset)
             eligible=[p for p in candidates if p in local]
@@ -513,7 +534,6 @@ class Model:
             pl.distance=local[pl.anchor]
             nearest=[p for p in eligible if local[p]==pl.distance]
             pl.confidence="local" if len(nearest)==1 else "ambiguous"
-            # Only a unique closest descendant is regarded as safe to rebuild.
             if len(nearest)>1:
                 pl.anchor=None
 
