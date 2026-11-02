@@ -7,6 +7,8 @@ Run from repository root:
 Requires the optional gpu_viewer/requirements.txt dependencies.
 """
 import os
+import faulthandler
+faulthandler.enable()
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -71,7 +73,9 @@ def run(path):
                     flush=True,
                 )
             timer.stop()
+            print("Closing Qt window",flush=True)
             window.close()
+            print("Qt window closed",flush=True)
             app.quit()
         elif elapsed > 45:
             result["error"] = (
@@ -85,7 +89,9 @@ def run(path):
     timer = QTimer()
     timer.timeout.connect(check)
     timer.start(100)
+    print("Entering Qt event loop",flush=True)
     app.exec()
+    print("Qt event loop exited",flush=True)
     if not result["ok"]:
         raise SystemExit(result["error"])
 
