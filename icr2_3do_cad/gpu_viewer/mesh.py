@@ -1,9 +1,9 @@
-"""Turn Papyrus Model polygons into one GPU-ready triangle buffer.
+"""Turn Papyrus Model polygons into GPU-ready XYZ/RGB/palette/UV/atlas buffer.
 
 This module is deliberately independent of Qt and OpenGL.  No modification to
 the source Model or the 3DO binary is required to preview it on a GPU.
 
-The preview is depth-tested flat colour; it is NOT ICR2's BSP/painter renderer.
+Visibility and paint order are handled by a separate BSP element index buffer.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ import numpy as np
 
 @dataclass
 class MeshData:
-    """Packed xyz/rgb float32 attributes in an N x 6 array."""
+    """Packed XYZ/RGB/palette index/UV/atlas rectangle, float32 N x 13."""
     vertices: np.ndarray
     polygon_count: int
     triangle_count: int
@@ -138,12 +138,13 @@ def read_palette(path: str | Path | None):
         return None
 
 
-def make_mesh(model, palette=None) -> MeshData:
-    """Triangulate local polygons once, returning a single flat-colour VBO.
+def make_mesh(model, palette=None, atlas=None) -> MeshData:
+    """Triangulate local polygons once, retaining original UVs and MIP references.
 
     Normalize XYZ around the model bounding centre to avoid precision loss
     on tracks whose Papyrus raw coordinates are several million units.
-    External DYNAMIC geometry, MIP textures and PMP sprites are deferred.
+    Indexed MIP images are loaded into an independent GPU atlas.
+    External DYNAMIC geometry and PMP sprites remain deferred.
     """
     started = perf_counter()
     if model.vertices:
@@ -185,14 +186,22 @@ def make_mesh(model, palette=None) -> MeshData:
             tint = 0.35 + (pal_index % 9) / 20.0
             rgb = np.array((tint, tint, tint), dtype=np.float32)
         normalized = ((original - center) / scale).astype(np.float32)
+        rect = (atlas.polygon_rects.get(polygon_offset, (0, 0, 0, 0))
+                if atlas is not None and polygon.kind == 2 else (0, 0, 0, 0))
+        uvs = [model.vertices[r].uv for r in refs]
+        if any(uv is None for uv in uvs):
+            rect = (0, 0, 0, 0)
         start_vertex = len(triangles)
         for a, b, c in face_tris:
             for i in (a, b, c):
                 x, y, z = normalized[i]
+                uv = uvs[i] if uvs[i] is not None else (0, 0)
                 triangles.append((float(x), float(y), float(z),
-                                  float(rgb[0]), float(rgb[1]), float(rgb[2])))
+                                  float(rgb[0]), float(rgb[1]), float(rgb[2]),
+                                  float(pal_index), float(uv[0]), float(uv[1]),
+                                  *map(float, rect)))
         polygon_ranges[polygon_offset] = (start_vertex, len(triangles) - start_vertex)
-    data = np.ascontiguousarray(np.asarray(triangles, dtype=np.float32).reshape(-1, 6))
+    data = np.ascontiguousarray(np.asarray(triangles, dtype=np.float32).reshape(-1, 13))
     return MeshData(
         data, good_polygons, len(triangles)//3, skipped,
         tuple(map(float, center)), scale, (perf_counter()-started)*1000,
