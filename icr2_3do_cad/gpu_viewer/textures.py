@@ -119,7 +119,8 @@ def _pack(images, max_side):
 
 
 def build_atlas(model, model_path, *, texture_folder=None,
-                fallback_mip=None, mip_overrides=None, max_side=4096):
+                fallback_mip=None, mip_overrides=None, body_mip=None,
+                max_side=4096):
     """Build the atlas for reachable POLY [T] records, with diagnostic counts.
 
     Referenced MATERIAL filenames take priority. The optional explicit
@@ -133,6 +134,8 @@ def build_atlas(model, model_path, *, texture_folder=None,
     errors = []
     textured_count = 0
     fallback = Path(fallback_mip) if fallback_mip else None
+    body_override = Path(body_mip) if body_mip else None
+    body_polygons = getattr(model, 'body_polygons', frozenset())
     overrides = {str(name).casefold(): Path(path)
                  for name, path in (mip_overrides or {}).items()}
     for off, polygon in model.polygons.items():
@@ -140,7 +143,15 @@ def build_atlas(model, model_path, *, texture_folder=None,
             continue
         textured_count += 1
         name = model.polygon_materials.get(off)
-        if name:
+        if body_override is not None and off in body_polygons:
+            # A manually selected car livery affects ONLY the base car
+            # POLY[T] faces. The wheel1/wheel2 DYNAMIC materials retain
+            # their separate MIPs, just as in the CPU editor.
+            path = body_override if body_override.is_file() else None
+            if path is None:
+                missing.add(body_override.name)
+                continue
+        elif name:
             # Explicit car livery assignment wins over MATERIAL filename,
             # but the source's original name remains the lookup key.
             path = overrides.get(name.casefold())
