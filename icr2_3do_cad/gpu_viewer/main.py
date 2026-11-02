@@ -316,6 +316,51 @@ class GLViewport(QOpenGLWidget):
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
 
+    def invalidate_visibility(self):
+        """Reevaluate only the BSP indices at the next draw, not the mesh."""
+        self._visibility_dirty = True
+        self.update()
+
+    def set_render_mode(self, mode):
+        if mode not in ('painter', 'depth', 'all'):
+            raise ValueError(f"Unknown render mode: {mode}")
+        self.render_mode = mode
+        if mode == 'all':
+            self.visibilityChanged.emit(
+                f"All polygons: {self._mesh.polygon_count:,} geometry faces "
+                "(BSP and LOD ignored; GPU depth test)"
+                if self._mesh is not None else "All polygons"
+            )
+            self.update()
+        else:
+            self.invalidate_visibility()
+
+    def _refresh_visibility(self):
+        """Active GL context required. Never reparses or retessellates."""
+        if self._model is None or self._mesh is None or self._vao is None:
+            return
+        eye = camera_in_model_units(
+            self._mesh.center, self._mesh.scale, self.target,
+            self.azimuth, self.elevation, self.distance)
+        indices, visible, info = ordered_bsp_indices(
+            self._model, self._mesh, eye, self.lod_distance)
+        glBindVertexArray(self._vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        self._index_count = len(indices)
+        self._visible_set = visible
+        self._visibility_info = info
+        self._visibility_dirty = False
+        self.visibilityChanged.emit(
+            f"BSP visible {info['mesh_polygons']:,}/{self._mesh.polygon_count:,} "
+            f"renderable polygons | {info['triangles']:,} triangles | "
+            f"{info['tested_planes']:,} plane tests | "
+            f"{info['culled_nodes']:,} pruned nodes | "
+            f"{info['lod_selections']:,} LOD selections"
+        )
+
     def paintGL(self):
         if self._program is None:
             return
@@ -324,7 +369,12 @@ class GLViewport(QOpenGLWidget):
         w=max(1,int(self.width()*self.devicePixelRatioF()))
         h=max(1,int(self.height()*self.devicePixelRatioF()))
         glViewport(0,0,w,h)
-        glEnable(GL_DEPTH_TEST)
+        if self.render_mode == 'painter':
+            # Preserve Papyrus traversal / LIST painter order. Depth testing
+            # would defeat authored overlaps and coincident BSP2 front/back.
+            glDisable(GL_DEPTH_TEST)
+        else:
+            glEnable(GL_DEPTH_TEST)
         glClearColor(0.065,0.09,0.135,1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self._vao is None:
@@ -340,8 +390,13 @@ class GLViewport(QOpenGLWidget):
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        if self.render_mode != 'all' and self._visibility_dirty:
+            self._refresh_visibility()
         glBindVertexArray(self._vao)
-        glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+        if self.render_mode == 'all':
+            glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+        elif self._index_count:
+            glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
         glUseProgram(0)
 
@@ -358,7 +413,7 @@ class GLViewport(QOpenGLWidget):
         self.target[:] = 0
         self.distance = 4.0
         self.half_height = 1.6
-        self.update()
+        self.invalidate_visibility()
 
     def set_view(self, name):
         if name == "3D":
@@ -369,14 +424,14 @@ class GLViewport(QOpenGLWidget):
             self.azimuth, self.elevation = 0.0, 0.0
         elif name == "Side":
             self.azimuth, self.elevation = math.pi / 2, 0.0
-        self.update()
+        self.invalidate_visibility()
 
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
         self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
         self.distance = min(1000.0, max(.001, self.distance * multiplier))
-        self.update()
+        self.invalidate_visibility()
         event.accept()
 
     def mousePressEvent(self, event):
@@ -405,7 +460,7 @@ class GLViewport(QOpenGLWidget):
             self.azimuth -= dx * .006
             self.elevation = max(-math.pi/2, min(math.pi/2,
                                                  self.elevation + dy*.006))
-        self.update()
+        self.invalidate_visibility()
         event.accept()
 
 
