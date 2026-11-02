@@ -490,7 +490,7 @@ class Compiler:
             return self._record(14,len(fields),*values)
         raise FormatError("Unsupported N3 construct: "+code[:125])
 
-    def compile(self):
+    def compile(self, *, associate_planes=True):
         if not self.decls:
             raise FormatError("No N3 declarations found")
         # 'root' is standard for hand-authored N3; offset-tagged CAD exports
@@ -521,7 +521,7 @@ class Compiler:
         except UnicodeError as err:
             raise FormatError("Papyrus 3DO resource names must be ASCII") from err
         raw=header+name_table+bytes(self.body)
-        checked=Model(self.path,raw_data=raw)
+        checked=Model(self.path,raw_data=raw,associate_planes=associate_planes)
         checked.n3_coordinate_scale=self.coordinate_scale
         checked.n3_data_lengths=self.data_lengths
         # Rewrite annotations for the new compiled offsets. A label can
@@ -532,10 +532,14 @@ class Compiler:
         return checked,remapped
 
 
-def compile_n3_text(source: str, path):
-    """Return (validated Model, name/comment Document) from only N3 .3D text."""
+def compile_n3_text(source: str, path, *, associate_planes=True):
+    """Return a validated Model and comment Document from N3 text.
+
+    associate_planes=False only skips editor-only anchor inference; the BSP
+    records are still parsed and retained unchanged for rendering/export.
+    """
     try:
-        return Compiler(source,path).compile()
+        return Compiler(source,path).compile(associate_planes=associate_planes)
     except (OverflowError,ValueError,struct.error) as exc:
         if isinstance(exc,FormatError):raise
         raise FormatError(f"Cannot compile N3 text: {exc}") from exc

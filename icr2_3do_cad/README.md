@@ -193,3 +193,12 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for technical constraints and [AGENTS.md](A
 Set `ICR2_CAD_PROFILE=1` to record load, compile, viewport and live-source
 performance in a JSON report. See [PERFORMANCE.md](PERFORMANCE.md) for a
 repeatable RENO.3D benchmark and interpretation notes.
+
+## Experimental OpenGL GPU viewer
+
+A separate read-only Qt/ModernGL viewer for large tracks is available in
+[gpu_viewer/](gpu_viewer/README.md). It reuses the `.3D`/`.3DO` compiler but
+batches local flat-color geometry into one GPU buffer, with fast orbit/pan/zoom,
+Top/Front/Side views and a continuous FPS benchmark. It does not yet support
+editing, MIP textures, external DYNAMIC geometry, or exact Papyrus BSP ordering.
+It leaves the existing Tkinter editor unchanged.

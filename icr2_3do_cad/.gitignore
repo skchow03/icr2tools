@@ -5,3 +5,7 @@ screenshots/
 
 # Local profiling measurements (may describe machine-specific timings)
 cad_performance*.json
+
+# Local GPU viewer benchmarks and optional rendered screenshots
+gpu_*.json
+gpu_viewer_smoke.png

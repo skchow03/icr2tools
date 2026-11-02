@@ -302,7 +302,7 @@ def equation_from_triplet(points, old_eq, *, preserve_facing=False):
 
 
 class Model:
-    def __init__(self, path: str | Path, *, raw_data: bytes | None = None, topology_history=()):
+    def __init__(self, path: str | Path, *, raw_data: bytes | None = None, topology_history=(), associate_planes=True):
         self.path = Path(path)
         self.raw = self.path.read_bytes() if raw_data is None else bytes(raw_data)
         self.topology_history = tuple(topology_history)
@@ -344,8 +344,12 @@ class Model:
         # Negative pointers are external 3DO references, indexed from -1.
         with MODEL_PROFILE.measure("model.parse_records"):
             self._parse()
-        with MODEL_PROFILE.measure("model.associate_planes"):
-            self._associate_planes()
+        # Plane/polygon anchor inference is expensive for full tracks and
+        # needed for conservative editing, not for a read-only GPU preview.
+        # Existing editor and compiler callers retain the default True.
+        if associate_planes:
+            with MODEL_PROFILE.measure("model.associate_planes"):
+                self._associate_planes()
 
     def _parse(self):
         pending = [self.root_offset]
