@@ -57,7 +57,8 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
-from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
+from gpu_viewer.visibility import camera_in_model_units
+from gpu_viewer.scene import build_scene, ordered_scene_indices
 from gpu_viewer.textures import build_atlas, load_palette
 
 
@@ -164,16 +165,17 @@ def perspective_projection(aspect, near, far):
 
 
 class LoadWorker(QThread):
-    ready = Signal(object, object, object, object, object)
+    ready = Signal(object, object, object, object, object, object)
     failed = Signal(str)
 
     def __init__(self, path, palette_path, texture_folder=None,
-                 fallback_mip=None, *, existing_model=None):
+                 fallback_mip=None, *, objects_folder=None, existing_model=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
         self.texture_folder = texture_folder
         self.fallback_mip = fallback_mip
+        self.objects_folder = objects_folder
         self.existing_model = existing_model
 
     def run(self):
@@ -193,11 +195,15 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
+            # Resolve and transform each nested instance once. BSP and
+            # RES selection remain per-source-model and per-placement.
+            scene = build_scene(model, objects_folder=self.objects_folder)
             palette = load_palette(self.palette_path)
-            atlas = build_atlas(model, self.path,
+            atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip)
-            mesh = make_mesh(model, palette.astype(np.float32) / 255.0, atlas)
+            mesh = make_mesh(scene.geometry,
+                             palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
                 "parse_ms": parse_ms,
@@ -213,10 +219,14 @@ class LoadWorker(QThread):
                 "textured_faces": len(atlas.polygon_rects),
                 "textured_candidates": atlas.textured_polygons,
                 "atlas_shape": atlas.pixels.shape,
+                "dynamic_instances": scene.loaded_instances,
+                "external_warnings": scene.warnings,
+                "switches": sum(len(inst.model.switches)
+                                for inst in scene.instances),
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
-            self.ready.emit(mesh, stats, model, atlas, palette)
+            self.ready.emit(mesh, stats, model, atlas, palette, scene)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
@@ -248,8 +258,9 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._model = None
+        self._scene = None
         self.render_mode = 'painter'  # painter | depth | all
-        self.lod_distance = 0  # Papyrus raw units; None inspects all LODs
+        self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self._visibility_dirty = True
         self._index_count = 0
         self._visible_set = frozenset()
@@ -331,10 +342,11 @@ class GLViewport(QOpenGLWidget):
         finally:
             self.doneCurrent()
 
-    def set_mesh(self, mesh: MeshData, model, atlas, palette,
+    def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
                  *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self._scene = scene
         self._atlas = atlas
         self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
@@ -473,8 +485,16 @@ class GLViewport(QOpenGLWidget):
         eye = camera_in_model_units(
             self._mesh.center, self._mesh.scale, self.target,
             self.azimuth, self.elevation, self.distance)
-        indices, visible, info = ordered_bsp_indices(
-            self._model, self._mesh, eye, self.lod_distance)
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation),
+            )
+        indices, visible, info = ordered_scene_indices(
+            self._scene, self._mesh, eye, self.lod_distance,
+            view_direction=direction)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
@@ -489,7 +509,8 @@ class GLViewport(QOpenGLWidget):
             f"renderable polygons | {info['triangles']:,} triangles | "
             f"{info['tested_planes']:,} plane tests | "
             f"{info['culled_nodes']:,} pruned nodes | "
-            f"{info['lod_selections']:,} LOD selections"
+            f"{info['lod_selections']:,} LOD selections | "
+            f"{info['instances_visited']:,} instances"
         )
 
     def paintGL(self):
