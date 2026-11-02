@@ -40,7 +40,19 @@ once with a building or fixtures/roadcar.3do.
   uses the real finite camera; orthographic BSP uses the *parallel viewing
   direction*, so zooming does not spuriously flip front/back visibility.
   For near-edge-on planes the finite-eye sign is used as an approximation.
-- Frame All (F): recenter and fit the model
+- **Origin (0,0,0)**: toggles a fixed-eye **perspective** camera at
+  the actual Papyrus model coordinate origin, useful for evaluating a
+  skybox or horizon from inside. This is **not** the normalized mesh
+  bounding-box center: the viewport compensates for center/scale so both
+  rendering and BSP/RES tests use raw XYZ (0,0,0). The initial direction
+  looks horizontally along +Y; drag to look around, or use 3D/Top/Front/
+  Side for viewing directions without moving the eye. Mouse wheel adjusts
+  perspective FOV (20–110 degrees) instead of dollying; shift/middle
+  panning is disabled in this mode so the eye stays fixed. The Perspective
+  checkbox is enabled and locked while inside. Toggle Origin again to
+  restore the prior external camera, or use Frame All to exit and refit.
+  No geometry, source code or textures are modified.
+- Frame All (F): recenter and fit the model; exits Origin mode
 - Open: load a different .3D or .3do without restarting. If source edits
   are unsaved, the viewer requests confirmation before discarding them.
 - **.3D Source**: open the side-by-side N3 source tab. For a loaded .3D
