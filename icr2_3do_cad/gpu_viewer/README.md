@@ -38,6 +38,20 @@ once with a building or fixtures/roadcar.3do.
 - Perspective: toggle orthographic/perspective projection
 - Frame All (F): recenter and fit the model
 - Open: load a different .3D or .3do without restarting
+- **Render**: **Papyrus BSP painter** (default) walks original FACE/FACE2/
+  BSPF/BSPA/BSP2/BSPN nodes from the actual camera position and paints
+  selected polygon triangles in the model's back-to-front order, with GPU
+  depth testing disabled. **BSP selection + GPU depth** uses the same selected
+  triangles with depth testing. **All polygons + GPU depth** ignores BSP/LOD
+  and is the legacy full-geometry diagnostic mode.
+- **LOD distance (game units)**: chooses RES/SWITCH DISTANCE branches. Defaults
+  to 0 (near); this is a **manual** model-unit value, not a simulation of
+  ICR2's dynamically evaluated per-object LOD distances. Check **All LOD
+  branches** to inspect every branch even though the game would not do so.
+- **Polygon @**: type the polygon's **3DO body offset** in decimal or 0x
+  hexadecimal (as displayed by the CAD structure inspector) to see whether
+  it is selected by BSP and the chosen LOD. Selected does not necessarily
+  mean pixel-visible: other drawn polygons can still cover it.
 
 Loading and mesh creation run on a worker thread; the OpenGL context and
 buffer upload stay on Qt's GUI thread.
@@ -50,9 +64,20 @@ triangles, convex quads, and concave polygons through ear clipping;
 degenerate faces are skipped and fallback fans are explicitly counted.
 Large track coordinates are recentered/scaled for GPU float precision.
 
-main.py uploads that buffer **once when the file opens**. Orbital camera
-movement only changes a 4x4 matrix; it never reparses N3, rebuilds BSP,
-or transfers polygon geometry to the GPU.
+main.py uploads the XYZ/RGB vertex buffer **once when the file opens**.
+The parsed Model tree remains in memory for read-only plane traversal.
+Orbit/pan/zoom updates the view matrix **and**, in BSP modes, re-evaluates
+the original BSP node side tests using the real camera location in unscaled
+Papyrus coordinates. A single `uint32` **element/index buffer** is reordered
+and uploaded only when view or LOD changes; it never retransfers polygon
+XYZ/RGB, reparses N3 or retessellates geometry. The continuous-redraw
+benchmark reuses the cached index buffer while the camera is stationary.
+
+The BSP painter path deliberately disables the normal OpenGL depth test:
+depth testing can reverse LIST sibling paint order and coincident face
+overlays. In GPU-depth modes the depth buffer is used as a diagnostic
+comparison. Vertex winding is not used for automatic GL backface culling:
+FACE/BSP plane rules control branch eligibility.
 
 It reports:
 - N3/3DO parse milliseconds: includes binary parsing but excludes
@@ -70,9 +95,14 @@ resolution, visibility and benchmark procedure are used on the same machine.
 This **does not yet** include editing, picking, source tabs, MIP texture
 sampling, PMP sprites or externally referenced DYNAMIC model geometry.
 It displays **local polygon geometry in flat indexed colors**, with ordinary
-GPU depth testing. Papyrus BSP/painter order, LOD switching and track-only
-LINE commands are **not faithfully reproduced**. Overlapping scenery may
-therefore look different from the game or Tk preview.
+GPU depth testing. Track-only LINE commands are **not rendered**, and exact Papyrus game
+rasterization, frustum/near-plane clipping, per-object LOD evaluation,
+texture transparency, material sampling and display budgets have not been
+reconstructed. BSP side tests and painter ordering reuse the editor's
+existing reverse-engineered interpretation (not a verified reproduction
+of the original game executable). Overlapping scenery can still look
+different from ICR2, particularly with transparency or external objects.
+Never infer that a BSP-selected polygon is completely visible on screen.
 
 The read-only GPU path suppresses only *plane-anchor inference*, an editor
 safety feature. It never modifies source coordinates, .3D comments or .3DO
