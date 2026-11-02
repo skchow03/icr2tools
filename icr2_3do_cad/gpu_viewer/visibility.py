@@ -30,7 +30,8 @@ def camera_in_model_units(center, scale, target, azimuth, elevation, distance):
 
 
 
-HORIZON_PREVIEW_EYE = (0.0, 0.0, 10000.0)
+# Default editable raw Papyrus XYZ eye for the Fixed Camera preview.
+FIXED_CAMERA_DEFAULT_EYE = (0.0, 0.0, 5000.0)
 
 
 def fixed_eye_view_target(center, scale, eye_xyz, azimuth, elevation, distance):
