@@ -90,7 +90,7 @@ def run(path):
     started = perf_counter()
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
-    origin = {"tested": False}
+    fixed = {"tested": False}
     live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
             "valid_sent":False, "valid_seen":False,
             "vbo":None, "azimuth":None, "source":None}
@@ -145,43 +145,51 @@ def run(path):
                   not window._source_invalid and not pane.pending and
                   window.worker is not None and not window.worker.isRunning()):
                 live["valid_seen"] = True
-        if dynamic_test and live["valid_seen"] and not origin["tested"]:
-            # Exercise the real Horizon Preview button, ensuring that the
-            # raw driver eye at (0,0,10000) maps to GL camera origin even
-            # when geometry is normalized around an unrelated center.
+        if dynamic_test and live["valid_seen"] and not fixed["tested"]:
+            # Exercise the actual user controls, not just the helper math.
+            # Both BSP/RES and OpenGL must use editable raw Papyrus XYZ.
             prior = (view.target.copy(), view.distance, view.half_height,
                      view.azimuth, view.elevation, view.perspective, view._vbo)
-            window.origin_button.setChecked(True)
-            if not (window.origin_button.text() == 'Horizon Preview' and
-                    view.origin_mode and view.perspective and
+            window.fixed_camera_button.setChecked(True)
+            if not (window.fixed_camera_button.text() == 'Fixed Camera' and
+                    view.fixed_camera_mode and view.perspective and
+                    window.fixed_camera_controls.isVisible() and
+                    [spin.value() for spin in window.fixed_camera_coords] ==
+                    [0, 0, 5000] and
                     window.perspective_toggle.isChecked() and
                     not window.perspective_toggle.isEnabled()):
-                result["error"] = "Horizon Preview did not enter fixed perspective eye mode"
+                result["error"] = "Fixed Camera did not enter default (0,0,5000) mode"
             else:
                 view.azimuth += .7
                 view.elevation = .3
-                view.invalidate_visibility()
-                raw_eye = view._camera_eye_model()
-                view_matrix, _, _ = view._camera_view_matrix()
-                raw_eye_in_gpu = (
-                    np.asarray((0.0, 0.0, 10000.0))
-                    - np.asarray(view._mesh.center)
-                ) / view._mesh.scale
-                in_eye_space = view_matrix @ np.append(raw_eye_in_gpu, 1.0)
-                if (not np.allclose(raw_eye, (0,0,10000), atol=1e-7, rtol=0) or
-                    not np.allclose(in_eye_space[:3], (0,0,0), atol=1e-9) or
-                    view._vbo != prior[6]):
-                    result["error"] = "Horizon Preview GL/BSP eye is not raw XYZ 0,0,10000"
-            # Exiting via the toggle must restore exactly the previous
-            # orbit target, distance, orientation and perspective mode.
-            window.origin_button.setChecked(False)
-            if (view.origin_mode or
+                for expected in ((0, 0, 5000), (12500, -8000, 1500),
+                                 (0, 0, 10000)):
+                    for spin, value in zip(window.fixed_camera_coords, expected):
+                        spin.setValue(value)
+                    raw_eye = view._camera_eye_model()
+                    view_matrix, _, _ = view._camera_view_matrix()
+                    eye_gpu = (np.asarray(expected, dtype=np.float64)
+                               - np.asarray(view._mesh.center)) / view._mesh.scale
+                    in_eye_space = view_matrix @ np.append(eye_gpu, 1.0)
+                    if (not np.allclose(raw_eye, expected, atol=1e-7, rtol=0)
+                        or not np.allclose(in_eye_space[:3], (0,0,0), atol=1e-9)
+                        or view._vbo != prior[6]
+                        or not view._visibility_dirty):
+                        result["error"] = "Editing XYZ did not update GL/BSP fixed eye"
+                        break
+            # Toggling off must preserve user-selected coordinates and
+            # restore the exact original external orbit camera.
+            window.fixed_camera_button.setChecked(False)
+            if (view.fixed_camera_mode or
+                window.fixed_camera_controls.isVisible() or
                 not np.array_equal(view.target, prior[0]) or
                 (view.distance, view.half_height, view.azimuth,
                  view.elevation, view.perspective) != prior[1:6] or
-                not window.perspective_toggle.isEnabled()):
-                result["error"] = "Horizon Preview toggle failed to restore exterior view"
-            origin["tested"] = True
+                not window.perspective_toggle.isEnabled() or
+                [spin.value() for spin in window.fixed_camera_coords] !=
+                [0, 0, 10000]):
+                result["error"] = "Fixed Camera exit failed to restore exterior view"
+            fixed["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
                 window.close()
@@ -191,7 +199,7 @@ def run(path):
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
                  (reload_state["completed"] and not window.worker.isRunning()
-                  and live["valid_seen"] and origin["tested"]))):
+                  and live["valid_seen"] and fixed["tested"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -252,7 +260,7 @@ def run(path):
                     f"external instances {view._scene.loaded_instances}; "
                     f"MIP hot reload {reload_state['completed']}; "
                     f"N3 invalid/valid preview {live['invalid_seen']}/{live['valid_seen']}; "
-                    f"horizon preview {origin['tested']}; "
+                    f"fixed camera XYZ {fixed['tested']}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
