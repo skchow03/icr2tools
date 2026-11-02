@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
+from gpu_viewer.car import recolor_table, recolor_index
 from three_do import Model
 
 
@@ -24,6 +25,8 @@ class Instance:
     depth: int
     ancestry: frozenset
     texture_override: str | None = None
+    texture_source: Path | None = None
+    recolor_layers: tuple[dict[int, int], ...] = ()
 
 
 @dataclass
@@ -34,22 +37,28 @@ class GPUScene:
     polygon_lookup: dict[tuple[int, int], int]
     geometry: SimpleNamespace
     warnings: tuple[str, ...]
+    recolor_pairs: int = 0
 
     @property
     def loaded_instances(self):
         return len(self.instances) - 1
 
 
-def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
+def build_scene(root, *, objects_folder=None, object_overrides=None,
+                max_depth=4, max_instances=2000):
     """Resolve instances including inactive LOD/BSP branches (no GL calls).
 
     Reusing a child 3DO file is cheap: the parsed Model is cached, while each
     DYNAMIC placement receives a distinct transformed instance of its faces.
     """
     resolver = ExternalResolver(objects_folder)
+    overrides = {str(name).casefold(): Path(path)
+                 for name, path in (object_overrides or {}).items()}
     cache = {}
     root_key = Path(root.path).resolve()
-    instances = [Instance(root, Transform(), 0, frozenset((root_key,)))]
+    root_recolor = recolor_table(root)
+    instances = [Instance(root, Transform(), 0, frozenset((root_key,)),
+                          recolor_layers=((root_recolor,) if root_recolor else ()))]
     links = {}
     warnings = []
     for parent_id, instance in enumerate(instances):
@@ -64,6 +73,7 @@ def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
                 name = placement.name
                 transform = instance.transform.compose(placement_transform(placement))
                 texture_override = instance.texture_override
+                texture_source = instance.texture_source
             else:
                 if not 1 <= -ref <= len(instance.model.external_names):
                     warnings.append(f'Invalid external pointer {ref} in {instance.model.path.name}')
@@ -71,13 +81,20 @@ def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
                 name = instance.model.external_names[-ref - 1]
                 transform = instance.transform
                 texture_override = event[2] or instance.texture_override
+                texture_source = (instance.model.path if event[2]
+                                  else instance.texture_source)
 
             if (parent_id, kind, ref) in links:
                 # Original traversal deduplicates each record. Negative child
                 # pointers can be reused by distinct MATERIAL wrappers; the
                 # source traversal currently cannot distinguish those sites.
                 continue
-            location = resolver.find(name, instance.model.path)
+            location = overrides.get(name.casefold())
+            if location is not None and not location.is_file():
+                warnings.append(f'{name}: override file missing: {location.name}')
+                continue
+            if location is None:
+                location = resolver.find(name, instance.model.path)
             if location is None:
                 warnings.append(f'{instance.model.path.name}: missing {name}.3do')
                 continue
@@ -100,9 +117,13 @@ def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
                 continue
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
+            local_recolor = recolor_table(child)
+            layers = instance.recolor_layers + (
+                (local_recolor,) if local_recolor else ())
             instances.append(Instance(
                 child, transform, instance.depth+1,
-                instance.ancestry | frozenset((key,)), texture_override))
+                instance.ancestry | frozenset((key,)), texture_override,
+                texture_source, layers))
 
     vertices = {}
     polygons = {}
@@ -123,11 +144,15 @@ def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
             if len(refs) != len(polygon.unique_refs):
                 continue
             polygons[next_polygon] = SimpleNamespace(
-                unique_refs=refs, kind=polygon.kind, color=polygon.color)
-            name = instance.model.polygon_materials.get(old) or instance.texture_override
+                unique_refs=refs, kind=polygon.kind,
+                color=recolor_index(polygon.color, instance.recolor_layers))
+            local_material = instance.model.polygon_materials.get(old)
+            name = local_material or instance.texture_override
             if name:
                 polygon_materials[next_polygon] = name
-                polygon_sources[next_polygon] = instance.model.path
+                polygon_sources[next_polygon] = (
+                    instance.model.path if local_material
+                    else (instance.texture_source or instance.model.path))
             polygon_lookup[instance_id, old] = next_polygon
             next_polygon += 1
     geometry = SimpleNamespace(
@@ -135,7 +160,8 @@ def build_scene(root, *, objects_folder=None, max_depth=4, max_instances=2000):
         polygon_materials=polygon_materials,
         polygon_sources=polygon_sources)
     return GPUScene(root, instances, links, polygon_lookup,
-                    geometry, tuple(dict.fromkeys(warnings)))
+                    geometry, tuple(dict.fromkeys(warnings)),
+                    len(root_recolor))
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
