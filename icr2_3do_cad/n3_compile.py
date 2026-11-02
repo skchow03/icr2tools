@@ -98,6 +98,63 @@ def _split(value: str) -> list[str]:
     return res
 
 
+# N3 permits prefix-style nested operators without an extra pair of braces.
+# E.g. BSPA (plane), BSPA (plane), a, b, c, d, e is one BSPA node,
+# whose first child is another BSPA node, not five sibling list objects.
+_N3_PLANE_CHILDREN={"FACE":1,"FACE2":2,"BSPF":3,"BSPA":3,"BSP2":4,"BSPN":2}
+_N3_PLANE_HEAD=re.compile(r"^(FACE2?|BSPF|BSPA|BSP2|BSPN)\s+(.+)$",re.I|re.S)
+_N3_MATERIAL_ATTR=re.compile(r"^(?:GROUP|MIP)\s*=",re.I)
+
+
+def _consume_prefix_node(fields,at):
+    """Read exactly one logical N3 node from comma-separated prefix tokens."""
+    if at>=len(fields):
+        raise FormatError("Incomplete nested N3 expression: missing object pointer")
+    first=fields[at].strip()
+    if not first:
+        raise FormatError("Empty object in N3 hierarchy")
+    pos=at+1
+    head=_N3_PLANE_HEAD.match(first)
+    if head:
+        parts=[first]
+        for _ in range(_N3_PLANE_CHILDREN[head.group(1).upper()]):
+            child,pos=_consume_prefix_node(fields,pos)
+            parts.append(child)
+        return ", ".join(parts),pos
+    if re.match(r"^MATERIAL\b",first,re.I):
+        parts=[first]
+        while pos<len(fields) and _N3_MATERIAL_ATTR.match(fields[pos].strip()):
+            parts.append(fields[pos].strip())
+            pos+=1
+        child,pos=_consume_prefix_node(fields,pos)
+        parts.append(child)
+        return ", ".join(parts),pos
+    if re.match(r"^SUPEROBJ\b",first,re.I):
+        child,pos=_consume_prefix_node(fields,pos)
+        return first+", "+child,pos
+    if re.match(r"^(?:SRB|PMP2)\b",first,re.I):
+        if pos+2>len(fields):
+            raise FormatError("Incomplete SRB/PMP2 placement")
+        return ", ".join(fields[at:pos+2]),pos+2
+    if re.match(r"^DYNAMIC\b",first,re.I):
+        # A DYNAMIC command has 8 scalar/comma-separated arguments in track N3.
+        # Within a LIST it is a prefix operand, not eight sibling objects.
+        if pos+7>len(fields):
+            raise FormatError("Incomplete DYNAMIC placement")
+        return ", ".join(fields[at:pos+7]),pos+7
+    return first,pos
+
+
+def _group_prefix_nodes(fields):
+    """Recombine LIST children and FACE/BSP operands in prefix grammar order."""
+    grouped=[]
+    at=0
+    while at<len(fields):
+        node,at=_consume_prefix_node(fields,at)
+        grouped.append(node)
+    return grouped
+
+
 def _brace(value, opener="{", closer="}"):
     value=value.strip()
     if not value.startswith(opener) or not value.endswith(closer):
@@ -309,17 +366,21 @@ class Compiler:
             return self._record(1,color,len(refs)-1,*refs)
         list_match=re.match(r"^LIST\s*(\{.*\})$",code,re.I|re.S)
         if list_match:
-            refs=[self._node(x) for x in _brace(list_match.group(1)) if x]
+            refs=[self._node(x) for x in _group_prefix_nodes(_brace(list_match.group(1)))]
             return self._record(11,len(refs),*refs)
         face=re.match(r"^(FACE2?|BSPF|BSPA|BSP2|BSPN)\s+(.+)$",code,re.I|re.S)
         if face:
             kind={"FACE":5,"FACE2":6,"BSPF":7,"BSPA":8,"BSP2":9,"BSPN":10}[face.group(1).upper()]
             fields=_split(face.group(2))
             count={5:1,6:2,7:3,8:3,9:4,10:2}[kind]
-            if len(fields)!=count+1:
+            if len(fields)<count+1:
                 raise FormatError(f"{face.group(1)} requires a plane and {count} object pointers")
             a,b,c,d=self._plane(fields[0])
-            refs=[self._node(x) for x in fields[1:]]
+            children=_group_prefix_nodes(fields[1:])
+            if len(children)!=count:
+                raise FormatError(f"{face.group(1)} requires {count} object pointers; "
+                                  f"found {len(children)}")
+            refs=[self._node(x) for x in children]
             # The text N3 operand orders differ from the binary ICR2 slots.
             if kind in (7,8):refs=[refs[0],refs[2],refs[1]]
             elif kind==9:refs=[refs[0],refs[3],refs[2],refs[1]]
@@ -336,10 +397,12 @@ class Compiler:
                 else:
                     if child is not None:raise FormatError("MATERIAL has more than one child")
                     child=f
-            if mip is None or child is None:
-                raise FormatError("MATERIAL requires MIP name and a child")
-            mid=self._file(mip,self.mips)
-            return self._record(4,mid,0,self._node(child))
+            if child is None:
+                raise FormatError("MATERIAL requires a child object")
+            # Track N3 legitimately uses MATERIAL GROUP=30, LIST {...}
+            # without a MIP. In the 3DO flavor, -1 denotes no texture.
+            mid=self._file(mip,self.mips) if mip is not None else -1
+            return self._record(4,mid,group if mip is None else 0,self._node(child))
         sprite=re.match(r"^(SRB|PMP2)\s+(.+)$",code,re.I|re.S)
         if sprite:
             fields=_split(sprite.group(2))

@@ -142,6 +142,8 @@ def _command(model: Model, off: int) -> str:
         return f"SUPEROBJ {_ref(prior,model)}, " + "{"+_join_refs(refs,model)+"}"
     if kind == 4:
         number = i32(b,off+4)
+        if number==-1:
+            return f"MATERIAL GROUP={i32(b,off+8)}, {_ref(i32(b,off+12),model)}"
         if not 0<=number<len(model.mip_names):
             raise FormatError(f"MATERIAL @{off}: missing MIP name")
         group = 3

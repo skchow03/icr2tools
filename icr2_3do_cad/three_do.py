@@ -419,8 +419,10 @@ class Model:
                 mip_number=i32(self.body,off+4)
                 if 0<=mip_number<len(self.mip_names):
                     self.materials[off]=(self.mip_names[mip_number],i32(self.body,off+12))
-                else:
+                elif mip_number!=-1:
                     self.warnings.append(f'MATERIAL @{off} invalid MIP index {mip_number}')
+                # MIP index -1 is a valid GROUP-only material wrapper in
+                # track .3D files; its child geometry has no MIP texture.
                 child=[i32(self.body,off+12)]
             elif kind in (3,18):
                 vertex_ref=i32(self.body,off+4)

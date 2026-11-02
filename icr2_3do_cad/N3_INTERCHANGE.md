@@ -25,6 +25,34 @@ Coordinate values are rounded to the nearest signed 32-bit Papyrus integer
 source, it may normalize the text into raw Papyrus integer units; keep the
 original file if you want to preserve its fractional authoring notation.
 
+## Nested track BSPA prefix syntax
+
+Tracks produced by Trk23D use prefix-operator syntax without braces around
+each node. For example:
+
+```text
+section: FACE (a,b,c),
+    LIST {
+        BSPA (a,b,c),
+            BSPA (d,e,f), left_objects, left_wall, nil,
+            right_wall,
+            right_objects,
+        surface
+    };
+```
+
+The importer groups the three child pointers for each BSPA recursively,
+rather than treating every top-level comma as a new LIST sibling.
+FACE/FACE2/BSPF/BSPA/BSP2/BSPN, MATERIAL and nested LISTs follow the
+same rule. This prevents the false "BSPA requires a plane and 3 object
+pointers" error on RENO sections.
+
+Track `MATERIAL GROUP=N, LIST {...}` expressions can omit MIP
+altogether. The editor represents these as a no-texture MATERIAL wrapper
+with MIP index -1 and retains the group number. This is intended for
+loading and inspection; verify binary output against the original track
+compiler before using a recompiled .3DO in ICR2.
+
 ## FACE/BSP plane syntax
 
 Papyrus N3 text defines a FACE/BSP plane using **three ordered points**,
