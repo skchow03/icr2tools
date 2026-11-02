@@ -227,4 +227,4 @@ class SourcePane(QWidget):
 
     def _cursor_changed(self):
         cursor = self.editor.textCursor()
-        self.position.set(f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
+        self.position.setText(f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
