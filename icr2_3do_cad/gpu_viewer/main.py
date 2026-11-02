@@ -60,7 +60,7 @@ except ImportError as exc:
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
 from gpu_viewer.visibility import (
-    HORIZON_PREVIEW_EYE, camera_in_model_units, fixed_eye_view_target,
+    FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
@@ -344,7 +344,7 @@ class TextureReloadWorker(QThread):
 class GLViewport(QOpenGLWidget):
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
-    originModeChanged = Signal(bool)
+    fixedCameraModeChanged = Signal(bool)
 
     def __init__(self):
         super().__init__()
@@ -383,8 +383,9 @@ class GLViewport(QOpenGLWidget):
         self.distance = 4.0
         self.half_height = 1.6
         self.perspective = False
-        self.origin_mode = False
-        self.origin_fov = 60.0
+        self.fixed_camera_mode = False
+        self.fixed_camera_eye = tuple(FIXED_CAMERA_DEFAULT_EYE)
+        self.fixed_camera_fov = 60.0
         self._saved_external_view = None
         self._drag = None
         self._frametimes = deque(maxlen=240)
@@ -468,7 +469,7 @@ class GLViewport(QOpenGLWidget):
         self._visibility_info = {}
         self._frametimes.clear()
         self._frame_count = 0
-        if not preserve_view and not self.origin_mode:
+        if not preserve_view and not self.fixed_camera_mode:
             self.frame_all()
         # If origin view is enabled while opening another model, keep the
         # eye pinned to that model's (0,0,0), not its bounding-box center.
@@ -607,18 +608,18 @@ class GLViewport(QOpenGLWidget):
 
     def _camera_eye_model(self):
         """Unscaled Papyrus eye used for BSP and automatic RES switches."""
-        if self.origin_mode:
-            return HORIZON_PREVIEW_EYE
+        if self.fixed_camera_mode:
+            return self.fixed_camera_eye
         return camera_in_model_units(
             self._mesh.center, self._mesh.scale, self.target,
             self.azimuth, self.elevation, self.distance)
 
     def _camera_view_matrix(self):
-        """Horizon Preview changes look direction without moving its eye."""
+        """Fixed Camera changes look direction without moving its eye."""
         target = self.target
-        if self.origin_mode and self._mesh is not None:
+        if self.fixed_camera_mode and self._mesh is not None:
             target = fixed_eye_view_target(
-                self._mesh.center, self._mesh.scale, HORIZON_PREVIEW_EYE,
+                self._mesh.center, self._mesh.scale, self.fixed_camera_eye,
                 self.azimuth, self.elevation, self.distance)
         return camera_view(
             self.azimuth, self.elevation, self.distance, target)
@@ -681,7 +682,7 @@ class GLViewport(QOpenGLWidget):
         if self.perspective:
             projection=perspective_projection(
                 aspect, near, far,
-                self.origin_fov if self.origin_mode else 60.0)
+                self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
@@ -712,33 +713,44 @@ class GLViewport(QOpenGLWidget):
             if duration > 0.25:
                 self.fps = (len(self._frametimes) - 1) / duration
 
-    def set_origin_mode(self, enabled):
-        """Lock the real camera to raw XYZ 0,0,10000 for horizon inspection."""
+    def set_fixed_camera_eye(self, x, y, z):
+        """Update the raw Papyrus XYZ eye without changing orbit, mesh or FOV."""
+        eye = tuple(float(v) for v in (x, y, z))
+        if not all(math.isfinite(v) for v in eye):
+            raise ValueError("Fixed Camera XYZ must be finite")
+        if eye == self.fixed_camera_eye:
+            return
+        self.fixed_camera_eye = eye
+        if self.fixed_camera_mode:
+            self.invalidate_visibility()
+
+    def set_fixed_camera_mode(self, enabled):
+        """Toggle a stationary perspective eye at user-specified raw XYZ."""
         enabled = bool(enabled)
-        if self.origin_mode == enabled:
+        if self.fixed_camera_mode == enabled:
             return
         if enabled:
             self._saved_external_view = (
                 self.target.copy(), self.distance, self.half_height,
                 self.perspective, self.azimuth, self.elevation)
-            self.origin_mode = True
+            self.fixed_camera_mode = True
             self.perspective = True
-            self.azimuth = 0.0       # Looking toward +Y from the driver eye
-            self.elevation = 0.0     # Level horizon rather than a top view
-            self.origin_fov = 60.0
+            self.azimuth = 0.0       # Looking toward +Y from the fixed eye
+            self.elevation = 0.0     # Level view for interior inspection
+            self.fixed_camera_fov = 60.0
         else:
-            self.origin_mode = False
+            self.fixed_camera_mode = False
             if self._saved_external_view is not None:
                 (target, self.distance, self.half_height, self.perspective,
                  self.azimuth, self.elevation) = self._saved_external_view
                 self.target = target.copy()
             self._saved_external_view = None
-        self.originModeChanged.emit(self.origin_mode)
+        self.fixedCameraModeChanged.emit(self.fixed_camera_mode)
         self.invalidate_visibility()
 
     def frame_all(self):
-        if self.origin_mode:
-            self.set_origin_mode(False)
+        if self.fixed_camera_mode:
+            self.set_fixed_camera_mode(False)
         self.target[:] = 0
         self.distance = 4.0
         self.half_height = 1.6
@@ -758,10 +770,10 @@ class GLViewport(QOpenGLWidget):
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
-        if self.origin_mode:
+        if self.fixed_camera_mode:
             # Do not dolly away from (0,0,0). Wheel adjusts field of view,
             # letting skybox authors examine details while stationary.
-            self.origin_fov = min(110.0, max(20.0, self.origin_fov * multiplier))
+            self.fixed_camera_fov = min(110.0, max(20.0, self.fixed_camera_fov * multiplier))
             self.update()
         else:
             self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
@@ -787,11 +799,11 @@ class GLViewport(QOpenGLWidget):
         if button == Qt.MouseButton.MiddleButton or (
             event.modifiers() & Qt.KeyboardModifier.ShiftModifier
         ):
-            if not self.origin_mode:
+            if not self.fixed_camera_mode:
                 _, right, up = self._camera_view_matrix()
                 world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
                 self.target += (-dx * right + dy * up) * world_per_pixel
-            # Horizon Preview disables pan: eye stays at raw 0,0,10000.
+            # Fixed Camera disables pan: eye stays at selected raw XYZ.
         else:
             self.azimuth -= dx * .006
             self.elevation = max(-math.pi/2, min(math.pi/2,
@@ -851,15 +863,15 @@ class Window(QMainWindow):
             button.clicked.connect(
                 lambda checked=False, mode=name: self.viewer.set_view(mode))
             toolbar.addWidget(button)
-        self.origin_button = QPushButton("Horizon Preview")
-        self.origin_button.setCheckable(True)
-        self.origin_button.setToolTip(
-            "Preview a horizon/skybox from raw Papyrus XYZ (0,0,10000), "
-            "the configured driver-eye viewpoint. Drag to look around; "
-            "mouse wheel changes FOV, not position. Frame All or untoggle "
+        self.fixed_camera_button = QPushButton("Fixed Camera")
+        self.fixed_camera_button.setCheckable(True)
+        self.fixed_camera_button.setToolTip(
+            "Lock the camera at user-selected raw Papyrus XYZ. "
+            "Default: (0, 0, 5000). Drag to look around; the wheel changes "
+            "FOV without moving the camera. Frame All or untoggle "
             "to return to the exterior orbit.")
-        self.origin_button.toggled.connect(self.viewer.set_origin_mode)
-        toolbar.addWidget(self.origin_button)
+        self.fixed_camera_button.toggled.connect(self.viewer.set_fixed_camera_mode)
+        toolbar.addWidget(self.fixed_camera_button)
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
         toolbar.addWidget(self.perspective_toggle)
@@ -872,6 +884,29 @@ class Window(QMainWindow):
         toolbar.addWidget(self.benchmark_toggle)
         toolbar.addStretch()
         layout.addLayout(toolbar)
+        # Expose raw Papyrus coordinates while Fixed Camera is active.
+        # Keep these controls outside the already-crowded view toolbar.
+        self.fixed_camera_controls = QWidget(root)
+        fixedbar = QHBoxLayout(self.fixed_camera_controls)
+        fixedbar.setContentsMargins(0, 0, 0, 0)
+        fixedbar.addWidget(QLabel("Fixed Camera eye (raw XYZ):"))
+        self.fixed_camera_coords = []
+        for axis, raw in zip("XYZ", FIXED_CAMERA_DEFAULT_EYE):
+            fixedbar.addWidget(QLabel(axis + ":"))
+            spin = QSpinBox()
+            spin.setRange(-2_000_000_000, 2_000_000_000)
+            spin.setSingleStep(1000)
+            spin.setValue(int(raw))
+            spin.setMinimumWidth(112)
+            spin.setToolTip(
+                f"Raw Papyrus {axis} camera coordinate, in model units. "
+                "Enter a value to move the fixed camera.")
+            spin.valueChanged.connect(self._fixed_camera_coords_changed)
+            self.fixed_camera_coords.append(spin)
+            fixedbar.addWidget(spin)
+        fixedbar.addStretch()
+        self.fixed_camera_controls.hide()
+        layout.addWidget(self.fixed_camera_controls)
         bspbar = QHBoxLayout()
         bspbar.addWidget(QLabel("Render:"))
         self.mode_combo = QComboBox()
@@ -997,7 +1032,7 @@ class Window(QMainWindow):
         reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
-        self.viewer.originModeChanged.connect(self._origin_mode_changed)
+        self.viewer.fixedCameraModeChanged.connect(self._fixed_camera_mode_changed)
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
@@ -1433,19 +1468,31 @@ class Window(QMainWindow):
             self.polygon_status.setText(
                 f"@{offset}: SELECTED by BSP (may still be covered by another polygon)")
 
-    def _origin_mode_changed(self, enabled):
-        # Frame All also leaves the origin preset; keep toolbar and Qt
-        # perspective state synchronized without triggering an extra toggle.
-        self.origin_button.blockSignals(True)
-        self.origin_button.setChecked(enabled)
-        self.origin_button.blockSignals(False)
+    def _fixed_camera_coords_changed(self, *_):
+        self.viewer.set_fixed_camera_eye(
+            *(spin.value() for spin in self.fixed_camera_coords))
+        if self.viewer.fixed_camera_mode:
+            self.statusBar().showMessage(
+                "Fixed Camera | raw XYZ "
+                + str(tuple(spin.value() for spin in self.fixed_camera_coords))
+                + " | Drag to look | Wheel adjusts FOV | Pan disabled")
+
+    def _fixed_camera_mode_changed(self, enabled):
+        # Frame All exits Fixed Camera; keep toolbar, coordinate controls
+        # and Qt perspective state synchronized without recursive signals.
+        self.fixed_camera_button.blockSignals(True)
+        self.fixed_camera_button.setChecked(enabled)
+        self.fixed_camera_button.blockSignals(False)
+        self.fixed_camera_controls.setVisible(enabled)
         self.perspective_toggle.blockSignals(True)
         self.perspective_toggle.setChecked(self.viewer.perspective)
         self.perspective_toggle.setEnabled(not enabled)
         self.perspective_toggle.blockSignals(False)
         self.statusBar().showMessage(
-            "Horizon Preview | Camera raw XYZ (0,0,10000) | Drag to look | "
-            "Wheel adjusts FOV | Pan disabled | Frame All exits preview"
+            "Fixed Camera | raw XYZ "
+            + str(tuple(spin.value() for spin in self.fixed_camera_coords))
+            + " | Drag to look | Wheel adjusts FOV | Pan disabled | "
+              "Frame All exits preview"
             if enabled else
             "Exterior camera restored | Left-drag orbit | Shift-left/middle pan")
 
