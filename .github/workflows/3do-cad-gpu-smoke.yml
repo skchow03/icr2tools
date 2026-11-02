@@ -28,7 +28,7 @@ jobs:
       - name: Install Mesa software OpenGL and Xvfb
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libegl1
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-xinput0
       - name: Install viewer dependencies
         run: python -m pip install -r icr2_3do_cad/gpu_viewer/requirements.txt
       - name: Verify 3.3 context, GPU buffers and actual framebuffer
