@@ -919,8 +919,14 @@ class Window(QMainWindow):
         layout.addWidget(self.texture_status)
         layout.addWidget(self.car_status)
         self.setCentralWidget(root)
-        QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
-        QShortcut(QKeySequence("R"), self, activated=self.reload_mips)
+        # Single-letter viewport shortcuts must NOT intercept N3 typing in
+        # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
+        frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
+                                  activated=self.viewer.frame_all)
+        frame_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        reload_shortcut = QShortcut(QKeySequence("R"), self.viewer,
+                                   activated=self.reload_mips)
+        reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
         self.source_pane.compileRequested.connect(self._source_requested)
