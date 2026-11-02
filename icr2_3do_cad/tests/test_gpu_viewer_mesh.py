@@ -10,6 +10,7 @@ import unittest
 import numpy as np
 
 from gpu_viewer.mesh import make_mesh, read_palette, triangulate
+from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
 from n3_compile import compile_n3_text
 from three_do import Model
 
@@ -108,6 +109,62 @@ root: FACE (a,b,c), p;
         self.assertEqual(mesh.scale,1_000_000.0)
         self.assertAlmostEqual(float(mesh.vertices[:,:3].max()),1.0)
         self.assertEqual(mesh.triangle_count,2)
+
+    def test_gpu_ranges_cover_every_emitted_triangle_exactly_once(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        self.assertEqual(len(mesh.polygon_ranges), mesh.polygon_count)
+        spans = sorted(mesh.polygon_ranges.values())
+        cursor = 0
+        for start, count in spans:
+            self.assertEqual(start, cursor)
+            self.assertGreater(count, 0)
+            self.assertEqual(count % 3, 0)
+            cursor += count
+        self.assertEqual(cursor, len(mesh.vertices))
+
+    def test_bsp_index_order_reuses_production_traversal(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        for y in (-80000, 0, 80000):
+            eye = (-36000, y, 7000)
+            actual, selected, info = ordered_bsp_indices(
+                model, mesh, eye, distance=0)
+            expected, _, _ = model.switched_polygons(
+                0, eye, bsp_mode='original')
+            self.assertEqual(selected, frozenset(expected))
+            expected_indices = [
+                v for offset in expected
+                if offset in mesh.polygon_ranges
+                for v in range(mesh.polygon_ranges[offset][0],
+                               sum(mesh.polygon_ranges[offset]))
+            ]
+            np.testing.assert_array_equal(
+                actual, np.asarray(expected_indices, dtype=np.uint32))
+            self.assertEqual(info['triangles'], len(actual) // 3)
+            self.assertTrue(actual.flags.c_contiguous)
+            self.assertTrue((actual < len(mesh.vertices)).all())
+
+    def test_bsp2_coincident_faces_selected_by_camera_side(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        selected = {}
+        for y in (-80000, 80000):
+            _, offsets, _ = ordered_bsp_indices(
+                model, mesh, (-36000, y, 7000), 0)
+            selected[y] = offsets & {7076, 7108, 7136, 7168}
+            self.assertEqual(len(selected[y]), 2)
+        self.assertEqual(selected[-80000], {7108, 7136})
+        self.assertEqual(selected[80000], {7076, 7168})
+
+    def test_camera_position_undoes_gpu_recentering(self):
+        eye = camera_in_model_units(
+            (4000000, 5000000, -100000), 1000000,
+            (0.1, 0.2, 0), 0, 0, 4)
+        self.assertEqual(eye, (4100000.0, 1200000.0, -100000.0))
 
     def test_qt_module_compiles_without_importing_optional_libraries(self):
         path=CAD_ROOT/"gpu_viewer"/"main.py"

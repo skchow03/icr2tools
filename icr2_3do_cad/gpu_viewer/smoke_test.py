@@ -16,7 +16,7 @@ from time import perf_counter
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QSurfaceFormat
 from PySide6.QtWidgets import QApplication
 
@@ -31,6 +31,9 @@ def run(path):
     QSurfaceFormat.setDefaultFormat(fmt)
     app = QApplication([sys.argv[0]])
     window = Window(path, benchmark=True)
+    # Ensure QOpenGLWidget is deleted while QApplication/GLX remain alive;
+    # PySide6 6.12 can bus-error during interpreter-finalization otherwise.
+    window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
     window.resize(900, 680)
     window.show()
     started = perf_counter()
@@ -45,6 +48,8 @@ def run(path):
                 result["error"] = "Empty OpenGL framebuffer"
             elif view._mesh.triangle_count < 1:
                 result["error"] = "No local triangles drawn"
+            elif view._index_count < 1 or not view._visible_set:
+                result["error"] = "BSP painter did not upload visible polygon indices"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:

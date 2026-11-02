@@ -24,12 +24,12 @@ if str(CAD_ROOT) not in sys.path:
 try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
-        GL_DEPTH_TEST, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_VERTEX_SHADER,
+        GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_VERTEX_SHADER,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
         glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
-        glDrawArrays, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
+        glDisable, glDrawArrays, glDrawElements, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
         glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
@@ -38,8 +38,9 @@ try:
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
     from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
     from PySide6.QtWidgets import (
-        QApplication, QCheckBox, QFileDialog, QHBoxLayout, QLabel,
-        QMainWindow, QMessageBox, QPushButton, QVBoxLayout, QWidget,
+        QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
+        QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
+        QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -50,6 +51,7 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
+from gpu_viewer.visibility import camera_in_model_units, ordered_bsp_indices
 
 
 VERTEX_SHADER = """
@@ -127,7 +129,7 @@ def perspective_projection(aspect, near, far):
 
 
 class LoadWorker(QThread):
-    ready = Signal(object, object)
+    ready = Signal(object, object, object)
     failed = Signal(str)
 
     def __init__(self, path):
@@ -161,14 +163,16 @@ class LoadWorker(QThread):
                 "external_objects": len(model.dynamics),
                 "mips": len(model.mip_names),
             }
-            # Do not keep Model around. UI only needs the flattened buffer.
-            self.ready.emit(mesh, stats)
+            # The parsed, read-only hierarchy is needed to evaluate BSP
+            # planes, but polygon geometry is never rebuilt during orbit.
+            self.ready.emit(mesh, stats, model)
         except Exception as exc:
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
 class GLViewport(QOpenGLWidget):
     statsChanged = Signal(str)
+    visibilityChanged = Signal(str)
 
     def __init__(self):
         super().__init__()
@@ -180,8 +184,16 @@ class GLViewport(QOpenGLWidget):
         self._uniform = None
         self._resources_released = False
         self._vbo = None
+        self._ebo = None
         self._vao = None
         self._mesh = None
+        self._model = None
+        self.render_mode = 'painter'  # painter | depth | all
+        self.lod_distance = 0  # Papyrus raw units; None inspects all LODs
+        self._visibility_dirty = True
+        self._index_count = 0
+        self._visible_set = frozenset()
+        self._visibility_info = {}
         self.upload_ms = None
         self.azimuth = math.radians(35)
         self.elevation = math.radians(28)
@@ -220,6 +232,7 @@ class GLViewport(QOpenGLWidget):
             glDeleteShader(vertex_shader)
             glDeleteShader(fragment_shader)
         glEnable(GL_DEPTH_TEST)
+        self._visibility_dirty = True
         if self._mesh is not None:
             self._upload_mesh()
 
@@ -238,13 +251,20 @@ class GLViewport(QOpenGLWidget):
             if self._vbo is not None:
                 glDeleteBuffers(1, [self._vbo])
                 self._vbo = None
+            if self._ebo is not None:
+                glDeleteBuffers(1, [self._ebo])
+                self._ebo = None
             glDeleteProgram(self._program)
             self._program = None
         finally:
             self.doneCurrent()
 
-    def set_mesh(self, mesh: MeshData):
+    def set_mesh(self, mesh: MeshData, model):
         self._mesh = mesh
+        self._model = model
+        self._visibility_dirty = True
+        self._visible_set = frozenset()
+        self._visibility_info = {}
         self._frametimes.clear()
         self._frame_count = 0
         self.frame_all()
@@ -267,11 +287,16 @@ class GLViewport(QOpenGLWidget):
         if self._vbo is not None:
             glDeleteBuffers(1, [self._vbo])
             self._vbo = None
+        if self._ebo is not None:
+            glDeleteBuffers(1, [self._ebo])
+            self._ebo = None
+        self._visibility_dirty = True
         if self._mesh is not None and self._mesh.vertices.size:
             payload = np.ascontiguousarray(
                 self._mesh.vertices, dtype=np.float32).tobytes()
             self._vao = int(glGenVertexArrays(1))
             self._vbo = int(glGenBuffers(1))
+            self._ebo = int(glGenBuffers(1))
             glBindVertexArray(self._vao)
             glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
             glBufferData(GL_ARRAY_BUFFER, len(payload), payload, GL_STATIC_DRAW)
@@ -281,12 +306,61 @@ class GLViewport(QOpenGLWidget):
             glEnableVertexAttribArray(1)
             glVertexAttribPointer(
                 1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+            # Element buffer stays attached to the VAO. Upload only integer
+            # indices when BSP visibility changes, never the XYZ/RGB VBO.
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
             glBindVertexArray(0)
             glBindBuffer(GL_ARRAY_BUFFER, 0)
             # One synchronization at load time; never in the render loop.
             glFinish()
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+
+    def invalidate_visibility(self):
+        """Reevaluate only the BSP indices at the next draw, not the mesh."""
+        self._visibility_dirty = True
+        self.update()
+
+    def set_render_mode(self, mode):
+        if mode not in ('painter', 'depth', 'all'):
+            raise ValueError(f"Unknown render mode: {mode}")
+        self.render_mode = mode
+        if mode == 'all':
+            self.visibilityChanged.emit(
+                f"All polygons: {self._mesh.polygon_count:,} geometry faces "
+                "(BSP and LOD ignored; GPU depth test)"
+                if self._mesh is not None else "All polygons"
+            )
+            self.update()
+        else:
+            self.invalidate_visibility()
+
+    def _refresh_visibility(self):
+        """Active GL context required. Never reparses or retessellates."""
+        if self._model is None or self._mesh is None or self._vao is None:
+            return
+        eye = camera_in_model_units(
+            self._mesh.center, self._mesh.scale, self.target,
+            self.azimuth, self.elevation, self.distance)
+        indices, visible, info = ordered_bsp_indices(
+            self._model, self._mesh, eye, self.lod_distance)
+        glBindVertexArray(self._vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        self._index_count = len(indices)
+        self._visible_set = visible
+        self._visibility_info = info
+        self._visibility_dirty = False
+        self.visibilityChanged.emit(
+            f"BSP visible {info['mesh_polygons']:,}/{self._mesh.polygon_count:,} "
+            f"renderable polygons | {info['triangles']:,} triangles | "
+            f"{info['tested_planes']:,} plane tests | "
+            f"{info['culled_nodes']:,} pruned nodes | "
+            f"{info['lod_selections']:,} LOD selections"
+        )
 
     def paintGL(self):
         if self._program is None:
@@ -296,7 +370,12 @@ class GLViewport(QOpenGLWidget):
         w=max(1,int(self.width()*self.devicePixelRatioF()))
         h=max(1,int(self.height()*self.devicePixelRatioF()))
         glViewport(0,0,w,h)
-        glEnable(GL_DEPTH_TEST)
+        if self.render_mode == 'painter':
+            # Preserve Papyrus traversal / LIST painter order. Depth testing
+            # would defeat authored overlaps and coincident BSP2 front/back.
+            glDisable(GL_DEPTH_TEST)
+        else:
+            glEnable(GL_DEPTH_TEST)
         glClearColor(0.065,0.09,0.135,1.0)
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self._vao is None:
@@ -312,8 +391,13 @@ class GLViewport(QOpenGLWidget):
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        if self.render_mode != 'all' and self._visibility_dirty:
+            self._refresh_visibility()
         glBindVertexArray(self._vao)
-        glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+        if self.render_mode == 'all':
+            glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+        elif self._index_count:
+            glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
         glUseProgram(0)
 
@@ -330,7 +414,7 @@ class GLViewport(QOpenGLWidget):
         self.target[:] = 0
         self.distance = 4.0
         self.half_height = 1.6
-        self.update()
+        self.invalidate_visibility()
 
     def set_view(self, name):
         if name == "3D":
@@ -341,14 +425,14 @@ class GLViewport(QOpenGLWidget):
             self.azimuth, self.elevation = 0.0, 0.0
         elif name == "Side":
             self.azimuth, self.elevation = math.pi / 2, 0.0
-        self.update()
+        self.invalidate_visibility()
 
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
         self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
         self.distance = min(1000.0, max(.001, self.distance * multiplier))
-        self.update()
+        self.invalidate_visibility()
         event.accept()
 
     def mousePressEvent(self, event):
@@ -377,7 +461,7 @@ class GLViewport(QOpenGLWidget):
             self.azimuth -= dx * .006
             self.elevation = max(-math.pi/2, min(math.pi/2,
                                                  self.elevation + dy*.006))
-        self.update()
+        self.invalidate_visibility()
         event.accept()
 
 
@@ -394,6 +478,8 @@ class Window(QMainWindow):
         self.load_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
         self.stats_label = QLabel("No model loaded")
+        self.visibility_label = QLabel("BSP status will appear here")
+        self.polygon_status = QLabel("Enter a polygon body offset to inspect")
         root = QWidget()
         layout = QVBoxLayout(root)
         toolbar = QHBoxLayout()
@@ -416,12 +502,40 @@ class Window(QMainWindow):
         toolbar.addWidget(self.benchmark_toggle)
         toolbar.addStretch()
         layout.addLayout(toolbar)
+        bspbar = QHBoxLayout()
+        bspbar.addWidget(QLabel("Render:"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Papyrus BSP painter", "painter")
+        self.mode_combo.addItem("BSP selection + GPU depth", "depth")
+        self.mode_combo.addItem("All polygons + GPU depth", "all")
+        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        bspbar.addWidget(self.mode_combo)
+        bspbar.addWidget(QLabel("LOD distance (game units):"))
+        self.lod_spin = QSpinBox()
+        self.lod_spin.setRange(0, 2000000000)
+        self.lod_spin.setSingleStep(10000)
+        self.lod_spin.setValue(0)
+        self.lod_spin.valueChanged.connect(self._lod_changed)
+        bspbar.addWidget(self.lod_spin)
+        self.all_lods = QCheckBox("All LOD branches (diagnostic)")
+        self.all_lods.toggled.connect(self._lod_changed)
+        bspbar.addWidget(self.all_lods)
+        bspbar.addWidget(QLabel("Polygon @"))
+        self.polygon_edit = QLineEdit()
+        self.polygon_edit.setPlaceholderText("decimal or 0x...")
+        self.polygon_edit.setMaximumWidth(135)
+        self.polygon_edit.textChanged.connect(self._update_polygon_status)
+        bspbar.addWidget(self.polygon_edit)
+        layout.addLayout(bspbar)
         layout.addWidget(self.load_label)
         layout.addWidget(self.viewer, stretch=1)
         layout.addWidget(self.stats_label)
+        layout.addWidget(self.visibility_label)
+        layout.addWidget(self.polygon_status)
         self.setCentralWidget(root)
         QShortcut(QKeySequence("F"), self, activated=self.viewer.frame_all)
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
+        self.viewer.visibilityChanged.connect(self._visibility_updated)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -431,6 +545,48 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _mode_changed(self, index):
+        self.viewer.set_render_mode(self.mode_combo.currentData())
+        self._update_polygon_status()
+
+    def _lod_changed(self, *args):
+        self.lod_spin.setEnabled(not self.all_lods.isChecked())
+        self.viewer.lod_distance = (
+            None if self.all_lods.isChecked() else self.lod_spin.value()
+        )
+        self.viewer.invalidate_visibility()
+
+    def _visibility_updated(self, message):
+        self.visibility_label.setText(message)
+        self._update_polygon_status()
+
+    def _update_polygon_status(self, *args):
+        text = self.polygon_edit.text().strip()
+        model = self.viewer._model
+        if not text:
+            self.polygon_status.setText("Enter a polygon body offset to inspect")
+            return
+        try:
+            offset = int(text, 16 if text.lower().startswith('0x') else 10)
+        except ValueError:
+            self.polygon_status.setText("Enter a decimal or 0x hexadecimal offset")
+            return
+        if model is None:
+            self.polygon_status.setText("Load a model first")
+        elif offset not in model.polygons:
+            self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
+        elif self.viewer.render_mode == 'all':
+            self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
+        elif self.viewer._visibility_dirty:
+            self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
+        elif offset not in self.viewer._visible_set:
+            self.polygon_status.setText(f"@{offset}: EXCLUDED by BSP or selected LOD")
+        elif offset not in self.viewer._mesh.polygon_ranges:
+            self.polygon_status.setText(f"@{offset}: selected by BSP, but degenerate / not meshed")
+        else:
+            self.polygon_status.setText(
+                f"@{offset}: SELECTED by BSP (may still be covered by another polygon)")
 
     def _set_perspective(self, checked):
         self.viewer.perspective = checked
@@ -475,9 +631,9 @@ class Window(QMainWindow):
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
 
-    def _loaded(self, mesh, stats):
+    def _loaded(self, mesh, stats, model):
         self._info = stats
-        self.viewer.set_mesh(mesh)
+        self.viewer.set_mesh(mesh, model)
         self.load_label.setText(
             f"{stats['file']}  |  vertices {stats['model_vertices']:,}  |  "
             f"planes {stats['model_planes']:,}  |  "
@@ -491,7 +647,7 @@ class Window(QMainWindow):
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
         self.statusBar().showMessage(
-            "Left-drag orbit | Shift-left / middle-drag pan | Wheel zoom | F frame")
+            "BSP painter mode | Left-drag orbit | Shift-left/middle pan | Wheel zoom | F frame")
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
@@ -520,6 +676,10 @@ class Window(QMainWindow):
                 "skipped_polygons": mesh.skipped_polygons,
                 "fan_fallbacks": mesh.fan_fallbacks,
                 "vertex_buffer_bytes": mesh.size_bytes,
+                "render_mode": self.viewer.render_mode,
+                "lod_distance": self.viewer.lod_distance,
+                "bsp_selected_polygons": len(self.viewer._visible_set),
+                "bsp_draw_indices": self.viewer._index_count,
             }
             try:
                 target = Path(self.report_path)
