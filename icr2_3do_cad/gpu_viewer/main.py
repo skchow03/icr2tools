@@ -233,6 +233,15 @@ class GLViewport(QOpenGLWidget):
         self.setAcceptDrops(False)
         self._program = None
         self._uniform = None
+        self._texture_uniform = None
+        self._repeat_uniform = None
+        self._atlas_texture = None
+        self._palette_texture = None
+        self._atlas = None
+        self._palette = None
+        self.textures_enabled = True
+        self.texture_repeat = False
+        self.texture_upload_ms = None
         self._resources_released = False
         self._vbo = None
         self._ebo = None
@@ -279,6 +288,12 @@ class GLViewport(QOpenGLWidget):
                 raise RuntimeError(glGetProgramInfoLog(program))
             self._program = program
             self._uniform = glGetUniformLocation(program, "u_mvp")
+            self._texture_uniform = glGetUniformLocation(program, "u_textures")
+            self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
+            glUseProgram(program)
+            glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
+            glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
+            glUseProgram(0)
         finally:
             glDeleteShader(vertex_shader)
             glDeleteShader(fragment_shader)
@@ -286,6 +301,7 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         if self._mesh is not None:
             self._upload_mesh()
+            self._upload_texture_assets()
 
     def shutdown_gl(self):
         """Delete our VBO/VAO/shader before Qt destroys its GL context."""
@@ -305,24 +321,34 @@ class GLViewport(QOpenGLWidget):
             if self._ebo is not None:
                 glDeleteBuffers(1, [self._ebo])
                 self._ebo = None
+            textures = [tex for tex in (self._atlas_texture, self._palette_texture)
+                        if tex is not None]
+            if textures:
+                glDeleteTextures(len(textures), textures)
+            self._atlas_texture = self._palette_texture = None
             glDeleteProgram(self._program)
             self._program = None
         finally:
             self.doneCurrent()
 
-    def set_mesh(self, mesh: MeshData, model):
+    def set_mesh(self, mesh: MeshData, model, atlas, palette,
+                 *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self._atlas = atlas
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
         self._visible_set = frozenset()
         self._visibility_info = {}
         self._frametimes.clear()
         self._frame_count = 0
-        self.frame_all()
+        if not preserve_view:
+            self.frame_all()
         if self._program is not None:
             self.makeCurrent()
             try:
                 self._upload_mesh()
+                self._upload_texture_assets()
             finally:
                 self.doneCurrent()
         self.update()
@@ -353,10 +379,16 @@ class GLViewport(QOpenGLWidget):
             glBufferData(GL_ARRAY_BUFFER, len(payload), payload, GL_STATIC_DRAW)
             glEnableVertexAttribArray(0)
             glVertexAttribPointer(
-                0, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(0))
+                0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
             glEnableVertexAttribArray(1)
             glVertexAttribPointer(
-                1, 3, GL_FLOAT, GL_FALSE, 24, ctypes.c_void_p(12))
+                1, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(12))
+            for location, length, offset in ((2, 1, 24), (3, 2, 28),
+                                             (4, 4, 36)):
+                glEnableVertexAttribArray(location)
+                glVertexAttribPointer(
+                    location, length, GL_FLOAT, GL_FALSE, 52,
+                    ctypes.c_void_p(offset))
             # Element buffer stays attached to the VAO. Upload only integer
             # indices when BSP visibility changes, never the XYZ/RGB VBO.
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
@@ -367,6 +399,53 @@ class GLViewport(QOpenGLWidget):
             glFinish()
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+
+    def _upload_texture_assets(self):
+        """OpenGL texture setup is GUI-thread-only; never called on orbit."""
+        if self._program is None or self._atlas is None or self._palette is None:
+            return
+        started = perf_counter()
+        if self._atlas_texture is None:
+            self._atlas_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        pixels = np.ascontiguousarray(self._atlas.pixels, dtype=np.uint8)
+        h, w = pixels.shape
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, w, h, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+        self._upload_palette()
+        self.texture_upload_ms = (perf_counter() - started) * 1000
+
+    def _upload_palette(self):
+        if self._program is None or self._palette is None:
+            return
+        if self._palette_texture is None:
+            self._palette_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 256, 1, 0, GL_RGB,
+                     GL_UNSIGNED_BYTE, self._palette)
+
+    def set_palette(self, palette):
+        """Swap the 256-color lookup without retessellating/reuploading XYZ."""
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_palette()
+            finally:
+                self.doneCurrent()
+        self.update()
 
     def invalidate_visibility(self):
         """Reevaluate only the BSP indices at the next draw, not the mesh."""
@@ -442,6 +521,12 @@ class GLViewport(QOpenGLWidget):
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        glUniform1i(self._texture_uniform, int(self.textures_enabled))
+        glUniform1i(self._repeat_uniform, int(self.texture_repeat))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode != 'all' and self._visibility_dirty:
             self._refresh_visibility()
         glBindVertexArray(self._vao)
