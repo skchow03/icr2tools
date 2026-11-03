@@ -48,7 +48,11 @@ or discard unsaved edits.
   selector for indexed Papyrus track models. The selector defaults to **HI** and
   switches among **HI** (four section slots), **MED** (two), and **LO** (one).
   Only the chosen tier is drawn; empty/NIL slots stay empty. The control is
-  disabled for models without a recognized track section table.
+  disabled for models without a recognized track section table. Original
+  compiled track `.3do` files use seven-pointer section records and a special
+  expanded root index (rather than the `.3D` source's eight-pointer lists and
+  DATA hash). The viewer recognizes both representations and skips the binary
+  index prelude in fixed HI/MED/LO views so it cannot draw all tiers first.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
