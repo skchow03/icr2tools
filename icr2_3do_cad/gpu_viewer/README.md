@@ -244,8 +244,9 @@ resolution, visibility and benchmark procedure are used on the same machine.
 
 ## Intentional limitations
 
-This **does not yet** include editing, picking, source tabs or PMP sprites.
-Per-driver RECOLOR tables and livery MIP overrides are read-only previews;
+The GPU viewer has editable N3 source and explicit .3D/.3DO export,
+but does **not yet** provide mouse polygon picking or PMP sprites.
+Per-driver RECOLOR tables and livery MIP overrides remain read-only overlays;
 the viewer does not save them back into carset archives.
 It displays local and referenced DYNAMIC/child 3DO polygon geometry with
 indexed palette colors and optional 8-bit MIP texture sampling.
@@ -260,9 +261,11 @@ of the original game executable). Overlapping scenery can still look
 different from ICR2, particularly with transparency or external objects.
 Never infer that a BSP-selected polygon is completely visible on screen.
 
-The read-only GPU path suppresses only *plane-anchor inference*, an editor
-safety feature. It never modifies source coordinates, .3D comments or .3DO
-binary output. Do not save game assets from this prototype.
+The GPU preview path suppresses only *plane-anchor inference*, an editor
+safety feature. Previewing and switching workspaces never writes original
+source files or .3DO assets. The explicit .3D save and compiled .3DO export
+commands are the only model-writing operations; validate generated binaries
+in the game before use.
 
 A successful GUI smoke test verifies that an OpenGL 3.3 context can draw
 a model. **No speedup is claimed until measured on RENO.**
