@@ -22,6 +22,25 @@ def resolve_lod_distance(mode, distance):
     raise ValueError(f"Unknown LOD mode: {mode!r}")
 
 
+def max_switch_distance(scene):
+    """Largest nonnegative RES branch threshold across loaded model instances.
+
+    Include nested external 3DOs: they share the viewer's manual distance.
+    Missing external objects have no parsed switches to inspect.
+    """
+    if scene is None:
+        return 0
+    return max(
+        (int(threshold)
+         for instance in scene.instances
+         for switch in instance.model.switches.values()
+         for threshold, _ in switch.branches
+         if threshold > 0),
+        default=0,
+    )
+
+
+
 _CAR_FILENAMES = frozenset({
     "indycar", "roadcar", "pacecar", "panoz", "irl", "cars",
 })
