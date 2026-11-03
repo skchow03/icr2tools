@@ -54,6 +54,31 @@ def _make_car_wrapper(path):
                      names + body)
 
 
+def _workspace_switch_keeps_document(window):
+    """Changing tool panels must not reload or alter the shared GPU/N3 model."""
+    tabs = window.workspace_tabs
+    if [tabs.tabText(i) for i in range(tabs.count())] != [
+            "Car", "Track", "Object"]:
+        return False
+    original_tab = tabs.currentIndex()
+    view = window.viewer
+    before = (view._model, view._mesh, view._scene,
+              view._vbo, view._vao, view.azimuth, view.elevation,
+              window.source_pane.revision, window.source_pane.dirty)
+    try:
+        for index in range(tabs.count()):
+            tabs.setCurrentIndex(index)
+            after = (view._model, view._mesh, view._scene,
+                     view._vbo, view._vao, view.azimuth, view.elevation,
+                     window.source_pane.revision, window.source_pane.dirty)
+            if any(a is not b if i < 3 else a != b
+                   for i, (a, b) in enumerate(zip(before, after))):
+                return False
+    finally:
+        tabs.setCurrentIndex(original_tab)
+    return True
+
+
 def run(path):
     # The stock roadcar references wheels and helmet files not shipped with
     # fixtures. Supply synthetic children in a temporary folder to make the
@@ -232,6 +257,8 @@ def run(path):
                     abs(view.azimuth - live["azimuth"]) > 1e-9 or
                     not view._scene.appearance):
                 result["error"] = "Live source compile did not preserve camera/appearance"
+            elif not _workspace_switch_keeps_document(window):
+                result["error"] = "Workspace tab switch changed shared model/source/camera"
             elif view.fps <= 0:
                 result["error"] = "No measured Qt frame-swapped FPS"
             else:
