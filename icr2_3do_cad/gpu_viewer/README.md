@@ -182,9 +182,29 @@ The mode is a UI organization choice, not a conversion between file formats.
   faces. **Fallback MIP…** maps otherwise-unassigned textured polygons to
   an explicitly chosen file; **Clear fallback** reverses this override.
   Changing MIPs rebuilds the read-only mesh/atlas, not the source file.
-- **Textures**: toggle sampled MIP colors versus flat polygon palette colors.
-  **Repeat UV** optionally wraps raw texel UVs, which clamp by default.
-  The status line reports loaded/missing MIPs, mapped faces and atlas size.
+- **Textures**: toggle sampled MIP colors and PMP sprites versus flat
+  polygon palette colors. **Repeat UV** optionally wraps raw texel UVs, which
+  clamp by default. The status line reports loaded/missing MIPs, mapped faces
+  and atlas size.
+- **PMP sprites (PMP/PMP2)** (Display, enabled by default): render
+  viewpoint-selected transparent sprites both in the opened 3DO and in
+  DYNAMIC/external referenced 3DOs. Uses the same validated PMP decoder as
+  the CPU editor: indexed colors and missing-span transparency, with the
+  current PCX palette sampled directly on the GPU. The sprite files are
+  resolved case-insensitively beside the referenced 3DO, in the selected
+  external-objects folder, or in the selected texture folder; missing/invalid
+  sprites are reported in Assets without blocking polygon rendering.
+  Camera-facing quads are anchored at their transformed source vertices,
+  scaled by the 3DO sprite size and image crop, and drawn in the original
+  BSP/RES/LIST painter order between polygon spans. **Textures** must also
+  be checked. Both checkboxes may be switched without reloading the model.
+  Opening a new model decodes all sprite view variants on a worker; orbiting
+  or changing SWITCH DISTANCE changes which sprites are selected, without
+  re-decoding PMP bitmaps or rebuilding the polygon VBO.
+  This follows the CPU viewer's sizing approximation, not a verified
+  bit-exact game sprite projection or depth convention. In the diagnostic
+  **All polygons** mode, all sprite variants are drawn, just as all polygon
+  alternatives are drawn.
 - **Polygon body offset** (Advanced diagnostics): type the polygon's **3DO body offset** in decimal or 0x
   hexadecimal (as displayed by the CAD structure inspector) to see whether
   it is selected by BSP and the chosen LOD. Selected does not necessarily
@@ -379,7 +399,9 @@ resolution, visibility and benchmark procedure are used on the same machine.
 ## Intentional limitations
 
 The GPU viewer has editable N3 source and explicit .3D/.3DO export,
-but does **not yet** provide mouse polygon picking or PMP sprites.
+but does **not yet** provide mouse polygon picking. PMP/PMP2 sprites
+use a separate OpenGL 3.3 billboard shader with palette-index/alpha textures;
+their dimensions and screen-facing behavior are approximate like the CPU view.
 Per-driver RECOLOR tables and livery MIP overrides remain read-only overlays;
 the viewer does not save them back into carset archives.
 It displays local and referenced DYNAMIC/child 3DO polygon geometry with
