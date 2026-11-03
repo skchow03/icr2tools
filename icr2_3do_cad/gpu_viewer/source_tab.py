@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
 
 from gpu_viewer.source_inspection import index_source_targets
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
+from gpu_viewer.active_source import (
+    active_source_labels, plane_vertex_dependencies, entry_is_active,
+)
 from gpu_viewer.source_rename import (
     edited_declaration_label, declaration_label, reference_spans,
 )
@@ -232,6 +235,13 @@ class SourcePane(QWidget):
         self._filter_sync = False
         self._filtered_edit_active = False
         self._filter_return_line = None
+        self._distance_model = None
+        self._distance_mode = "auto"
+        self._distance_eye = (0.0, 0.0, 0.0)
+        self._distance_dependencies_key = None
+        self._distance_dependencies = {}
+        self._distance_labels_key = None
+        self._distance_labels = set()
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -300,6 +310,16 @@ class SourcePane(QWidget):
                 self._only_filter(kind))
             row.addWidget(only)
             filter_layout.addLayout(row)
+        self.current_distance_only = QCheckBox(
+            "Active SWITCH DISTANCE branches only")
+        self.current_distance_only.setObjectName("currentDistanceOnly")
+        self.current_distance_only.setToolTip(
+            "Only show declarations reachable through the current RES "
+            "distance choices, including used vertices, POLYs, LIST, BSP, "
+            "FACE, MATERIAL, DYNAMIC and SWITCH wrappers. "
+            "This is LOD reachability, not camera BSP or occlusion.")
+        self.current_distance_only.toggled.connect(self._apply_filters)
+        filter_layout.addWidget(self.current_distance_only)
         popup = QWidgetAction(self.filter_menu)
         popup.setDefaultWidget(filter_widget)
         self.filter_menu.addAction(popup)
@@ -334,6 +354,8 @@ class SourcePane(QWidget):
         self.filtered_list.setUniformItemSizes(False)
         self.filtered_list.setAlternatingRowColors(True)
         self.filtered_list.setItemDelegate(InlineStatementDelegate(self.filtered_list))
+        self.filtered_list.itemDelegate().closeEditor.connect(
+            lambda *_: QTimer.singleShot(0, self._apply_filters))
         self.filtered_list.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked |
             QAbstractItemView.EditTrigger.SelectedClicked |
@@ -412,6 +434,8 @@ class SourcePane(QWidget):
         self._rename_snapshot = normalized
         self._source_index = index_source_targets(normalized)
         self._filter_cache_revision = -1
+        self._distance_dependencies_key = None
+        self._distance_labels_key = None
         self._apply_filters()
         self._cursor_changed()
 
@@ -436,6 +460,9 @@ class SourcePane(QWidget):
         self._rename_snapshot = ""
         self._source_index = index_source_targets("")
         self._filter_cache_revision = -1
+        self._distance_model = None
+        self._distance_dependencies_key = None
+        self._distance_labels_key = None
         self._apply_filters()
         self._cursor_changed()
 
@@ -447,6 +474,8 @@ class SourcePane(QWidget):
         self._track_symbol_edit()
         self.revision += 1
         self._filter_cache_revision = -1
+        self._distance_dependencies_key = None
+        self._distance_labels_key = None
         if self.source_stack.currentIndex() == 1 and not self._filtered_edit_active:
             self._apply_filters()
         self._last_error_line = None
@@ -473,6 +502,10 @@ class SourcePane(QWidget):
         self._polygon_visible = None
         self._refresh_extra_selections()
         self._source_index = index_source_targets(self.editor.toPlainText())
+        self._distance_dependencies_key = None
+        self._distance_labels_key = None
+        if self.current_distance_only.isChecked():
+            self._apply_filters()
         self.status.setText(
             f'Valid N3: {len(model.vertices):,} vertices, '
             f'{len(model.polygons):,} polygons. GPU preview updated (unsaved).')
@@ -493,6 +526,8 @@ class SourcePane(QWidget):
             selected.cursor = QTextCursor(block)
             self.editor.setExtraSelections([selected])
         self._polygon_visible = None
+        if self.current_distance_only.isChecked():
+            self._apply_filters()
         self.status.setText(f'Line {line}: {error}. Last valid GPU preview retained.')
         self._emit_cursor_target()
 
@@ -577,18 +612,20 @@ class SourcePane(QWidget):
             self._filter_counts[entry.category] += 1
         self._filter_cache_revision = self.revision
 
-    def _set_selected_filters(self, selected):
+    def _set_selected_filters(self, selected, *, clear_distance=False):
         self._filter_sync = True
         try:
             for category, box in self._filter_checks.items():
                 box.setChecked(category in selected)
+            if clear_distance:
+                self.current_distance_only.setChecked(False)
         finally:
             self._filter_sync = False
         self._apply_filters()
 
     def _show_all_filters(self):
         self.filter_search.clear()
-        self._set_selected_filters(set(CATEGORIES))
+        self._set_selected_filters(set(CATEGORIES), clear_distance=True)
 
     def _hide_all_filters(self):
         self._set_selected_filters(set())
@@ -600,25 +637,76 @@ class SourcePane(QWidget):
         if not self._filter_sync:
             self._apply_filters()
 
+    def set_distance_filter_context(self, model, distance, camera):
+        """Update the LOD filter from the committed renderer model and camera."""
+        camera = tuple(camera) if camera is not None else (0.0, 0.0, 0.0)
+        if (model is self._distance_model and
+                distance == self._distance_mode and camera == self._distance_eye):
+            return
+        changed = model is not self._distance_model
+        self._distance_model = model
+        self._distance_mode = distance
+        self._distance_eye = camera
+        self._distance_labels_key = None
+        if changed:
+            self._distance_dependencies_key = None
+        if self.current_distance_only.isChecked():
+            self._apply_filters()
+
+    def _active_labels_at_distance(self):
+        model = self._distance_model
+        if model is None:
+            return None
+        # Deriving source-space plane vertex references is independent of
+        # camera/distance; cache it through consecutive slider movements.
+        dependency_key = (id(model), self.revision)
+        if self._distance_dependencies_key != dependency_key:
+            self._ensure_filter_entries()
+            self._distance_dependencies = plane_vertex_dependencies(
+                self.editor.toPlainText(), model, self._filter_entries)
+            self._distance_dependencies_key = dependency_key
+        key = (dependency_key, self._distance_mode, self._distance_eye)
+        if key != self._distance_labels_key:
+            self._distance_labels = active_source_labels(
+                model, self._distance_mode, self._distance_eye,
+                self._distance_dependencies)
+            self._distance_labels_key = key
+        return self._distance_labels
+
     def _apply_filters(self, *_):
-        if self._filter_sync:
+        if self._filter_sync or self._filtered_edit_active:
+            return
+        if self.filtered_list.state() == QAbstractItemView.State.EditingState:
+            # Do not discard a still-open inline editor on a camera update.
+            # The delegate's closeEditor event reapplies the current filter.
             return
         chosen = {c for c, checkbox in self._filter_checks.items()
                   if checkbox.isChecked()}
         query = self.filter_search.text().strip().casefold()
         count = len(chosen)
+        active_only = self.current_distance_only.isChecked()
+        suffix = " · Active LOD" if active_only else ""
         self.filter_button.setText(
-            "Filter statements (all)" if count == len(CATEGORIES) else
-            f"Filter statements ({count}/{len(CATEGORIES)})")
-        if count == len(CATEGORIES) and not query:
+            ("Filter statements (all)" if count == len(CATEGORIES) else
+             f"Filter statements ({count}/{len(CATEGORIES)})") + suffix)
+        if count == len(CATEGORIES) and not query and not active_only:
             self.source_stack.setCurrentWidget(self.editor)
             self.filter_status.setText("All source lines shown")
             return
         self._ensure_filter_entries()
+        active_names = self._active_labels_at_distance() if active_only else None
+        # While a source edit awaits compilation, retain its original row
+        # even if its renamed label is not in the last validated model.
+        edited_line = self._filter_return_line if self.pending else None
         matching = [
             entry for entry in self._filter_entries
             if entry.category in chosen and
-            (not query or query in entry.preview.casefold())
+            (not query or query in entry.preview.casefold()) and
+            (not active_only or active_names is None or
+             (entry.category != "Comments (%)" and
+              entry_is_active(entry, active_names)) or
+             (edited_line is not None and
+              entry.first_line <= edited_line <= entry.last_line))
         ]
         previous_line = (self._filter_return_line if
                          self._filter_return_line is not None else
@@ -626,8 +714,11 @@ class SourcePane(QWidget):
         self._filter_return_line = None
         self.filtered_model.set_entries(matching)
         self.source_stack.setCurrentWidget(self.filtered_page)
+        note = (" · waiting for model" if active_only and active_names is None
+                else " · last valid model" if active_only and self.pending
+                else "")
         self.filter_status.setText(
-            f"{len(matching):,}/{len(self._filter_entries):,} statements")
+            f"{len(matching):,}/{len(self._filter_entries):,} statements{note}")
         if matching:
             # Preserve the just-edited row (or select the nearest remaining
             # row if its text/category no longer satisfies the active filter).
