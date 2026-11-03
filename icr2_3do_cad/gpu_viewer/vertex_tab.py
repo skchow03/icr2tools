@@ -187,7 +187,8 @@ class VertexPane(QWidget):
         save.clicked.connect(self.saveRequested.emit)
         layout.addWidget(save)
         self.status = QLabel("Left-click a dot to select; drag on chosen axis. "
-                             "Shift+left-drag/right-drag orbit; middle-drag pan.")
+                             "Right-drag or empty-space left-drag to orbit; "
+                             "Shift+left-drag/middle-drag to pan.")
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
         self._refresh_selection()
