@@ -184,18 +184,23 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
-                          view_direction=None):
-    """Expand nested painter events, evaluating child BSP in local coordinates.
+                          view_direction=None, with_sprites=False):
+    """Expand BSP/DYNAMIC painter order with optional PMP insertion markers.
 
-    Returns indices, root-only visible polygon offsets (for the inspector),
-    and aggregate traversal statistics.
+    Default three-value result remains compatible with existing callers.
+    With sprite events return a fourth item: (EBO element position,
+    (instance_id, sprite record offset)) for each active PMP/PMP2, preserving
+    its location between polygons rather than drawing sprites on top.
     """
     spans = []
+    sprite_events = []
+    element_count = 0
     root_visible = set()
     stats = dict(mesh_polygons=0, triangles=0, tested_planes=0,
                  culled_nodes=0, lod_selections=0, excluded_branches=0,
-                 instances_visited=0)
+                 pmp_sprites=0, instances_visited=0)
     def walk(instance_id):
+        nonlocal element_count
         instance = scene.instances[instance_id]
         local_eye = instance.transform.inverse_point(camera)
         local_direction = None
@@ -225,7 +230,14 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                 if span is None:
                     continue
                 spans.append(span)
+                element_count += span[1]
                 stats['mesh_polygons'] += 1
+            elif kind == 'pmp':
+                resources = getattr(scene, "sprite_resources", None)
+                if (resources is not None and
+                        (instance_id, old) in resources.placements):
+                    sprite_events.append((element_count, (instance_id, old)))
+                    stats['pmp_sprites'] += 1
             elif kind in ('dynamic', 'external'):
                 child = scene.links.get((instance_id, kind, old))
                 if child is not None:
@@ -238,7 +250,8 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                                                  dtype=np.uint32)
         cursor += count
     stats['triangles'] = cursor // 3
-    return indices, frozenset(root_visible), stats
+    result = (indices, frozenset(root_visible), stats)
+    return (*result, tuple(sprite_events)) if with_sprites else result
 
 
 def load_car_or_model(path, *, existing_model=None, objects_folder=None,
