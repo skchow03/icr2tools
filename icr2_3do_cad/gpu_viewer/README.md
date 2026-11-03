@@ -65,8 +65,10 @@ the existing OpenGL viewport; the same editor is available in **Car, Track,
 and Object** workspaces, alongside the existing **.3D Source** and **Help**
 tabs. Vertex mode does not create a second model or viewport.
 
-- Dots mark root-model vertices belonging to polygons in the active BSP/LOD
-  view. Uncheck **Active BSP / LOD only** to show all root-model vertices,
+- Dots are drawn as batched OpenGL points from a dedicated root-vertex
+  buffer (not thousands of Qt ovals). BSP/LOD filtering changes only the
+  index list and mouse picking uses the same projected coordinates.
+  Uncheck **Active BSP / LOD only** to show all root-model vertices,
   including alternate or hidden branches. Dots and names/offset labels may
   be toggled independently; labels use screen-space thinning for large tracks.
   External DYNAMIC child geometry is previewed but not vertex-editable from
