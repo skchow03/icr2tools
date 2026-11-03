@@ -136,10 +136,24 @@ The mode is a UI organization choice, not a conversion between file formats.
   Automatic computes each RES distance in local model coordinates, including
   transformed DYNAMIC objects, using Euclidean distance as an approximation
   rather than verified game-exact behavior.
-- **Open PCX palette…**: load a normal indexed 8-bit PCX with a 256-color
-  VGA palette trailer (e.g. `sunny.pcx`). The bundled `gamepal.pcx` is used
-  on startup; **Default palette** restores it. Palette changes recolor
-  both plain polygons and MIPs instantly, without rebuilding geometry.
+- **Automatic model-local SUNNY.PCX**: whenever you open a new
+  `.3D` or `.3DO`, the GPU viewer first searches **that file's own folder**
+  for `SUNNY.PCX` (case-insensitively). If present and valid, it becomes
+  the active 256-color palette automatically, including for referenced
+  sprites and MIP textures in the scene. The Assets panel shows
+  **model folder** beside the palette name. If the file has no
+  `SUNNY.PCX`, the previously selected palette remains in effect
+  (the bundled `gamepal.pcx` is the initial default). If the local
+  `SUNNY.PCX` is malformed, a status warning is shown and the previous
+  palette is used so the model can still open. Only the **opened model's
+  immediate folder** is searched; referenced 3DOs cannot replace its
+  palette. Source recompilation and reloading the current model keep
+  your currently selected palette.
+- **Open PCX palette…**: manually choose any indexed 8-bit PCX with a
+  256-color VGA palette trailer, overriding the automatically selected
+  palette for the current model. **Default palette** restores bundled
+  `gamepal.pcx`. Palette changes recolor both plain polygons, MIPs and
+  PMP sprites instantly, without rebuilding geometry or decoding sprites.
 - **Individual car 3DO**: open a per-driver `.3do` directly, such as
   `cit74.3do`. As in the CPU editor, the root MATERIAL references a
   **RECOLOR record at body offset zero**, not a renderable child. The GPU
