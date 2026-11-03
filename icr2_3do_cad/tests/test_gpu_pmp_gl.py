@@ -51,7 +51,7 @@ class GPURealPMPRenderingTests(unittest.TestCase):
         from gpu_viewer.sprites import prepare_scene_sprites
         from gpu_viewer.textures import build_atlas, load_palette
 
-        source = FIXTURES / name
+        source = name if isinstance(name, Path) else FIXTURES / name
         model = Model(source, associate_planes=False)
         scene = build_scene(model, objects_folder=FIXTURES)
         scene.sprite_resources = prepare_scene_sprites(
@@ -124,6 +124,36 @@ class GPURealPMPRenderingTests(unittest.TestCase):
         off = self.screenshot()
         self.assertGreater(int(np.any(on[..., :3] != off[..., :3],
                                       axis=2).sum()), 25)
+
+    def test_terminator_free_scenery_pmp_renders_in_real_opengl(self):
+        # Reproduce the uploaded tree2.3do / tree2.pmp structural headers
+        # without committing proprietary art to the regression fixtures.
+        import struct
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            model_path = folder / "tree2.3do"
+            model_path.write_bytes(
+                struct.pack("<5i", 32, 16, 0, 1, 0) +
+                b"tree2\x00\x00\x00" +
+                struct.pack("<8i", 0, 0, 0, 0,
+                            -(1 << 31) + 3, 0, 204000, 0))
+            spans = b"".join(
+                bytes((y, 116, 140, 47)) for y in range(30, 128))
+            (folder / "TREE2.PMP").write_bytes(
+                bytes.fromhex("5b7baffb") +
+                struct.pack("<II", len(spans), 30) + spans)
+            scene = self.install_model(model_path)
+            self.assertEqual(len(scene.sprite_resources.placements), 1)
+            self.assertEqual(len(scene.sprite_resources.images), 1)
+            self.assertEqual(scene.sprite_resources.warnings, ())
+            on = self.screenshot()
+            self.assertEqual(self.view._visibility_info["pmp_sprites"], 1)
+            self.view.sprites_enabled = False
+            self.view.update()
+            off = self.screenshot()
+            self.assertGreater(
+                int(np.any(on[..., :3] != off[..., :3], axis=2).sum()), 25)
 
     def test_referenced_helmet_drawn_inside_car_scene(self):
         scene = self.install_model("indycar.3do")
