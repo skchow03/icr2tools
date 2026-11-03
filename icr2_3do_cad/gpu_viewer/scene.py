@@ -196,8 +196,9 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
     (instance_id, sprite record offset)) for each active PMP/PMP2, preserving
     its location between polygons rather than drawing sprites on top.
     """
-    overrides = (selected_track_section_lists(scene.track_section_lods, track_detail)
-                 if track_detail is not None and scene.track_section_lods else None)
+    overrides = (selected_track_section_lists(
+        scene.track_section_lods, track_detail, model=scene.root)
+        if track_detail is not None and scene.track_section_lods else None)
     spans = []
     sprite_events = []
     element_count = 0
