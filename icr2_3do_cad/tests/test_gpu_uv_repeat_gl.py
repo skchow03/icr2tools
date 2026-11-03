@@ -81,14 +81,17 @@ class RepeatedMIPRenderingTests(unittest.TestCase):
         scene = build_scene(model)
         polygon_id = next(iter(scene.geometry.polygons))
         # Four independently colored quadrants in a single 4x4 image.
-        pixels = np.array([
+        pixels = np.zeros((8, 8), dtype=np.uint8)
+        pixels[2:6, 3:7] = np.array([
             [1, 1, 2, 2],
             [1, 1, 2, 2],
             [3, 3, 4, 4],
             [3, 3, 4, 4],
         ], dtype=np.uint8)
+        # Offset the MIP inside a larger atlas; repeating the entire atlas
+        # rather than this 4x4 rectangle would reveal black border texels.
         atlas = TextureAtlas(
-            pixels, {polygon_id: (0, 0, 4, 4)},
+            pixels, {polygon_id: (3, 2, 4, 4)},
             loaded_names=("tile.mip",), textured_polygons=1)
         palette = np.zeros((256, 3), dtype=np.uint8)
         palette[1] = (255, 0, 0)
