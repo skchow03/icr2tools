@@ -645,6 +645,10 @@ class SourcePane(QWidget):
     def set_distance_filter_context(self, model, distance, camera):
         """Update the LOD filter from the committed renderer model and camera."""
         camera = tuple(camera) if camera is not None else (0.0, 0.0, 0.0)
+        # Manual and all-LOD choices do not depend on camera position.
+        # Avoid rebuilding thousands of filter rows during orbit/pan.
+        if distance != "auto":
+            camera = (0.0, 0.0, 0.0)
         if (model is self._distance_model and
                 distance == self._distance_mode and camera == self._distance_eye):
             return
