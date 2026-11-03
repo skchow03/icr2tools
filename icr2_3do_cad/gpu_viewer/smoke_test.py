@@ -231,6 +231,7 @@ def run(path):
         if (dynamic_test and live["valid_seen"] and fixed["tested"] and
                 not inspection["tested"]):
             pane = window.source_pane
+            inspected_vbo = view._vbo
             targets = index_source_targets(pane.get_source()).targets
             poly = next((
                 item for item in targets
@@ -292,8 +293,8 @@ def run(path):
                             if (picture.isNull() or pixel.red() < 210 or
                                     pixel.green() < 190 or pixel.blue() > 150):
                                 result["error"] = "Vertex dot was not visible in framebuffer"
-                            elif view._vbo != live["vbo"] and not view._vbo:
-                                result["error"] = "Source inspection unexpectedly removed VBO"
+                            elif view._vbo != inspected_vbo:
+                                result["error"] = "Moving the source caret rebuilt GPU geometry"
             inspection["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
