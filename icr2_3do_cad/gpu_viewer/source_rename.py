@@ -108,3 +108,64 @@ def reference_spans(source: str, old: str, new: str) -> list[tuple[int, int]]:
             continue
         positions.append(span)
     return positions
+
+
+
+def plan_pointer_rename(source: str, line: int, new: str,
+                        *, update_references: bool = True
+                        ) -> tuple[str, list[tuple[int, int, str]]]:
+    """Return (old name, original-source spans) for one atomic F2 rename.
+
+    Every span is expressed in Python string offsets of the unchanged source.
+    The declaration's command, whitespace, comments, punctuation and all
+    other declarations are left byte-for-byte as authored. References are
+    changed only when requested; invalid or ambiguous renames raise ValueError.
+    """
+    rows = source.splitlines(keepends=True)
+    if not 0 <= line < len(rows):
+        raise ValueError("Select an N3 declaration before pressing F2.")
+    match = DECLARATION.match(rows[line])
+    if match is None:
+        raise ValueError("The selected line is not a named N3 declaration.")
+    old = match.group("name")
+    if not NAME_ONLY.fullmatch(new) or new.upper() in KEYWORDS:
+        raise ValueError(
+            "A pointer name must begin with a letter or underscore and "
+            "contain only letters, digits, underscores, or hyphens; "
+            "N3 keywords are not valid names.")
+    if old.upper() in KEYWORDS:
+        raise ValueError(f"Cannot rename reserved N3 keyword {old!r}.")
+    if new == old:
+        return old, []
+
+    declaration_names = [
+        item.group("name")
+        for item in re.finditer(
+            r"(?m)^[ \t]*(?P<name>" + NAME + r")[ \t]*:", source)
+    ]
+    if declaration_names.count(old) != 1:
+        raise ValueError(
+            f"Pointer {old!r} is ambiguous because it has multiple declarations.")
+    if new in declaration_names:
+        raise ValueError(f"A declaration named {new!r} already exists.")
+
+    start = sum(len(row) for row in rows[:line]) + match.start("name")
+    end = start + len(old)
+    edits = [(start, end, new)]
+    if update_references:
+        changed = source[:start] + new + source[end:]
+        delta = len(new) - len(old)
+        for first, last in reference_spans(changed, old, new):
+            # Convert positions in hypothetical renamed text back to the
+            # original document so one descending edit block can replace
+            # everything together without shifting earlier cursor positions.
+            if first >= start + len(new):
+                first -= delta
+                last -= delta
+            edits.append((first, last, new))
+    return old, sorted(edits, key=lambda item: item[0], reverse=True)
+
+
+def qt_utf16_offset(source: str, python_offset: int) -> int:
+    """Convert Python code-point offsets to QTextCursor UTF-16 positions."""
+    return len(source[:python_offset].encode("utf-16-le")) // 2
