@@ -66,6 +66,7 @@ from gpu_viewer.visibility import (
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
+from gpu_viewer.sprite_gl import PMPGLRenderer
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
@@ -386,9 +387,12 @@ class GLViewport(QOpenGLWidget):
         self._inspection_uniform = None
         self._atlas_texture = None
         self._palette_texture = None
+        self._sprite_renderer = None
+        self._sprite_events = ()
         self._atlas = None
         self._palette = None
         self.textures_enabled = True
+        self.sprites_enabled = True
         self.texture_repeat = False
         self.texture_upload_ms = None
         self._resources_released = False
@@ -502,6 +506,7 @@ class GLViewport(QOpenGLWidget):
         if self._mesh is not None:
             self._upload_mesh()
             self._upload_texture_assets()
+            self._upload_sprite_assets()
 
     def shutdown_gl(self):
         """Delete our VBO/VAO/shader before Qt destroys its GL context."""
@@ -526,6 +531,9 @@ class GLViewport(QOpenGLWidget):
             if textures:
                 glDeleteTextures(len(textures), textures)
             self._atlas_texture = self._palette_texture = None
+            if self._sprite_renderer is not None:
+                self._sprite_renderer.release()
+                self._sprite_renderer = None
             glDeleteProgram(self._program)
             self._program = None
         finally:
@@ -536,6 +544,7 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._scene = scene
+        self._sprite_events = ()
         self.inspection_kind = None
         self.inspection_offset = None
         self._atlas = atlas
@@ -554,6 +563,7 @@ class GLViewport(QOpenGLWidget):
             try:
                 self._upload_mesh()
                 self._upload_texture_assets()
+                self._upload_sprite_assets()
             finally:
                 self.doneCurrent()
         self.update()
@@ -634,6 +644,19 @@ class GLViewport(QOpenGLWidget):
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
         self._upload_palette()
         self.texture_upload_ms = (perf_counter() - started) * 1000
+
+    def _upload_sprite_assets(self):
+        """Upload indexed PMP assets on the GUI GL thread, never the worker."""
+        if self._program is None or self._scene is None:
+            return
+        assets = getattr(self._scene, "sprite_resources", None)
+        if assets is None or not assets.images:
+            if self._sprite_renderer is not None:
+                self._sprite_renderer.upload(None)
+            return
+        if self._sprite_renderer is None:
+            self._sprite_renderer = PMPGLRenderer()
+        self._sprite_renderer.upload(assets)
 
     def _upload_palette(self):
         if self._program is None or self._palette is None:
@@ -721,15 +744,16 @@ class GLViewport(QOpenGLWidget):
                 -math.cos(self.elevation) * math.cos(self.azimuth),
                 math.sin(self.elevation),
             )
-        indices, visible, info = ordered_scene_indices(
+        indices, visible, info, sprite_events = ordered_scene_indices(
             self._scene, self._mesh, eye, self.lod_distance,
-            view_direction=direction)
+            view_direction=direction, with_sprites=True)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
                      indices if indices.size else None, GL_DYNAMIC_DRAW)
         glBindVertexArray(0)
         self._index_count = len(indices)
+        self._sprite_events = sprite_events
         self._visible_set = visible
         self._visibility_info = info
         self._visibility_dirty = False
@@ -739,7 +763,8 @@ class GLViewport(QOpenGLWidget):
             f"{info['tested_planes']:,} plane tests | "
             f"{info['culled_nodes']:,} pruned nodes | "
             f"{info['lod_selections']:,} LOD selections | "
-            f"{info['instances_visited']:,} instances"
+            f"{info['instances_visited']:,} instances | "
+            f"{info['pmp_sprites']:,} PMP sprites"
         )
 
     def paintGL(self):
@@ -783,8 +808,28 @@ class GLViewport(QOpenGLWidget):
         if self.render_mode != 'all' and self._visibility_dirty:
             self._refresh_visibility()
         glBindVertexArray(self._vao)
+        pmp_enabled = (self.textures_enabled and self.sprites_enabled and
+                       self._sprite_renderer is not None and
+                       self._scene is not None and
+                       getattr(self._scene, "sprite_resources", None) is not None)
         if self.render_mode == 'all':
             glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+            if pmp_enabled:
+                # Diagnostic mode deliberately includes all LOD/BSP variants.
+                for placement in self._scene.sprite_resources.placements.values():
+                    self._draw_pmp(placement, projection, view)
+        elif pmp_enabled and self._sprite_events:
+            # Split the SAME EBO at sprite insertion markers so LIST/DYNAMIC
+            # painter ordering remains faithful without repacking geometry.
+            for command in draw_runs(self._index_count, self._sprite_events):
+                if command[0] == "polygons":
+                    glDrawElements(GL_TRIANGLES, command[2], GL_UNSIGNED_INT,
+                                   ctypes.c_void_p(command[1] * 4))
+                else:
+                    placement = self._scene.sprite_resources.placements.get(
+                        command[1])
+                    if placement is not None:
+                        self._draw_pmp(placement, projection, view)
         elif self._index_count:
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
 
@@ -825,6 +870,18 @@ class GLViewport(QOpenGLWidget):
                 painter.setBrush(QBrush(QColor(255, 237, 65)))
                 painter.drawEllipse(QPointF(*position), 6.0, 6.0)
                 painter.end()
+
+    def _draw_pmp(self, placement, projection, view):
+        """Draw one palette-indexed transparent billboard at its BSP site."""
+        self._sprite_renderer.draw(
+            placement, self._mesh, projection, view, self._palette_texture)
+        # Restore polygon state for the next BSP span or source highlight.
+        glUseProgram(self._program)
+        glBindVertexArray(self._vao)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -970,6 +1027,7 @@ class Window(QMainWindow):
         self.polygon_status = QLabel("Enter a polygon body offset to inspect")
         self.palette_status = QLabel("Palette: bundled gamepal.pcx")
         self.texture_status = QLabel("MIPs: no model loaded")
+        self.sprite_status = QLabel("PMP sprites: no model loaded")
         self.car_status = QLabel("Individual-car RECOLOR: not loaded")
         root = QWidget()
         layout = QVBoxLayout(root)
@@ -1137,6 +1195,13 @@ class Window(QMainWindow):
         self.show_textures.setChecked(True)
         self.show_textures.toggled.connect(self._textures_toggled)
         display_layout.addWidget(self.show_textures)
+        self.show_sprites = QCheckBox("PMP sprites (PMP/PMP2)")
+        self.show_sprites.setToolTip(
+            "Render viewpoint-selected billboards from this 3DO and nested "
+            "referenced objects. Requires Textures enabled.")
+        self.show_sprites.setChecked(True)
+        self.show_sprites.toggled.connect(self._sprites_toggled)
+        display_layout.addWidget(self.show_sprites)
         self.repeat_uv = QCheckBox("Repeat UV")
         self.repeat_uv.toggled.connect(self._repeat_toggled)
         display_layout.addWidget(self.repeat_uv)
@@ -1246,7 +1311,8 @@ class Window(QMainWindow):
         layout.addWidget(self.main_splitter, stretch=1)
         for label in (self.stats_label, self.visibility_label,
                       self.polygon_status, self.palette_status,
-                      self.texture_status, self.car_status,
+                      self.texture_status, self.sprite_status,
+                      self.car_status,
                       self.track_status, self.object_status):
             label.setWordWrap(True)
         advanced_layout.addWidget(self.stats_label)
@@ -1254,6 +1320,7 @@ class Window(QMainWindow):
         advanced_layout.addWidget(self.polygon_status)
         assets_layout.addWidget(self.palette_status)
         assets_layout.addWidget(self.texture_status)
+        assets_layout.addWidget(self.sprite_status)
         self.setCentralWidget(root)
         self._workspace_changed(self.workspace_tabs.currentIndex())
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
@@ -1302,6 +1369,10 @@ class Window(QMainWindow):
 
     def _textures_toggled(self, checked):
         self.viewer.textures_enabled = checked
+        self.viewer.update()
+
+    def _sprites_toggled(self, checked):
+        self.viewer.sprites_enabled = checked
         self.viewer.update()
 
     def _repeat_toggled(self, checked):
@@ -1934,6 +2005,12 @@ class Window(QMainWindow):
         self.palette_status.setText(
             f"Palette: {self.palette_path.name} (256 colors)")
         self._show_mip_stats(stats)
+        self.sprite_status.setText(
+            f"PMP sprites: {stats['pmp_placements']} placements / "
+            f"{stats['pmp_images']} images loaded | "
+            f"{len(stats['pmp_warnings'])} missing or invalid"
+            + (": " + "; ".join(stats['pmp_warnings'][:3])
+               if stats['pmp_warnings'] else ""))
         self.car_status.setText(
             f"Individual-car RECOLOR: {stats['recolor_pairs']} mappings"
             f" | referenced carshape(s): {len(model.external_names)}"
@@ -1989,10 +2066,12 @@ class Window(QMainWindow):
             f"{mesh.polygon_count:,} polygons / {mesh.triangle_count:,} triangles  |  "
             f"skipped {mesh.skipped_polygons:,}  |  "
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
-            f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
+            f"buffer {mesh.size_bytes / 1048576:.1f} MiB | "
+            f"PMP {stats['pmp_images']} images")
         problem_count = (len(stats['external_warnings']) +
                          len(stats['missing_textures']) +
-                         len(stats['texture_errors']))
+                         len(stats['texture_errors']) +
+                         len(stats['pmp_warnings']))
         self.statusBar().showMessage(
             f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
             + (f"{problem_count} asset warnings — see Assets" if problem_count
