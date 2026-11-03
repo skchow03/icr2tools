@@ -560,6 +560,8 @@ class GLViewport(QOpenGLWidget):
         self._visible_set = frozenset()
         self._visibility_info = {}
         self._dot_cached_refs = None
+        self._vertex_refs_key = None
+        self._vertex_refs = ()
         self._vertex_cache_key = None
         self._vertex_projected = None
         self._vertex_override = None
@@ -844,76 +846,111 @@ class GLViewport(QOpenGLWidget):
             self._draw_vertex_overlay(mvp)
 
     def _draw_vertex_overlay(self, mvp):
-        """QPainter draws dots in logical widget pixels over the GPU scene.
+        """GPU-rendered selectable root vertex dots; QPainter for labels only.
 
-        The same screen projections are reused for nearest-dot picking.
-        No QPainter operations are performed inside OpenGL drawing calls.
+        The packed dot VBO persists across camera updates. Active BSP/LOD
+        offsets change only its small EBO, not geometry. Python projects
+        points only when camera/model/selection changes for mouse picking.
         """
-        if self._model is None or self._mesh is None:
+        if self._model is None or self._mesh is None or self._dot_vao is None:
             self._vertex_projected = None
             return
         self._vertex_mvp = mvp
-        if self.render_mode == 'all' or not self.vertex_visible_only:
-            refs = sorted(self._model.vertices)
-        else:
-            active = set()
-            for off in self._visible_set:
-                poly = self._model.polygons.get(off)
-                if poly is not None:
-                    active.update(poly.unique_refs)
-            refs = sorted(active)
-        if self.vertex_selected in self._model.vertices and self.vertex_selected not in refs:
-            refs.append(self.vertex_selected)
-        if not refs:
-            self._vertex_projected = None
+        refs_key = (id(self._model), self.render_mode,
+                    self.vertex_visible_only, id(self._visible_set))
+        if getattr(self, "_vertex_refs_key", None) != refs_key:
+            if self.render_mode == 'all' or not self.vertex_visible_only:
+                refs = sorted(self._model.vertices)
+            else:
+                active = set()
+                for off in self._visible_set:
+                    poly = self._model.polygons.get(off)
+                    if poly is not None:
+                        active.update(poly.unique_refs)
+                refs = sorted(active)
+            self._vertex_refs = tuple(refs)
+            self._vertex_refs_key = refs_key
+            self._dot_cached_refs = None
+        refs = self._vertex_refs
+        selected = self.vertex_selected
+        points_refs = refs + ((selected,) if
+                              selected in self._model.vertices and
+                              selected not in refs else ())
+        key = (refs_key, mvp.tobytes(), selected, self._vertex_override)
+        if key != self._vertex_cache_key:
+            xyz = np.asarray(
+                [self._model.vertices[ref].xyz for ref in points_refs],
+                dtype=np.float64).reshape((-1, 3))
+            if self._vertex_override is not None and selected in points_refs:
+                xyz[points_refs.index(selected)] = self._vertex_override
+            pixels, valid = project_vertices(
+                xyz, self._mesh.center, self._mesh.scale,
+                mvp, self.width(), self.height())
+            self._vertex_projected = (
+                np.asarray(points_refs, dtype=np.int64), pixels, valid)
+            self._vertex_cache_key = key
+        refs_array, px, valid = self._vertex_projected
+        if self.vertex_dots and self._dot_program is not None:
+            draw_refs = tuple(self._dot_indices[ref] for ref in refs
+                              if ref != selected)
+            if self._dot_cached_refs != draw_refs:
+                indices = np.asarray(draw_refs, dtype=np.uint32)
+                glBindVertexArray(self._dot_vao)
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._dot_ebo)
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                             indices if indices.size else None, GL_DYNAMIC_DRAW)
+                glBindVertexArray(0)
+                self._dot_index_count = int(indices.size)
+                self._dot_cached_refs = draw_refs
+            glDisable(GL_DEPTH_TEST)
+            glEnable(GL_PROGRAM_POINT_SIZE)
+            glUseProgram(self._dot_program)
+            params = self._dot_uniforms
+            glUniformMatrix4fv(params["mvp"], 1, GL_FALSE,
+                               np.ascontiguousarray(mvp.T, dtype=np.float32))
+            glUniform3f(params["offset"], 0.0, 0.0, 0.0)
+            glUniform1f(params["point_size"], 4.0 * self.devicePixelRatioF())
+            glUniform4f(params["color"], 0.72, 0.80, 0.93, 1.0)
+            glBindVertexArray(self._dot_vao)
+            if self._dot_index_count:
+                glDrawElements(GL_POINTS, self._dot_index_count,
+                               GL_UNSIGNED_INT, None)
+            if selected in self._dot_indices:
+                translation = np.zeros(3, dtype=np.float64)
+                if self._vertex_override is not None:
+                    original = np.asarray(
+                        self._model.vertices[selected].xyz, dtype=np.float64)
+                    translation = (
+                        np.asarray(self._vertex_override, dtype=np.float64)
+                        - original) / self._mesh.scale
+                glUniform3f(params["offset"], *map(float, translation))
+                glUniform1f(params["point_size"],
+                            10.0 * self.devicePixelRatioF())
+                glUniform4f(params["color"], 1.0, 0.86, 0.41, 1.0)
+                glDrawArrays(GL_POINTS, self._dot_indices[selected], 1)
+            glBindVertexArray(0)
+            glUseProgram(0)
+        if self.vertex_label_mode == "Off":
             return
-        coords = np.array([self._model.vertices[ref].xyz for ref in refs],
-                          dtype=np.float64)
-        if (self._vertex_override is not None and
-                self.vertex_selected in refs):
-            coords[refs.index(self.vertex_selected)] = self._vertex_override
-        px, valid = project_vertices(
-            coords, self._mesh.center, self._mesh.scale, mvp,
-            self.width(), self.height())
-        self._vertex_projected = (np.asarray(refs, dtype=np.int64), px, valid)
-        if not self.vertex_dots and self.vertex_label_mode == "Off":
-            return
+        # Labels are optional; avoid expensive Qt painting in the default
+        # dot-only path. Thin labels by screen cell as the CPU editor does.
         painter = QPainter(self)
         try:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-            painter.setPen(Qt.PenStyle.NoPen)
-            if self.vertex_dots:
-                for i in np.flatnonzero(valid):
-                    if refs[i] == self.vertex_selected:
-                        continue
-                    painter.setBrush(QColor("#b8cced"))
-                    x, y = float(px[i, 0]), float(px[i, 1])
-                    painter.drawEllipse(int(x-2), int(y-2), 4, 4)
-                if self.vertex_selected in refs:
-                    i = refs.index(self.vertex_selected)
-                    if valid[i]:
-                        painter.setBrush(QColor("#ffdc68"))
-                        x, y = float(px[i, 0]), float(px[i, 1])
-                        painter.drawEllipse(int(x-5), int(y-5), 10, 10)
-            if self.vertex_label_mode != "Off":
-                font = QFont("Consolas", 9)
-                painter.setFont(font)
-                painter.setPen(QColor("#e7efff"))
-                occupied = set()
-                shown = 0
-                for i in np.flatnonzero(valid):
-                    ref = refs[i]
-                    x, y = float(px[i, 0]), float(px[i, 1])
-                    cell = (int(x//54), int(y//17))
-                    if ref != self.vertex_selected and cell in occupied:
-                        continue
-                    occupied.add(cell)
-                    name = (self.vertex_names.get(ref, f"@{ref}")
-                            if self.vertex_label_mode == "Names" else str(ref))
-                    painter.drawText(int(x+7), int(y-7), name)
-                    shown += 1
-                    if shown >= 650:
-                        break
+            painter.setFont(QFont("Consolas", 9))
+            painter.setPen(QColor("#e7efff"))
+            occupied = set()
+            for number, i in enumerate(np.flatnonzero(valid)):
+                if number >= 650:
+                    break
+                ref = int(refs_array[i])
+                x, y = float(px[i, 0]), float(px[i, 1])
+                cell = (int(x//54), int(y//17))
+                if ref != selected and cell in occupied:
+                    continue
+                occupied.add(cell)
+                name = (self.vertex_names.get(ref, f"@{ref}")
+                        if self.vertex_label_mode == "Names" else str(ref))
+                painter.drawText(int(x+7), int(y-7), name)
         finally:
             painter.end()
 
