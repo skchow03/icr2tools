@@ -193,6 +193,33 @@ The mode is a UI organization choice, not a conversion between file formats.
 Loading and mesh creation run on a worker thread; the OpenGL context and
 buffer upload stay on Qt's GUI thread.
 
+## Filtering and navigating .3D Source
+
+The **Filter statements** dropdown in .3D Source contains checkboxes for
+**Comments (%)**, **POLY**, **Vertices**, **LIST**, **BSP**, **FACE**,
+**SWITCH**, **MATERIAL**, **DYNAMIC**, **LINE**, **RECOLOR**, **Sprites**
+(SRB/PMP2), and **Other** (NIL, DATA, SUPEROBJ, the version header, etc.).
+Every category is checked by default, so the normal editable source is shown.
+
+- Uncheck any categories to **exclude** those statements from the
+  navigation results, or click **Only** beside a category to isolate it.
+  **Show all** restores the full editable source; **Hide all** gives an
+  empty starting point for choosing a few categories.
+- The **Find** field further filters results by label or displayed statement
+  text. Results display **original file line numbers** in source order.
+  Multiline declarations are grouped as a single result, so they are never
+  cut into dangling continuation lines. Standalone `%` comment lines are
+  listed under Comments, while inline comments stay with their statements.
+- A filtered result list is deliberately **read-only**. Selecting one jumps
+  the source cursor to the original declaration and updates existing
+  GPU polygon/vertex inspection. **Double-click** a result (or use
+  **Edit selected source line**) to restore the complete editor, locate the
+  selected line, and edit it normally.
+- Filters **never delete, rewrite, or remove lines from the N3 document**.
+  All hidden statements, comments, blank lines, source offsets, undo history,
+  live compilation, Save Source, and compiled 3DO export remain unchanged.
+  **Find error** also restores the complete editor before navigating.
+
 ## Inspecting N3 geometry with the source cursor
 
 Open **.3D Source** beside the GPU preview. Place the text cursor anywhere
