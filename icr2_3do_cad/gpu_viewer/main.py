@@ -67,7 +67,8 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.sprite_gl import PMPGLRenderer
-from gpu_viewer.textures import build_atlas, load_palette
+from gpu_viewer.textures import (build_atlas, load_palette,
+                                 find_model_sunny_palette)
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
@@ -195,7 +196,7 @@ class LoadWorker(QThread):
                  fallback_mip=None, *, objects_folder=None,
                  mip_overrides=None, object_overrides=None, body_mip=None,
                  existing_model=None, source_text=None, source_path=None,
-                 appearance_override=None):
+                 appearance_override=None, auto_local_palette=False):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
@@ -209,6 +210,7 @@ class LoadWorker(QThread):
         self.source_text = source_text
         self.source_path = Path(source_path) if source_path is not None else None
         self.appearance_override = appearance_override
+        self.auto_local_palette = auto_local_palette
 
     def run(self):
         try:
@@ -244,7 +246,26 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            palette = load_palette(self.palette_path)
+            selected_palette = self.palette_path
+            palette_warning = None
+            auto_palette = False
+            local_sunny = (find_model_sunny_palette(self.path)
+                           if self.auto_local_palette else None)
+            if local_sunny is not None:
+                try:
+                    palette = load_palette(local_sunny)
+                except (OSError, ValueError) as exc:
+                    # A damaged SUNNY.PCX must not prevent opening otherwise
+                    # valid geometry. Fall back to the existing user palette.
+                    palette_warning = (
+                        f"{local_sunny.name}: {exc}; "
+                        f"using {self.palette_path.name}")
+                    palette = load_palette(self.palette_path)
+                else:
+                    selected_palette = local_sunny
+                    auto_palette = True
+            else:
+                palette = load_palette(self.palette_path)
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
@@ -261,6 +282,9 @@ class LoadWorker(QThread):
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
+                "palette_path": selected_palette,
+                "palette_auto": auto_palette,
+                "palette_warning": palette_warning,
                 "parse_ms": parse_ms,
                 "mesh_ms": mesh.build_ms,
                 "model_polygons": len(model.polygons),
@@ -1987,7 +2011,8 @@ class Window(QMainWindow):
             source_path=(self.source_pane.source_path
                          if reuse_model and self._source_applied else None),
             appearance_override=(self.viewer._scene.appearance
-                                 if reuse_model and self._source_applied else None))
+                                 if reuse_model and self._source_applied else None),
+            auto_local_palette=not reuse_model)
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
         self.worker.start()
@@ -1995,6 +2020,9 @@ class Window(QMainWindow):
     def _loaded(self, mesh, stats, model, atlas, palette, scene,
                 *, from_source=False):
         self._info = stats
+        # Commit the auto-selected palette only after the whole model has
+        # loaded successfully. Failed loads leave the prior palette intact.
+        self.palette_path = Path(stats.get("palette_path", self.palette_path))
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
@@ -2008,8 +2036,10 @@ class Window(QMainWindow):
             suggested = suggest_workspace(self.model_path, stats)
             if suggested is not None:
                 self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index(suggested))
+        palette_note = (" · model folder"
+                        if stats.get("palette_auto") else "")
         self.palette_status.setText(
-            f"Palette: {self.palette_path.name} (256 colors)")
+            f"Palette: {self.palette_path.name} (256 colors){palette_note}")
         self._show_mip_stats(stats)
         self.sprite_status.setText(
             f"PMP sprites: {stats['pmp_placements']} placements / "
@@ -2077,10 +2107,13 @@ class Window(QMainWindow):
         problem_count = (len(stats['external_warnings']) +
                          len(stats['missing_textures']) +
                          len(stats['texture_errors']) +
-                         len(stats['pmp_warnings']))
+                         len(stats['pmp_warnings']) +
+                         int(bool(stats.get('palette_warning'))))
         self.statusBar().showMessage(
             f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
-            + (f"{problem_count} asset warnings — see Assets" if problem_count
+            + (stats['palette_warning']
+               if stats.get('palette_warning') else
+               f"{problem_count} asset warnings — see Assets" if problem_count
                else "Ready"))
         if not from_source and self.source_toggle.isChecked():
             self._ensure_source_loaded()
