@@ -2,13 +2,13 @@
 
 The model owns the *compiled* vertices; user edits are emitted as requests to
 Window, which patches and recompiles the authoritative .3D source. The list
-is virtualized so giant track models do not create thousands of Qt widgets.
+uses Qt's native string-list model to avoid thousands of Qt item widgets.
 """
 from __future__ import annotations
 
 from bisect import bisect_left
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, Signal
+from PySide6.QtCore import QStringListModel, Qt, Signal
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFormLayout, QHBoxLayout, QLabel, QLineEdit,
     QListView, QMessageBox, QPushButton, QSpinBox, QVBoxLayout, QWidget,
@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
 from vertex_labels import declaration_label, names_for_vertices
 
 
-class VertexListModel(QAbstractListModel):
+class VertexListModel(QStringListModel):
+    """Native Qt list storage avoids a Python virtual data() callback per row."""
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.model = None
@@ -25,31 +27,23 @@ class VertexListModel(QAbstractListModel):
         self.names = {}
 
     def replace(self, model, names):
-        self.beginResetModel()
         self.model = model
         self.offsets = sorted(model.vertices) if model is not None else []
         self.names = names or {}
-        self.endResetModel()
-
-    def rowCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else len(self.offsets)
-
-    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
-        if not index.isValid() or not 0 <= index.row() < len(self.offsets):
-            return None
-        if role == Qt.ItemDataRole.DisplayRole:
-            off = self.offsets[index.row()]
-            v = self.model.vertices[off]
-            named = self.names.get(off)
-            tag = " UV" if v.textured else ""
-            return (f"@{off}  {named}  {v.xyz[0]}, {v.xyz[1]}, {v.xyz[2]}{tag}"
-                    if named else
-                    f"@{off}  {v.xyz[0]}, {v.xyz[1]}, {v.xyz[2]}{tag}")
-        if role == Qt.ItemDataRole.UserRole:
-            return self.offsets[index.row()]
-        return None
+        rows = []
+        if model is not None:
+            for off in self.offsets:
+                vertex = model.vertices[off]
+                name = self.names.get(off)
+                label = f"@{off} " + (f" {name} " if name else " ")
+                rows.append(
+                    f"{label} {vertex.xyz[0]}, {vertex.xyz[1]}, {vertex.xyz[2]}"
+                    + (" UV" if vertex.textured else ""))
+        self.setStringList(rows)
 
     def row_for_offset(self, off):
+        if off is None:
+            return -1
         index = bisect_left(self.offsets, off)
         return index if index < len(self.offsets) and self.offsets[index] == off else -1
 
@@ -261,9 +255,9 @@ class VertexPane(QWidget):
                      if self._document is not None else ""))
 
     def _selected_list(self, index):
-        off = self.list_model.data(index, Qt.ItemDataRole.UserRole)
-        if off is not None:
-            self.select_offset(off)
+        row = index.row()
+        if 0 <= row < len(self.list_model.offsets):
+            self.select_offset(self.list_model.offsets[row])
 
     def find_offset(self):
         try:
