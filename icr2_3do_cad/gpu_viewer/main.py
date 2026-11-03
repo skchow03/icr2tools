@@ -43,14 +43,14 @@ try:
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
         glUniform1i,
     )
-    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF
     from PySide6.QtGui import (
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
-        QScrollArea, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+        QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -68,11 +68,12 @@ from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_mod
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
-    target_offset, polygon_mesh_range, vertex_screen_position,
+    target_offset, polygon_mesh_range, polygon_inspection_notice,
+    vertex_screen_position,
 )
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
-    resolve_lod_distance,
+    resolve_lod_distance, max_switch_distance,
 )
 
 
@@ -733,12 +734,23 @@ class GLViewport(QOpenGLWidget):
         elif self._index_count:
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
 
+        # Source highlighting must never force a BSP/LOD-excluded polygon
+        # into the scene. Only brighten polygons selected for this view.
+        notice = None
         if self.inspection_kind == "polygon":
             span = polygon_mesh_range(
                 self._scene, self._mesh, self.inspection_offset)
-            if span is not None and span[1]:
-                # The overlay is intentionally visible through occluding
-                # geometry and inactive BSP branches for source inspection.
+            if span is None or not span[1]:
+                notice = "POLY has no renderable triangles in this scene"
+            elif (self.render_mode != "all" and
+                  self.inspection_offset not in self._visible_set):
+                notice = polygon_inspection_notice(
+                    self._model, self.inspection_offset, self._visible_set,
+                    self.lod_distance, self._camera_eye_model(),
+                    self.render_mode)
+            else:
+                # The selected face is part of the active traversal; retain
+                # its bright overlay for easy identification.
                 glDisable(GL_DEPTH_TEST)
                 glUniform1i(self._inspection_uniform, 1)
                 glDrawArrays(GL_TRIANGLES, *span)
@@ -746,19 +758,36 @@ class GLViewport(QOpenGLWidget):
 
         glBindVertexArray(0)
         glUseProgram(0)
-        if self.inspection_kind == "vertex":
-            position = vertex_screen_position(
-                self._model, self._mesh, self.inspection_offset,
-                projection @ view, self.width(), self.height())
-            if position is not None:
-                # Draw in screen space so even an unused/occluded vertex has
-                # a legible, constant-size marker without changing geometry.
-                painter = QPainter(self)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setPen(QPen(QColor(12, 20, 32), 2))
-                painter.setBrush(QBrush(QColor(255, 237, 65)))
-                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
-                painter.end()
+        if notice or self.inspection_kind == "vertex":
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            if notice:
+                # Readable diagnostic in the viewport, not in the source
+                # editor or status bar where it could be overlooked.
+                font = painter.font()
+                font.setPointSize(10)
+                painter.setFont(font)
+                text_width = painter.fontMetrics().horizontalAdvance(notice)
+                box_width = min(self.width() - 20, text_width + 24)
+                painter.setPen(Qt.PenStyle.NoPen)
+                painter.setBrush(QColor(23, 30, 44, 232))
+                painter.drawRoundedRect(QRectF(10, 10, box_width, 34), 5, 5)
+                painter.setPen(QColor(255, 226, 130))
+                if text_width + 24 <= box_width:
+                    painter.drawText(QPointF(22, 32), notice)
+                else:
+                    painter.drawText(QRectF(18, 13, box_width - 16, 29),
+                                     Qt.TextFlag.TextWordWrap, notice)
+            if self.inspection_kind == "vertex":
+                position = vertex_screen_position(
+                    self._model, self._mesh, self.inspection_offset,
+                    projection @ view, self.width(), self.height())
+                if position is not None:
+                    # Marker follows camera motion without changing geometry.
+                    painter.setPen(QPen(QColor(12, 20, 32), 2))
+                    painter.setBrush(QBrush(QColor(255, 237, 65)))
+                    painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+            painter.end()
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -1015,22 +1044,38 @@ class Window(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         advanced_layout.addWidget(self.mode_combo)
 
-        display_layout.addWidget(QLabel("Detail level"))
+        display_layout.addWidget(QLabel("SWITCH DISTANCE / RES"))
         self.lod_mode_combo = QComboBox()
-        self.lod_mode_combo.addItem("Automatic (default)", "auto")
-        self.lod_mode_combo.addItem("Manual distance", "manual")
+        self.lod_mode_combo.addItem("Automatic (per RES anchor)", "auto")
+        self.lod_mode_combo.addItem("Manual (slider)", "manual")
         self.lod_mode_combo.addItem("Show all detail levels", "all")
+        self.lod_mode_combo.setToolTip(
+            "Drag the distance slider to select manual distance. "
+            "Automatic measures from the camera to each RES anchor.")
         self.lod_mode_combo.currentIndexChanged.connect(self._lod_changed)
         display_layout.addWidget(self.lod_mode_combo)
+        slider_row = QHBoxLayout()
+        self.lod_slider = QSlider(Qt.Orientation.Horizontal)
+        self.lod_slider.setRange(0, 0)
+        self.lod_slider.setEnabled(False)
+        self.lod_slider.setToolTip(
+            "Manual SWITCH DISTANCE in raw Papyrus model units; "
+            "dragging switches from Automatic to Manual.")
+        self.lod_slider.sliderPressed.connect(self._activate_manual_distance)
+        self.lod_slider.valueChanged.connect(self._slider_distance_changed)
+        slider_row.addWidget(self.lod_slider, 1)
         self.lod_spin = QSpinBox()
-        self.lod_spin.setRange(0, 2000000000)
-        self.lod_spin.setSingleStep(10000)
-        self.lod_spin.setValue(0)
-        self.lod_spin.setPrefix("Distance: ")
-        self.lod_spin.setToolTip("Original Papyrus model units")
-        self.lod_spin.valueChanged.connect(self._lod_changed)
+        self.lod_spin.setRange(0, 0)
+        self.lod_spin.setKeyboardTracking(False)
+        self.lod_spin.setToolTip(
+            "Exact SWITCH DISTANCE. Editing this value selects Manual mode.")
+        self.lod_spin.valueChanged.connect(self._spin_distance_changed)
         self.lod_spin.setEnabled(False)
-        display_layout.addWidget(self.lod_spin)
+        slider_row.addWidget(self.lod_spin)
+        display_layout.addLayout(slider_row)
+        self.lod_max_label = QLabel("No SWITCH DISTANCE thresholds found")
+        self.lod_max_label.setWordWrap(True)
+        display_layout.addWidget(self.lod_max_label)
 
         advanced_layout.addWidget(QLabel("Polygon body offset"))
         self.polygon_edit = QLineEdit()
@@ -1589,6 +1634,7 @@ class Window(QMainWindow):
             self.viewer.set_mesh(
                 mesh, self.viewer._model, atlas,
                 self.viewer._palette, self.viewer._scene, preserve_view=True)
+            self._source_target_changed(self.source_pane.current_target())
             self.statusBar().showMessage(
                 "Livery MIPs reloaded; UV atlas layout changed, rebuilt VBO")
         self._show_mip_stats(stats)
@@ -1610,11 +1656,45 @@ class Window(QMainWindow):
         self.viewer.set_render_mode(self.mode_combo.currentData())
         self._update_polygon_status()
 
+    def _activate_manual_distance(self):
+        if self.lod_mode_combo.currentData() != "manual":
+            self.lod_mode_combo.setCurrentIndex(
+                self.lod_mode_combo.findData("manual"))
+        else:
+            self._lod_changed()
+
+    def _slider_distance_changed(self, value):
+        self.lod_spin.blockSignals(True)
+        self.lod_spin.setValue(value)
+        self.lod_spin.blockSignals(False)
+        self._activate_manual_distance()
+
+    def _spin_distance_changed(self, value):
+        self.lod_slider.blockSignals(True)
+        self.lod_slider.setValue(value)
+        self.lod_slider.blockSignals(False)
+        self._activate_manual_distance()
+
+    def _configure_switch_distance(self, scene):
+        """Clamp the slider to the loaded scene's highest actual RES threshold."""
+        maximum = max_switch_distance(scene)
+        value = min(self.lod_spin.value(), maximum)
+        for control in (self.lod_slider, self.lod_spin):
+            control.blockSignals(True)
+            control.setRange(0, maximum)
+            control.setValue(value)
+            control.setEnabled(maximum > 0)
+            control.blockSignals(False)
+        self.lod_slider.setSingleStep(max(1, maximum // 500))
+        self.lod_slider.setPageStep(max(1, maximum // 20))
+        self.lod_max_label.setText(
+            f"0 – {maximum:,} raw model units (highest RES threshold)"
+            if maximum else "No SWITCH DISTANCE thresholds found")
+        self._lod_changed()
+
     def _lod_changed(self, *args):
-        mode = self.lod_mode_combo.currentData()
-        self.lod_spin.setEnabled(mode == "manual")
         self.viewer.lod_distance = resolve_lod_distance(
-            mode, self.lod_spin.value())
+            self.lod_mode_combo.currentData(), self.lod_spin.value())
         self.viewer.invalidate_visibility()
 
     def _visibility_updated(self, message):
@@ -1765,6 +1845,7 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        self._configure_switch_distance(scene)
         self._preserve_view = False
         self._source_target_changed(self.source_pane.current_target())
         # Keep manual mode selection for ambiguous files and all background
