@@ -65,6 +65,7 @@ from gpu_viewer.visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
+from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
@@ -243,6 +244,13 @@ class LoadWorker(QThread):
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
             palette = load_palette(self.palette_path)
+            # Decode every PMP variant once in this worker, including
+            # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
+            # RG8 palette-index/alpha images stay independent of PCX colors.
+            scene.sprite_resources = prepare_scene_sprites(
+                scene, objects_folder=self.objects_folder,
+                texture_folder=self.texture_folder)
+            scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip,
@@ -267,6 +275,9 @@ class LoadWorker(QThread):
                 "atlas_shape": atlas.pixels.shape,
                 "dynamic_instances": scene.loaded_instances,
                 "external_warnings": scene.warnings,
+                "pmp_warnings": scene.sprite_resources.warnings,
+                "pmp_images": len(scene.sprite_resources.images),
+                "pmp_placements": len(scene.sprite_resources.placements),
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
                 "recolor_pairs": scene.recolor_pairs,
