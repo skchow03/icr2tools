@@ -415,9 +415,16 @@ def run(path):
     # interpreter shutdown on PySide6 6.12.
     import gc
     timer.stop()
-    timer.timeout.disconnect(check)
-    if window.isVisible():
-        window.close()
+    try:
+        timer.timeout.disconnect(check)
+    except RuntimeError:
+        pass
+    # WA_DeleteOnClose can already have deleted the C++ window.
+    try:
+        if window.isVisible():
+            window.close()
+    except RuntimeError:
+        pass
     app.processEvents()
     del check
     del timer
