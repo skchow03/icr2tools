@@ -1349,6 +1349,174 @@ class Window(QMainWindow):
         self.viewer.vertex_step = pane.step.value()
         self.viewer.update()
 
+    def _refresh_vertex_pane(self):
+        model = self.viewer._model
+        self.vertex_pane.set_model(
+            model, self._vertex_document,
+            original_n3=(self.model_path is not None and
+                         self.model_path.suffix.lower() == ".3d"),
+            selected=self.viewer.vertex_selected)
+        self._vertex_options_changed()
+
+    def _vertex_selected(self, offset):
+        if self.viewer._model is None or offset not in self.viewer._model.vertices:
+            return
+        self.viewer.vertex_selected = offset
+        self.vertex_pane.select_offset(offset, emit=False)
+        self.viewer.update()
+
+    def _vertex_can_edit(self):
+        if (not self.source_pane.ready or self._vertex_document is None or
+                self.viewer._model is None):
+            self.vertex_pane.status.setText("Preparing editable .3D source…")
+            self._ensure_source_loaded()
+            return False
+        if (self.source_pane.pending or self._source_invalid or
+                self._source_queued is not None or
+                (self.worker is not None and self.worker.isRunning())):
+            self.vertex_pane.status.setText(
+                "Wait for source validation; resolve any N3 errors before editing a vertex.")
+            return False
+        if self.vertex_pane.selected not in self.viewer._model.vertices:
+            self.vertex_pane.status.setText("Select a vertex first.")
+            return False
+        return True
+
+    def _submit_vertex_source(self, revised):
+        current = self.source_pane.get_source()
+        if revised == current:
+            return False
+        self.source_pane.editor.setPlainText(revised.replace("\r\n", "\n"))
+        self._vertex_edit_revision = self.source_pane.revision
+        self.source_pane.apply_now()
+        self.vertex_pane.status.setText("Compiling vertex change; preview retains last valid geometry…")
+        return True
+
+    def _vertex_change(self, xyz=None, uv=None, *, record=True):
+        if not self._vertex_can_edit():
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            return
+        ref = self.vertex_pane.selected
+        vertex = self.viewer._model.vertices[ref]
+        old_xyz = tuple(vertex.xyz)
+        old_uv = tuple(vertex.uv) if vertex.uv is not None else None
+        new_xyz, new_uv = check_values(
+            old_xyz if xyz is None else xyz,
+            old_uv if uv is None else uv)
+        if (new_xyz, new_uv) == (old_xyz, old_uv):
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            return
+        label = declaration_label(self.viewer._model, self._vertex_document, ref)
+        try:
+            changed = patch_vertex_source(
+                self.source_pane.get_source(), label, new_xyz, new_uv,
+                coordinate_scale=getattr(self.viewer._model,
+                                         "n3_coordinate_scale", 1))
+        except ValueError as error:
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            QMessageBox.warning(self, "Invalid vertex edit", str(error))
+            return
+        if record:
+            self._vertex_undo.append(
+                ("vertex", label, old_xyz, old_uv, new_xyz, new_uv))
+            self._vertex_undo = self._vertex_undo[-150:]
+            self._vertex_redo.clear()
+        self._submit_vertex_source(changed)
+
+    def _vertex_coordinates(self, values):
+        try:
+            check_values(values)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid XYZ", str(error))
+            return
+        self._vertex_change(xyz=values)
+
+    def _vertex_uv(self, values):
+        if self.viewer._model is None or self.vertex_pane.selected is None:
+            return
+        vertex = self.viewer._model.vertices[self.vertex_pane.selected]
+        if not vertex.textured:
+            return
+        try:
+            check_values(vertex.xyz, values)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid UV", str(error))
+            return
+        self._vertex_change(uv=values)
+
+    def _vertex_dragged(self, offset, xyz):
+        self._vertex_selected(offset)
+        self._vertex_change(xyz=xyz)
+
+    def _vertex_nudge(self, direction):
+        if not self._vertex_can_edit():
+            return
+        vertex = self.viewer._model.vertices[self.vertex_pane.selected]
+        xyz = list(vertex.xyz)
+        xyz["XYZ".index(self.vertex_pane.axis.currentText())] += (
+            direction * self.vertex_pane.step.value())
+        self._vertex_change(xyz=xyz)
+
+    def _vertex_rename(self, requested):
+        if not self._vertex_can_edit():
+            return
+        ref = self.vertex_pane.selected
+        old = declaration_label(self.viewer._model, self._vertex_document, ref)
+        try:
+            new_source = rename_vertex_in_source(
+                self.source_pane.get_source(), self._vertex_document,
+                old, requested)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid pointer name", str(error))
+            return
+        if new_source != self.source_pane.get_source():
+            self._vertex_undo.append(("rename", old, requested))
+            self._vertex_redo.clear()
+            self._submit_vertex_source(new_source)
+
+    def _vertex_history_apply(self, record, *, reverse):
+        if not self._vertex_can_edit():
+            return False
+        source = self.source_pane.get_source()
+        try:
+            if record[0] == "vertex":
+                _, label, before_xyz, before_uv, after_xyz, after_uv = record
+                target_xyz, target_uv = (
+                    (before_xyz, before_uv) if reverse else (after_xyz, after_uv))
+                changed = patch_vertex_source(
+                    source, label, target_xyz, target_uv,
+                    coordinate_scale=getattr(
+                        self.viewer._model, "n3_coordinate_scale", 1))
+            else:
+                _, old_name, new_name = record
+                changed = rename_vertex_in_source(
+                    source, self._vertex_document,
+                    new_name if reverse else old_name,
+                    old_name if reverse else new_name)
+        except ValueError as error:
+            QMessageBox.warning(self, "Cannot replay vertex history", str(error))
+            return False
+        return self._submit_vertex_source(changed)
+
+    def _vertex_undo_edit(self):
+        if not self._vertex_undo:
+            return
+        entry = self._vertex_undo[-1]
+        if self._vertex_history_apply(entry, reverse=True):
+            self._vertex_undo.pop()
+            self._vertex_redo.append(entry)
+
+    def _vertex_redo_edit(self):
+        if not self._vertex_redo:
+            return
+        entry = self._vertex_redo[-1]
+        if self._vertex_history_apply(entry, reverse=False):
+            self._vertex_redo.pop()
+            self._vertex_undo.append(entry)
+
     def _ensure_source_loaded(self):
         if self.source_pane.ready or self.viewer._model is None:
             return
@@ -1425,6 +1593,12 @@ class Window(QMainWindow):
     def _source_compiled(self, rev, source, mesh, stats, model, atlas, palette, scene):
         self._source_busy_revision = None
         if rev == self.source_pane.revision:
+            if self._vertex_edit_revision != rev:
+                # Source-tab edits can change declarations/topology; do not
+                # replay old vertex-offset commands against a different tree.
+                self._vertex_undo.clear()
+                self._vertex_redo.clear()
+            self._vertex_edit_revision = None
             # Commit one complete candidate, never a partially parsed tree.
             self._preserve_view = True
             self._loaded(mesh, stats, model, atlas, palette, scene,
@@ -1433,6 +1607,11 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self.source_pane.mark_valid(rev, model)
             self._source_invalid = False
+            self.viewer._vertex_override = None
+            self.vertex_pane.status.setText(
+                f"Validated .3D: {len(model.vertices):,} vertices. "
+                "GPU preview updated; export explicitly to save.")
+            self.viewer.update()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -1440,7 +1619,13 @@ class Window(QMainWindow):
         self._source_busy_revision = None
         if rev == self.source_pane.revision:
             self._source_invalid = True
+            self._vertex_edit_revision = None
+            self.viewer._vertex_override = None
+            self.viewer.update()
             self.source_pane.mark_error(rev, error)
+            self.vertex_pane.status.setText(
+                "N3 validation failed; last valid preview preserved. "
+                "Correct the source in .3D Source before further vertex edits.")
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
