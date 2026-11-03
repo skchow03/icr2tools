@@ -5,6 +5,9 @@ on:
     paths:
       - "icr2_3do_cad/gpu_viewer/**"
       - "icr2_3do_cad/three_do.py"
+      - "icr2_3do_cad/pmp_preview.py"
+      - "icr2_3do_cad/tests/test_gpu_pmp_gl.py"
+      - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
       - "icr2_3do_cad/tests/test_gpu_viewer_mesh.py"
       - ".github/workflows/3do-cad-gpu-smoke.yml"
@@ -12,6 +15,9 @@ on:
     paths:
       - "icr2_3do_cad/gpu_viewer/**"
       - "icr2_3do_cad/three_do.py"
+      - "icr2_3do_cad/pmp_preview.py"
+      - "icr2_3do_cad/tests/test_gpu_pmp_gl.py"
+      - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
       - "icr2_3do_cad/tests/test_gpu_viewer_mesh.py"
       - ".github/workflows/3do-cad-gpu-smoke.yml"
