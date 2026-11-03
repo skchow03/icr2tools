@@ -64,6 +64,7 @@ class VertexPane(QWidget):
     redoRequested = Signal()
     frameRequested = Signal()
     saveRequested = Signal()
+    exportRequested = Signal()
     visualChanged = Signal()
 
     def __init__(self, parent=None):
@@ -183,9 +184,14 @@ class VertexPane(QWidget):
         frame.clicked.connect(self.frameRequested.emit)
         bottom.addWidget(frame)
         layout.addLayout(bottom)
+        saves = QHBoxLayout()
         save = QPushButton("Save .3D as…")
         save.clicked.connect(self.saveRequested.emit)
-        layout.addWidget(save)
+        saves.addWidget(save)
+        export = QPushButton("Export compiled .3DO…")
+        export.clicked.connect(self.exportRequested.emit)
+        saves.addWidget(export)
+        layout.addLayout(saves)
         self.status = QLabel("Left-click a dot to select; drag on chosen axis. "
                              "Right-drag or empty-space left-drag to orbit; "
                              "Shift+left-drag/middle-drag to pan.")
@@ -199,6 +205,9 @@ class VertexPane(QWidget):
         self._names = names_for_vertices(
             model, document, original_n3=original_n3)
         self.list_model.replace(model, self._names)
+        # A model-reset invalidates the old view index even if the Papyrus
+        # body offset remains unchanged. Reapply its selection explicitly.
+        self.selected = None
         self.select_offset(selected, emit=False)
 
     def select_offset(self, off, *, emit=True):
