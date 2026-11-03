@@ -408,7 +408,21 @@ def run(path):
     timer.start(100)
     print("Entering Qt event loop",flush=True)
     app.exec()
-    print("Qt event loop exited",flush=True)
+    print("Qt event loop exited", flush=True)
+    # Release Python references to the Python-owned Qt list model and painter
+    # widget before PySide6 module teardown. The editor has a virtualized
+    # QAbstractListModel, which otherwise can be garbage-collected late during
+    # interpreter shutdown on PySide6 6.12.
+    import gc
+    timer.stop()
+    timer.timeout.disconnect(check)
+    if window.isVisible():
+        window.close()
+    app.processEvents()
+    del check
+    del timer
+    del window
+    gc.collect()
     scratch.cleanup()
     if not result["ok"]:
         raise SystemExit(result["error"])
