@@ -33,7 +33,7 @@ TREE_HEADERS = {
 # Stock helmet PMP header is 4c38aaaf (a nominal 76x56 rectangle at
 # x=86..162, y=81..137), with a final 0xaf footer. The visible pixels can
 # occupy a smaller area, unlike these trees' tight extent rectangles.
-HELMET_SPANS = ((84, 90, 91, 232), (133, 149, 150, 47))
+HELMET_SPANS = ((84, 90, 91, 232), (137, 149, 150, 47))
 
 
 def extent_header(spans):
@@ -95,8 +95,10 @@ class PMPVariantsTests(unittest.TestCase):
         self.assertEqual(raw[-1], 0xaf)
         sprite = self.load_bytes(raw)
         # Nominal rectangle is 76x56, but actual painted region is smaller.
-        self.assertEqual(sprite.bounds, (90, 84, 150, 134))
-        self.assertEqual(sprite.rgba.getpixel((59, 49)),
+        # The y=137 pixel extends just beyond the nominal bottom=137,
+        # as seen in real helmet PMP variants.
+        self.assertEqual(sprite.bounds, (90, 84, 150, 138))
+        self.assertEqual(sprite.rgba.getpixel((59, 53)),
                          (47, 47, 47, 255))
 
     def test_scenery_may_also_have_footer_based_on_record_alignment(self):
@@ -119,7 +121,7 @@ class PMPVariantsTests(unittest.TestCase):
                 self.load_bytes(raw)
 
         damaged = bytearray(sample)
-        damaged[0] ^= 1
+        damaged[2] = 1  # nominal left=255; rectangle runs off canvas
         with self.assertRaisesRegex(PMPError, "extent header"):
             self.load_bytes(bytes(damaged))
         # A structurally aligned but tampered last record must fail even
