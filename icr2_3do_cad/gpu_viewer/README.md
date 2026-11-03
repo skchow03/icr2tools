@@ -205,6 +205,26 @@ Every category is checked by default, so the normal editable source is shown.
   navigation results, or click **Only** beside a category to isolate it.
   **Show all** restores the full editable source; **Hide all** gives an
   empty starting point for choosing a few categories.
+- The **Active SWITCH DISTANCE branches only** checkbox in the same
+  dropdown adds a second, independent filter. It follows the compiled
+  model's selected RES branches at the current Display-panel manual distance,
+  or per-anchor camera distance in **Automatic** mode. The list updates when
+  the slider, mode, or camera moves. **Show all detail levels** includes all
+  RES branches. Active branch wrappers (SWITCH, LIST, FACE/BSP, MATERIAL,
+  DYNAMIC), their POLYs, the vertices referenced by those polygons and
+  RES anchors, and named FACE/BSP plane vertices are kept together. Branches
+  not selected at the current distance and unrelated declarations are hidden.
+  Combine this option with any statement-type checkboxes or Find text.
+- **Active** here means reachable through the current **distance/LOD**
+  selection, **not necessarily visible on screen**: BSP camera-side culling,
+  occlusion, and clipping are intentionally separate. Green/salmon POLY
+  inspection still reports BSP/LOD drawing selection. Standalone comment
+  lines and unused declarations are excluded in active-only mode.
+  If the editor has unvalidated source edits, the list uses the last valid
+  compiled model and labels its status accordingly; newly renamed statements
+  stay in the filtered list until recompilation. If no compiled model is
+  available, the filter temporarily shows category matches rather than
+  incorrectly hiding everything.
 - The **Find** field further filters results by label or displayed statement
   text. Results display **original file line numbers** in source order.
   Multiline declarations are grouped as a single result, so they are never
