@@ -152,7 +152,7 @@ class SourceFilterQtTests(unittest.TestCase):
         self.assertTrue(index.flags() & Qt.ItemFlag.ItemIsEditable)
         before = pane.get_source()
         edited = pane.filtered_model.data(index, Qt.ItemDataRole.EditRole)
-        self.assertEqual(edited, "panel: POLY <44>\\n   {a,b,c};")
+        self.assertEqual(edited, "panel: POLY <44>\n   {a,b,c};")
         self.assertTrue(pane.filtered_model.setData(
             index, edited.replace("<44>", "<55>"), Qt.ItemDataRole.EditRole))
         QApplication.processEvents()
@@ -178,7 +178,7 @@ class SourceFilterQtTests(unittest.TestCase):
         pane = self.pane
         pane._only_filter("POLY")
         index = pane.filtered_model.index(0)
-        edited = "panel: POLY <44>\\n   {a, b,\\n    c};"
+        edited = "panel: POLY <44>\n   {a, b,\n    c};"
         self.assertTrue(pane.filtered_model.setData(
             index, edited, Qt.ItemDataRole.EditRole))
         QApplication.processEvents()
@@ -199,7 +199,7 @@ class SourceFilterQtTests(unittest.TestCase):
         pane.filter_search.setText("panel")
         index = pane.filtered_model.index(0)
         assert pane.filtered_model.setData(
-            index, "wing: POLY <44>\\n   {a,b,c};", Qt.ItemDataRole.EditRole)
+            index, "wing: POLY <44>\n   {a,b,c};", Qt.ItemDataRole.EditRole)
         QApplication.processEvents()
         self.assertEqual(pane.filter_search.text(), "panel")
         self.assertEqual(len(pane.filtered_model.entries), 0)
@@ -216,7 +216,7 @@ class SourceFilterQtTests(unittest.TestCase):
         pane._only_filter("POLY")
         index = pane.filtered_model.index(0)
         self.assertTrue(pane.filtered_model.setData(
-            index, "wing: POLY <44>\\n   {a,b,c};",
+            index, "wing: POLY <44>\n   {a,b,c};",
             Qt.ItemDataRole.EditRole))
         pane._rename_timer.stop()
         pane._commit_pending_rename()
@@ -234,13 +234,13 @@ class SourceFilterQtTests(unittest.TestCase):
         pane._only_filter("POLY")
         QApplication.processEvents()
         index = pane.filtered_model.index(0)
-        self.assertTrue(pane.filtered_list.edit(index))
+        pane.filtered_list.edit(index)
         QApplication.processEvents()
         editor = next(
             child for child in pane.filtered_list.findChildren(QPlainTextEdit)
             if child.isVisible())
         self.assertEqual(editor.toPlainText(),
-                         "panel: POLY <44>\\n   {a,b,c};")
+                         "panel: POLY <44>\n   {a,b,c};")
         editor.setPlainText(editor.toPlainText().replace("<44>", "<77>"))
         # Exercise the delegate commit path used on Ctrl+Enter/focus loss.
         delegate = pane.filtered_list.itemDelegate()
