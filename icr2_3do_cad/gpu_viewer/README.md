@@ -32,10 +32,12 @@ once with a building or fixtures/roadcar.3do.
 
 ## Car, Track, and Object workspaces
 
-The viewer now has three mode tabs **above a single shared GPU preview and
-editable .3D Source pane**. Change tabs at any time to show the tools
-appropriate to the current asset; tab changes do not reload the model, reset
-the camera, compile source, or discard unsaved edits.
+The viewer has a large GPU viewport and a **scrollable right-hand inspector**
+with collapsible **Model**, **Display**, **Assets**, and **Advanced diagnostics**
+sections. **Model** contains the Car / Track / Object workspace tabs.
+Change workspaces at any time to show the tools appropriate to the current
+asset; tab changes do not reload the model, reset the camera, compile source,
+or discard unsaved edits.
 
 - **Car** groups appearance-wrapper/carshape resolution, body or external
   material targets, livery MIP assignment, overrides, and RECOLOR status.
@@ -46,10 +48,15 @@ the camera, compile source, or discard unsaved edits.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
-Camera views, Open, Render/BSP, RES/LOD diagnostics, palette, MIP folder,
-texture toggles, Reload MIPs, and the **.3D Source** toggle remain available
-in all three modes. The Source pane still sits beside the same GPU viewport,
-with the same live compilation, save, and export behavior.
+The top bar retains **Open**, **Save Source**, **Export 3DO**, **Frame All**,
+camera views, and the **.3D Source** toggle. Display keeps projection,
+textures and a single detail-level selector. Assets groups palette, MIP and
+external-3DO resolution; Advanced diagnostics contains BSP rendering method,
+fixed camera, polygon-offset lookup, benchmark and performance information.
+The Source pane still opens beside the GPU viewport, with the same live
+compilation, save, and export behavior. When Save Source or Export 3DO is
+used before source has been prepared, the Source pane opens and generates it
+first; repeat the requested action once preparation is complete.
 
 The viewer suggests **Car** for recognized car geometry or individual-car
 appearance wrappers, **Track** for clearly named track models (including
@@ -70,8 +77,8 @@ The mode is a UI organization choice, not a conversion between file formats.
   For near-edge-on planes the finite-eye sign is used as an approximation.
 - **Fixed Camera**: toggles a stationary **perspective** camera at
   editable *raw Papyrus* XYZ coordinates, defaulting to **(0,0,5000)**.
-  The X, Y and Z numeric controls appear immediately below the view toolbar
-  while this mode is enabled. Enter positive or negative model coordinates
+  The X, Y and Z numeric controls appear in **Advanced diagnostics**
+  below Fixed Camera while this mode is enabled. Enter positive or negative model coordinates
   (up to ±2 billion raw units); changing any coordinate updates the camera
   position and BSP/automatic RES selection immediately without retessellating
   geometry or reloading textures. All entered XYZ values persist when the
@@ -118,11 +125,11 @@ The mode is a UI organization choice, not a conversion between file formats.
   depth testing disabled. **BSP selection + GPU depth** uses the same selected
   triangles with depth testing. **All polygons + GPU depth** ignores BSP/LOD
   and is the legacy full-geometry diagnostic mode.
-- **SWITCH DISTANCE / RES**: **Auto per anchor** (default) computes the
-  distance from the camera to the specific RES anchor in its local model
-  coordinates, including inside transformed DYNAMIC objects. Uncheck Auto
-  to enter a **manual** threshold in original model units. **All LOD branches**
-  ignores the distance and renders every alternate branch for inspection.
+- **Detail level / SWITCH DISTANCE / RES**: **Automatic** (default)
+  computes the distance from the camera to each RES anchor in local model
+  coordinates, including transformed DYNAMIC objects. Choose **Manual
+  distance** to enter a threshold in original model units, or **Show all
+  detail levels** to render alternate branches for diagnosis.
   Auto uses Euclidean distance as an approximation of the engine's actual
   switch logic, not a claim of exact in-game LOD thresholds.
 - **Open PCX palette…**: load a normal indexed 8-bit PCX with a 256-color
@@ -174,7 +181,7 @@ The mode is a UI organization choice, not a conversion between file formats.
 - **Textures**: toggle sampled MIP colors versus flat polygon palette colors.
   **Repeat UV** optionally wraps raw texel UVs, which clamp by default.
   The status line reports loaded/missing MIPs, mapped faces and atlas size.
-- **Polygon @**: type the polygon's **3DO body offset** in decimal or 0x
+- **Polygon body offset** (Advanced diagnostics): type the polygon's **3DO body offset** in decimal or 0x
   hexadecimal (as displayed by the CAD structure inspector) to see whether
   it is selected by BSP and the chosen LOD. Selected does not necessarily
   mean pixel-visible: other drawn polygons can still cover it.
