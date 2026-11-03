@@ -242,6 +242,7 @@ class SourcePane(QWidget):
         self._distance_dependencies = {}
         self._distance_labels_key = None
         self._distance_labels = set()
+        self._active_edit_line = None
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -414,6 +415,7 @@ class SourcePane(QWidget):
         self._rename_timer.stop()
         self._rename_pending = None
         self._polygon_visible = None
+        self._active_edit_line = None
         self._setting = True
         try:
             self.line_ending = '\r\n' if '\r\n' in text else '\n'
@@ -444,6 +446,7 @@ class SourcePane(QWidget):
         self._rename_timer.stop()
         self._rename_pending = None
         self._polygon_visible = None
+        self._active_edit_line = None
         self._setting = True
         try:
             self.editor.clear()
@@ -500,6 +503,7 @@ class SourcePane(QWidget):
         self.applied_revision = revision
         self._last_error_line = None
         self._polygon_visible = None
+        self._active_edit_line = None
         self._refresh_extra_selections()
         self._source_index = index_source_targets(self.editor.toPlainText())
         self._distance_dependencies_key = None
@@ -515,6 +519,7 @@ class SourcePane(QWidget):
         if revision != self.revision:
             return
         self.applied_revision = revision
+        self._active_edit_line = None
         line = find_error_line(self.get_source(), error)
         self._last_error_line = line
         block = self.editor.document().findBlockByNumber(line-1)
@@ -697,7 +702,7 @@ class SourcePane(QWidget):
         active_names = self._active_labels_at_distance() if active_only else None
         # While a source edit awaits compilation, retain its original row
         # even if its renamed label is not in the last validated model.
-        edited_line = self._filter_return_line if self.pending else None
+        edited_line = self._active_edit_line if self.pending else None
         matching = [
             entry for entry in self._filter_entries
             if entry.category in chosen and
@@ -764,6 +769,7 @@ class SourcePane(QWidget):
         if not first.isValid() or not last.isValid():
             return False
         self._filter_return_line = entry.first_line
+        self._active_edit_line = entry.first_line
         self._filtered_edit_active = True
         try:
             # Position the canonical caret for automatic pointer rename and
