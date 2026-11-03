@@ -1275,6 +1275,7 @@ class Window(QMainWindow):
         self.vertex_pane.redoRequested.connect(self._vertex_redo_edit)
         self.vertex_pane.frameRequested.connect(self.viewer.frame_vertex)
         self.vertex_pane.saveRequested.connect(self._save_source)
+        self.vertex_pane.exportRequested.connect(self._export_compiled_source)
         self.vertex_pane.visualChanged.connect(self._vertex_options_changed)
         self.vertex_pane.axis.currentTextChanged.connect(self._vertex_options_changed)
         self.vertex_pane.step.valueChanged.connect(self._vertex_options_changed)
