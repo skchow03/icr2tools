@@ -65,6 +65,7 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.workspaces import WORKSPACE_MODES, suggest_workspace, workspace_scene_summary
 
 
 VERTEX_SHADER = """
@@ -818,7 +819,7 @@ BODY_MATERIAL = "__car_body__"  # internal target, never an asset filename
 class Window(QMainWindow):
     def __init__(self, path=None, *, benchmark=False, report_path=None):
         super().__init__()
-        self.setWindowTitle("ICR2 GPU Viewer — prototype")
+        self.setWindowTitle("ICR2 GPU Viewer — Object workspace")
         self.resize(1280, 850)
         self.worker = None
         self._info = {}
@@ -947,15 +948,9 @@ class Window(QMainWindow):
         folder_button = QPushButton("MIP folder…")
         folder_button.clicked.connect(self.choose_mip_folder)
         assetsbar.addWidget(folder_button)
-        objects_button = QPushButton("3DO objects folder…")
-        objects_button.clicked.connect(self.choose_objects_folder)
-        assetsbar.addWidget(objects_button)
-        fallback_button = QPushButton("Fallback MIP…")
-        fallback_button.clicked.connect(self.choose_fallback_mip)
-        assetsbar.addWidget(fallback_button)
-        reset_mip = QPushButton("Clear fallback")
-        reset_mip.clicked.connect(self.clear_fallback_mip)
-        assetsbar.addWidget(reset_mip)
+        reload_button = QPushButton("Reload MIPs (R)")
+        reload_button.clicked.connect(self.reload_mips)
+        assetsbar.addWidget(reload_button)
         self.show_textures = QCheckBox("Textures")
         self.show_textures.setChecked(True)
         self.show_textures.toggled.connect(self._textures_toggled)
@@ -964,6 +959,14 @@ class Window(QMainWindow):
         self.repeat_uv.toggled.connect(self._repeat_toggled)
         assetsbar.addWidget(self.repeat_uv)
         layout.addLayout(assetsbar)
+
+        # Mode tabs configure the current scene; the GPU viewport and N3
+        # editor below remain a single shared document across all three.
+        self.workspace_tabs = QTabWidget()
+        self.workspace_tabs.setDocumentMode(True)
+        car_page = QWidget()
+        car_layout = QVBoxLayout(car_page)
+        car_layout.setContentsMargins(6, 4, 6, 4)
         carbar = QHBoxLayout()
         carbar.addWidget(QLabel("Car geometry:"))
         self.car_ref_combo = QComboBox()
@@ -985,10 +988,61 @@ class Window(QMainWindow):
         clear_livery = QPushButton("Clear livery override")
         clear_livery.clicked.connect(self.clear_livery_mip)
         carbar.addWidget(clear_livery)
-        reload_button = QPushButton("Reload MIPs (R)")
-        reload_button.clicked.connect(self.reload_mips)
-        carbar.addWidget(reload_button)
-        layout.addLayout(carbar)
+        car_layout.addLayout(carbar)
+        car_assets = QHBoxLayout()
+        car_objects_button = QPushButton("3DO objects folder…")
+        car_objects_button.clicked.connect(self.choose_objects_folder)
+        car_assets.addWidget(car_objects_button)
+        car_assets.addStretch()
+        car_layout.addLayout(car_assets)
+        car_layout.addWidget(self.car_status)
+        self.workspace_tabs.addTab(car_page, "Car")
+
+        track_page = QWidget()
+        track_layout = QVBoxLayout(track_page)
+        track_layout.setContentsMargins(6, 4, 6, 4)
+        track_tools = QHBoxLayout()
+        track_tools.addWidget(QLabel("Track assets:"))
+        track_objects_button = QPushButton("3DO objects folder…")
+        track_objects_button.clicked.connect(self.choose_objects_folder)
+        track_tools.addWidget(track_objects_button)
+        track_fallback_button = QPushButton("Fallback MIP…")
+        track_fallback_button.clicked.connect(self.choose_fallback_mip)
+        track_tools.addWidget(track_fallback_button)
+        track_clear_fallback = QPushButton("Clear fallback")
+        track_clear_fallback.clicked.connect(self.clear_fallback_mip)
+        track_tools.addWidget(track_clear_fallback)
+        track_tools.addStretch()
+        track_layout.addLayout(track_tools)
+        self.track_status = QLabel("Track scene: open a track .3D or .3DO")
+        track_layout.addWidget(self.track_status)
+        self.workspace_tabs.addTab(track_page, "Track")
+
+        object_page = QWidget()
+        object_layout = QVBoxLayout(object_page)
+        object_layout.setContentsMargins(6, 4, 6, 4)
+        object_tools = QHBoxLayout()
+        object_tools.addWidget(QLabel("Object assets:"))
+        object_objects_button = QPushButton("External 3DO folder…")
+        object_objects_button.clicked.connect(self.choose_objects_folder)
+        object_tools.addWidget(object_objects_button)
+        object_fallback_button = QPushButton("Fallback MIP…")
+        object_fallback_button.clicked.connect(self.choose_fallback_mip)
+        object_tools.addWidget(object_fallback_button)
+        object_clear_fallback = QPushButton("Clear fallback")
+        object_clear_fallback.clicked.connect(self.clear_fallback_mip)
+        object_tools.addWidget(object_clear_fallback)
+        object_tools.addStretch()
+        object_layout.addLayout(object_tools)
+        self.object_status = QLabel("Object scene: open a standalone .3D or .3DO")
+        object_layout.addWidget(self.object_status)
+        self.workspace_tabs.addTab(object_page, "Object")
+
+        # Ambiguous filenames should not be guessed to be cars or tracks.
+        # A strongly identified file selects a tab after its first load.
+        self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index("object"))
+        self.workspace_tabs.currentChanged.connect(self._workspace_changed)
+        layout.addWidget(self.workspace_tabs)
         layout.addWidget(self.load_label)
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.editor_splitter.addWidget(self.viewer)
@@ -1020,8 +1074,8 @@ class Window(QMainWindow):
         layout.addWidget(self.polygon_status)
         layout.addWidget(self.palette_status)
         layout.addWidget(self.texture_status)
-        layout.addWidget(self.car_status)
         self.setCentralWidget(root)
+        self._workspace_changed(self.workspace_tabs.currentIndex())
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
         # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
@@ -1045,6 +1099,11 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _workspace_changed(self, index):
+        if 0 <= index < self.workspace_tabs.count():
+            label = self.workspace_tabs.tabText(index)
+            self.setWindowTitle(f"ICR2 GPU Viewer — {label} workspace")
 
     def _textures_toggled(self, checked):
         self.viewer.textures_enabled = checked
@@ -1580,9 +1639,16 @@ class Window(QMainWindow):
     def _loaded(self, mesh, stats, model, atlas, palette, scene,
                 *, from_source=False):
         self._info = stats
+        was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
-                             preserve_view=self._preserve_view)
+                             preserve_view=was_reloading)
         self._preserve_view = False
+        # Keep manual mode selection for ambiguous files and all background
+        # rebuilds. Only clearly recognized newly opened files select a tab.
+        if not was_reloading and not from_source:
+            suggested = suggest_workspace(self.model_path, stats)
+            if suggested is not None:
+                self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index(suggested))
         self.palette_status.setText(
             f"Palette: {self.palette_path.name} (256 colors)")
         self._show_mip_stats(stats)
@@ -1590,6 +1656,8 @@ class Window(QMainWindow):
             f"Individual-car RECOLOR: {stats['recolor_pairs']} mappings"
             f" | referenced carshape(s): {len(model.external_names)}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        self.track_status.setText(workspace_scene_summary("track", stats))
+        self.object_status.setText(workspace_scene_summary("object", stats))
         previous_ref = self.car_ref_combo.currentData()
         self.car_ref_combo.blockSignals(True)
         self.car_ref_combo.clear()
