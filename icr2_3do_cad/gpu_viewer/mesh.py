@@ -144,11 +144,14 @@ def make_mesh(model, palette=None, atlas=None) -> MeshData:
     Normalize XYZ around the model bounding centre to avoid precision loss
     on tracks whose Papyrus raw coordinates are several million units.
     Indexed MIP images are loaded into an independent GPU atlas.
-    External DYNAMIC geometry and PMP sprites remain deferred.
+    External DYNAMIC geometry is flattened by the scene builder; PMP sprite
+    anchors and extents contribute to normalization without being tessellated.
     """
     started = perf_counter()
-    if model.vertices:
-        coords = np.asarray([v.xyz for v in model.vertices.values()], dtype=np.float64)
+    points = [v.xyz for v in model.vertices.values()]
+    points.extend(getattr(model, "sprite_bounds", ()))
+    if points:
+        coords = np.asarray(points, dtype=np.float64)
         lo = coords.min(axis=0)
         hi = coords.max(axis=0)
         center = (lo + hi) / 2.0
