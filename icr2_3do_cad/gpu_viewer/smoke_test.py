@@ -20,7 +20,7 @@ from time import perf_counter
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPoint
 from PySide6.QtGui import QSurfaceFormat, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -116,6 +116,8 @@ def run(path):
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
     fixed = {"tested": False}
+    vertex = {"state": "not_started", "ref": None, "before": None,
+              "expected": None, "done": False}
     live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
             "valid_sent":False, "valid_seen":False,
             "vbo":None, "azimuth":None, "source":None}
@@ -220,11 +222,100 @@ def run(path):
                 window.close()
                 app.quit()
                 return
+        if dynamic_test and live["valid_seen"] and fixed["tested"] and not vertex["done"]:
+            if vertex["state"] == "not_started":
+                # Synthetic car wrapper has child geometry and complex BSP.
+                # Use all-geometry mode + Frame All to guarantee the test
+                # clicks a displayed root vertex, not a hidden LOD point.
+                window.mode_combo.setCurrentIndex(2)
+                view.frame_all()
+                window.vertex_pane.visible_only.setChecked(False)
+                window.vertex_toggle.setChecked(True)
+                if (not view.vertex_mode or
+                    window.source_tabs.currentIndex() != window.vertex_tab_index):
+                    result["error"] = "Vertex editing tab did not activate"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                vertex["state"] = "pick"
+            elif vertex["state"] == "pick" and view._vertex_projected is not None:
+                refs, projected, valid = view._vertex_projected
+                choices = np.flatnonzero(valid)
+                if len(choices):
+                    loc = choices[len(choices)//2]
+                    pos = QPoint(int(round(projected[loc, 0])),
+                                 int(round(projected[loc, 1])))
+                    QTest.mouseClick(view, Qt.MouseButton.LeftButton, pos=pos)
+                    ref = window.vertex_pane.selected
+                    if ref is None or ref != view.vertex_selected:
+                        result["error"] = "Clicking vertex dot did not select model vertex"
+                        timer.stop()
+                        window.close()
+                        app.quit()
+                        return
+                    vertex["ref"] = ref
+                    vertex["before"] = view._model.vertices[ref].xyz
+                    window.vertex_pane.step.setValue(100)
+                    window._vertex_nudge(1)
+                    vertex["expected"] = (
+                        vertex["before"][0] + 100,
+                        vertex["before"][1], vertex["before"][2])
+                    vertex["state"] = "validate"
+            elif (vertex["state"] == "validate" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if (window._source_invalid or
+                    view._model.vertices[vertex["ref"]].xyz != vertex["expected"] or
+                    not window.source_pane.dirty):
+                    result["error"] = "Vertex XYZ edit did not compile into GPU model/source"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                window._vertex_undo_edit()
+                vertex["state"] = "undo"
+            elif (vertex["state"] == "undo" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if view._model.vertices[vertex["ref"]].xyz != vertex["before"]:
+                    result["error"] = "Vertex editor undo did not restore original XYZ"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                window._vertex_redo_edit()
+                vertex["state"] = "redo"
+            elif (vertex["state"] == "redo" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if view._model.vertices[vertex["ref"]].xyz != vertex["expected"]:
+                    result["error"] = "Vertex editor redo did not reapply XYZ"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                if not _workspace_switch_keeps_document(window):
+                    result["error"] = "Workspace tabs changed vertex editor state"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                view.frame_vertex()
+                # Restore the normal painter for the existing final BSP
+                # visibility and framebuffer assertions below.
+                window.mode_combo.setCurrentIndex(0)
+                view.frame_all()
+                vertex["done"] = True
+
         if (window._info and view._vao is not None and
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
                  (reload_state["completed"] and not window.worker.isRunning()
-                  and live["valid_seen"] and fixed["tested"]))):
+                  and live["valid_seen"] and fixed["tested"] and vertex["done"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -299,7 +390,13 @@ def run(path):
         elif elapsed > 45:
             result["error"] = (
                 f"timeout loading or drawing: {window.stats_label.text()} | "
-                f"source {window.source_pane.status.text()} | live {live} | "
+                f"source {window.source_pane.status.text()} | "
+                f"live_state={live['valid_seen']} | "
+                f"fixed={fixed} vertex={vertex} "
+                f"mode={view.vertex_mode} projected="
+                f"{len(view._vertex_projected[0]) if view._vertex_projected else None} "
+                f"valid_dots={int(view._vertex_projected[2].sum()) if view._vertex_projected else None} "
+                f"vertex_status={window.vertex_pane.status.text()} | "
                 f"ctx={view._program is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
@@ -311,7 +408,28 @@ def run(path):
     timer.start(100)
     print("Entering Qt event loop",flush=True)
     app.exec()
-    print("Qt event loop exited",flush=True)
+    print("Qt event loop exited", flush=True)
+    # Release Python references to the Python-owned Qt list model and painter
+    # widget before PySide6 module teardown. The editor has a virtualized
+    # QAbstractListModel, which otherwise can be garbage-collected late during
+    # interpreter shutdown on PySide6 6.12.
+    import gc
+    timer.stop()
+    try:
+        timer.timeout.disconnect(check)
+    except RuntimeError:
+        pass
+    # WA_DeleteOnClose can already have deleted the C++ window.
+    try:
+        if window.isVisible():
+            window.close()
+    except RuntimeError:
+        pass
+    app.processEvents()
+    del check
+    del timer
+    del window
+    gc.collect()
     scratch.cleanup()
     if not result["ok"]:
         raise SystemExit(result["error"])

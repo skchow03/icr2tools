@@ -27,7 +27,8 @@ try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
         GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_POINTS, GL_PROGRAM_POINT_SIZE,
+        GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
@@ -41,10 +42,10 @@ try:
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
         glViewport, glGenTextures, glDeleteTextures, glBindTexture,
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
-        glUniform1i,
+        glUniform1i, glUniform1f, glUniform3f, glUniform4f,
     )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
-    from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
+    from PySide6.QtGui import (QSurfaceFormat, QShortcut, QKeySequence, QPainter, QColor, QFont)
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
@@ -65,6 +66,13 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.vertex_tab import VertexPane
+from gpu_viewer.vertex_tools import (
+    check_values, patch_vertex_source, project_vertices, pick_vertex,
+    drag_along_axis,
+)
+from text_3d import parse_document
+from vertex_labels import declaration_label, rename_vertex_in_source
 from gpu_viewer.workspaces import WORKSPACE_MODES, suggest_workspace, workspace_scene_summary
 
 
@@ -86,6 +94,29 @@ void main() {
     v_index = int(in_index + 0.5);
     v_uv = in_uv;
     v_rect = in_rect;
+}
+"""
+
+DOT_VERTEX_SHADER = """
+#version 330 core
+layout(location = 0) in vec3 in_pos;
+uniform mat4 u_mvp;
+uniform vec3 u_offset;
+uniform float u_point_size;
+void main() {
+    gl_Position = u_mvp * vec4(in_pos + u_offset, 1.0);
+    gl_PointSize = u_point_size;
+}
+"""
+
+DOT_FRAGMENT_SHADER = """
+#version 330 core
+uniform vec4 u_color;
+out vec4 fragColor;
+void main() {
+    vec2 delta = gl_PointCoord - vec2(0.5);
+    if (dot(delta, delta) > 0.25) discard;
+    fragColor = u_color;
 }
 """
 
@@ -199,10 +230,11 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
+            source_document = None
             if self.source_text is not None:
                 # Compile candidate text off the UI thread. Do not overwrite
                 # the last valid model until this AND the mesh/atlas succeed.
-                model, _ = compile_n3_text(
+                model, source_document = compile_n3_text(
                     self.source_text, self.source_path, associate_planes=False)
                 appearance = self.appearance_override
                 scene = build_scene(model, objects_folder=self.objects_folder,
@@ -219,7 +251,7 @@ class LoadWorker(QThread):
                     model = self.existing_model
                 else:
                     text = self.path.read_text(encoding="utf-8-sig")
-                    model, _ = compile_n3_text(
+                    model, source_document = compile_n3_text(
                         text, self.path, associate_planes=False)
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides)
@@ -237,6 +269,7 @@ class LoadWorker(QThread):
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
+                "_n3_document": source_document,
                 "parse_ms": parse_ms,
                 "mesh_ms": mesh.build_ms,
                 "model_polygons": len(model.polygons),
@@ -343,6 +376,8 @@ class TextureReloadWorker(QThread):
 
 
 class GLViewport(QOpenGLWidget):
+    vertexSelected = Signal(int)
+    vertexMoved = Signal(int, object)
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
     fixedCameraModeChanged = Signal(bool)
@@ -354,6 +389,15 @@ class GLViewport(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(False)
         self._program = None
+        self._dot_program = None
+        self._dot_uniforms = {}
+        self._dot_vao = None
+        self._dot_vbo = None
+        self._dot_ebo = None
+        self._dot_indices = {}
+        self._dot_cached_refs = None
+        self._dot_index_count = 0
+        self._vertex_cache_key = None
         self._uniform = None
         self._texture_uniform = None
         self._repeat_uniform = None
@@ -389,6 +433,18 @@ class GLViewport(QOpenGLWidget):
         self.fixed_camera_fov = 60.0
         self._saved_external_view = None
         self._drag = None
+        self.vertex_mode = False
+        self.vertex_dots = True
+        self.vertex_visible_only = True
+        self.vertex_label_mode = "Off"
+        self.vertex_names = {}
+        self.vertex_selected = None
+        self.vertex_axis = "X"
+        self.vertex_step = 100
+        self._vertex_projected = None
+        self._vertex_mvp = None
+        self._vertex_drag = None
+        self._vertex_override = None
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
         self.fps = 0.0
@@ -424,6 +480,29 @@ class GLViewport(QOpenGLWidget):
         finally:
             glDeleteShader(vertex_shader)
             glDeleteShader(fragment_shader)
+        # OpenGL point rendering keeps dense-track dots off the Qt painter.
+        dot_vs = glCreateShader(GL_VERTEX_SHADER)
+        dot_fs = glCreateShader(GL_FRAGMENT_SHADER)
+        try:
+            for shader, code in ((dot_vs, DOT_VERTEX_SHADER),
+                                 (dot_fs, DOT_FRAGMENT_SHADER)):
+                glShaderSource(shader, code)
+                glCompileShader(shader)
+                if not glGetShaderiv(shader, GL_COMPILE_STATUS):
+                    raise RuntimeError(glGetShaderInfoLog(shader))
+            self._dot_program = glCreateProgram()
+            glAttachShader(self._dot_program, dot_vs)
+            glAttachShader(self._dot_program, dot_fs)
+            glLinkProgram(self._dot_program)
+            if not glGetProgramiv(self._dot_program, GL_LINK_STATUS):
+                raise RuntimeError(glGetProgramInfoLog(self._dot_program))
+            self._dot_uniforms = {
+                key: glGetUniformLocation(self._dot_program, "u_" + key)
+                for key in ("mvp", "offset", "point_size", "color")}
+        finally:
+            glDeleteShader(dot_vs)
+            glDeleteShader(dot_fs)
+        glEnable(GL_PROGRAM_POINT_SIZE)
         glEnable(GL_DEPTH_TEST)
         self._visibility_dirty = True
         if self._mesh is not None:
@@ -439,6 +518,18 @@ class GLViewport(QOpenGLWidget):
             return
         self.makeCurrent()
         try:
+            if self._dot_vao is not None:
+                glDeleteVertexArrays(1, [self._dot_vao])
+                self._dot_vao = None
+            if self._dot_vbo is not None:
+                glDeleteBuffers(1, [self._dot_vbo])
+                self._dot_vbo = None
+            if self._dot_ebo is not None:
+                glDeleteBuffers(1, [self._dot_ebo])
+                self._dot_ebo = None
+            if self._dot_program is not None:
+                glDeleteProgram(self._dot_program)
+                self._dot_program = None
             if self._vao is not None:
                 glDeleteVertexArrays(1, [self._vao])
                 self._vao = None
@@ -468,6 +559,14 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         self._visible_set = frozenset()
         self._visibility_info = {}
+        self._dot_cached_refs = None
+        self._vertex_refs_key = None
+        self._vertex_refs = ()
+        self._vertex_cache_key = None
+        self._vertex_projected = None
+        self._vertex_override = None
+        if self.vertex_selected not in model.vertices:
+            self.vertex_selected = None
         self._frametimes.clear()
         self._frame_count = 0
         if not preserve_view and not self.fixed_camera_mode:
@@ -527,8 +626,46 @@ class GLViewport(QOpenGLWidget):
             glBindBuffer(GL_ARRAY_BUFFER, 0)
             # One synchronization at load time; never in the render loop.
             glFinish()
+        self._upload_vertex_dots()
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+
+    def _upload_vertex_dots(self):
+        """Upload each root-model vertex exactly once, independent of BSP."""
+        if self._dot_vao is not None:
+            glDeleteVertexArrays(1, [self._dot_vao])
+            self._dot_vao = None
+        if self._dot_vbo is not None:
+            glDeleteBuffers(1, [self._dot_vbo])
+            self._dot_vbo = None
+        if self._dot_ebo is not None:
+            glDeleteBuffers(1, [self._dot_ebo])
+            self._dot_ebo = None
+        self._dot_cached_refs = None
+        self._vertex_cache_key = None
+        self._dot_index_count = 0
+        self._dot_indices = {}
+        if self._model is None or not self._model.vertices:
+            return
+        refs = sorted(self._model.vertices)
+        self._dot_indices = {ref: index for index, ref in enumerate(refs)}
+        coords = np.asarray(
+            [self._model.vertices[ref].xyz for ref in refs], dtype=np.float64)
+        positions = np.ascontiguousarray(
+            (coords - np.asarray(self._mesh.center)) / self._mesh.scale,
+            dtype=np.float32)
+        self._dot_vao = int(glGenVertexArrays(1))
+        self._dot_vbo = int(glGenBuffers(1))
+        self._dot_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._dot_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._dot_vbo)
+        glBufferData(GL_ARRAY_BUFFER, positions.nbytes, positions, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, ctypes.c_void_p(0))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._dot_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
 
     def _upload_texture_assets(self):
         """OpenGL texture setup is GUI-thread-only; never called on orbit."""
@@ -686,7 +823,8 @@ class GLViewport(QOpenGLWidget):
                 self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
-        matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
+        mvp = projection @ view
+        matrix=np.ascontiguousarray(mvp.T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
         glUniform1i(self._texture_uniform, int(self.textures_enabled))
@@ -704,6 +842,132 @@ class GLViewport(QOpenGLWidget):
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
         glUseProgram(0)
+        if self.vertex_mode:
+            self._draw_vertex_overlay(mvp)
+
+    def _draw_vertex_overlay(self, mvp):
+        """GPU-rendered selectable root vertex dots; QPainter for labels only.
+
+        The packed dot VBO persists across camera updates. Active BSP/LOD
+        offsets change only its small EBO, not geometry. Python projects
+        points only when camera/model/selection changes for mouse picking.
+        """
+        if self._model is None or self._mesh is None or self._dot_vao is None:
+            self._vertex_projected = None
+            return
+        self._vertex_mvp = mvp
+        refs_key = (id(self._model), self.render_mode,
+                    self.vertex_visible_only, id(self._visible_set))
+        if getattr(self, "_vertex_refs_key", None) != refs_key:
+            if self.render_mode == 'all' or not self.vertex_visible_only:
+                refs = sorted(self._model.vertices)
+            else:
+                active = set()
+                for off in self._visible_set:
+                    poly = self._model.polygons.get(off)
+                    if poly is not None:
+                        active.update(poly.unique_refs)
+                refs = sorted(active)
+            self._vertex_refs = tuple(refs)
+            self._vertex_refs_key = refs_key
+            self._dot_cached_refs = None
+        refs = self._vertex_refs
+        selected = self.vertex_selected
+        points_refs = refs + ((selected,) if
+                              selected in self._model.vertices and
+                              selected not in refs else ())
+        key = (refs_key, mvp.tobytes(), selected, self._vertex_override)
+        if key != self._vertex_cache_key:
+            xyz = np.asarray(
+                [self._model.vertices[ref].xyz for ref in points_refs],
+                dtype=np.float64).reshape((-1, 3))
+            if self._vertex_override is not None and selected in points_refs:
+                xyz[points_refs.index(selected)] = self._vertex_override
+            pixels, valid = project_vertices(
+                xyz, self._mesh.center, self._mesh.scale,
+                mvp, self.width(), self.height())
+            self._vertex_projected = (
+                np.asarray(points_refs, dtype=np.int64), pixels, valid)
+            self._vertex_cache_key = key
+        refs_array, px, valid = self._vertex_projected
+        if self.vertex_dots and self._dot_program is not None:
+            draw_refs = tuple(self._dot_indices[ref] for ref in refs
+                              if ref != selected)
+            if self._dot_cached_refs != draw_refs:
+                indices = np.asarray(draw_refs, dtype=np.uint32)
+                glBindVertexArray(self._dot_vao)
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._dot_ebo)
+                glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                             indices if indices.size else None, GL_DYNAMIC_DRAW)
+                glBindVertexArray(0)
+                self._dot_index_count = int(indices.size)
+                self._dot_cached_refs = draw_refs
+            glDisable(GL_DEPTH_TEST)
+            glEnable(GL_PROGRAM_POINT_SIZE)
+            glUseProgram(self._dot_program)
+            params = self._dot_uniforms
+            glUniformMatrix4fv(params["mvp"], 1, GL_FALSE,
+                               np.ascontiguousarray(mvp.T, dtype=np.float32))
+            glUniform3f(params["offset"], 0.0, 0.0, 0.0)
+            glUniform1f(params["point_size"], 4.0 * self.devicePixelRatioF())
+            glUniform4f(params["color"], 0.72, 0.80, 0.93, 1.0)
+            glBindVertexArray(self._dot_vao)
+            if self._dot_index_count:
+                glDrawElements(GL_POINTS, self._dot_index_count,
+                               GL_UNSIGNED_INT, None)
+            if selected in self._dot_indices:
+                translation = np.zeros(3, dtype=np.float64)
+                if self._vertex_override is not None:
+                    original = np.asarray(
+                        self._model.vertices[selected].xyz, dtype=np.float64)
+                    translation = (
+                        np.asarray(self._vertex_override, dtype=np.float64)
+                        - original) / self._mesh.scale
+                glUniform3f(params["offset"], *map(float, translation))
+                glUniform1f(params["point_size"],
+                            10.0 * self.devicePixelRatioF())
+                glUniform4f(params["color"], 1.0, 0.86, 0.41, 1.0)
+                glDrawArrays(GL_POINTS, self._dot_indices[selected], 1)
+            glBindVertexArray(0)
+            glUseProgram(0)
+        if self.vertex_label_mode == "Off":
+            return
+        # Labels are optional; avoid expensive Qt painting in the default
+        # dot-only path. Thin labels by screen cell as the CPU editor does.
+        painter = QPainter(self)
+        try:
+            painter.setFont(QFont("Consolas", 9))
+            painter.setPen(QColor("#e7efff"))
+            occupied = set()
+            for number, i in enumerate(np.flatnonzero(valid)):
+                if number >= 650:
+                    break
+                ref = int(refs_array[i])
+                x, y = float(px[i, 0]), float(px[i, 1])
+                cell = (int(x//54), int(y//17))
+                if ref != selected and cell in occupied:
+                    continue
+                occupied.add(cell)
+                name = (self.vertex_names.get(ref, f"@{ref}")
+                        if self.vertex_label_mode == "Names" else str(ref))
+                painter.drawText(int(x+7), int(y-7), name)
+        finally:
+            painter.end()
+
+    def frame_vertex(self):
+        """Center a selected root vertex in the common GPU camera."""
+        if self._mesh is None or self._model is None:
+            return
+        ref = self.vertex_selected
+        if ref not in self._model.vertices:
+            return
+        if self.fixed_camera_mode:
+            self.set_fixed_camera_mode(False)
+        xyz = np.asarray(self._model.vertices[ref].xyz, dtype=np.float64)
+        self.target = (xyz - np.asarray(self._mesh.center)) / self._mesh.scale
+        self.half_height = min(self.half_height, 0.15)
+        self.distance = max(0.3, min(self.distance, 4.0))
+        self.invalidate_visibility()
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -783,14 +1047,57 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
+        if (self.vertex_mode and event.button() == Qt.MouseButton.LeftButton
+                and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                and self.vertex_dots and self._vertex_projected is not None):
+            refs, points, visible = self._vertex_projected
+            picked = pick_vertex(refs, points, visible,
+                                 event.position().x(), event.position().y())
+            if picked is not None:
+                self.vertex_selected = picked
+                self._vertex_drag = (
+                    picked, event.position(),
+                    tuple(self._model.vertices[picked].xyz))
+                self._vertex_override = None
+                self.vertexSelected.emit(picked)
+                self.update()
+                event.accept()
+                return
         self._drag = (event.position(), event.button())
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self._vertex_drag is not None:
+            ref, _, before = self._vertex_drag
+            after = self._vertex_override
+            self._vertex_drag = None
+            if after is not None and after != before:
+                self.vertexMoved.emit(ref, after)
+            else:
+                self._vertex_override = None
+                self.update()
+            event.accept()
+            return
         self._drag = None
         event.accept()
 
     def mouseMoveEvent(self, event):
+        if self._vertex_drag is not None:
+            ref, start, xyz = self._vertex_drag
+            dx = event.position().x() - start.x()
+            dy = event.position().y() - start.y()
+            if dx*dx+dy*dy < 16 and self._vertex_override is None:
+                return
+            try:
+                self._vertex_override = drag_along_axis(
+                    xyz, self.vertex_axis, dx, dy, self.vertex_step,
+                    self._mesh.center, self._mesh.scale, self._vertex_mvp,
+                    self.width(), self.height())
+                self.update()
+            except ValueError as error:
+                self.statsChanged.emit(str(error))
+            event.accept()
+            return
         if self._drag is None:
             return
         old, button = self._drag
@@ -840,6 +1147,10 @@ class Window(QMainWindow):
         self._source_export_model = None
         self._source_applied = False
         self._last_valid_source_text = None
+        self._vertex_document = None
+        self._vertex_undo = []
+        self._vertex_redo = []
+        self._vertex_edit_revision = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -880,6 +1191,10 @@ class Window(QMainWindow):
         self.source_toggle.setCheckable(True)
         self.source_toggle.toggled.connect(self._toggle_source)
         toolbar.addWidget(self.source_toggle)
+        self.vertex_toggle = QPushButton("Vertex Edit")
+        self.vertex_toggle.setCheckable(True)
+        self.vertex_toggle.toggled.connect(self._toggle_vertex)
+        toolbar.addWidget(self.vertex_toggle)
         self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
         self.benchmark_toggle.setChecked(benchmark)
         toolbar.addWidget(self.benchmark_toggle)
@@ -1049,6 +1364,8 @@ class Window(QMainWindow):
         self.source_tabs = QTabWidget()
         self.source_pane = SourcePane()
         self.source_tabs.addTab(self.source_pane, '.3D Source')
+        self.vertex_pane = VertexPane()
+        self.vertex_tab_index = self.source_tabs.addTab(self.vertex_pane, "Vertex")
         source_help = QLabel(
             'Edit Papyrus N3 text; after a 650 ms pause, valid source '
             'recompiles off the GUI thread and updates the GPU viewport.\\n\\n'
@@ -1064,6 +1381,7 @@ class Window(QMainWindow):
         source_help.setAlignment(Qt.AlignmentFlag.AlignTop)
         source_help.setMargin(16)
         self.source_tabs.addTab(source_help, 'Help')
+        self.source_tabs.currentChanged.connect(self._editor_tab_changed)
         self.editor_splitter.addWidget(self.source_tabs)
         self.editor_splitter.setStretchFactor(0, 2)
         self.editor_splitter.setStretchFactor(1, 1)
@@ -1081,6 +1399,9 @@ class Window(QMainWindow):
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
                                   activated=self.viewer.frame_all)
         frame_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        selected_shortcut = QShortcut(QKeySequence("Shift+F"), self.viewer,
+                                     activated=self.viewer.frame_vertex)
+        selected_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         reload_shortcut = QShortcut(QKeySequence("R"), self.viewer,
                                    activated=self.reload_mips)
         reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -1090,6 +1411,21 @@ class Window(QMainWindow):
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
+        self.vertex_pane.vertexSelected.connect(self._vertex_selected)
+        self.vertex_pane.coordinatesRequested.connect(self._vertex_coordinates)
+        self.vertex_pane.uvRequested.connect(self._vertex_uv)
+        self.vertex_pane.renameRequested.connect(self._vertex_rename)
+        self.vertex_pane.nudgeRequested.connect(self._vertex_nudge)
+        self.vertex_pane.undoRequested.connect(self._vertex_undo_edit)
+        self.vertex_pane.redoRequested.connect(self._vertex_redo_edit)
+        self.vertex_pane.frameRequested.connect(self.viewer.frame_vertex)
+        self.vertex_pane.saveRequested.connect(self._save_source)
+        self.vertex_pane.exportRequested.connect(self._export_compiled_source)
+        self.vertex_pane.visualChanged.connect(self._vertex_options_changed)
+        self.vertex_pane.axis.currentTextChanged.connect(self._vertex_options_changed)
+        self.vertex_pane.step.valueChanged.connect(self._vertex_options_changed)
+        self.viewer.vertexSelected.connect(self._vertex_selected)
+        self.viewer.vertexMoved.connect(self._vertex_dragged)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -1114,11 +1450,218 @@ class Window(QMainWindow):
         self.viewer.update()
 
     def _toggle_source(self, checked):
-        self.source_tabs.setVisible(checked)
         if checked:
+            self.source_tabs.show()
             self.editor_splitter.setSizes([780, 480])
             self.source_tabs.setCurrentIndex(0)
             self._ensure_source_loaded()
+        elif self.source_tabs.currentIndex() == 0:
+            self.source_tabs.hide()
+        self._editor_tab_changed(self.source_tabs.currentIndex())
+
+    def _toggle_vertex(self, checked):
+        if checked:
+            self.source_tabs.show()
+            self.editor_splitter.setSizes([780, 480])
+            self.source_tabs.setCurrentIndex(self.vertex_tab_index)
+            self._ensure_source_loaded()
+        elif self.source_tabs.currentIndex() == self.vertex_tab_index:
+            self.source_tabs.hide()
+        self._editor_tab_changed(self.source_tabs.currentIndex())
+
+    def _editor_tab_changed(self, index):
+        source_active = self.source_tabs.isVisible() and index == 0
+        vertex_active = (self.source_tabs.isVisible() and
+                         index == self.vertex_tab_index)
+        for button, value in ((self.source_toggle, source_active),
+                              (self.vertex_toggle, vertex_active)):
+            button.blockSignals(True)
+            button.setChecked(value)
+            button.blockSignals(False)
+        self.viewer.vertex_mode = vertex_active
+        self._vertex_options_changed()
+        if source_active or vertex_active:
+            self._ensure_source_loaded()
+
+    def _vertex_options_changed(self, *args):
+        if not hasattr(self, "vertex_pane"):
+            return
+        pane = self.vertex_pane
+        self.viewer.vertex_dots = pane.dots.isChecked()
+        self.viewer.vertex_visible_only = pane.visible_only.isChecked()
+        self.viewer.vertex_label_mode = pane.label_mode.currentText()
+        self.viewer.vertex_names = dict(pane._names)
+        self.viewer.vertex_axis = pane.axis.currentText()
+        self.viewer.vertex_step = pane.step.value()
+        self.viewer.update()
+
+    def _refresh_vertex_pane(self):
+        model = self.viewer._model
+        self.vertex_pane.set_model(
+            model, self._vertex_document,
+            original_n3=(self.model_path is not None and
+                         self.model_path.suffix.lower() == ".3d"),
+            selected=self.viewer.vertex_selected)
+        self._vertex_options_changed()
+
+    def _vertex_selected(self, offset):
+        if self.viewer._model is None or offset not in self.viewer._model.vertices:
+            return
+        self.viewer.vertex_selected = offset
+        self.vertex_pane.select_offset(offset, emit=False)
+        self.viewer.update()
+
+    def _vertex_can_edit(self):
+        if (not self.source_pane.ready or self._vertex_document is None or
+                self.viewer._model is None):
+            self.vertex_pane.status.setText("Preparing editable .3D source…")
+            self._ensure_source_loaded()
+            return False
+        if (self.source_pane.pending or self._source_invalid or
+                self._source_queued is not None or
+                (self.worker is not None and self.worker.isRunning())):
+            self.vertex_pane.status.setText(
+                "Wait for source validation; resolve any N3 errors before editing a vertex.")
+            return False
+        if self.vertex_pane.selected not in self.viewer._model.vertices:
+            self.vertex_pane.status.setText("Select a vertex first.")
+            return False
+        return True
+
+    def _submit_vertex_source(self, revised):
+        current = self.source_pane.get_source()
+        if revised == current:
+            return False
+        self.source_pane.editor.setPlainText(revised.replace("\r\n", "\n"))
+        self._vertex_edit_revision = self.source_pane.revision
+        self.source_pane.apply_now()
+        self.vertex_pane.status.setText("Compiling vertex change; preview retains last valid geometry…")
+        return True
+
+    def _vertex_change(self, xyz=None, uv=None, *, record=True):
+        if not self._vertex_can_edit():
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            return
+        ref = self.vertex_pane.selected
+        vertex = self.viewer._model.vertices[ref]
+        old_xyz = tuple(vertex.xyz)
+        old_uv = tuple(vertex.uv) if vertex.uv is not None else None
+        new_xyz, new_uv = check_values(
+            old_xyz if xyz is None else xyz,
+            old_uv if uv is None else uv)
+        if (new_xyz, new_uv) == (old_xyz, old_uv):
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            return
+        label = declaration_label(self.viewer._model, self._vertex_document, ref)
+        try:
+            changed = patch_vertex_source(
+                self.source_pane.get_source(), label, new_xyz, new_uv,
+                coordinate_scale=getattr(self.viewer._model,
+                                         "n3_coordinate_scale", 1))
+        except ValueError as error:
+            self.viewer._vertex_override = None
+            self.viewer.update()
+            QMessageBox.warning(self, "Invalid vertex edit", str(error))
+            return
+        if record:
+            self._vertex_undo.append(
+                ("vertex", label, old_xyz, old_uv, new_xyz, new_uv))
+            self._vertex_undo = self._vertex_undo[-150:]
+            self._vertex_redo.clear()
+        self._submit_vertex_source(changed)
+
+    def _vertex_coordinates(self, values):
+        try:
+            check_values(values)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid XYZ", str(error))
+            return
+        self._vertex_change(xyz=values)
+
+    def _vertex_uv(self, values):
+        if self.viewer._model is None or self.vertex_pane.selected is None:
+            return
+        vertex = self.viewer._model.vertices[self.vertex_pane.selected]
+        if not vertex.textured:
+            return
+        try:
+            check_values(vertex.xyz, values)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid UV", str(error))
+            return
+        self._vertex_change(uv=values)
+
+    def _vertex_dragged(self, offset, xyz):
+        self._vertex_selected(offset)
+        self._vertex_change(xyz=xyz)
+
+    def _vertex_nudge(self, direction):
+        if not self._vertex_can_edit():
+            return
+        vertex = self.viewer._model.vertices[self.vertex_pane.selected]
+        xyz = list(vertex.xyz)
+        xyz["XYZ".index(self.vertex_pane.axis.currentText())] += (
+            direction * self.vertex_pane.step.value())
+        self._vertex_change(xyz=xyz)
+
+    def _vertex_rename(self, requested):
+        if not self._vertex_can_edit():
+            return
+        ref = self.vertex_pane.selected
+        old = declaration_label(self.viewer._model, self._vertex_document, ref)
+        try:
+            new_source = rename_vertex_in_source(
+                self.source_pane.get_source(), self._vertex_document,
+                old, requested)
+        except ValueError as error:
+            QMessageBox.warning(self, "Invalid pointer name", str(error))
+            return
+        if new_source != self.source_pane.get_source():
+            self._vertex_undo.append(("rename", old, requested))
+            self._vertex_redo.clear()
+            self._submit_vertex_source(new_source)
+
+    def _vertex_history_apply(self, record, *, reverse):
+        if not self._vertex_can_edit():
+            return False
+        source = self.source_pane.get_source()
+        try:
+            if record[0] == "vertex":
+                _, label, before_xyz, before_uv, after_xyz, after_uv = record
+                target_xyz, target_uv = (
+                    (before_xyz, before_uv) if reverse else (after_xyz, after_uv))
+                changed = patch_vertex_source(
+                    source, label, target_xyz, target_uv,
+                    coordinate_scale=getattr(
+                        self.viewer._model, "n3_coordinate_scale", 1))
+            else:
+                _, old_name, new_name = record
+                changed = rename_vertex_in_source(
+                    source, self._vertex_document,
+                    new_name if reverse else old_name,
+                    old_name if reverse else new_name)
+        except ValueError as error:
+            QMessageBox.warning(self, "Cannot replay vertex history", str(error))
+            return False
+        return self._submit_vertex_source(changed)
+
+    def _vertex_undo_edit(self):
+        if not self._vertex_undo:
+            return
+        entry = self._vertex_undo[-1]
+        if self._vertex_history_apply(entry, reverse=True):
+            self._vertex_undo.pop()
+            self._vertex_redo.append(entry)
+
+    def _vertex_redo_edit(self):
+        if not self._vertex_redo:
+            return
+        entry = self._vertex_redo[-1]
+        if self._vertex_history_apply(entry, reverse=False):
+            self._vertex_redo.pop()
+            self._vertex_undo.append(entry)
 
     def _ensure_source_loaded(self):
         if self.source_pane.ready or self.viewer._model is None:
@@ -1139,7 +1682,7 @@ class Window(QMainWindow):
 
     def _source_exported(self, candidate, text, path):
         if candidate is not self.viewer._model:
-            if self.source_toggle.isChecked():
+            if self.source_tabs.isVisible():
                 QTimer.singleShot(80, self._ensure_source_loaded)
             return
         if self.source_pane.ready:
@@ -1149,6 +1692,10 @@ class Window(QMainWindow):
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
         self._source_invalid = False
+        if self._vertex_document is None:
+            # The binary exporter uses the original body offsets as labels.
+            self._vertex_document = parse_document(text)
+        self._refresh_vertex_pane()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -1192,6 +1739,12 @@ class Window(QMainWindow):
     def _source_compiled(self, rev, source, mesh, stats, model, atlas, palette, scene):
         self._source_busy_revision = None
         if rev == self.source_pane.revision:
+            if self._vertex_edit_revision != rev:
+                # Source-tab edits can change declarations/topology; do not
+                # replay old vertex-offset commands against a different tree.
+                self._vertex_undo.clear()
+                self._vertex_redo.clear()
+            self._vertex_edit_revision = None
             # Commit one complete candidate, never a partially parsed tree.
             self._preserve_view = True
             self._loaded(mesh, stats, model, atlas, palette, scene,
@@ -1200,6 +1753,11 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self.source_pane.mark_valid(rev, model)
             self._source_invalid = False
+            self.viewer._vertex_override = None
+            self.vertex_pane.status.setText(
+                f"Validated .3D: {len(model.vertices):,} vertices. "
+                "GPU preview updated; export explicitly to save.")
+            self.viewer.update()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -1207,7 +1765,13 @@ class Window(QMainWindow):
         self._source_busy_revision = None
         if rev == self.source_pane.revision:
             self._source_invalid = True
+            self._vertex_edit_revision = None
+            self.viewer._vertex_override = None
+            self.viewer.update()
             self.source_pane.mark_error(rev, error)
+            self.vertex_pane.status.setText(
+                "N3 validation failed; last valid preview preserved. "
+                "Correct the source in .3D Source before further vertex edits.")
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -1603,6 +2167,12 @@ class Window(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         if not reuse_model:
+            self._vertex_document = None
+            self._vertex_undo.clear()
+            self._vertex_redo.clear()
+            self._vertex_edit_revision = None
+            self.viewer.vertex_selected = None
+            self.vertex_pane.set_model(None, None)
             self._source_invalid = False
             self._source_applied = False
             self._last_valid_source_text = None
@@ -1640,9 +2210,27 @@ class Window(QMainWindow):
                 *, from_source=False):
         self._info = stats
         was_reloading = self._preserve_view
+        old_doc = self._vertex_document
+        old_model = self.viewer._model
+        previous_ref = self.vertex_pane.selected
+        previous_label = (declaration_label(old_model, old_doc, previous_ref)
+                          if old_model is not None and old_doc is not None
+                          and previous_ref in old_model.vertices else None)
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
         self._preserve_view = False
+        if stats.get("_n3_document") is not None:
+            self._vertex_document = stats["_n3_document"]
+        elif old_model is not model:
+            self._vertex_document = None
+        selected = previous_ref
+        if previous_label is not None and self._vertex_document is not None:
+            selected = next(
+                (stmt.offset for stmt in self._vertex_document.statements
+                 if stmt.label == previous_label and stmt.offset in model.vertices),
+                previous_ref)
+        self.viewer.vertex_selected = selected if selected in model.vertices else None
+        self._refresh_vertex_pane()
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
         if not was_reloading and not from_source:
@@ -1712,10 +2300,12 @@ class Window(QMainWindow):
             ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
             if stats['external_warnings'] else
             "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
-        if not from_source and self.source_toggle.isChecked():
+        if not from_source and self.source_tabs.isVisible():
             self._ensure_source_loaded()
 
     def _load_failed(self, message):
+        self.viewer._vertex_override = None
+        self.viewer.update()
         self.load_label.setText("Load failed; previous model preserved")
         self.stats_label.setText(message)
         QMessageBox.critical(self, "Cannot load Papyrus model", message)
