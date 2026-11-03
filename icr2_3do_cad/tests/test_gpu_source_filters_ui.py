@@ -143,6 +143,115 @@ class SourceFilterQtTests(unittest.TestCase):
         self.assertIn("second: POLY", pane.filtered_model.entries[1].preview)
         self.assertIn("second: POLY", pane.get_source())
 
+    def test_filtered_poly_edit_preserves_hidden_source_and_filter(self):
+        from PySide6.QtCore import Qt, QTimer
+        from PySide6.QtWidgets import QApplication
+        pane = self.pane
+        pane._only_filter("POLY")
+        index = pane.filtered_model.index(0)
+        self.assertTrue(index.flags() & Qt.ItemFlag.ItemIsEditable)
+        before = pane.get_source()
+        edited = pane.filtered_model.data(index, Qt.ItemDataRole.EditRole)
+        self.assertEqual(edited, "panel: POLY <44>\\n   {a,b,c};")
+        self.assertTrue(pane.filtered_model.setData(
+            index, edited.replace("<44>", "<55>"), Qt.ItemDataRole.EditRole))
+        QApplication.processEvents()
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+        self.assertEqual(
+            pane.filter_button.text(),
+            "Filter statements (1/13)")
+        self.assertIn("panel: POLY <55>", pane.get_source())
+        self.assertTrue(pane.dirty)
+        self.assertTrue(pane.pending)
+        self.assertEqual(pane.get_source().replace("<55>", "<44>"), before)
+        self.assertEqual(len(pane.filtered_model.entries), 1)
+        self.assertIn("<55>", pane.filtered_model.entries[0].preview)
+        self.assertTrue(pane.editor.document().isUndoAvailable())
+        pane._debounce.stop()
+        pane.editor.undo()
+        QApplication.processEvents()
+        self.assertEqual(pane.get_source(), before)
+
+    def test_filtered_multiline_edit_and_comment_preservation(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        pane = self.pane
+        pane._only_filter("POLY")
+        index = pane.filtered_model.index(0)
+        edited = "panel: POLY <44>\\n   {a, b,\\n    c};"
+        self.assertTrue(pane.filtered_model.setData(
+            index, edited, Qt.ItemDataRole.EditRole))
+        QApplication.processEvents()
+        self.assertEqual(pane.get_source().splitlines()[1], "% global comment")
+        self.assertEqual(pane.get_source().splitlines()[-1], "% second comment")
+        self.assertIn("root: LIST {panel};", pane.get_source())
+        self.assertEqual(
+            (pane.filtered_model.entries[0].first_line,
+             pane.filtered_model.entries[0].last_line), (5, 7))
+        self.assertEqual(pane.get_source().count("POLY"), 1)
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+
+    def test_filtered_edit_retains_search_until_match_changes(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        pane = self.pane
+        pane._only_filter("POLY")
+        pane.filter_search.setText("panel")
+        index = pane.filtered_model.index(0)
+        assert pane.filtered_model.setData(
+            index, "wing: POLY <44>\\n   {a,b,c};", Qt.ItemDataRole.EditRole)
+        QApplication.processEvents()
+        self.assertEqual(pane.filter_search.text(), "panel")
+        self.assertEqual(len(pane.filtered_model.entries), 0)
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+        self.assertIn("wing: POLY", pane.get_source())
+        pane.filter_search.clear()
+        self.assertEqual(len(pane.filtered_model.entries), 1)
+
+    def test_filtered_pointer_rename_updates_hidden_references(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication
+        pane = self.pane
+        self.assertTrue(pane.auto_rename.isChecked())
+        pane._only_filter("POLY")
+        index = pane.filtered_model.index(0)
+        self.assertTrue(pane.filtered_model.setData(
+            index, "wing: POLY <44>\\n   {a,b,c};",
+            Qt.ItemDataRole.EditRole))
+        pane._rename_timer.stop()
+        pane._commit_pending_rename()
+        QApplication.processEvents()
+        self.assertIn("root: LIST {wing};", pane.get_source())
+        self.assertEqual(pane.get_source().splitlines()[1], "% global comment")
+        self.assertEqual(len(pane.filtered_model.entries), 1)
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+
+    def test_actual_inline_editor_commits_without_switching_mode(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtWidgets import QApplication, QPlainTextEdit
+        pane = self.pane
+        pane.show()
+        pane._only_filter("POLY")
+        QApplication.processEvents()
+        index = pane.filtered_model.index(0)
+        self.assertTrue(pane.filtered_list.edit(index))
+        QApplication.processEvents()
+        editor = next(
+            child for child in pane.filtered_list.findChildren(QPlainTextEdit)
+            if child.isVisible())
+        self.assertEqual(editor.toPlainText(),
+                         "panel: POLY <44>\\n   {a,b,c};")
+        editor.setPlainText(editor.toPlainText().replace("<44>", "<77>"))
+        # Exercise the delegate commit path used on Ctrl+Enter/focus loss.
+        delegate = pane.filtered_list.itemDelegate()
+        delegate.commitData.emit(editor)
+        delegate.closeEditor.emit(editor)
+        QApplication.processEvents()
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+        self.assertIn("panel: POLY <77>", pane.get_source())
+        self.assertEqual(len(pane.filtered_model.entries), 1)
+        pane.hide()
+
     def test_find_error_returns_to_full_editable_source(self):
         pane = self.pane
         pane._only_filter("LIST")
