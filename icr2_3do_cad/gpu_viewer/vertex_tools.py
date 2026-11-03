@@ -86,7 +86,7 @@ def project_vertices(xyz, center, scale, mvp, width, height):
     xyz = np.asarray(xyz, dtype=np.float64).reshape((-1, 3))
     if not len(xyz):
         return np.zeros((0, 3)), np.zeros(0, dtype=bool)
-    normed = (xyz - np.asarray(center, dtype=np.float64)) * float(scale)
+    normed = (xyz - np.asarray(center, dtype=np.float64)) / float(scale)
     homogeneous = np.column_stack((normed, np.ones(len(xyz))))
     clip = homogeneous @ np.asarray(mvp, dtype=np.float64).T
     valid = clip[:, 3] > 1e-9
@@ -126,7 +126,7 @@ def drag_along_axis(xyz, axis, pixel_dx, pixel_dy, step, center, scale,
         raise ValueError("Choose an X/Y/Z axis and a positive integer step")
     xyz, _ = check_values(xyz)
     index = "XYZ".index(axis)
-    sample = max(1, round(0.001 / float(scale)))
+    sample = max(1, round(0.001 * float(scale)))
     endpoint = list(xyz)
     endpoint[index] += sample
     points, visible = project_vertices((xyz, endpoint), center, scale, mvp, width, height)
