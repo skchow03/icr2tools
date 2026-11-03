@@ -69,7 +69,7 @@ class GPUVertexToolsTests(unittest.TestCase):
 
     def test_drag_along_axis_and_edge_on_rejection(self):
         xyz = (0, 0, 0)
-        kwargs = dict(center=(0, 0, 0), scale=0.01,
+        kwargs = dict(center=(0, 0, 0), scale=100,
                       mvp=np.eye(4), width=200, height=100)
         result = drag_along_axis(xyz, "X", 20, 0, 10, **kwargs)
         self.assertEqual(result, (20, 0, 0))
