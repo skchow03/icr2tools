@@ -153,7 +153,10 @@ root: LIST {lod};
         # Root polygon present in LOD traversal but excluded by camera BSP.
         self.assertIn("BSP", polygon_inspection_notice(
             model, far, set(), 1200, eye, "painter"))
-        self.assertIn("not referenced", polygon_inspection_notice(
+        # Orphan source declarations are not parsed into renderable POLYs.
+        # Inspection correctly returns no notice when the record is absent.
+        self.assertNotIn(unused, model.polygons)
+        self.assertIsNone(polygon_inspection_notice(
             model, unused, set(), 1200, eye, "painter"))
 
 
