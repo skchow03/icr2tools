@@ -108,6 +108,26 @@ class SourceFilterQtTests(unittest.TestCase):
         finally:
             pane.cursorTargetChanged.disconnect(captured.append)
 
+    def test_filtered_poly_retains_green_salmon_inspection_state(self):
+        from PySide6.QtCore import Qt
+        pane = self.pane
+        pane._only_filter("POLY")
+        index = pane.filtered_model.index(0)
+        pane.filtered_list.setCurrentIndex(index)
+        self.assertEqual(pane.current_target(), ("polygon", "panel"))
+        for visible, color, status in (
+                (True, "#b5e3bb", "[VISIBLE]"),
+                (False, "#f1ada1", "[NOT DRAWN]")):
+            pane.set_polygon_visibility(visible)
+            self.assertEqual(
+                pane.filtered_model.data(
+                    index, Qt.ItemDataRole.BackgroundRole).name(), color)
+            self.assertIn(status, pane.filtered_model.data(
+                index, Qt.ItemDataRole.DisplayRole))
+        pane.set_polygon_visibility(None)
+        self.assertIsNone(pane.filtered_model.data(
+            index, Qt.ItemDataRole.BackgroundRole))
+
     def test_filtered_results_rebuild_after_source_edit(self):
         pane = self.pane
         pane._only_filter("POLY")
