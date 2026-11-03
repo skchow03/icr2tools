@@ -1,12 +1,12 @@
 """Read-only ICR2 PMP sprite decoding for 3DO PMP/PMP2 nodes.
 
 Observed from stock helmets and tree1..tree4 scenery:
-    Bytes 0..3 are NOT a fixed magic signature. They encode an enclosing
-    sprite rectangle: (width, height, -left, -top), modulo 256 for origin
-    offsets. The rectangle may contain transparent padding: stock helmets
-    use a larger rectangle than their painted spans; all four observed
-    trees happen to use tight rectangles. Tree2 starts 5b 7b af fb,
-    while tree1 starts 7a 79 be f9. Both describe valid PMP sprites.
+    Bytes 0..3 are NOT a fixed magic signature. They encode nominal
+    sprite placement extents: (width, height, -left, -top), modulo 256 for
+    origin offsets. These are not always exact painted bounds: some helmet
+    spans extend slightly beyond their nominal rectangle; all four observed
+    trees happen to match it. Tree2 starts 5b 7b af fb; tree1 starts
+    7a 79 be f9. Both describe valid PMP sprites.
     Byte 4: little-endian uint32 declared size.
     Byte 8: little-endian uint32 auxiliary field.
     Byte 12 onward: (y, x_start, x_end, palette_index) 4-byte records
@@ -81,19 +81,21 @@ def load_pmp(path, palette):
 
     if not spans:
         raise PMPError(f'{path.name}: no visible spans')
-    # These four bytes describe an *enclosing* image rectangle. Some
-    # helmets paint only part of that rectangle; insisting on a tight
-    # bounding-box equality would reject existing valid helmet sprites.
+    # These four bytes are NOMINAL extents used for sprite placement, not
+    # necessarily an enclosing bounding box. Helmet views may paint outside
+    # the nominal rectangle by a pixel or more, whereas the four supplied
+    # trees happen to match it exactly. Validate a plausible placement with
+    # overlapping, in-canvas data, not a wrongly assumed tight rectangle.
     width, height, neg_left, neg_top = data[:4]
     left = (-neg_left) & 0xff
     top = (-neg_top) & 0xff
     right = left + (width or 256)
     bottom = top + (height or 256)
     if (right > 256 or bottom > 256 or
-            not (left <= min_x and max_x <= right and
-                 top <= min_y and max_y + 1 <= bottom)):
+            not (left < max_x and min_x < right and
+                 top <= max_y and min_y < bottom)):
         raise PMPError(
-            f'{path.name}: PMP extent header does not enclose color spans '
+            f'{path.name}: implausible PMP extent header for color spans '
             f'(header {data[:4].hex()}, visible '
             f'({min_x},{min_y},{max_x},{max_y+1}))')
 
