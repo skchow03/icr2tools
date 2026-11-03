@@ -860,6 +860,7 @@ class Window(QMainWindow):
         side_layout = QVBoxLayout(self.sidebar_content)
         side_layout.setContentsMargins(8, 8, 8, 8)
         side_layout.setSpacing(6)
+        self.section_buttons = {}
 
         def section(title, expanded):
             header = QToolButton()
@@ -869,6 +870,7 @@ class Window(QMainWindow):
             header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
             header.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
             side_layout.addWidget(header)
+            self.section_buttons[title] = header
             panel = QWidget()
             content = QVBoxLayout(panel)
             content.setContentsMargins(4, 2, 4, 8)
