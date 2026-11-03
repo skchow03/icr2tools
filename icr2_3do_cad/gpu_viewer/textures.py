@@ -40,6 +40,31 @@ def load_palette(path):
     return np.frombuffer(data[-768:], dtype=np.uint8).copy().reshape(256, 3)
 
 
+
+def find_model_sunny_palette(model_path):
+    """Find SUNNY.PCX beside the opened .3D/.3DO (case-insensitively).
+
+    Only the opened model's immediate folder is searched. Referenced 3DO
+    folders, the texture-folder override, and subdirectories cannot change
+    the palette selected for the parent model. Do not load or modify files
+    during lookup; the worker validates PCX contents separately.
+    """
+    folder = Path(model_path).parent
+    for name in ("SUNNY.PCX", "sunny.pcx"):
+        candidate = folder / name
+        if candidate.is_file():
+            return candidate
+    try:
+        # Stable if a case-sensitive filesystem contains multiple variants.
+        candidates = sorted(
+            (entry for entry in folder.iterdir()
+             if entry.name.casefold() == "sunny.pcx" and entry.is_file()),
+            key=lambda entry: entry.name)
+    except OSError:
+        return None
+    return candidates[0] if candidates else None
+
+
 def find_texture(name, model_path, texture_folder=None):
     """Resolve one DOS-style MIP basename, case-insensitively, locally only."""
     safe = Path(str(name)).name
