@@ -102,6 +102,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python icr2_3do_cad/gpu_viewer/visibility_source_smoke_test.py
+      - name: Render standalone and referenced PMP sprites in real OpenGL
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_pmp_gl.py'
       - name: Attach rendered GPU screenshot
         if: always()
         uses: actions/upload-artifact@v4
