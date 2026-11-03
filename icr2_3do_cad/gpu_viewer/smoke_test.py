@@ -236,8 +236,6 @@ def run(path):
             poly = next((
                 item for item in targets
                 if item.kind == "polygon" and
-                target_offset(view._model, item.kind, item.label) in
-                view._visible_set and
                 polygon_mesh_range(
                     view._scene, view._mesh,
                     target_offset(view._model, item.kind, item.label))
