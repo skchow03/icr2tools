@@ -687,6 +687,16 @@ class SourcePane(QWidget):
             cursor.endEditBlock()
         finally:
             self._filtered_edit_active = False
+        # A QTextCursor replacement can emit intermediate textChanged signals
+        # (deleting the old multiline statement before inserting the new).
+        # Track a declaration-label rename from complete before/after text,
+        # not those intermediate snapshots, so references in filtered-out
+        # LIST/FACE/SWITCH statements are updated as normal.
+        old_label = edited_declaration_label(original, text, 0)
+        if old_label is not None and self.auto_rename.isChecked():
+            self._rename_pending = (entry.first_line, old_label)
+            self._rename_timer.start()
+        self._rename_snapshot = self.editor.toPlainText()
         # Rebuild after the delegate has closed; a synchronous model reset
         # inside setModelData would destroy its active editing widget.
         QTimer.singleShot(0, self._apply_filters)
