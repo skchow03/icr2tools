@@ -224,6 +224,12 @@ def run(path):
                 return
         if dynamic_test and live["valid_seen"] and fixed["tested"] and not vertex["done"]:
             if vertex["state"] == "not_started":
+                # Synthetic car wrapper has child geometry and complex BSP.
+                # Use all-geometry mode + Frame All to guarantee the test
+                # clicks a displayed root vertex, not a hidden LOD point.
+                window.mode_combo.setCurrentIndex(2)
+                view.frame_all()
+                window.vertex_pane.visible_only.setChecked(False)
                 window.vertex_toggle.setChecked(True)
                 if (not view.vertex_mode or
                     window.source_tabs.currentIndex() != window.vertex_tab_index):
@@ -381,10 +387,11 @@ def run(path):
             result["error"] = (
                 f"timeout loading or drawing: {window.stats_label.text()} | "
                 f"source {window.source_pane.status.text()} | "
-                f"live={{k:v for k,v in live.items() if k != 'source'}} | "
+                f"live_state={live['valid_seen']} | "
                 f"fixed={fixed} vertex={vertex} "
                 f"mode={view.vertex_mode} projected="
                 f"{len(view._vertex_projected[0]) if view._vertex_projected else None} "
+                f"valid_dots={int(view._vertex_projected[2].sum()) if view._vertex_projected else None} "
                 f"vertex_status={window.vertex_pane.status.text()} | "
                 f"ctx={view._program is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
