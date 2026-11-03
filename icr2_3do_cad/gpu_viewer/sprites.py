@@ -88,8 +88,8 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                     rgba = np.asarray(decoded.rgba, dtype=np.uint8)
                     image = np.ascontiguousarray(
                         np.stack((rgba[:, :, 0], rgba[:, :, 3]), axis=-1))
-                    if (sum(x.nbytes for x in images.values()) + image.nbytes >
-                            max_bytes):
+                    if (sum(data.nbytes for data, _ in images.values()) +
+                            image.nbytes > max_bytes):
                         warnings.append(
                             f"{location.name}: PMP memory budget exceeded")
                         continue
