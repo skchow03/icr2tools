@@ -242,13 +242,37 @@ class SourceFilterQtTests(unittest.TestCase):
         self.assertEqual(editor.toPlainText(),
                          "panel: POLY <44>\n   {a,b,c};")
         editor.setPlainText(editor.toPlainText().replace("<44>", "<77>"))
-        # Exercise the delegate commit path used on Ctrl+Enter/focus loss.
-        delegate = pane.filtered_list.itemDelegate()
-        delegate.commitData.emit(editor)
-        delegate.closeEditor.emit(editor)
+        # Exercise the actual keyboard shortcut, not an artificial
+        # setData call: Ctrl+Enter commits while the filter remains active.
+        from PySide6.QtTest import QTest
+        QTest.keyClick(editor, Qt.Key.Key_Return,
+                       Qt.KeyboardModifier.ControlModifier)
         QApplication.processEvents()
         self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
         self.assertIn("panel: POLY <77>", pane.get_source())
+        self.assertEqual(len(pane.filtered_model.entries), 1)
+        pane.hide()
+
+    def test_escape_cancels_inline_edit_and_keeps_active_filter(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtTest import QTest
+        from PySide6.QtWidgets import QApplication, QPlainTextEdit
+        pane = self.pane
+        pane.show()
+        pane._only_filter("POLY")
+        QApplication.processEvents()
+        pane.filtered_list.edit(pane.filtered_model.index(0))
+        QApplication.processEvents()
+        editor = next(
+            child for child in pane.filtered_list.findChildren(QPlainTextEdit)
+            if child.isVisible())
+        editor.setPlainText("panel: POLY <999>\n   {a,b,c};")
+        QTest.keyClick(editor, Qt.Key.Key_Escape)
+        QApplication.processEvents()
+        self.assertEqual(pane.get_source(), SOURCE)
+        self.assertFalse(pane.dirty)
+        self.assertFalse(pane.pending)
+        self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
         self.assertEqual(len(pane.filtered_model.entries), 1)
         pane.hide()
 
