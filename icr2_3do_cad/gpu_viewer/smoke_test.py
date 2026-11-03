@@ -380,7 +380,12 @@ def run(path):
         elif elapsed > 45:
             result["error"] = (
                 f"timeout loading or drawing: {window.stats_label.text()} | "
-                f"source {window.source_pane.status.text()} | live {live} | "
+                f"source {window.source_pane.status.text()} | "
+                f"live={{k:v for k,v in live.items() if k != 'source'}} | "
+                f"fixed={fixed} vertex={vertex} "
+                f"mode={view.vertex_mode} projected="
+                f"{len(view._vertex_projected[0]) if view._vertex_projected else None} "
+                f"vertex_status={window.vertex_pane.status.text()} | "
                 f"ctx={view._program is not None}, "
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
