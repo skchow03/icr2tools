@@ -189,6 +189,31 @@ The mode is a UI organization choice, not a conversion between file formats.
 Loading and mesh creation run on a worker thread; the OpenGL context and
 buffer upload stay on Qt's GUI thread.
 
+## Inspecting N3 geometry with the source cursor
+
+Open **.3D Source** beside the GPU preview. Place the text cursor anywhere
+within a named `POLY` or `POLY [T]` declaration to brighten that face.
+Place it within a named vertex declaration (`name: [<X,Y,Z>];`) to show
+a bright dot at that vertex in the 3D viewport. Both overlays track orbit,
+zoom and the fixed-camera view; they do not move geometry or edit the N3.
+
+- Cursor inspection works with named standalone .3D declarations as well as
+  generated `_offset` declarations when a binary .3do is opened.
+- Multiline polygon declarations are supported. Empty lines, comments and
+  unrelated commands clear the overlay.
+- While source text is unvalidated or contains a compilation error, overlays
+  disappear rather than pointing to the *last valid* model incorrectly.
+  They return after a successful live compile. Closing Source hides them.
+- A highlighted polygon is drawn as a **diagnostic overlay**, even if a BSP
+  branch, LOD switch, or foreground surface would normally hide it. It is
+  **not** a claim that ICR2 would draw the polygon from that camera angle.
+- Inline anonymous vertices within commands are not independent named
+  vertex declarations. A marker also disappears if its 3D position is
+  outside the camera frustum. This feature does not add mouse picking.
+
+The selection uses original model coordinates and compiled N3 record offsets;
+it does not recompile the model or re-upload the mesh on each cursor move.
+
 ## Architecture and what is measured
 
 mesh.py builds **one packed, interleaved float32 XYZ/RGB/index/UV/atlas-rect
