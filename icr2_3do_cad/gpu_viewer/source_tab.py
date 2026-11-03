@@ -7,6 +7,7 @@ results and keeps the last valid mesh on compilation failure.
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QTimer, Signal
@@ -78,11 +79,36 @@ class FilteredStatementsModel(QAbstractListModel):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.entries = ()
+        self.starts = ()
+        self.active_line = None
+        self.active_visibility = None
 
     def set_entries(self, entries):
         self.beginResetModel()
         self.entries = tuple(entries)
+        self.starts = tuple(e.first_line for e in self.entries)
         self.endResetModel()
+
+    def _row_at_line(self, line):
+        if line is None or not self.starts:
+            return None
+        row = bisect_right(self.starts, line) - 1
+        if row < 0 or line > self.entries[row].last_line:
+            return None
+        return row
+
+    def set_inspection(self, line, visible):
+        before = self._row_at_line(self.active_line)
+        self.active_line = line
+        self.active_visibility = visible
+        after = self._row_at_line(line)
+        for row in {before, after}:
+            if row is not None:
+                self.dataChanged.emit(
+                    self.index(row), self.index(row),
+                    [Qt.ItemDataRole.DisplayRole,
+                     Qt.ItemDataRole.BackgroundRole,
+                     Qt.ItemDataRole.ForegroundRole])
 
     def rowCount(self, parent=QModelIndex()):
         return 0 if parent.isValid() else len(self.entries)
@@ -91,9 +117,18 @@ class FilteredStatementsModel(QAbstractListModel):
         if not index.isValid() or index.row() >= len(self.entries):
             return None
         entry = self.entries[index.row()]
+        active = (entry.category == "POLY" and
+                  self._row_at_line(self.active_line) == index.row() and
+                  self.active_visibility is not None)
         if role == Qt.ItemDataRole.DisplayRole:
+            status = ("  [VISIBLE]" if self.active_visibility else
+                      "  [NOT DRAWN]") if active else ""
             return (f"{entry.first_line + 1:>6}  "
-                    f"[{entry.category}]  {entry.preview}")
+                    f"[{entry.category}]  {entry.preview}{status}")
+        if active and role == Qt.ItemDataRole.BackgroundRole:
+            return QColor("#b5e3bb" if self.active_visibility else "#f1ada1")
+        if active and role == Qt.ItemDataRole.ForegroundRole:
+            return QColor("#17221d")
         if role == Qt.ItemDataRole.ToolTipRole:
             return (f"Original line {entry.first_line + 1}"
                     + (f"–{entry.last_line + 1}" if
@@ -443,6 +478,8 @@ class SourcePane(QWidget):
                     item.cursor = QTextCursor(block)
                     lines.append(item)
         self.editor.setExtraSelections(lines)
+        self.filtered_model.set_inspection(
+            self.editor.textCursor().blockNumber(), self._polygon_visible)
 
     def _emit_cursor_target(self):
         if self._setting:
@@ -463,10 +500,9 @@ class SourcePane(QWidget):
         if self._filter_cache_revision == self.revision:
             return
         self._filter_entries = index_source_entries(self.editor.toPlainText())
-        self._filter_counts = {
-            category: sum(e.category == category for e in self._filter_entries)
-            for category in CATEGORIES
-        }
+        self._filter_counts = dict.fromkeys(CATEGORIES, 0)
+        for entry in self._filter_entries:
+            self._filter_counts[entry.category] += 1
         self._filter_cache_revision = self.revision
 
     def _set_selected_filters(self, selected):
@@ -614,3 +650,5 @@ class SourcePane(QWidget):
         self.position.setText(
             f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
         self._emit_cursor_target()
+        self.filtered_model.set_inspection(
+            cursor.blockNumber(), self._polygon_visible)
