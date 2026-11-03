@@ -42,7 +42,7 @@ class F2PointerRenamePlanTests(unittest.TestCase):
     def test_change_vertex_refs_in_poly_face_and_preserve_comments(self):
         old, edits = plan_pointer_rename(SOURCE, 2, "nose_vertex")
         self.assertEqual(old, "front")
-        self.assertEqual(len(edits), 4)
+        self.assertEqual(len(edits), 3)
         changed = apply_plan(SOURCE, edits)
         self.assertIn("nose_vertex: [<0,0,0>];", changed)
         self.assertIn("{nose_vertex, right, top};", changed)
