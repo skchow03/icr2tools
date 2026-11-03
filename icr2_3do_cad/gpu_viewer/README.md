@@ -190,7 +190,11 @@ The mode is a UI organization choice, not a conversion between file formats.
   viewpoint-selected transparent sprites both in the opened 3DO and in
   DYNAMIC/external referenced 3DOs. Uses the same validated PMP decoder as
   the CPU editor: indexed colors and missing-span transparency, with the
-  current PCX palette sampled directly on the GPU. The sprite files are
+  current PCX palette sampled directly on the GPU. The shared decoder accepts
+  both the original helmet PMP signature (4C 38 AA AF, terminated spans)
+  and the observed scenery/tree signature (5B 7B AF FB, un-terminated
+  four-byte spans). For example, tree2.3do references tree2.pmp, which
+  can be displayed with a user-selected SUNNY.PCX palette. The sprite files are
   resolved case-insensitively beside the referenced 3DO, in the selected
   external-objects folder, or in the selected texture folder; missing/invalid
   sprites are reported in Assets without blocking polygon rendering.
