@@ -9,14 +9,16 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton,
-    QTextEdit, QVBoxLayout, QWidget,
+    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QListView, QMenu,
+    QPlainTextEdit, QPushButton, QStackedWidget, QToolButton,
+    QTextEdit, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from gpu_viewer.source_inspection import index_source_targets
+from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.source_rename import (
     edited_declaration_label, declaration_label, reference_spans,
 )
@@ -70,6 +72,38 @@ class N3Highlighter(QSyntaxHighlighter):
                                self.formats[name])
 
 
+class FilteredStatementsModel(QAbstractListModel):
+    """Virtualized read-only navigation results, never a second source document."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.entries = ()
+
+    def set_entries(self, entries):
+        self.beginResetModel()
+        self.entries = tuple(entries)
+        self.endResetModel()
+
+    def rowCount(self, parent=QModelIndex()):
+        return 0 if parent.isValid() else len(self.entries)
+
+    def data(self, index, role=Qt.ItemDataRole.DisplayRole):
+        if not index.isValid() or index.row() >= len(self.entries):
+            return None
+        entry = self.entries[index.row()]
+        if role == Qt.ItemDataRole.DisplayRole:
+            return (f"{entry.first_line + 1:>6}  "
+                    f"[{entry.category}]  {entry.preview}")
+        if role == Qt.ItemDataRole.ToolTipRole:
+            return (f"Original line {entry.first_line + 1}"
+                    + (f"–{entry.last_line + 1}" if
+                       entry.last_line != entry.first_line else "")
+                    + f" | {entry.category}\n{entry.preview}")
+        if role == Qt.ItemDataRole.UserRole:
+            return entry.first_line
+        return None
+
+
 class SourcePane(QWidget):
     compileRequested = Signal(int, str)
     saveRequested = Signal()
@@ -92,6 +126,9 @@ class SourcePane(QWidget):
         self._rename_snapshot = ""
         self._rename_pending = None  # (zero-based declaration line, original label)
         self._applying_rename = False
+        self._filter_entries = ()
+        self._filter_cache_revision = -1
+        self._filter_sync = False
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -116,6 +153,65 @@ class SourcePane(QWidget):
         controls.addWidget(self.auto_rename)
         layout.addLayout(controls)
 
+        # A checkable popup filters a separate, read-only navigation list.
+        # Never hide or delete QTextBlocks in the editable document: that
+        # would make selection, undo, save and automated renaming unsafe.
+        filter_bar = QHBoxLayout()
+        self.filter_button = QToolButton()
+        self.filter_button.setText("Filter statements (all)")
+        self.filter_button.setToolTip(
+            "Choose N3 statement types to show or hide. "
+            "Filtered matches can be opened in the full editor.")
+        self.filter_menu = QMenu(self.filter_button)
+        self.filter_button.setMenu(self.filter_menu)
+        self.filter_button.setPopupMode(
+            QToolButton.ToolButtonPopupMode.InstantPopup)
+        self._filter_checks = {}
+        self._filter_counts = {}
+
+        filter_widget = QWidget(self.filter_menu)
+        filter_layout = QVBoxLayout(filter_widget)
+        filter_layout.setContentsMargins(10, 8, 10, 8)
+        filter_layout.setSpacing(3)
+        menu_actions = QHBoxLayout()
+        all_button = QPushButton("Show all")
+        all_button.clicked.connect(self._show_all_filters)
+        menu_actions.addWidget(all_button)
+        none_button = QPushButton("Hide all")
+        none_button.clicked.connect(self._hide_all_filters)
+        menu_actions.addWidget(none_button)
+        filter_layout.addLayout(menu_actions)
+        filter_layout.addWidget(QLabel("Statement types   ·   Only = isolate"))
+        for category in CATEGORIES:
+            row = QHBoxLayout()
+            checkbox = QCheckBox(category)
+            checkbox.setChecked(True)
+            checkbox.toggled.connect(self._filters_changed)
+            self._filter_checks[category] = checkbox
+            row.addWidget(checkbox, 1)
+            only = QPushButton("Only")
+            only.setToolTip(f"Show only {category} entries")
+            only.setMaximumWidth(52)
+            only.clicked.connect(
+                lambda checked=False, kind=category:
+                self._only_filter(kind))
+            row.addWidget(only)
+            filter_layout.addLayout(row)
+        popup = QWidgetAction(self.filter_menu)
+        popup.setDefaultWidget(filter_widget)
+        self.filter_menu.addAction(popup)
+        self.filter_menu.aboutToShow.connect(self._filter_menu_opening)
+        filter_bar.addWidget(self.filter_button)
+        filter_bar.addWidget(QLabel("Find:"))
+        self.filter_search = QLineEdit()
+        self.filter_search.setPlaceholderText("Label or source text…")
+        self.filter_search.setClearButtonEnabled(True)
+        self.filter_search.textChanged.connect(self._apply_filters)
+        filter_bar.addWidget(self.filter_search, 1)
+        self.filter_status = QLabel("All source lines shown")
+        filter_bar.addWidget(self.filter_status)
+        layout.addLayout(filter_bar)
+
         self.status = QLabel('Open a .3D or .3DO to edit source.')
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -129,7 +225,33 @@ class SourcePane(QWidget):
         self.highlighter = N3Highlighter(self.editor.document())
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
-        layout.addWidget(self.editor, 1)
+        self.filtered_model = FilteredStatementsModel(self)
+        self.filtered_list = QListView()
+        self.filtered_list.setModel(self.filtered_model)
+        self.filtered_list.setUniformItemSizes(True)
+        self.filtered_list.setAlternatingRowColors(True)
+        self.filtered_list.setFont(font)
+        self.filtered_list.setToolTip(
+            "Select a statement to inspect it in the GPU viewport. "
+            "Double-click to open its original source line for editing.")
+        self.filtered_list.selectionModel().currentChanged.connect(
+            self._inspect_filtered_entry)
+        self.filtered_list.doubleClicked.connect(self._edit_filtered_entry)
+        self.filtered_page = QWidget()
+        filtered_layout = QVBoxLayout(self.filtered_page)
+        filtered_layout.setContentsMargins(0, 0, 0, 0)
+        filtered_layout.addWidget(QLabel(
+            "Filtered navigation (read-only). Select to inspect; "
+            "double-click to edit in the full source."))
+        filtered_layout.addWidget(self.filtered_list, 1)
+        edit_button = QPushButton("Edit selected source line (show all)")
+        edit_button.clicked.connect(self._edit_filtered_entry)
+        filtered_layout.addWidget(edit_button)
+
+        self.source_stack = QStackedWidget()
+        self.source_stack.addWidget(self.editor)
+        self.source_stack.addWidget(self.filtered_page)
+        layout.addWidget(self.source_stack, 1)
         self.position = QLabel('Line 1, column 1')
         layout.addWidget(self.position)
 
@@ -182,6 +304,8 @@ class SourcePane(QWidget):
             self._setting = False
         self._rename_snapshot = normalized
         self._source_index = index_source_targets(normalized)
+        self._filter_cache_revision = -1
+        self._apply_filters()
         self._cursor_changed()
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
@@ -204,6 +328,8 @@ class SourcePane(QWidget):
             self._setting = False
         self._rename_snapshot = ""
         self._source_index = index_source_targets("")
+        self._filter_cache_revision = -1
+        self._apply_filters()
         self._cursor_changed()
 
     def _edited(self):
@@ -213,6 +339,9 @@ class SourcePane(QWidget):
             return
         self._track_symbol_edit()
         self.revision += 1
+        self._filter_cache_revision = -1
+        if self.source_stack.currentIndex() == 1:
+            self._apply_filters()
         self._last_error_line = None
         self._polygon_visible = None
         self._refresh_extra_selections()
@@ -263,6 +392,8 @@ class SourcePane(QWidget):
     def goto_error(self):
         if not self._last_error_line:
             return
+        if self.source_stack.currentIndex() == 1:
+            self._show_all_filters()
         block = self.editor.document().findBlockByNumber(self._last_error_line-1)
         if block.isValid():
             cursor = QTextCursor(block)
@@ -322,6 +453,103 @@ class SourcePane(QWidget):
             self._polygon_visible = None
             self._refresh_extra_selections()
             self.cursorTargetChanged.emit(target)
+
+    def _filter_menu_opening(self):
+        self._ensure_filter_entries()
+        for category, checkbox in self._filter_checks.items():
+            checkbox.setText(f"{category} ({self._filter_counts[category]:,})")
+
+    def _ensure_filter_entries(self):
+        if self._filter_cache_revision == self.revision:
+            return
+        self._filter_entries = index_source_entries(self.editor.toPlainText())
+        self._filter_counts = {
+            category: sum(e.category == category for e in self._filter_entries)
+            for category in CATEGORIES
+        }
+        self._filter_cache_revision = self.revision
+
+    def _set_selected_filters(self, selected):
+        self._filter_sync = True
+        try:
+            for category, box in self._filter_checks.items():
+                box.setChecked(category in selected)
+        finally:
+            self._filter_sync = False
+        self._apply_filters()
+
+    def _show_all_filters(self):
+        self.filter_search.clear()
+        self._set_selected_filters(set(CATEGORIES))
+
+    def _hide_all_filters(self):
+        self._set_selected_filters(set())
+
+    def _only_filter(self, category):
+        self._set_selected_filters({category})
+
+    def _filters_changed(self, *_):
+        if not self._filter_sync:
+            self._apply_filters()
+
+    def _apply_filters(self, *_):
+        if self._filter_sync:
+            return
+        chosen = {c for c, checkbox in self._filter_checks.items()
+                  if checkbox.isChecked()}
+        query = self.filter_search.text().strip().casefold()
+        count = len(chosen)
+        self.filter_button.setText(
+            "Filter statements (all)" if count == len(CATEGORIES) else
+            f"Filter statements ({count}/{len(CATEGORIES)})")
+        if count == len(CATEGORIES) and not query:
+            self.source_stack.setCurrentWidget(self.editor)
+            self.filter_status.setText("All source lines shown")
+            return
+        self._ensure_filter_entries()
+        matching = [
+            entry for entry in self._filter_entries
+            if entry.category in chosen and
+            (not query or query in entry.preview.casefold())
+        ]
+        previous_line = self.editor.textCursor().blockNumber()
+        self.filtered_model.set_entries(matching)
+        self.source_stack.setCurrentWidget(self.filtered_page)
+        self.filter_status.setText(
+            f"{len(matching):,}/{len(self._filter_entries):,} statements")
+        if matching:
+            # Keep the caret on its source line until a filtered result is
+            # explicitly selected; filtering alone does not change geometry.
+            row = next((i for i, entry in enumerate(matching)
+                        if entry.first_line <= previous_line <= entry.last_line),
+                       None)
+            if row is not None:
+                self.filtered_list.setCurrentIndex(self.filtered_model.index(row))
+        else:
+            self.filtered_list.clearSelection()
+
+    def _inspect_filtered_entry(self, index, *_):
+        if not index.isValid():
+            return
+        entry = self.filtered_model.entries[index.row()]
+        block = self.editor.document().findBlockByNumber(entry.first_line)
+        if block.isValid():
+            self.editor.setTextCursor(QTextCursor(block))
+            self._cursor_changed()
+
+    def _edit_filtered_entry(self, index=None):
+        if index is None or not hasattr(index, "isValid"):
+            index = self.filtered_list.currentIndex()
+        line = None
+        if index.isValid() and index.row() < len(self.filtered_model.entries):
+            line = self.filtered_model.entries[index.row()].first_line
+        self._show_all_filters()
+        if line is not None:
+            block = self.editor.document().findBlockByNumber(line)
+            if block.isValid():
+                self.editor.setTextCursor(QTextCursor(block))
+                self.editor.centerCursor()
+        self.editor.setFocus()
 
     def _auto_rename_toggled(self, enabled):
         if not enabled:
