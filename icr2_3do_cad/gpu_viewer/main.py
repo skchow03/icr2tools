@@ -43,8 +43,10 @@ try:
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
         glUniform1i,
     )
-    from PySide6.QtCore import Qt, QThread, Signal, QTimer
-    from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF
+    from PySide6.QtGui import (
+        QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
+    )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
@@ -65,6 +67,9 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.source_inspection import (
+    target_offset, polygon_mesh_range, vertex_screen_position,
+)
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
     resolve_lod_distance,
@@ -102,6 +107,7 @@ uniform usampler2D u_mips;
 uniform sampler2D u_palette;
 uniform int u_textures;
 uniform int u_repeat;
+uniform int u_inspect_poly;
 out vec4 fragColor;
 void main() {
     int index = clamp(v_index, 0, 255);
@@ -116,7 +122,12 @@ void main() {
         }
         index = int(texelFetch(u_mips, ivec2(v_rect.xy) + texel, 0).r);
     }
-    fragColor = vec4(texelFetch(u_palette, ivec2(index, 0), 0).rgb, 1.0);
+    vec3 color = texelFetch(u_palette, ivec2(index, 0), 0).rgb;
+    if (u_inspect_poly != 0) {
+        // Highlight the requested face even when BSP/LOD excludes it.
+        color = min(vec3(1.0), color * 1.5 + vec3(0.45, 0.33, 0.12));
+    }
+    fragColor = vec4(color, 1.0);
 }
 """
 
@@ -360,6 +371,7 @@ class GLViewport(QOpenGLWidget):
         self._uniform = None
         self._texture_uniform = None
         self._repeat_uniform = None
+        self._inspection_uniform = None
         self._atlas_texture = None
         self._palette_texture = None
         self._atlas = None
@@ -374,6 +386,8 @@ class GLViewport(QOpenGLWidget):
         self._mesh = None
         self._model = None
         self._scene = None
+        self.inspection_kind = None
+        self.inspection_offset = None
         self.render_mode = 'painter'  # painter | depth | all
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self._visibility_dirty = True
@@ -420,6 +434,7 @@ class GLViewport(QOpenGLWidget):
             self._uniform = glGetUniformLocation(program, "u_mvp")
             self._texture_uniform = glGetUniformLocation(program, "u_textures")
             self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
+            self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
             glUseProgram(program)
             glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
             glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
@@ -466,6 +481,8 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._scene = scene
+        self.inspection_kind = None
+        self.inspection_offset = None
         self._atlas = atlas
         self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
@@ -485,6 +502,15 @@ class GLViewport(QOpenGLWidget):
             finally:
                 self.doneCurrent()
         self.update()
+
+    def set_source_inspection(self, kind=None, offset=None):
+        """Set a source-only overlay. Existing VBO/EBO and scene stay unchanged."""
+        if kind not in ("polygon", "vertex") or offset is None:
+            kind, offset = None, None
+        if (self.inspection_kind, self.inspection_offset) != (kind, offset):
+            self.inspection_kind = kind
+            self.inspection_offset = offset
+            self.update()
 
     def _upload_mesh(self):
         if self._program is None:
@@ -694,6 +720,7 @@ class GLViewport(QOpenGLWidget):
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
         glUniform1i(self._texture_uniform, int(self.textures_enabled))
         glUniform1i(self._repeat_uniform, int(self.texture_repeat))
+        glUniform1i(self._inspection_uniform, 0)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
         glActiveTexture(GL_TEXTURE1)
@@ -705,8 +732,33 @@ class GLViewport(QOpenGLWidget):
             glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
         elif self._index_count:
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+
+        if self.inspection_kind == "polygon":
+            span = polygon_mesh_range(
+                self._scene, self._mesh, self.inspection_offset)
+            if span is not None and span[1]:
+                # The overlay is intentionally visible through occluding
+                # geometry and inactive BSP branches for source inspection.
+                glDisable(GL_DEPTH_TEST)
+                glUniform1i(self._inspection_uniform, 1)
+                glDrawArrays(GL_TRIANGLES, *span)
+                glUniform1i(self._inspection_uniform, 0)
+
         glBindVertexArray(0)
         glUseProgram(0)
+        if self.inspection_kind == "vertex":
+            position = vertex_screen_position(
+                self._model, self._mesh, self.inspection_offset,
+                projection @ view, self.width(), self.height())
+            if position is not None:
+                # Draw in screen space so even an unused/occluded vertex has
+                # a legible, constant-size marker without changing geometry.
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setPen(QPen(QColor(12, 20, 32), 2))
+                painter.setBrush(QBrush(QColor(255, 237, 65)))
+                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+                painter.end()
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -1136,6 +1188,7 @@ class Window(QMainWindow):
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
+        self.source_pane.cursorTargetChanged.connect(self._source_target_changed)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -1179,6 +1232,19 @@ class Window(QMainWindow):
             self.editor_splitter.setSizes([780, 480])
             self.source_tabs.setCurrentIndex(0)
             self._ensure_source_loaded()
+            self._source_target_changed(self.source_pane.current_target())
+        else:
+            self.viewer.set_source_inspection()
+
+    def _source_target_changed(self, target):
+        if (not self.source_toggle.isChecked() or
+                self.source_pane.pending or self._source_invalid or
+                target is None):
+            self.viewer.set_source_inspection()
+            return
+        kind, label = target
+        offset = target_offset(self.viewer._model, kind, label)
+        self.viewer.set_source_inspection(kind, offset)
 
     def _ensure_source_loaded(self):
         if self.source_pane.ready or self.viewer._model is None:
@@ -1258,8 +1324,8 @@ class Window(QMainWindow):
                          from_source=True)
             self._source_applied = True
             self._last_valid_source_text = source
-            self.source_pane.mark_valid(rev, model)
             self._source_invalid = False
+            self.source_pane.mark_valid(rev, model)
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -1700,6 +1766,7 @@ class Window(QMainWindow):
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
         self._preserve_view = False
+        self._source_target_changed(self.source_pane.current_target())
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
         if not was_reloading and not from_source:
