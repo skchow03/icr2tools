@@ -4,12 +4,20 @@ from pathlib import Path
 
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
+    resolve_lod_distance,
 )
 
 
 class WorkspaceModesTests(unittest.TestCase):
     def test_three_workspaces_are_stable(self):
         self.assertEqual(WORKSPACE_MODES, ("car", "track", "object"))
+
+    def test_simplified_lod_selector_preserves_renderer_contract(self):
+        self.assertEqual(resolve_lod_distance("auto", 12345), "auto")
+        self.assertEqual(resolve_lod_distance("manual", 12345), 12345)
+        self.assertIsNone(resolve_lod_distance("all", 12345))
+        with self.assertRaises(ValueError):
+            resolve_lod_distance("invalid", 12345)
 
     def test_known_car_shapes_and_appearance_wrappers(self):
         self.assertEqual(suggest_workspace("ROADCAR.3DO", {}), "car")
