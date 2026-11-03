@@ -1742,15 +1742,28 @@ class Window(QMainWindow):
             if maximum else "No SWITCH DISTANCE thresholds found")
         self._lod_changed()
 
+    def _sync_source_distance_filter(self):
+        """Mirror the renderer's validated model, RES setting and camera."""
+        if not hasattr(self, "source_pane"):
+            return
+        model = self.viewer._model
+        eye = (self.viewer._camera_eye_model()
+               if model is not None and self.viewer._mesh is not None
+               else None)
+        self.source_pane.set_distance_filter_context(
+            model, self.viewer.lod_distance, eye)
+
     def _lod_changed(self, *args):
         self.viewer.lod_distance = resolve_lod_distance(
             self.lod_mode_combo.currentData(), self.lod_spin.value())
         self.viewer.invalidate_visibility()
+        self._sync_source_distance_filter()
         self._refresh_source_polygon_visibility()
 
     def _visibility_updated(self, message):
         self.visibility_label.setText(message)
         self._update_polygon_status()
+        self._sync_source_distance_filter()
         self._refresh_source_polygon_visibility()
 
     def _update_polygon_status(self, *args):
@@ -1899,6 +1912,7 @@ class Window(QMainWindow):
                              preserve_view=was_reloading)
         self._configure_switch_distance(scene)
         self._preserve_view = False
+        self._sync_source_distance_filter()
         self._source_target_changed(self.source_pane.current_target())
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
