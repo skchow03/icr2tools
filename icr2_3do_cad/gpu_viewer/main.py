@@ -592,7 +592,12 @@ class GLViewport(QOpenGLWidget):
             glDeleteBuffers(1, [self._ebo])
             self._ebo = None
         self._visibility_dirty = True
-        if self._mesh is not None and self._mesh.vertices.size:
+        has_sprites = (self._scene is not None and
+                       getattr(self._scene, "sprite_resources", None) is not None and
+                       bool(self._scene.sprite_resources.placements))
+        if self._mesh is not None and (self._mesh.vertices.size or has_sprites):
+            # PMP-only 3DOs have no polygon VBO contents, but still need a
+            # live VAO/EBO so BSP traversal and sprite draw passes run.
             payload = np.ascontiguousarray(
                 self._mesh.vertices, dtype=np.float32).tobytes()
             self._vao = int(glGenVertexArrays(1))
@@ -600,7 +605,8 @@ class GLViewport(QOpenGLWidget):
             self._ebo = int(glGenBuffers(1))
             glBindVertexArray(self._vao)
             glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
-            glBufferData(GL_ARRAY_BUFFER, len(payload), payload, GL_STATIC_DRAW)
+            glBufferData(GL_ARRAY_BUFFER, len(payload),
+                         payload if payload else None, GL_STATIC_DRAW)
             glEnableVertexAttribArray(0)
             glVertexAttribPointer(
                 0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
