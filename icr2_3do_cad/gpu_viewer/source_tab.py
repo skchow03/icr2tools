@@ -408,6 +408,22 @@ class SourcePane(QWidget):
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.rename_pointer_shortcut.activated.connect(
             self.rename_selected_pointer)
+        # QAbstractItemView normally interprets F2 as "edit the entire row".
+        # Intercept its keypress before the default view handler so this
+        # shortcut always edits just the pointer label in either view.
+        for widget in (self.editor, self.editor.viewport(),
+                       self.filtered_list, self.filtered_list.viewport()):
+            widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.KeyPress and
+                event.key() == Qt.Key.Key_F2 and
+                watched in (self.editor, self.editor.viewport(),
+                            self.filtered_list, self.filtered_list.viewport())):
+            self.rename_selected_pointer()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     @property
     def ready(self):
@@ -426,6 +442,9 @@ class SourcePane(QWidget):
         return value.replace('\n', '\r\n') if self.line_ending == '\r\n' else value
 
     def set_source(self, text, path, *, status=None):
+        # A newly loaded file must not inherit an open filtered-row editor
+        # or selection from the previous model.
+        self.filtered_list.reset()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
@@ -457,6 +476,7 @@ class SourcePane(QWidget):
         self._cursor_changed()
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
+        self.filtered_list.reset()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
