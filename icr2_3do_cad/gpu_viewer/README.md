@@ -284,6 +284,24 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
   vertex declarations. A marker also disappears if its 3D position is
   outside the camera frustum. This feature does not add mouse picking.
 
+### F2: rename just a pointer name
+
+Press **F2** with the caret anywhere in a named N3 declaration, including a
+multiline continuation, or with a statement selected in the filtered results.
+Enter the replacement name in the dialog. The editor changes **only the
+declaration label**, leaving its command, vertex coordinates, color values,
+texture assignments, spacing and comments untouched. In the filtered list
+you stay on the same filter and can continue working.
+
+With **Auto-rename references** checked (the default), F2 also updates exact
+references to that pointer elsewhere in the full source, even when those rows
+are hidden by filters. Disabling that checkbox makes F2 change **only the
+label**. The rename rejects invalid N3 identifiers, reserved keywords and
+duplicate declaration names before editing, and makes the entire operation
+**one undoable change**. Press **Cancel** to leave everything unchanged.
+F2 does nothing on comments, the version header or blank lines. Source still
+requires an explicit save or compiled export to write files.
+
 **Auto-rename references** is enabled by default in the .3D Source toolbar.
 When you edit a declaration's pointer name (for example `old_panel:` to
 `new_panel:`), the editor automatically rewrites matching references in
