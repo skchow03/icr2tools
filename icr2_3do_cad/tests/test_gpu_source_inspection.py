@@ -6,8 +6,10 @@ import numpy as np
 
 from gpu_viewer.source_inspection import (
     index_source_targets, target_offset, polygon_mesh_range,
-    vertex_screen_position,
+    vertex_screen_position, polygon_inspection_notice,
 )
+from gpu_viewer.workspaces import max_switch_distance
+from gpu_viewer.scene import build_scene
 from n3_compile import compile_n3_text
 
 
@@ -95,6 +97,67 @@ class SourceInspectionTests(unittest.TestCase):
         behind = np.diag([1.0, 1.0, 1.0, -1.0])
         self.assertIsNone(vertex_screen_position(
             model, mesh, 1, behind, 800, 600))
+
+
+    def test_max_switch_distance_includes_loaded_child_models(self):
+        # No file needed for this deterministic traversal.
+        local = SimpleNamespace(model=SimpleNamespace(switches={
+            1: SimpleNamespace(branches=((100, 10), (0, 20))),
+        }))
+        child = SimpleNamespace(model=SimpleNamespace(switches={
+            2: SimpleNamespace(branches=((450, 30), (125, 40), (0, 50))),
+        }))
+        scene = SimpleNamespace(instances=[local, child])
+        self.assertEqual(max_switch_distance(scene), 450)
+        self.assertEqual(max_switch_distance(None), 0)
+        self.assertEqual(max_switch_distance(SimpleNamespace(instances=[])), 0)
+
+    def test_hidden_polygon_report_uses_active_res_branch_not_forced_draw(self):
+        source = """3D VERSION 3.0;
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
+near_poly: POLY <44> {a,b,c};
+far_poly: POLY <55> {a,c,b};
+unreferenced: POLY <66> {a,b,c};
+lod: SWITCH DISTANCE (a) > {(1200 ? far_poly), (0 ? near_poly)};
+root: LIST {lod};
+"""
+        model, _ = compile_n3_text(source, "switch_inspect.3d",
+                                   associate_planes=False)
+        scene = build_scene(model)
+        self.assertEqual(max_switch_distance(scene), 1200)
+        near = model.n3_label_offsets["near_poly"]
+        far = model.n3_label_offsets["far_poly"]
+        unused = model.n3_label_offsets["unreferenced"]
+        eye = (0, 0, 200)
+
+        selected_near, _, _ = model.switched_polygons(0, eye, "original")
+        self.assertIn(near, selected_near)
+        self.assertNotIn(far, selected_near)
+        notice = polygon_inspection_notice(
+            model, far, set(selected_near), 0, eye, "painter")
+        self.assertIn("SWITCH DISTANCE", notice)
+        self.assertIn("distance 0", notice)
+        self.assertIsNone(polygon_inspection_notice(
+            model, near, set(selected_near), 0, eye, "painter"))
+        self.assertIsNone(polygon_inspection_notice(
+            model, far, set(), 0, eye, "all"))
+
+        selected_far, _, _ = model.switched_polygons(1200, eye, "original")
+        self.assertIn(far, selected_far)
+        self.assertNotIn(near, selected_far)
+        self.assertIn("distance 1,200", polygon_inspection_notice(
+            model, near, set(selected_far), 1200, eye, "painter"))
+
+        # Root polygon present in LOD traversal but excluded by camera BSP.
+        self.assertIn("BSP", polygon_inspection_notice(
+            model, far, set(), 1200, eye, "painter"))
+        # Orphan source declarations are not parsed into renderable POLYs.
+        # Inspection correctly returns no notice when the record is absent.
+        self.assertNotIn(unused, model.polygons)
+        self.assertIsNone(polygon_inspection_notice(
+            model, unused, set(), 1200, eye, "painter"))
 
 
 if __name__ == "__main__":
