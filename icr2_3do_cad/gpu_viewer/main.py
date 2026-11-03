@@ -411,6 +411,49 @@ class GLViewport(QOpenGLWidget):
         self._frame_count = 0
         self.fps = 0.0
         self.frameSwapped.connect(self._on_frame_swapped)
+        # IMPORTANT: text drawn via QPainter inside paintGL was corrupted on
+        # some drivers (glyphs become speckled/striped after raw GL calls).
+        # A child QLabel paints through Qt's widget compositor independently
+        # of the OpenGL shader / buffer state.
+        self.visibility_banner = QLabel(self)
+        self.visibility_banner.setObjectName("sourceVisibilityBanner")
+        self.visibility_banner.setTextFormat(Qt.TextFormat.PlainText)
+        self.visibility_banner.setWordWrap(True)
+        self.visibility_banner.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.visibility_banner.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.visibility_banner.setStyleSheet(
+            "QLabel#sourceVisibilityBanner {"
+            " background: #171e2b; color: #ffffff;"
+            " border: 2px solid #dca04b; border-radius: 6px;"
+            " padding: 10px 14px;"
+            " font-size: 13px; font-weight: bold; }")
+        self.visibility_banner.hide()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._size_visibility_banner()
+
+    def _size_visibility_banner(self):
+        width = max(120, min(660, self.width() - 24))
+        self.visibility_banner.setGeometry(12, 12, width, 76)
+
+    def _set_visibility_warning(self, notice):
+        if not notice:
+            if self.visibility_banner.isVisible():
+                self.visibility_banner.hide()
+            return
+        # Two deliberate lines: Qt owns font rendering and wraps the detail
+        # at the *logical* widget width, independent of device pixel ratio.
+        reason = notice.partition(": ")[2] if ": " in notice else notice
+        text = "POLY NOT VISIBLE\n" + reason[0].upper() + reason[1:]
+        if self.visibility_banner.text() != text:
+            self.visibility_banner.setText(text)
+        self._size_visibility_banner()
+        if not self.visibility_banner.isVisible():
+            self.visibility_banner.show()
+        self.visibility_banner.raise_()
 
     def initializeGL(self):
         """Qt owns the active FBO. PyOpenGL operates on it without wrapping."""
@@ -758,36 +801,19 @@ class GLViewport(QOpenGLWidget):
 
         glBindVertexArray(0)
         glUseProgram(0)
-        if notice or self.inspection_kind == "vertex":
-            painter = QPainter(self)
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            if notice:
-                # Readable diagnostic in the viewport, not in the source
-                # editor or status bar where it could be overlooked.
-                font = painter.font()
-                font.setPointSize(10)
-                painter.setFont(font)
-                text_width = painter.fontMetrics().horizontalAdvance(notice)
-                box_width = min(self.width() - 20, text_width + 24)
-                painter.setPen(Qt.PenStyle.NoPen)
-                painter.setBrush(QColor(23, 30, 44, 232))
-                painter.drawRoundedRect(QRectF(10, 10, box_width, 34), 5, 5)
-                painter.setPen(QColor(255, 226, 130))
-                if text_width + 24 <= box_width:
-                    painter.drawText(QPointF(22, 32), notice)
-                else:
-                    painter.drawText(QRectF(18, 13, box_width - 16, 29),
-                                     Qt.TextFlag.TextWordWrap, notice)
-            if self.inspection_kind == "vertex":
-                position = vertex_screen_position(
-                    self._model, self._mesh, self.inspection_offset,
-                    projection @ view, self.width(), self.height())
-                if position is not None:
-                    # Marker follows camera motion without changing geometry.
-                    painter.setPen(QPen(QColor(12, 20, 32), 2))
-                    painter.setBrush(QBrush(QColor(255, 237, 65)))
-                    painter.drawEllipse(QPointF(*position), 6.0, 6.0)
-            painter.end()
+        self._set_visibility_warning(notice)
+        if self.inspection_kind == "vertex":
+            position = vertex_screen_position(
+                self._model, self._mesh, self.inspection_offset,
+                projection @ view, self.width(), self.height())
+            if position is not None:
+                # The existing screen-space dot retains its own QPainter path.
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setPen(QPen(QColor(12, 20, 32), 2))
+                painter.setBrush(QBrush(QColor(255, 237, 65)))
+                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+                painter.end()
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -1280,16 +1306,39 @@ class Window(QMainWindow):
             self._source_target_changed(self.source_pane.current_target())
         else:
             self.viewer.set_source_inspection()
+            self.source_pane.set_polygon_visibility(None)
 
     def _source_target_changed(self, target):
         if (not self.source_toggle.isChecked() or
                 self.source_pane.pending or self._source_invalid or
                 target is None):
             self.viewer.set_source_inspection()
+            self.source_pane.set_polygon_visibility(None)
             return
         kind, label = target
         offset = target_offset(self.viewer._model, kind, label)
         self.viewer.set_source_inspection(kind, offset)
+        self._refresh_source_polygon_visibility()
+
+    def _refresh_source_polygon_visibility(self):
+        target = self.source_pane.current_target()
+        if (not self.source_toggle.isChecked() or
+                self._source_invalid or target is None or
+                target[0] != "polygon" or
+                self.viewer._model is None or
+                (self.viewer._visibility_dirty and
+                 self.viewer.render_mode != "all")):
+            self.source_pane.set_polygon_visibility(None)
+            return
+        offset = target_offset(self.viewer._model, "polygon", target[1])
+        span = polygon_mesh_range(self.viewer._scene,
+                                  self.viewer._mesh, offset)
+        if span is None or not span[1]:
+            self.source_pane.set_polygon_visibility(False)
+        else:
+            self.source_pane.set_polygon_visibility(
+                self.viewer.render_mode == "all" or
+                offset in self.viewer._visible_set)
 
     def _ensure_source_loaded(self):
         if self.source_pane.ready or self.viewer._model is None:
@@ -1654,6 +1703,7 @@ class Window(QMainWindow):
 
     def _mode_changed(self, index):
         self.viewer.set_render_mode(self.mode_combo.currentData())
+        self._refresh_source_polygon_visibility()
         self._update_polygon_status()
 
     def _activate_manual_distance(self):
@@ -1696,10 +1746,12 @@ class Window(QMainWindow):
         self.viewer.lod_distance = resolve_lod_distance(
             self.lod_mode_combo.currentData(), self.lod_spin.value())
         self.viewer.invalidate_visibility()
+        self._refresh_source_polygon_visibility()
 
     def _visibility_updated(self, message):
         self.visibility_label.setText(message)
         self._update_polygon_status()
+        self._refresh_source_polygon_visibility()
 
     def _update_polygon_status(self, *args):
         text = self.polygon_edit.text().strip()

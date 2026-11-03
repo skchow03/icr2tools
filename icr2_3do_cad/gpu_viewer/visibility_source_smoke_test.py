@@ -77,12 +77,29 @@ def run():
         assert view.inspection_offset == far_offset
         hidden = view.grabFramebuffer()
         assert not hidden.isNull()
-        # The warning rectangle appears at the upper-left of the viewport.
-        assert (hidden.pixelColor(15, 15).rgba() !=
-                base.pixelColor(15, 15).rgba()), (
-                    "Hidden source POLY did not display its viewport warning")
-        # The image below the message must not change: no forced polygon.
-        for y in range(80, min(base.height(), hidden.height()), 40):
+        assert window.source_pane._polygon_visible is False
+        banner = view.visibility_banner
+        assert banner.isVisible(), "No Qt warning widget shown for hidden source POLY"
+        assert banner.text().startswith("POLY NOT VISIBLE\n")
+        assert "SWITCH DISTANCE" in banner.text()
+        assert banner.width() > 300 and banner.height() >= 70
+        # Qt renders text independently of raw OpenGL. Inspect actual widget
+        # pixels for substantial white glyph coverage, not speckles/streaks
+        # drawn in the GL framebuffer (the reported regression).
+        widget_image = banner.grab().toImage()
+        assert not widget_image.isNull(), "Warning Qt widget did not paint"
+        white_pixels = sum(
+            widget_image.pixelColor(x, y).red() >= 220 and
+            widget_image.pixelColor(x, y).green() >= 220 and
+            widget_image.pixelColor(x, y).blue() >= 220
+            for y in range(8, widget_image.height() - 8)
+            for x in range(8, widget_image.width() - 8))
+        assert white_pixels >= 80, (
+            f"Warning lettering was not rendered legibly: {white_pixels} white pixels")
+        banner.grab().save("gpu_visibility_warning.png")
+        # The OpenGL framebuffer itself must remain byte-identical to the
+        # inactive-branch baseline; only the independent Qt label changed.
+        for y in range(5, min(base.height(), hidden.height()), 40):
             for x in range(20, min(base.width(), hidden.width()), 40):
                 assert (hidden.pixelColor(x, y).rgba() ==
                         base.pixelColor(x, y).rgba()), (
@@ -95,17 +112,18 @@ def run():
         revealed = view.grabFramebuffer()
         assert far_offset in view._visible_set
         assert near_offset not in view._visible_set
-        assert (revealed.pixelColor(15, 15).rgba() ==
-                base.pixelColor(15, 15).rgba()), (
-                    "Warning was not removed when far branch became selected")
+        assert window.source_pane._polygon_visible is True
+        assert banner.isHidden(), (
+            "Qt visibility warning was not removed when the branch became selected")
         # Selecting near at the far distance must now show the same warning.
         window.source_pane.editor.setTextCursor(QTextCursor(
             window.source_pane.editor.document().findBlockByNumber(4)))
         assert view.inspection_offset == near_offset
         other = view.grabFramebuffer()
-        assert (other.pixelColor(15, 15).rgba() !=
-                revealed.pixelColor(15, 15).rgba()), (
-                    "Inactive near LOD did not show a viewport warning")
+        assert banner.isVisible(), "Inactive near LOD did not show its warning"
+        assert "SWITCH DISTANCE" in banner.text()
+        assert window.source_pane._polygon_visible is False
+        assert other.pixelColor(15, 15).rgba() == revealed.pixelColor(15, 15).rgba()
         print("Source polygon respects SWITCH DISTANCE and shows warnings")
     finally:
         window.close()

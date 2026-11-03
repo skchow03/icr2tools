@@ -210,17 +210,32 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
   They return after a successful live compile. Closing Source hides them.
 - A selected polygon is brightened **only when its POLY is selected by
   the current BSP and SWITCH DISTANCE/LOD traversal**. If the active distance
-  excludes its LOD branch, the viewport instead displays an explanatory
-  message; the polygon is not forced into the drawing. A different message
-  identifies BSP camera-side exclusion or unreferenced polygons. In
-  **All polygons + GPU depth** mode, all mesh faces are available for highlighting
-  because the rendering mode itself bypasses BSP/LOD.
+  excludes its LOD branch, a high-contrast **Qt text banner** appears over
+  the viewport; it is rendered independently of the OpenGL pipeline to avoid
+  corrupted/distorted glyphs. BSP camera-side exclusions get a distinct
+  explanation. The currently selected POLY declaration is also shaded
+  **green** when included in the active BSP/LOD traversal, or **salmon** when
+  excluded. Multiline declarations are shaded in full. These colors clear
+  while the source edit is pending validation or when selecting a non-POLY.
+  In **All polygons + GPU depth** mode, every renderable polygon qualifies
+  because that mode bypasses BSP/LOD.
 - Being included in BSP/LOD selection is **not proof of pixel visibility**:
   other geometry can still cover a selected polygon. The diagnostic highlight
   continues to draw atop those surfaces for inspection.
 - Inline anonymous vertices within commands are not independent named
   vertex declarations. A marker also disappears if its 3D position is
   outside the camera frustum. This feature does not add mouse picking.
+
+**Auto-rename references** is enabled by default in the .3D Source toolbar.
+When you edit a declaration's pointer name (for example `old_panel:` to
+`new_panel:`), the editor automatically rewrites matching references in
+other statements after a short typing pause. The operation is token-aware:
+comments, quoted MIP/EXTERN filenames, longer identifiers containing the
+name, N3 keywords and other declarations are not modified. Name collisions
+are not propagated; compilation reports the invalid declaration normally.
+Uncheck **Auto-rename references** to edit declaration labels without
+touching their references. Nothing is written to disk until an explicit save
+or export. Automatic changes participate in the editor's undo history.
 
 The selection uses original model coordinates and compiled N3 record offsets;
 it does not recompile the model or re-upload the mesh on each cursor move.

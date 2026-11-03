@@ -33,14 +33,16 @@ class SourceTargetIndex:
     targets: tuple[SourceTarget, ...]
     starts: tuple[int, ...]
 
-    def at_line(self, line: int) -> tuple[str, str] | None:
+    def target_at_line(self, line: int) -> SourceTarget | None:
         pos = bisect_right(self.starts, line) - 1
         if pos < 0:
             return None
         target = self.targets[pos]
-        if line > target.last_line:
-            return None
-        return target.kind, target.label
+        return target if line <= target.last_line else None
+
+    def at_line(self, line: int) -> tuple[str, str] | None:
+        target = self.target_at_line(line)
+        return (target.kind, target.label) if target is not None else None
 
 
 def _without_comment(line: str) -> str:
