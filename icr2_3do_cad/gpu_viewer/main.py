@@ -206,10 +206,11 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
+            source_document = None
             if self.source_text is not None:
                 # Compile candidate text off the UI thread. Do not overwrite
                 # the last valid model until this AND the mesh/atlas succeed.
-                model, _ = compile_n3_text(
+                model, source_document = compile_n3_text(
                     self.source_text, self.source_path, associate_planes=False)
                 appearance = self.appearance_override
                 scene = build_scene(model, objects_folder=self.objects_folder,
@@ -226,7 +227,7 @@ class LoadWorker(QThread):
                     model = self.existing_model
                 else:
                     text = self.path.read_text(encoding="utf-8-sig")
-                    model, _ = compile_n3_text(
+                    model, source_document = compile_n3_text(
                         text, self.path, associate_planes=False)
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides)
@@ -244,6 +245,7 @@ class LoadWorker(QThread):
                              palette.astype(np.float32) / 255.0, atlas)
             stats = {
                 "file": self.path.name,
+                "_n3_document": source_document,
                 "parse_ms": parse_ms,
                 "mesh_ms": mesh.build_ms,
                 "model_polygons": len(model.polygons),
@@ -1000,6 +1002,10 @@ class Window(QMainWindow):
         self._source_export_model = None
         self._source_applied = False
         self._last_valid_source_text = None
+        self._vertex_document = None
+        self._vertex_undo = []
+        self._vertex_redo = []
+        self._vertex_edit_revision = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -1040,6 +1046,10 @@ class Window(QMainWindow):
         self.source_toggle.setCheckable(True)
         self.source_toggle.toggled.connect(self._toggle_source)
         toolbar.addWidget(self.source_toggle)
+        self.vertex_toggle = QPushButton("Vertex Edit")
+        self.vertex_toggle.setCheckable(True)
+        self.vertex_toggle.toggled.connect(self._toggle_vertex)
+        toolbar.addWidget(self.vertex_toggle)
         self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
         self.benchmark_toggle.setChecked(benchmark)
         toolbar.addWidget(self.benchmark_toggle)
@@ -1209,6 +1219,8 @@ class Window(QMainWindow):
         self.source_tabs = QTabWidget()
         self.source_pane = SourcePane()
         self.source_tabs.addTab(self.source_pane, '.3D Source')
+        self.vertex_pane = VertexPane()
+        self.vertex_tab_index = self.source_tabs.addTab(self.vertex_pane, "Vertex")
         source_help = QLabel(
             'Edit Papyrus N3 text; after a 650 ms pause, valid source '
             'recompiles off the GUI thread and updates the GPU viewport.\\n\\n'
@@ -1224,6 +1236,7 @@ class Window(QMainWindow):
         source_help.setAlignment(Qt.AlignmentFlag.AlignTop)
         source_help.setMargin(16)
         self.source_tabs.addTab(source_help, 'Help')
+        self.source_tabs.currentChanged.connect(self._editor_tab_changed)
         self.editor_splitter.addWidget(self.source_tabs)
         self.editor_splitter.setStretchFactor(0, 2)
         self.editor_splitter.setStretchFactor(1, 1)
@@ -1241,6 +1254,9 @@ class Window(QMainWindow):
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
                                   activated=self.viewer.frame_all)
         frame_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        selected_shortcut = QShortcut(QKeySequence("Shift+F"), self.viewer,
+                                     activated=self.viewer.frame_vertex)
+        selected_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         reload_shortcut = QShortcut(QKeySequence("R"), self.viewer,
                                    activated=self.reload_mips)
         reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -1250,6 +1266,20 @@ class Window(QMainWindow):
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
+        self.vertex_pane.vertexSelected.connect(self._vertex_selected)
+        self.vertex_pane.coordinatesRequested.connect(self._vertex_coordinates)
+        self.vertex_pane.uvRequested.connect(self._vertex_uv)
+        self.vertex_pane.renameRequested.connect(self._vertex_rename)
+        self.vertex_pane.nudgeRequested.connect(self._vertex_nudge)
+        self.vertex_pane.undoRequested.connect(self._vertex_undo_edit)
+        self.vertex_pane.redoRequested.connect(self._vertex_redo_edit)
+        self.vertex_pane.frameRequested.connect(self.viewer.frame_vertex)
+        self.vertex_pane.saveRequested.connect(self._save_source)
+        self.vertex_pane.visualChanged.connect(self._vertex_options_changed)
+        self.vertex_pane.axis.currentTextChanged.connect(self._vertex_options_changed)
+        self.vertex_pane.step.valueChanged.connect(self._vertex_options_changed)
+        self.viewer.vertexSelected.connect(self._vertex_selected)
+        self.viewer.vertexMoved.connect(self._vertex_dragged)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -1274,11 +1304,50 @@ class Window(QMainWindow):
         self.viewer.update()
 
     def _toggle_source(self, checked):
-        self.source_tabs.setVisible(checked)
         if checked:
+            self.source_tabs.show()
             self.editor_splitter.setSizes([780, 480])
             self.source_tabs.setCurrentIndex(0)
             self._ensure_source_loaded()
+        elif self.source_tabs.currentIndex() == 0:
+            self.source_tabs.hide()
+        self._editor_tab_changed(self.source_tabs.currentIndex())
+
+    def _toggle_vertex(self, checked):
+        if checked:
+            self.source_tabs.show()
+            self.editor_splitter.setSizes([780, 480])
+            self.source_tabs.setCurrentIndex(self.vertex_tab_index)
+            self._ensure_source_loaded()
+        elif self.source_tabs.currentIndex() == self.vertex_tab_index:
+            self.source_tabs.hide()
+        self._editor_tab_changed(self.source_tabs.currentIndex())
+
+    def _editor_tab_changed(self, index):
+        source_active = self.source_tabs.isVisible() and index == 0
+        vertex_active = (self.source_tabs.isVisible() and
+                         index == self.vertex_tab_index)
+        for button, value in ((self.source_toggle, source_active),
+                              (self.vertex_toggle, vertex_active)):
+            button.blockSignals(True)
+            button.setChecked(value)
+            button.blockSignals(False)
+        self.viewer.vertex_mode = vertex_active
+        self._vertex_options_changed()
+        if source_active or vertex_active:
+            self._ensure_source_loaded()
+
+    def _vertex_options_changed(self, *args):
+        if not hasattr(self, "vertex_pane"):
+            return
+        pane = self.vertex_pane
+        self.viewer.vertex_dots = pane.dots.isChecked()
+        self.viewer.vertex_visible_only = pane.visible_only.isChecked()
+        self.viewer.vertex_label_mode = pane.label_mode.currentText()
+        self.viewer.vertex_names = dict(pane._names)
+        self.viewer.vertex_axis = pane.axis.currentText()
+        self.viewer.vertex_step = pane.step.value()
+        self.viewer.update()
 
     def _ensure_source_loaded(self):
         if self.source_pane.ready or self.viewer._model is None:
@@ -1299,7 +1368,7 @@ class Window(QMainWindow):
 
     def _source_exported(self, candidate, text, path):
         if candidate is not self.viewer._model:
-            if self.source_toggle.isChecked():
+            if self.source_tabs.isVisible():
                 QTimer.singleShot(80, self._ensure_source_loaded)
             return
         if self.source_pane.ready:
@@ -1309,6 +1378,10 @@ class Window(QMainWindow):
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
         self._source_invalid = False
+        if self._vertex_document is None:
+            # The binary exporter uses the original body offsets as labels.
+            self._vertex_document = parse_document(text)
+        self._refresh_vertex_pane()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -1763,6 +1836,12 @@ class Window(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 return
         if not reuse_model:
+            self._vertex_document = None
+            self._vertex_undo.clear()
+            self._vertex_redo.clear()
+            self._vertex_edit_revision = None
+            self.viewer.vertex_selected = None
+            self.vertex_pane.set_model(None, None)
             self._source_invalid = False
             self._source_applied = False
             self._last_valid_source_text = None
@@ -1800,9 +1879,27 @@ class Window(QMainWindow):
                 *, from_source=False):
         self._info = stats
         was_reloading = self._preserve_view
+        old_doc = self._vertex_document
+        old_model = self.viewer._model
+        previous_ref = self.vertex_pane.selected
+        previous_label = (declaration_label(old_model, old_doc, previous_ref)
+                          if old_model is not None and old_doc is not None
+                          and previous_ref in old_model.vertices else None)
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
         self._preserve_view = False
+        if stats.get("_n3_document") is not None:
+            self._vertex_document = stats["_n3_document"]
+        elif old_model is not model:
+            self._vertex_document = None
+        selected = previous_ref
+        if previous_label is not None and self._vertex_document is not None:
+            selected = next(
+                (stmt.offset for stmt in self._vertex_document.statements
+                 if stmt.label == previous_label and stmt.offset in model.vertices),
+                previous_ref)
+        self.viewer.vertex_selected = selected if selected in model.vertices else None
+        self._refresh_vertex_pane()
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
         if not was_reloading and not from_source:
@@ -1872,10 +1969,12 @@ class Window(QMainWindow):
             ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
             if stats['external_warnings'] else
             "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
-        if not from_source and self.source_toggle.isChecked():
+        if not from_source and self.source_tabs.isVisible():
             self._ensure_source_loaded()
 
     def _load_failed(self, message):
+        self.viewer._vertex_override = None
+        self.viewer.update()
         self.load_label.setText("Load failed; previous model preserved")
         self.stats_label.setText(message)
         QMessageBox.critical(self, "Cannot load Papyrus model", message)
