@@ -30,9 +30,10 @@ TREE_HEADERS = {
     "tree3": bytes.fromhex("557aaaf6"),
     "tree4": bytes.fromhex("6c72b4f3"),
 }
-# Stock helmet PMP header is 4c38aaaf; its final 0xaf is a footer,
-# unlike the scenery files where the final four bytes are image data.
-HELMET_SPANS = ((81, 86, 87, 232), (136, 161, 162, 47))
+# Stock helmet PMP header is 4c38aaaf (a nominal 76x56 rectangle at
+# x=86..162, y=81..137), with a final 0xaf footer. The visible pixels can
+# occupy a smaller area, unlike these trees' tight extent rectangles.
+HELMET_SPANS = ((84, 90, 91, 232), (133, 149, 150, 47))
 
 
 def extent_header(spans):
@@ -46,12 +47,12 @@ def extent_header(spans):
                   (-min_x) & 0xff, (-min_y) & 0xff))
 
 
-def pmp_bytes(spans=TREE_BOUNDS["tree2"], *, terminated=False):
+def pmp_bytes(spans=TREE_BOUNDS["tree2"], *, terminated=False, header=None):
     payload = b"".join(bytes(span) for span in spans)
     if terminated:
         payload += b"\xaf"
-    return (extent_header(spans) + struct.pack("<II", len(payload), 30)
-            + payload)
+    return ((header if header is not None else extent_header(spans)) +
+            struct.pack("<II", len(payload), 30) + payload)
 
 
 def tree_3do_bytes():
@@ -87,12 +88,15 @@ class PMPVariantsTests(unittest.TestCase):
                 self.assertEqual(sprite.auxiliary, 30)
 
     def test_stock_helmet_header_and_footer_remain_supported(self):
-        raw = pmp_bytes(HELMET_SPANS, terminated=True)
+        raw = pmp_bytes(
+            HELMET_SPANS, terminated=True,
+            header=bytes.fromhex("4c38aaaf"))
         self.assertEqual(raw[:4], bytes.fromhex("4c38aaaf"))
         self.assertEqual(raw[-1], 0xaf)
         sprite = self.load_bytes(raw)
-        self.assertEqual(sprite.bounds, (86, 81, 162, 137))
-        self.assertEqual(sprite.rgba.getpixel((75, 55)),
+        # Nominal rectangle is 76x56, but actual painted region is smaller.
+        self.assertEqual(sprite.bounds, (90, 84, 150, 134))
+        self.assertEqual(sprite.rgba.getpixel((59, 49)),
                          (47, 47, 47, 255))
 
     def test_scenery_may_also_have_footer_based_on_record_alignment(self):
