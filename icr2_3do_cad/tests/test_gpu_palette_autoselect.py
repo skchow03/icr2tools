@@ -59,8 +59,7 @@ class AutoSunnyPaletteTests(unittest.TestCase):
         self.create_sunny(model_folder / "textures", "sunny.pcx")
         self.assertIsNone(find_model_sunny_palette(file))
         self.assertIsNone(find_model_sunny_palette(
-            self.folder / "missing_model.3d" if False
-            else model_folder / "other.3d"))
+            model_folder / "other.3d"))
 
     def test_exact_uppercase_wins_if_case_sensitive_folder_has_duplicates(self):
         model = self.folder / "tree.3do"
