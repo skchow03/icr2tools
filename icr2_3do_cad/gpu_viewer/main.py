@@ -27,7 +27,8 @@ try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
         GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_POINTS, GL_PROGRAM_POINT_SIZE,
+        GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
@@ -41,7 +42,7 @@ try:
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
         glViewport, glGenTextures, glDeleteTextures, glBindTexture,
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
-        glUniform1i,
+        glUniform1i, glUniform1f, glUniform3f, glUniform4f,
     )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
     from PySide6.QtGui import (QSurfaceFormat, QShortcut, QKeySequence, QPainter, QColor, QFont)
@@ -93,6 +94,29 @@ void main() {
     v_index = int(in_index + 0.5);
     v_uv = in_uv;
     v_rect = in_rect;
+}
+"""
+
+DOT_VERTEX_SHADER = """
+#version 330 core
+layout(location = 0) in vec3 in_pos;
+uniform mat4 u_mvp;
+uniform vec3 u_offset;
+uniform float u_point_size;
+void main() {
+    gl_Position = u_mvp * vec4(in_pos + u_offset, 1.0);
+    gl_PointSize = u_point_size;
+}
+"""
+
+DOT_FRAGMENT_SHADER = """
+#version 330 core
+uniform vec4 u_color;
+out vec4 fragColor;
+void main() {
+    vec2 delta = gl_PointCoord - vec2(0.5);
+    if (dot(delta, delta) > 0.25) discard;
+    fragColor = u_color;
 }
 """
 
@@ -365,6 +389,15 @@ class GLViewport(QOpenGLWidget):
         self.setMouseTracking(True)
         self.setAcceptDrops(False)
         self._program = None
+        self._dot_program = None
+        self._dot_uniforms = {}
+        self._dot_vao = None
+        self._dot_vbo = None
+        self._dot_ebo = None
+        self._dot_indices = {}
+        self._dot_cached_refs = None
+        self._dot_index_count = 0
+        self._vertex_cache_key = None
         self._uniform = None
         self._texture_uniform = None
         self._repeat_uniform = None
@@ -447,6 +480,29 @@ class GLViewport(QOpenGLWidget):
         finally:
             glDeleteShader(vertex_shader)
             glDeleteShader(fragment_shader)
+        # OpenGL point rendering keeps dense-track dots off the Qt painter.
+        dot_vs = glCreateShader(GL_VERTEX_SHADER)
+        dot_fs = glCreateShader(GL_FRAGMENT_SHADER)
+        try:
+            for shader, code in ((dot_vs, DOT_VERTEX_SHADER),
+                                 (dot_fs, DOT_FRAGMENT_SHADER)):
+                glShaderSource(shader, code)
+                glCompileShader(shader)
+                if not glGetShaderiv(shader, GL_COMPILE_STATUS):
+                    raise RuntimeError(glGetShaderInfoLog(shader))
+            self._dot_program = glCreateProgram()
+            glAttachShader(self._dot_program, dot_vs)
+            glAttachShader(self._dot_program, dot_fs)
+            glLinkProgram(self._dot_program)
+            if not glGetProgramiv(self._dot_program, GL_LINK_STATUS):
+                raise RuntimeError(glGetProgramInfoLog(self._dot_program))
+            self._dot_uniforms = {
+                key: glGetUniformLocation(self._dot_program, "u_" + key)
+                for key in ("mvp", "offset", "point_size", "color")}
+        finally:
+            glDeleteShader(dot_vs)
+            glDeleteShader(dot_fs)
+        glEnable(GL_PROGRAM_POINT_SIZE)
         glEnable(GL_DEPTH_TEST)
         self._visibility_dirty = True
         if self._mesh is not None:
@@ -462,6 +518,18 @@ class GLViewport(QOpenGLWidget):
             return
         self.makeCurrent()
         try:
+            if self._dot_vao is not None:
+                glDeleteVertexArrays(1, [self._dot_vao])
+                self._dot_vao = None
+            if self._dot_vbo is not None:
+                glDeleteBuffers(1, [self._dot_vbo])
+                self._dot_vbo = None
+            if self._dot_ebo is not None:
+                glDeleteBuffers(1, [self._dot_ebo])
+                self._dot_ebo = None
+            if self._dot_program is not None:
+                glDeleteProgram(self._dot_program)
+                self._dot_program = None
             if self._vao is not None:
                 glDeleteVertexArrays(1, [self._vao])
                 self._vao = None
@@ -491,6 +559,8 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         self._visible_set = frozenset()
         self._visibility_info = {}
+        self._dot_cached_refs = None
+        self._vertex_cache_key = None
         self._vertex_projected = None
         self._vertex_override = None
         if self.vertex_selected not in model.vertices:
