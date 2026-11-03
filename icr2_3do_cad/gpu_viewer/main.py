@@ -819,7 +819,7 @@ class GLViewport(QOpenGLWidget):
         if self.fixed_camera_mode:
             self.set_fixed_camera_mode(False)
         xyz = np.asarray(self._model.vertices[ref].xyz, dtype=np.float64)
-        self.target = (xyz - np.asarray(self._mesh.center)) * self._mesh.scale
+        self.target = (xyz - np.asarray(self._mesh.center)) / self._mesh.scale
         self.half_height = min(self.half_height, 0.15)
         self.distance = max(0.3, min(self.distance, 4.0))
         self.invalidate_visibility()
