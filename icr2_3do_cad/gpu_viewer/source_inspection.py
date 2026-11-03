@@ -116,6 +116,29 @@ def polygon_mesh_range(scene, mesh, offset: int | None):
     return mesh.polygon_ranges.get(polygon)
 
 
+
+def polygon_inspection_notice(model, offset, visible_offsets, distance,
+                              camera, render_mode):
+    """Why a source POLY is not selected by the active BSP/RES traversal.
+
+    Do not claim pixel visibility: the BSP selection may still be covered
+    by another polygon.  In all-polygons mode no BSP/LOD exclusion applies.
+    """
+    if (model is None or offset not in model.polygons or
+            render_mode == "all" or offset in visible_offsets):
+        return None
+    candidates, _, _ = model.switched_polygons(distance, camera, "off")
+    if offset in candidates:
+        return "POLY not drawn: excluded by BSP at this camera view"
+    if distance is not None:
+        branches, _, _ = model.switched_polygons(None, camera, "off")
+        if offset in branches:
+            label = ("automatic camera distance" if distance == "auto"
+                     else f"distance {int(distance):,}")
+            return f"POLY not drawn: inactive SWITCH DISTANCE branch ({label})"
+    return "POLY not drawn: not referenced by the current scene"
+
+
 def vertex_screen_position(model, mesh, offset, matrix, width, height):
     """Project a source vertex to logical viewport pixels, or None if clipped.
 
