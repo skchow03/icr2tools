@@ -85,6 +85,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python -m unittest discover -s tests -p 'test_gpu_active_source_ui.py'
+      - name: Test F2 pointer renaming in full and filtered Source
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_pointer_rename_ui.py'
       - name: Verify hidden source POLYs respect SWITCH DISTANCE
         env:
           LIBGL_ALWAYS_SOFTWARE: "1"

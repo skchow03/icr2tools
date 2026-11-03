@@ -11,11 +11,15 @@ from bisect import bisect_right
 from pathlib import Path
 
 from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from PySide6.QtGui import (
+    QColor, QFont, QKeySequence, QShortcut, QSyntaxHighlighter,
+    QTextCharFormat, QTextCursor,
+)
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QListView,
-    QMenu, QPlainTextEdit, QPushButton, QStackedWidget, QStyledItemDelegate,
-    QToolButton, QTextEdit, QVBoxLayout, QWidget, QWidgetAction,
+    QAbstractItemView, QCheckBox, QHBoxLayout, QInputDialog, QLabel,
+    QLineEdit, QListView, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+    QStackedWidget, QStyledItemDelegate, QToolButton, QTextEdit,
+    QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from gpu_viewer.source_inspection import index_source_targets
@@ -25,6 +29,7 @@ from gpu_viewer.active_source import (
 )
 from gpu_viewer.source_rename import (
     edited_declaration_label, declaration_label, reference_spans,
+    plan_pointer_rename, qt_utf16_offset,
 )
 
 # Same N3 token categories and error location heuristics as the CPU editor.
@@ -346,6 +351,9 @@ class SourcePane(QWidget):
         self.editor.setFont(font)
         self.editor.setTabStopDistance(72)
         self.editor.setUndoRedoEnabled(True)
+        self.editor.setToolTip(
+            "F2: rename the pointer on this line; only its name and "
+            "(optionally) references change.")
         self.highlighter = N3Highlighter(self.editor.document())
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
@@ -364,7 +372,8 @@ class SourcePane(QWidget):
         self.filtered_list.setFont(font)
         self.filtered_list.setToolTip(
             "Select a statement to inspect in the GPU viewport. "
-            "Double-click to edit inline; Ctrl+Enter applies, Esc cancels.")
+            "F2 renames its pointer; double-click edits the whole statement. "
+            "Ctrl+Enter applies inline edits, Esc cancels.")
         self.filtered_list.selectionModel().currentChanged.connect(
             self._inspect_filtered_entry)
         self.filtered_page = QWidget()
@@ -393,6 +402,28 @@ class SourcePane(QWidget):
         self._rename_timer.setSingleShot(True)
         self._rename_timer.setInterval(450)
         self._rename_timer.timeout.connect(self._commit_pending_rename)
+        self.rename_pointer_shortcut = QShortcut(
+            QKeySequence(Qt.Key.Key_F2), self)
+        self.rename_pointer_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.rename_pointer_shortcut.activated.connect(
+            self.rename_selected_pointer)
+        # QAbstractItemView normally interprets F2 as "edit the entire row".
+        # Intercept its keypress before the default view handler so this
+        # shortcut always edits just the pointer label in either view.
+        for widget in (self.editor, self.editor.viewport(),
+                       self.filtered_list, self.filtered_list.viewport()):
+            widget.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.KeyPress and
+                event.key() == Qt.Key.Key_F2 and
+                watched in (self.editor, self.editor.viewport(),
+                            self.filtered_list, self.filtered_list.viewport())):
+            self.rename_selected_pointer()
+            event.accept()
+            return True
+        return super().eventFilter(watched, event)
 
     @property
     def ready(self):
@@ -411,6 +442,9 @@ class SourcePane(QWidget):
         return value.replace('\n', '\r\n') if self.line_ending == '\r\n' else value
 
     def set_source(self, text, path, *, status=None):
+        # A newly loaded file must not inherit an open filtered-row editor
+        # or selection from the previous model.
+        self.filtered_list.reset()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
@@ -442,6 +476,7 @@ class SourcePane(QWidget):
         self._cursor_changed()
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
+        self.filtered_list.reset()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
@@ -825,6 +860,92 @@ class SourcePane(QWidget):
                 self.editor.setTextCursor(QTextCursor(block))
                 self.editor.centerCursor()
         self.editor.setFocus()
+
+    def _selected_pointer_line(self):
+        """Resolve a visible filtered row or any line in a source declaration.
+
+        For multiline statements, F2 targets the header label even when the
+        cursor is on a continuation row. A comment or header is not renameable.
+        """
+        if self.source_stack.currentWidget() is self.filtered_page:
+            index = self.filtered_list.currentIndex()
+            if not index.isValid() or index.row() >= len(self.filtered_model.entries):
+                return None
+            return self.filtered_model.entries[index.row()].first_line
+        self._ensure_filter_entries()
+        line = self.editor.textCursor().blockNumber()
+        starts = [entry.first_line for entry in self._filter_entries]
+        row = bisect_right(starts, line) - 1
+        if row < 0 or line > self._filter_entries[row].last_line:
+            return None
+        return self._filter_entries[row].first_line
+
+    def _apply_pointer_rename(self, line, new_name):
+        """Atomically rename just one label and optional exact references."""
+        source = self.editor.toPlainText()
+        old, edits = plan_pointer_rename(
+            source, line, new_name,
+            update_references=self.auto_rename.isChecked())
+        if not edits:
+            return 0
+
+        self._rename_timer.stop()
+        self._rename_pending = None
+        self._filter_return_line = line
+        self._active_edit_line = line
+        cursor = QTextCursor(self.editor.document())
+        self._applying_rename = True
+        try:
+            cursor.beginEditBlock()
+            try:
+                # Descending offsets prevent replacement text from shifting
+                # the remaining original-document edits. Qt uses UTF-16
+                # cursor positions; Python string offsets are code points.
+                for start, end, replacement in edits:
+                    cursor.setPosition(qt_utf16_offset(source, start))
+                    cursor.setPosition(
+                        qt_utf16_offset(source, end),
+                        QTextCursor.MoveMode.KeepAnchor)
+                    cursor.insertText(replacement)
+            finally:
+                cursor.endEditBlock()
+        finally:
+            self._applying_rename = False
+        self._rename_snapshot = self.editor.toPlainText()
+        self._edited()
+        updated_references = len(edits) - 1
+        self.status.setText(
+            f'Renamed pointer {old} → {new_name} '
+            f'({updated_references} reference(s) updated).'
+            + ('' if self.auto_rename.isChecked()
+               else ' Auto-rename references is off.'))
+        return updated_references
+
+    def rename_selected_pointer(self):
+        """F2: prompt for the selected declaration label, not its contents."""
+        if not self._ready:
+            return
+        if (self.source_stack.currentWidget() is self.filtered_page and
+                self.filtered_list.state() ==
+                QAbstractItemView.State.EditingState):
+            self.status.setText(
+                'Finish editing the current statement before pressing F2.')
+            return
+        line = self._selected_pointer_line()
+        old = (declaration_label(self.editor.toPlainText(), line)
+               if line is not None else None)
+        if old is None:
+            self.status.setText('Select a named N3 declaration to rename with F2.')
+            return
+        new, accepted = QInputDialog.getText(
+            self, 'Rename N3 pointer', f'New name for {old}:',
+            QLineEdit.EchoMode.Normal, old)
+        if not accepted or new == old:
+            return
+        try:
+            self._apply_pointer_rename(line, new)
+        except ValueError as exc:
+            QMessageBox.warning(self, 'Cannot rename N3 pointer', str(exc))
 
     def _auto_rename_toggled(self, enabled):
         if not enabled:
