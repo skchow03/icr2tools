@@ -80,7 +80,7 @@ def run():
         assert window.source_pane._polygon_visible is False
         banner = view.visibility_banner
         assert banner.isVisible(), "No Qt warning widget shown for hidden source POLY"
-        assert banner.text().startswith("POLY NOT VISIBLE\\n")
+        assert banner.text().startswith("POLY NOT VISIBLE\n")
         assert "SWITCH DISTANCE" in banner.text()
         assert banner.width() > 300 and banner.height() >= 70
         # Qt renders text independently of raw OpenGL. Inspect actual widget
