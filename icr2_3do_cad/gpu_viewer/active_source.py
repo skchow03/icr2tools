@@ -17,6 +17,13 @@ _PLANE = re.compile(
 _IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z_0-9-]*\Z")
 
 
+def entry_is_active(entry, names):
+    """A source declaration participates only if its current name is active."""
+    match = _LABEL.match(entry.preview)
+    return bool(match and match.group(1) in names)
+
+
+
 def label_offsets(model):
     """Map current compiled names and exported binary _offset aliases."""
     if model is None:
