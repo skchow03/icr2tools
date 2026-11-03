@@ -20,7 +20,7 @@ from time import perf_counter
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QPoint
 from PySide6.QtGui import QSurfaceFormat, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -116,6 +116,8 @@ def run(path):
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
     fixed = {"tested": False}
+    vertex = {"state": "not_started", "ref": None, "before": None,
+              "expected": None, "done": False}
     live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
             "valid_sent":False, "valid_seen":False,
             "vbo":None, "azimuth":None, "source":None}
@@ -220,11 +222,90 @@ def run(path):
                 window.close()
                 app.quit()
                 return
+        if dynamic_test and live["valid_seen"] and fixed["tested"] and not vertex["done"]:
+            if vertex["state"] == "not_started":
+                window.vertex_toggle.setChecked(True)
+                if (not view.vertex_mode or
+                    window.source_tabs.currentIndex() != window.vertex_tab_index):
+                    result["error"] = "Vertex editing tab did not activate"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                vertex["state"] = "pick"
+            elif vertex["state"] == "pick" and view._vertex_projected is not None:
+                refs, projected, valid = view._vertex_projected
+                choices = np.flatnonzero(valid)
+                if len(choices):
+                    loc = choices[len(choices)//2]
+                    pos = QPoint(int(round(projected[loc, 0])),
+                                 int(round(projected[loc, 1])))
+                    QTest.mouseClick(view, Qt.MouseButton.LeftButton, pos=pos)
+                    ref = window.vertex_pane.selected
+                    if ref is None or ref != view.vertex_selected:
+                        result["error"] = "Clicking vertex dot did not select model vertex"
+                        timer.stop()
+                        window.close()
+                        app.quit()
+                        return
+                    vertex["ref"] = ref
+                    vertex["before"] = view._model.vertices[ref].xyz
+                    window.vertex_pane.step.setValue(100)
+                    window._vertex_nudge(1)
+                    vertex["expected"] = (
+                        vertex["before"][0] + 100,
+                        vertex["before"][1], vertex["before"][2])
+                    vertex["state"] = "validate"
+            elif (vertex["state"] == "validate" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if (window._source_invalid or
+                    view._model.vertices[vertex["ref"]].xyz != vertex["expected"] or
+                    not window.source_pane.dirty):
+                    result["error"] = "Vertex XYZ edit did not compile into GPU model/source"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                window._vertex_undo_edit()
+                vertex["state"] = "undo"
+            elif (vertex["state"] == "undo" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if view._model.vertices[vertex["ref"]].xyz != vertex["before"]:
+                    result["error"] = "Vertex editor undo did not restore original XYZ"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                window._vertex_redo_edit()
+                vertex["state"] = "redo"
+            elif (vertex["state"] == "redo" and
+                  not window.source_pane.pending and
+                  window.worker is not None and
+                  not window.worker.isRunning()):
+                if view._model.vertices[vertex["ref"]].xyz != vertex["expected"]:
+                    result["error"] = "Vertex editor redo did not reapply XYZ"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                if not _workspace_switch_keeps_document(window):
+                    result["error"] = "Workspace tabs changed vertex editor state"
+                    timer.stop()
+                    window.close()
+                    app.quit()
+                    return
+                view.frame_vertex()
+                vertex["done"] = True
+
         if (window._info and view._vao is not None and
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
                  (reload_state["completed"] and not window.worker.isRunning()
-                  and live["valid_seen"] and fixed["tested"]))):
+                  and live["valid_seen"] and fixed["tested"] and vertex["done"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
