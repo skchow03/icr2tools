@@ -125,13 +125,17 @@ The mode is a UI organization choice, not a conversion between file formats.
   depth testing disabled. **BSP selection + GPU depth** uses the same selected
   triangles with depth testing. **All polygons + GPU depth** ignores BSP/LOD
   and is the legacy full-geometry diagnostic mode.
-- **Detail level / SWITCH DISTANCE / RES**: **Automatic** (default)
-  computes the distance from the camera to each RES anchor in local model
-  coordinates, including transformed DYNAMIC objects. Choose **Manual
-  distance** to enter a threshold in original model units, or **Show all
-  detail levels** to render alternate branches for diagnosis.
-  Auto uses Euclidean distance as an approximation of the engine's actual
-  switch logic, not a claim of exact in-game LOD thresholds.
+- **SWITCH DISTANCE / RES** in **Display** has a horizontal slider from
+  **0 to the highest RES threshold** found in the loaded model and resolved
+  external 3DO instances. The exact raw-unit value is editable beside the
+  slider; changing either selects **Manual (slider)** automatically. The
+  range is recalculated and the value clamped when a different model loads
+  or valid source is recompiled. The slider is disabled if no positive
+  RES threshold is present. **Automatic (per RES anchor)** remains the
+  default, and **Show all detail levels** still renders every branch.
+  Automatic computes each RES distance in local model coordinates, including
+  transformed DYNAMIC objects, using Euclidean distance as an approximation
+  rather than verified game-exact behavior.
 - **Open PCX palette…**: load a normal indexed 8-bit PCX with a 256-color
   VGA palette trailer (e.g. `sunny.pcx`). The bundled `gamepal.pcx` is used
   on startup; **Default palette** restores it. Palette changes recolor
@@ -204,9 +208,16 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
 - While source text is unvalidated or contains a compilation error, overlays
   disappear rather than pointing to the *last valid* model incorrectly.
   They return after a successful live compile. Closing Source hides them.
-- A highlighted polygon is drawn as a **diagnostic overlay**, even if a BSP
-  branch, LOD switch, or foreground surface would normally hide it. It is
-  **not** a claim that ICR2 would draw the polygon from that camera angle.
+- A selected polygon is brightened **only when its POLY is selected by
+  the current BSP and SWITCH DISTANCE/LOD traversal**. If the active distance
+  excludes its LOD branch, the viewport instead displays an explanatory
+  message; the polygon is not forced into the drawing. A different message
+  identifies BSP camera-side exclusion or unreferenced polygons. In
+  **All polygons + GPU depth** mode, all mesh faces are available for highlighting
+  because the rendering mode itself bypasses BSP/LOD.
+- Being included in BSP/LOD selection is **not proof of pixel visibility**:
+  other geometry can still cover a selected polygon. The diagnostic highlight
+  continues to draw atop those surfaces for inspection.
 - Inline anonymous vertices within commands are not independent named
   vertex declarations. A marker also disappears if its 3D position is
   outside the camera frustum. This feature does not add mouse picking.
