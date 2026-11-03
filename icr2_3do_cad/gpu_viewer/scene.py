@@ -15,6 +15,7 @@ import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
 from gpu_viewer.car import recolor_table, recolor_index
+from gpu_viewer.track_lod import detect_track_section_lods, selected_track_section_lists
 from car_appearance import read_car_appearance, locate_base_geometry, AppearanceError
 from three_do import Model
 
@@ -40,6 +41,7 @@ class GPUScene:
     warnings: tuple[str, ...]
     recolor_pairs: int = 0
     appearance: object | None = None
+    track_section_lods: dict | None = None
 
     @property
     def loaded_instances(self):
@@ -180,11 +182,13 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
         body_polygons=frozenset(body_polygons))
     return GPUScene(root, instances, links, polygon_lookup,
                     geometry, tuple(dict.fromkeys(warnings)),
-                    len(root_recolor), appearance)
+                    len(root_recolor), appearance,
+                    track_section_lods=detect_track_section_lods(root))
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
-                          view_direction=None, with_sprites=False):
+                          view_direction=None, with_sprites=False,
+                          track_detail=None, bsp_mode='original'):
     """Expand BSP/DYNAMIC painter order with optional PMP insertion markers.
 
     Default three-value result remains compatible with existing callers.
@@ -192,6 +196,8 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
     (instance_id, sprite record offset)) for each active PMP/PMP2, preserving
     its location between polygons rather than drawing sprites on top.
     """
+    overrides = (selected_track_section_lists(scene.track_section_lods, track_detail)
+                 if track_detail is not None and scene.track_section_lods else None)
     spans = []
     sprite_events = []
     element_count = 0
@@ -211,8 +217,9 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                 for i in range(3))
         events = []
         _, summary, lods = instance.model.switched_polygons(
-            distance, local_eye, 'original', events=events,
-            view_direction=local_direction)
+            distance, local_eye, bsp_mode, events=events,
+            view_direction=local_direction,
+            list_overrides=overrides if instance_id == 0 else None)
         stats['instances_visited'] += 1
         stats['tested_planes'] += summary['tested_planes']
         stats['culled_nodes'] += summary['culled_nodes']

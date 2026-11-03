@@ -803,7 +803,7 @@ class Model:
 
     def switched_polygons(self, distance: float | None | str, camera,
                           bsp_mode: str = 'off', events: list | None = None,
-                          *, view_direction=None):
+                          *, view_direction=None, list_overrides=None):
         """Return (visible polygon offsets, stats, selected LOD branches).
 
         `distance=None`: all switch branches for historical full-geometry view.
@@ -813,6 +813,8 @@ class Model:
         model coordinates for orthographic BSP tests. Perspective retains the
         actual finite-camera plane evaluation unchanged.
         `bsp_mode`: off, original, rebuilt.
+        `list_overrides`: optional body-offset -> ordered pointer sequence;
+        only supplied LIST nodes are overridden (used by track section LOD).
         This is an inspection tool, not a byte-identical ICR2 rasterizer.
         """
         if bsp_mode not in ('off', 'original', 'rebuilt'):
@@ -969,7 +971,9 @@ class Model:
                     return
             if kind==11:  # LIST: painter's algorithm, authored back to front.
                 # Never depth-sort this sequence in the renderer.
-                for ptr in child:
+                pointers = (list_overrides.get(node, child)
+                            if list_overrides is not None else child)
+                for ptr in pointers:
                     walk(ptr,stack | {node},material)
                 return
             for ptr in child:

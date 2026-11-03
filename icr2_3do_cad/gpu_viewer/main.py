@@ -305,6 +305,7 @@ class LoadWorker(QThread):
                 "pmp_placements": len(scene.sprite_resources.placements),
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
+                "track_section_lists": len(scene.track_section_lods or {}),
                 "recolor_pairs": scene.recolor_pairs,
                 "appearance_geometry": (appearance.geometry_name if appearance else ""),
                 "appearance_mip": (appearance.texture_name if appearance else ""),
@@ -430,6 +431,7 @@ class GLViewport(QOpenGLWidget):
         self.inspection_offset = None
         self.render_mode = 'painter'  # painter | depth | all
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
+        self.track_detail = 'hi'  # track indexed section tables only; not car RES
         self._visibility_dirty = True
         self._index_count = 0
         self._visible_set = frozenset()
@@ -730,11 +732,15 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         self.update()
 
+    def _track_lod_active(self):
+        return bool(self._scene is not None and
+                    self._scene.track_section_lods and self.track_detail)
+
     def set_render_mode(self, mode):
         if mode not in ('painter', 'depth', 'all'):
             raise ValueError(f"Unknown render mode: {mode}")
         self.render_mode = mode
-        if mode == 'all':
+        if mode == 'all' and not self._track_lod_active():
             self.visibilityChanged.emit(
                 f"All polygons: {self._mesh.polygon_count:,} geometry faces "
                 "(BSP and LOD ignored; GPU depth test)"
@@ -775,8 +781,11 @@ class GLViewport(QOpenGLWidget):
                 math.sin(self.elevation),
             )
         indices, visible, info, sprite_events = ordered_scene_indices(
-            self._scene, self._mesh, eye, self.lod_distance,
-            view_direction=direction, with_sprites=True)
+            self._scene, self._mesh, eye,
+            None if self.render_mode == 'all' else self.lod_distance,
+            view_direction=direction, with_sprites=True,
+            bsp_mode='off' if self.render_mode == 'all' else 'original',
+            track_detail=self.track_detail if self._track_lod_active() else None)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
@@ -835,14 +844,14 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
-        if self.render_mode != 'all' and self._visibility_dirty:
+        if (self.render_mode != 'all' or self._track_lod_active()) and self._visibility_dirty:
             self._refresh_visibility()
         glBindVertexArray(self._vao)
         pmp_enabled = (self.textures_enabled and self.sprites_enabled and
                        self._sprite_renderer is not None and
                        self._scene is not None and
                        getattr(self._scene, "sprite_resources", None) is not None)
-        if self.render_mode == 'all':
+        if self.render_mode == 'all' and not self._track_lod_active():
             glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
             if pmp_enabled:
                 # Diagnostic mode deliberately includes all LOD/BSP variants.
@@ -871,7 +880,7 @@ class GLViewport(QOpenGLWidget):
                 self._scene, self._mesh, self.inspection_offset)
             if span is None or not span[1]:
                 notice = "POLY has no renderable triangles in this scene"
-            elif (self.render_mode != "all" and
+            elif ((self.render_mode != "all" or self._track_lod_active()) and
                   self.inspection_offset not in self._visible_set):
                 notice = polygon_inspection_notice(
                     self._model, self.inspection_offset, self._visible_set,
@@ -1287,6 +1296,21 @@ class Window(QMainWindow):
         track_layout.setContentsMargins(6, 4, 6, 4)
         self.track_status = QLabel("Track scene: open a track .3D or .3DO")
         track_layout.addWidget(self.track_status)
+        track_layout.addWidget(QLabel("Track section detail"))
+        self.track_detail_combo = QComboBox()
+        self.track_detail_combo.addItem("HI (4 geometry slots)", "hi")
+        self.track_detail_combo.addItem("MED (2 geometry slots)", "med")
+        self.track_detail_combo.addItem("LO (1 geometry slot)", "lo")
+        self.track_detail_combo.setEnabled(False)
+        self.track_detail_combo.setToolTip(
+            "Show only the chosen tier from each indexed track section LIST. "
+            "This does not affect car/object RES switches or saved geometry.")
+        self.track_detail_combo.currentIndexChanged.connect(self._track_detail_changed)
+        track_layout.addWidget(self.track_detail_combo)
+        self.track_detail_status = QLabel(
+            "No eight-entry Papyrus track section index detected")
+        self.track_detail_status.setWordWrap(True)
+        track_layout.addWidget(self.track_detail_status)
         self.workspace_tabs.addTab(track_page, "Track")
 
         object_page = QWidget()
@@ -1439,7 +1463,8 @@ class Window(QMainWindow):
                 target[0] != "polygon" or
                 self.viewer._model is None or
                 (self.viewer._visibility_dirty and
-                 self.viewer.render_mode != "all")):
+                 (self.viewer.render_mode != "all" or
+                  self.viewer._track_lod_active()))):
             self.source_pane.set_polygon_visibility(None)
             return
         offset = target_offset(self.viewer._model, "polygon", target[1])
@@ -1449,7 +1474,8 @@ class Window(QMainWindow):
             self.source_pane.set_polygon_visibility(False)
         else:
             self.source_pane.set_polygon_visibility(
-                self.viewer.render_mode == "all" or
+                (self.viewer.render_mode == "all" and
+                 not self.viewer._track_lod_active()) or
                 offset in self.viewer._visible_set)
 
     def _ensure_source_loaded(self):
@@ -1813,6 +1839,12 @@ class Window(QMainWindow):
         self.statusBar().showMessage("MIP reload failed; previous livery retained")
         QMessageBox.warning(self, "MIP reload failed", message)
 
+    def _track_detail_changed(self, *args):
+        self.viewer.track_detail = self.track_detail_combo.currentData()
+        self.viewer.invalidate_visibility()
+        self._refresh_source_polygon_visibility()
+        self._update_polygon_status()
+
     def _mode_changed(self, index):
         self.viewer.set_render_mode(self.mode_combo.currentData())
         self._refresh_source_polygon_visibility()
@@ -1893,7 +1925,7 @@ class Window(QMainWindow):
             self.polygon_status.setText("Load a model first")
         elif offset not in model.polygons:
             self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
-        elif self.viewer.render_mode == 'all':
+        elif self.viewer.render_mode == 'all' and not self.viewer._track_lod_active():
             self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
         elif self.viewer._visibility_dirty:
             self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
@@ -2052,6 +2084,13 @@ class Window(QMainWindow):
             f" | referenced carshape(s): {len(model.external_names)}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
         self.track_status.setText(workspace_scene_summary("track", stats))
+        section_count = stats.get('track_section_lists', 0)
+        self.track_detail_combo.setEnabled(bool(section_count))
+        self.track_detail_status.setText(
+            f"{section_count} indexed section LISTs detected. HI/MED/LO "
+            "are mutually exclusive and independent of RES distance."
+            if section_count else
+            "No eight-entry Papyrus track section index detected")
         self.object_status.setText(workspace_scene_summary("object", stats))
         previous_ref = self.car_ref_combo.currentData()
         self.car_ref_combo.blockSignals(True)

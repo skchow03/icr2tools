@@ -51,6 +51,9 @@ def suggest_workspace(path, stats):
     """Return a strong workspace hint, or None when type is ambiguous."""
     if stats.get("appearance_geometry") or stats.get("recolor_pairs", 0):
         return "car"
+    # The indexed section-table signature is stronger than a filename.
+    if stats.get('track_section_lists', 0):
+        return 'track'
     if path is None:
         return None
     stem = Path(path).stem.casefold()
@@ -70,6 +73,7 @@ def workspace_scene_summary(mode, stats):
             f"{stats.get('model_planes', 0):,} planes | "
             f"{stats.get('dynamic_instances', 0):,} external instances | "
             f"{stats.get('switches', 0):,} RES switches | "
+            f"{stats.get('track_section_lists', 0):,} indexed section lists | "
             f"{len(stats.get('external_warnings', ()))} unresolved references")
     if mode == "object":
         return (

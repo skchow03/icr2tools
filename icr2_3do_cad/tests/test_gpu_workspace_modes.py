@@ -33,6 +33,11 @@ class WorkspaceModesTests(unittest.TestCase):
         self.assertEqual(suggest_workspace("track_miami.3d", {}), "track")
         self.assertEqual(suggest_workspace("putnam_track.3d", {}), "track")
 
+    def test_track_structure_overrides_ambiguous_filename(self):
+        self.assertEqual(suggest_workspace("PUTNAM.3D", {"track_section_lists": 76}), "track")
+        self.assertEqual(suggest_workspace(None, {"track_section_lists": 1}), "track")
+        self.assertEqual(suggest_workspace("PUTNAM.3D", {}), None)
+
     def test_ambiguous_names_remain_user_selected(self):
         for name in ("grandstand.3do", "wasp.3d", "testmodel.3d"):
             with self.subTest(name=name):

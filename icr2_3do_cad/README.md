@@ -199,6 +199,8 @@ repeatable RENO.3D benchmark and interpretation notes.
 A separate read-only Qt/PyOpenGL viewer for large tracks is available in
 [gpu_viewer/](gpu_viewer/README.md). It reuses the `.3D`/`.3DO` compiler but
 batches local flat-color geometry into one GPU buffer, with fast orbit/pan/zoom,
-Top/Front/Side views and a continuous FPS benchmark. It does not yet support
-editing, MIP textures, external DYNAMIC geometry, or exact Papyrus BSP ordering.
-It leaves the existing Tkinter editor unchanged.
+Top/Front/Side views and a continuous FPS benchmark. It supports an exclusive HI/MED/LO selector for indexed Papyrus track section
+lists; unlike generic car RES switching, this picks among the seven positional
+section detail pointers and avoids drawing the three tiers on top of each other.
+It does not yet provide a game-exact Papyrus rasterizer. It leaves the existing
+Tkinter editor unchanged.
