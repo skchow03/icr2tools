@@ -58,6 +58,41 @@ currently selected workspace rather than guessing their semantics.
 Select the correct mode manually for models whose names give no reliable hint.
 The mode is a UI organization choice, not a conversion between file formats.
 
+## Vertex editing in the GPU viewport
+
+Select **Vertex Edit** in the top toolbar. The **Vertex** tab opens beside
+the existing OpenGL viewport; the same editor is available in **Car, Track,
+and Object** workspaces, alongside the existing **.3D Source** and **Help**
+tabs. Vertex mode does not create a second model or viewport.
+
+- Dots mark root-model vertices belonging to polygons in the active BSP/LOD
+  view. Uncheck **Active BSP / LOD only** to show all root-model vertices,
+  including alternate or hidden branches. Dots and names/offset labels may
+  be toggled independently; labels use screen-space thinning for large tracks.
+  External DYNAMIC child geometry is previewed but not vertex-editable from
+  the parent file; open that child separately to edit its source.
+- Left-click a visible vertex dot or choose its **body offset** from the
+  virtualized vertex list. The selected point is yellow and its XYZ, UV,
+  pointer name, and RES-anchor status appear in the tab. Use **Go** for
+  decimal or `0x` hexadecimal offsets, **Frame selected** or **Shift+F**
+  to center on the selected point. In vertex mode, **right-drag** or
+  **left-drag on empty space** orbits; **middle/Shift-left drag** pans.
+- Enter raw X/Y/Z and choose **Apply XYZ**, or U/V and **Apply UV** for
+  textured POLY [T] vertices. UVs are constrained to unsigned 16-bit.
+  Select X/Y/Z and a positive step for **± Step** nudging or left-drag
+  a selected dot along the projected axis. During dragging, the moving
+  marker previews the change; the mesh recompiles on release.
+- **Rename** changes a vertex's .3D pointer label and all references,
+  leaving comments/quoted filenames alone. Names exist in .3D source,
+  not binary .3DO. **Undo/Redo** replays bounded vertex coordinate, UV,
+  and rename operations; manual .3D text edits invalidate this history.
+- Changes patch the same editable .3D source pane and run through the
+  existing asynchronous N3 compiler. Only a validated result replaces
+  the GPU mesh; failed compilation keeps the last valid preview and
+  exposes the error in .3D Source. **Save .3D as…** and **Export compiled
+  .3DO…** are explicit separate operations and never silently overwrite
+  original binaries.
+
 ## Controls
 
 - Left mouse drag: orbit
