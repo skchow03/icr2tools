@@ -48,7 +48,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
-        QSplitter, QTabWidget, QVBoxLayout, QWidget,
+        QScrollArea, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -65,7 +65,10 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
-from gpu_viewer.workspaces import WORKSPACE_MODES, suggest_workspace, workspace_scene_summary
+from gpu_viewer.workspaces import (
+    WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
+    resolve_lod_distance,
+)
 
 
 VERTEX_SHADER = """
@@ -852,10 +855,54 @@ class Window(QMainWindow):
         self.car_status = QLabel("Individual-car RECOLOR: not loaded")
         root = QWidget()
         layout = QVBoxLayout(root)
+        # Collapsible, scrollable settings leave the majority of the window to the model.
+        self.sidebar_content = QWidget()
+        side_layout = QVBoxLayout(self.sidebar_content)
+        side_layout.setContentsMargins(8, 8, 8, 8)
+        side_layout.setSpacing(6)
+        self.section_buttons = {}
+
+        def section(title, expanded):
+            header = QToolButton()
+            header.setText(title)
+            header.setCheckable(True)
+            header.setChecked(expanded)
+            header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+            header.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+            side_layout.addWidget(header)
+            self.section_buttons[title] = header
+            panel = QWidget()
+            content = QVBoxLayout(panel)
+            content.setContentsMargins(4, 2, 4, 8)
+            content.setSpacing(6)
+            panel.setVisible(expanded)
+            side_layout.addWidget(panel)
+
+            def toggle(checked, target=panel, button=header):
+                target.setVisible(checked)
+                button.setArrowType(
+                    Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
+            header.toggled.connect(toggle)
+            return content
+
+        model_layout = section("Model", True)
+        display_layout = section("Display", True)
+        assets_layout = section("Assets", False)
+        advanced_layout = section("Advanced diagnostics", False)
+        side_layout.addStretch()
+
         toolbar = QHBoxLayout()
         open_button = QPushButton("Open…")
         open_button.clicked.connect(self.open_dialog)
         toolbar.addWidget(open_button)
+        save_source = QPushButton("Save Source")
+        save_source.clicked.connect(
+            lambda: self._source_toolbar_action(self._save_source))
+        toolbar.addWidget(save_source)
+        export_3do = QPushButton("Export 3DO")
+        export_3do.clicked.connect(
+            lambda: self._source_toolbar_action(self._export_compiled_source))
+        toolbar.addWidget(export_3do)
         frame_button = QPushButton("Frame All (F)")
         frame_button.clicked.connect(self.viewer.frame_all)
         toolbar.addWidget(frame_button)
@@ -872,23 +919,23 @@ class Window(QMainWindow):
             "FOV without moving the camera. Frame All or untoggle "
             "to return to the exterior orbit.")
         self.fixed_camera_button.toggled.connect(self.viewer.set_fixed_camera_mode)
-        toolbar.addWidget(self.fixed_camera_button)
+        advanced_layout.addWidget(self.fixed_camera_button)
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
-        toolbar.addWidget(self.perspective_toggle)
+        display_layout.addWidget(self.perspective_toggle)
         self.source_toggle = QPushButton('.3D Source')
         self.source_toggle.setCheckable(True)
         self.source_toggle.toggled.connect(self._toggle_source)
         toolbar.addWidget(self.source_toggle)
         self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
         self.benchmark_toggle.setChecked(benchmark)
-        toolbar.addWidget(self.benchmark_toggle)
+        advanced_layout.addWidget(self.benchmark_toggle)
         toolbar.addStretch()
         layout.addLayout(toolbar)
         # Expose raw Papyrus coordinates while Fixed Camera is active.
         # Keep these controls outside the already-crowded view toolbar.
         self.fixed_camera_controls = QWidget(root)
-        fixedbar = QHBoxLayout(self.fixed_camera_controls)
+        fixedbar = QVBoxLayout(self.fixed_camera_controls)
         fixedbar.setContentsMargins(0, 0, 0, 0)
         fixedbar.addWidget(QLabel("Fixed Camera eye (raw XYZ):"))
         self.fixed_camera_coords = []
@@ -907,38 +954,39 @@ class Window(QMainWindow):
             fixedbar.addWidget(spin)
         fixedbar.addStretch()
         self.fixed_camera_controls.hide()
-        layout.addWidget(self.fixed_camera_controls)
-        bspbar = QHBoxLayout()
-        bspbar.addWidget(QLabel("Render:"))
+        advanced_layout.addWidget(self.fixed_camera_controls)
+        advanced_layout.addWidget(QLabel("Rendering method"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Papyrus BSP painter", "painter")
+        self.mode_combo.addItem("Papyrus drawing order (default)", "painter")
         self.mode_combo.addItem("BSP selection + GPU depth", "depth")
         self.mode_combo.addItem("All polygons + GPU depth", "all")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
-        bspbar.addWidget(self.mode_combo)
-        bspbar.addWidget(QLabel("LOD distance (game units):"))
+        advanced_layout.addWidget(self.mode_combo)
+
+        display_layout.addWidget(QLabel("Detail level"))
+        self.lod_mode_combo = QComboBox()
+        self.lod_mode_combo.addItem("Automatic (default)", "auto")
+        self.lod_mode_combo.addItem("Manual distance", "manual")
+        self.lod_mode_combo.addItem("Show all detail levels", "all")
+        self.lod_mode_combo.currentIndexChanged.connect(self._lod_changed)
+        display_layout.addWidget(self.lod_mode_combo)
         self.lod_spin = QSpinBox()
         self.lod_spin.setRange(0, 2000000000)
         self.lod_spin.setSingleStep(10000)
         self.lod_spin.setValue(0)
+        self.lod_spin.setPrefix("Distance: ")
+        self.lod_spin.setToolTip("Original Papyrus model units")
         self.lod_spin.valueChanged.connect(self._lod_changed)
-        bspbar.addWidget(self.lod_spin)
-        self.auto_lod = QCheckBox("Auto per anchor")
-        self.auto_lod.setChecked(True)
-        self.auto_lod.toggled.connect(self._lod_changed)
-        bspbar.addWidget(self.auto_lod)
         self.lod_spin.setEnabled(False)
-        self.all_lods = QCheckBox("All LOD branches (diagnostic)")
-        self.all_lods.toggled.connect(self._lod_changed)
-        bspbar.addWidget(self.all_lods)
-        bspbar.addWidget(QLabel("Polygon @"))
+        display_layout.addWidget(self.lod_spin)
+
+        advanced_layout.addWidget(QLabel("Polygon body offset"))
         self.polygon_edit = QLineEdit()
         self.polygon_edit.setPlaceholderText("decimal or 0x...")
-        self.polygon_edit.setMaximumWidth(135)
         self.polygon_edit.textChanged.connect(self._update_polygon_status)
-        bspbar.addWidget(self.polygon_edit)
-        layout.addLayout(bspbar)
-        assetsbar = QHBoxLayout()
+        advanced_layout.addWidget(self.polygon_edit)
+
+        assetsbar = QVBoxLayout()
         palette_button = QPushButton("Open PCX palette…")
         palette_button.clicked.connect(self.open_palette_dialog)
         assetsbar.addWidget(palette_button)
@@ -954,11 +1002,24 @@ class Window(QMainWindow):
         self.show_textures = QCheckBox("Textures")
         self.show_textures.setChecked(True)
         self.show_textures.toggled.connect(self._textures_toggled)
-        assetsbar.addWidget(self.show_textures)
+        display_layout.addWidget(self.show_textures)
         self.repeat_uv = QCheckBox("Repeat UV")
         self.repeat_uv.toggled.connect(self._repeat_toggled)
-        assetsbar.addWidget(self.repeat_uv)
-        layout.addLayout(assetsbar)
+        display_layout.addWidget(self.repeat_uv)
+        assets_layout.addLayout(assetsbar)
+        objects_button = QPushButton("External 3DO folder…")
+        objects_button.clicked.connect(self.choose_objects_folder)
+        assets_layout.addWidget(objects_button)
+        self.fallback_controls = QWidget()
+        fallback_layout = QVBoxLayout(self.fallback_controls)
+        fallback_layout.setContentsMargins(0, 0, 0, 0)
+        fallback_button = QPushButton("Fallback MIP…")
+        fallback_button.clicked.connect(self.choose_fallback_mip)
+        fallback_layout.addWidget(fallback_button)
+        clear_fallback = QPushButton("Clear fallback MIP")
+        clear_fallback.clicked.connect(self.clear_fallback_mip)
+        fallback_layout.addWidget(clear_fallback)
+        assets_layout.addWidget(self.fallback_controls)
 
         # Mode tabs configure the current scene; the GPU viewport and N3
         # editor below remain a single shared document across all three.
@@ -967,7 +1028,7 @@ class Window(QMainWindow):
         car_page = QWidget()
         car_layout = QVBoxLayout(car_page)
         car_layout.setContentsMargins(6, 4, 6, 4)
-        carbar = QHBoxLayout()
+        carbar = QVBoxLayout()
         carbar.addWidget(QLabel("Car geometry:"))
         self.car_ref_combo = QComboBox()
         self.car_ref_combo.setMinimumWidth(90)
@@ -989,31 +1050,12 @@ class Window(QMainWindow):
         clear_livery.clicked.connect(self.clear_livery_mip)
         carbar.addWidget(clear_livery)
         car_layout.addLayout(carbar)
-        car_assets = QHBoxLayout()
-        car_objects_button = QPushButton("3DO objects folder…")
-        car_objects_button.clicked.connect(self.choose_objects_folder)
-        car_assets.addWidget(car_objects_button)
-        car_assets.addStretch()
-        car_layout.addLayout(car_assets)
         car_layout.addWidget(self.car_status)
         self.workspace_tabs.addTab(car_page, "Car")
 
         track_page = QWidget()
         track_layout = QVBoxLayout(track_page)
         track_layout.setContentsMargins(6, 4, 6, 4)
-        track_tools = QHBoxLayout()
-        track_tools.addWidget(QLabel("Track assets:"))
-        track_objects_button = QPushButton("3DO objects folder…")
-        track_objects_button.clicked.connect(self.choose_objects_folder)
-        track_tools.addWidget(track_objects_button)
-        track_fallback_button = QPushButton("Fallback MIP…")
-        track_fallback_button.clicked.connect(self.choose_fallback_mip)
-        track_tools.addWidget(track_fallback_button)
-        track_clear_fallback = QPushButton("Clear fallback")
-        track_clear_fallback.clicked.connect(self.clear_fallback_mip)
-        track_tools.addWidget(track_clear_fallback)
-        track_tools.addStretch()
-        track_layout.addLayout(track_tools)
         self.track_status = QLabel("Track scene: open a track .3D or .3DO")
         track_layout.addWidget(self.track_status)
         self.workspace_tabs.addTab(track_page, "Track")
@@ -1021,19 +1063,6 @@ class Window(QMainWindow):
         object_page = QWidget()
         object_layout = QVBoxLayout(object_page)
         object_layout.setContentsMargins(6, 4, 6, 4)
-        object_tools = QHBoxLayout()
-        object_tools.addWidget(QLabel("Object assets:"))
-        object_objects_button = QPushButton("External 3DO folder…")
-        object_objects_button.clicked.connect(self.choose_objects_folder)
-        object_tools.addWidget(object_objects_button)
-        object_fallback_button = QPushButton("Fallback MIP…")
-        object_fallback_button.clicked.connect(self.choose_fallback_mip)
-        object_tools.addWidget(object_fallback_button)
-        object_clear_fallback = QPushButton("Clear fallback")
-        object_clear_fallback.clicked.connect(self.clear_fallback_mip)
-        object_tools.addWidget(object_clear_fallback)
-        object_tools.addStretch()
-        object_layout.addLayout(object_tools)
         self.object_status = QLabel("Object scene: open a standalone .3D or .3DO")
         object_layout.addWidget(self.object_status)
         self.workspace_tabs.addTab(object_page, "Object")
@@ -1042,8 +1071,9 @@ class Window(QMainWindow):
         # A strongly identified file selects a tab after its first load.
         self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index("object"))
         self.workspace_tabs.currentChanged.connect(self._workspace_changed)
-        layout.addWidget(self.workspace_tabs)
-        layout.addWidget(self.load_label)
+        model_layout.addWidget(self.workspace_tabs)
+        self.load_label.setWordWrap(True)
+        model_layout.addWidget(self.load_label)
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.editor_splitter.addWidget(self.viewer)
         self.source_tabs = QTabWidget()
@@ -1068,12 +1098,28 @@ class Window(QMainWindow):
         self.editor_splitter.setStretchFactor(0, 2)
         self.editor_splitter.setStretchFactor(1, 1)
         self.source_tabs.hide()
-        layout.addWidget(self.editor_splitter, stretch=1)
-        layout.addWidget(self.stats_label)
-        layout.addWidget(self.visibility_label)
-        layout.addWidget(self.polygon_status)
-        layout.addWidget(self.palette_status)
-        layout.addWidget(self.texture_status)
+        sidebar = QScrollArea()
+        sidebar.setWidgetResizable(True)
+        sidebar.setWidget(self.sidebar_content)
+        sidebar.setMinimumWidth(265)
+        sidebar.setMaximumWidth(410)
+        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.main_splitter.addWidget(self.editor_splitter)
+        self.main_splitter.addWidget(sidebar)
+        self.main_splitter.setStretchFactor(0, 1)
+        self.main_splitter.setStretchFactor(1, 0)
+        self.main_splitter.setSizes([970, 300])
+        layout.addWidget(self.main_splitter, stretch=1)
+        for label in (self.stats_label, self.visibility_label,
+                      self.polygon_status, self.palette_status,
+                      self.texture_status, self.car_status,
+                      self.track_status, self.object_status):
+            label.setWordWrap(True)
+        advanced_layout.addWidget(self.stats_label)
+        advanced_layout.addWidget(self.visibility_label)
+        advanced_layout.addWidget(self.polygon_status)
+        assets_layout.addWidget(self.palette_status)
+        assets_layout.addWidget(self.texture_status)
         self.setCentralWidget(root)
         self._workspace_changed(self.workspace_tabs.currentIndex())
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
@@ -1104,6 +1150,20 @@ class Window(QMainWindow):
         if 0 <= index < self.workspace_tabs.count():
             label = self.workspace_tabs.tabText(index)
             self.setWindowTitle(f"ICR2 GPU Viewer — {label} workspace")
+            self.fallback_controls.setVisible(label != "Car")
+
+    def _source_toolbar_action(self, callback):
+        """Expose Save/Export without bypassing lazy source preparation."""
+        if not self.source_pane.ready:
+            if self.viewer._model is None:
+                QMessageBox.information(self, "No model", "Open a model first.")
+                return
+            self.source_toggle.setChecked(True)
+            self._ensure_source_loaded()
+            self.statusBar().showMessage(
+                "Preparing editable source; use Save Source or Export 3DO when ready.")
+            return
+        callback()
 
     def _textures_toggled(self, checked):
         self.viewer.textures_enabled = checked
@@ -1485,13 +1545,10 @@ class Window(QMainWindow):
         self._update_polygon_status()
 
     def _lod_changed(self, *args):
-        self.lod_spin.setEnabled(not (self.all_lods.isChecked()
-                                      or self.auto_lod.isChecked()))
-        self.viewer.lod_distance = (
-            None if self.all_lods.isChecked()
-            else 'auto' if self.auto_lod.isChecked()
-            else self.lod_spin.value()
-        )
+        mode = self.lod_mode_combo.currentData()
+        self.lod_spin.setEnabled(mode == "manual")
+        self.viewer.lod_distance = resolve_lod_distance(
+            mode, self.lod_spin.value())
         self.viewer.invalidate_visibility()
 
     def _visibility_updated(self, message):
@@ -1708,10 +1765,13 @@ class Window(QMainWindow):
             f"skipped {mesh.skipped_polygons:,}  |  "
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB")
+        problem_count = (len(stats['external_warnings']) +
+                         len(stats['missing_textures']) +
+                         len(stats['texture_errors']))
         self.statusBar().showMessage(
-            ("External 3DO issues: " + "; ".join(stats['external_warnings'][:3]))
-            if stats['external_warnings'] else
-            "BSP painter | auto RES | Left-drag orbit | Shift-left/middle pan | F frame")
+            f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
+            + (f"{problem_count} asset warnings — see Assets" if problem_count
+               else "Ready"))
         if not from_source and self.source_toggle.isChecked():
             self._ensure_source_loaded()
 

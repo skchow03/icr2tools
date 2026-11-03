@@ -11,6 +11,17 @@ from pathlib import Path
 
 WORKSPACE_MODES = ("car", "track", "object")
 
+def resolve_lod_distance(mode, distance):
+    """Translate a single UI detail-level choice to the existing renderer API."""
+    if mode == "auto":
+        return "auto"
+    if mode == "all":
+        return None
+    if mode == "manual":
+        return distance
+    raise ValueError(f"Unknown LOD mode: {mode!r}")
+
+
 _CAR_FILENAMES = frozenset({
     "indycar", "roadcar", "pacecar", "panoz", "irl", "cars",
 })

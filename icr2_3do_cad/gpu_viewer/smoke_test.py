@@ -175,6 +175,9 @@ def run(path):
             # Both BSP/RES and OpenGL must use editable raw Papyrus XYZ.
             prior = (view.target.copy(), view.distance, view.half_height,
                      view.azimuth, view.elevation, view.perspective, view._vbo)
+            # Fixed Camera lives in the intentionally collapsed Advanced panel.
+            # Open it as a user would before asserting widget visibility.
+            window.section_buttons["Advanced diagnostics"].setChecked(True)
             window.fixed_camera_button.setChecked(True)
             if not (window.fixed_camera_button.text() == 'Fixed Camera' and
                     view.fixed_camera_mode and view.perspective and
