@@ -210,15 +210,26 @@ Every category is checked by default, so the normal editable source is shown.
   Multiline declarations are grouped as a single result, so they are never
   cut into dangling continuation lines. Standalone `%` comment lines are
   listed under Comments, while inline comments stay with their statements.
-- A filtered result list is deliberately **read-only**. Selecting one jumps
-  the source cursor to the original declaration and updates existing
-  GPU polygon/vertex inspection. **Double-click** a result (or use
-  **Edit selected source line**) to restore the complete editor, locate the
-  selected line, and edit it normally.
-- Filters **never delete, rewrite, or remove lines from the N3 document**.
-  All hidden statements, comments, blank lines, source offsets, undo history,
-  live compilation, Save Source, and compiled 3DO export remain unchanged.
-  **Find error** also restores the complete editor before navigating.
+- The filtered results are **editable in place**, not a separate read-only
+  navigation mode. Select a statement to inspect its polygon or vertex in the
+  GPU viewport. **Double-click** a result (or start typing on a selected row)
+  to edit that statement inside the filtered list. **Ctrl+Enter** commits the
+  edit, **Esc** cancels, and moving focus away also commits. Multiline
+  statements open with their complete text.
+- After each edit the **same checkbox selection and Find query remain active**,
+  so you can immediately edit the next matching statement. If your edit
+  changes a statement's category or removes its search match, that row
+  naturally drops out of the filtered results.
+- **Show full source at selected line** remains available when you want
+  unrestricted editing across statement boundaries. The inline editor
+  deliberately restricts each edit to one complete statement, so a large
+  paste or selection cannot delete filtered-out statements between rows.
+- Filtering itself **never deletes or modifies hidden lines**. Inline edits
+  update the **one canonical N3 source document**, preserving undo/redo,
+  revision tracking, live compilation, validation, Save Source and 3DO export.
+  The existing optional auto-rename feature still updates references across
+  the document when an edited declaration label is renamed. **Find error**
+  restores the complete editor before navigating to the failing line.
 
 ## Inspecting N3 geometry with the source cursor
 

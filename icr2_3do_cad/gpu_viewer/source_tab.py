@@ -10,12 +10,12 @@ import re
 from bisect import bisect_right
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QCheckBox, QHBoxLayout, QLabel, QLineEdit, QListView, QMenu,
-    QPlainTextEdit, QPushButton, QStackedWidget, QToolButton,
-    QTextEdit, QVBoxLayout, QWidget, QWidgetAction,
+    QAbstractItemView, QCheckBox, QHBoxLayout, QLabel, QLineEdit, QListView,
+    QMenu, QPlainTextEdit, QPushButton, QStackedWidget, QStyledItemDelegate,
+    QToolButton, QTextEdit, QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from gpu_viewer.source_inspection import index_source_targets
@@ -74,10 +74,15 @@ class N3Highlighter(QSyntaxHighlighter):
 
 
 class FilteredStatementsModel(QAbstractListModel):
-    """Virtualized read-only navigation results, never a second source document."""
+    """Virtualized source entries with safe per-statement inline editing.
 
-    def __init__(self, parent=None):
-        super().__init__(parent)
+    The canonical QTextDocument always owns the text; model rows contain
+    source spans, not copies of N3 to save or compile.
+    """
+
+    def __init__(self, owner):
+        super().__init__(owner)
+        self.owner = owner
         self.entries = ()
         self.starts = ()
         self.active_line = None
@@ -133,10 +138,71 @@ class FilteredStatementsModel(QAbstractListModel):
             return (f"Original line {entry.first_line + 1}"
                     + (f"–{entry.last_line + 1}" if
                        entry.last_line != entry.first_line else "")
-                    + f" | {entry.category}\n{entry.preview}")
+                    + f" | {entry.category}\n"
+                    "Double-click or type to edit this statement here. "
+                    "Ctrl+Enter applies; Esc cancels.")
         if role == Qt.ItemDataRole.UserRole:
             return entry.first_line
+        if role == Qt.ItemDataRole.EditRole:
+            return self.owner._filtered_statement_text(entry)
         return None
+
+    def flags(self, index):
+        flags = super().flags(index)
+        if index.isValid() and self.owner.ready:
+            flags |= Qt.ItemFlag.ItemIsEditable
+        return flags
+
+    def setData(self, index, value, role=Qt.ItemDataRole.EditRole):
+        if (role != Qt.ItemDataRole.EditRole or not index.isValid() or
+                not self.owner.ready or index.row() >= len(self.entries)):
+            return False
+        return self.owner._replace_filtered_statement(
+            self.entries[index.row()], str(value))
+
+
+class InlineStatementDelegate(QStyledItemDelegate):
+    """Edit one complete N3 statement directly within the filtered list."""
+
+    def createEditor(self, parent, option, index):
+        editor = QPlainTextEdit(parent)
+        editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        editor.setFont(option.font)
+        editor.setTabChangesFocus(True)
+        editor.setToolTip(
+            "Edit the statement directly. Ctrl+Enter applies; Esc cancels. "
+            "Hidden statements remain untouched.")
+        return editor
+
+    def setEditorData(self, editor, index):
+        editor.setPlainText(index.data(Qt.ItemDataRole.EditRole) or "")
+        editor.selectAll()
+
+    def setModelData(self, editor, model, index):
+        model.setData(index, editor.toPlainText(), Qt.ItemDataRole.EditRole)
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        entries = index.model().entries
+        if 0 <= index.row() < len(entries):
+            entry = entries[index.row()]
+            rows = min(7, entry.last_line - entry.first_line + 1)
+            size.setHeight(max(size.height(),
+                               option.fontMetrics.lineSpacing() * rows + 10))
+        return size
+
+    def eventFilter(self, editor, event):
+        if isinstance(editor, QPlainTextEdit) and event.type() == QEvent.Type.KeyPress:
+            if (event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and
+                    event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                self.commitData.emit(editor)
+                self.closeEditor.emit(editor)
+                return True
+            if event.key() == Qt.Key.Key_Escape:
+                self.closeEditor.emit(
+                    editor, QStyledItemDelegate.EndEditHint.RevertModelCache)
+                return True
+        return super().eventFilter(editor, event)
 
 
 class SourcePane(QWidget):
@@ -164,6 +230,8 @@ class SourcePane(QWidget):
         self._filter_entries = ()
         self._filter_cache_revision = -1
         self._filter_sync = False
+        self._filtered_edit_active = False
+        self._filter_return_line = None
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -188,15 +256,15 @@ class SourcePane(QWidget):
         controls.addWidget(self.auto_rename)
         layout.addLayout(controls)
 
-        # A checkable popup filters a separate, read-only navigation list.
-        # Never hide or delete QTextBlocks in the editable document: that
-        # would make selection, undo, save and automated renaming unsafe.
+        # The popup filters editable, independently bounded statements.
+        # Never hide or delete QTextBlocks in the canonical document: doing
+        # so could damage unrelated source during Backspace, undo or paste.
         filter_bar = QHBoxLayout()
         self.filter_button = QToolButton()
         self.filter_button.setText("Filter statements (all)")
         self.filter_button.setToolTip(
-            "Choose N3 statement types to show or hide. "
-            "Filtered matches can be opened in the full editor.")
+            "Choose N3 statement types to show or hide. Filtered statements "
+            "remain editable in place; full source is preserved.")
         self.filter_menu = QMenu(self.filter_button)
         self.filter_button.setMenu(self.filter_menu)
         self.filter_button.setPopupMode(
@@ -263,23 +331,27 @@ class SourcePane(QWidget):
         self.filtered_model = FilteredStatementsModel(self)
         self.filtered_list = QListView()
         self.filtered_list.setModel(self.filtered_model)
-        self.filtered_list.setUniformItemSizes(True)
+        self.filtered_list.setUniformItemSizes(False)
         self.filtered_list.setAlternatingRowColors(True)
+        self.filtered_list.setItemDelegate(InlineStatementDelegate(self.filtered_list))
+        self.filtered_list.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked |
+            QAbstractItemView.EditTrigger.SelectedClicked |
+            QAbstractItemView.EditTrigger.EditKeyPressed)
         self.filtered_list.setFont(font)
         self.filtered_list.setToolTip(
-            "Select a statement to inspect it in the GPU viewport. "
-            "Double-click to open its original source line for editing.")
+            "Select a statement to inspect in the GPU viewport. "
+            "Double-click to edit inline; Ctrl+Enter applies, Esc cancels.")
         self.filtered_list.selectionModel().currentChanged.connect(
             self._inspect_filtered_entry)
-        self.filtered_list.doubleClicked.connect(self._edit_filtered_entry)
         self.filtered_page = QWidget()
         filtered_layout = QVBoxLayout(self.filtered_page)
         filtered_layout.setContentsMargins(0, 0, 0, 0)
         filtered_layout.addWidget(QLabel(
-            "Filtered navigation (read-only). Select to inspect; "
-            "double-click to edit in the full source."))
+            "Editable filtered statements. Double-click or type to edit; "
+            "Ctrl+Enter applies, Esc cancels."))
         filtered_layout.addWidget(self.filtered_list, 1)
-        edit_button = QPushButton("Edit selected source line (show all)")
+        edit_button = QPushButton("Show full source at selected line")
         edit_button.clicked.connect(self._edit_filtered_entry)
         filtered_layout.addWidget(edit_button)
 
@@ -375,7 +447,7 @@ class SourcePane(QWidget):
         self._track_symbol_edit()
         self.revision += 1
         self._filter_cache_revision = -1
-        if self.source_stack.currentIndex() == 1:
+        if self.source_stack.currentIndex() == 1 and not self._filtered_edit_active:
             self._apply_filters()
         self._last_error_line = None
         self._polygon_visible = None
@@ -548,21 +620,87 @@ class SourcePane(QWidget):
             if entry.category in chosen and
             (not query or query in entry.preview.casefold())
         ]
-        previous_line = self.editor.textCursor().blockNumber()
+        previous_line = (self._filter_return_line if
+                         self._filter_return_line is not None else
+                         self.editor.textCursor().blockNumber())
+        self._filter_return_line = None
         self.filtered_model.set_entries(matching)
         self.source_stack.setCurrentWidget(self.filtered_page)
         self.filter_status.setText(
             f"{len(matching):,}/{len(self._filter_entries):,} statements")
         if matching:
-            # Keep the caret on its source line until a filtered result is
-            # explicitly selected; filtering alone does not change geometry.
+            # Preserve the just-edited row (or select the nearest remaining
+            # row if its text/category no longer satisfies the active filter).
             row = next((i for i, entry in enumerate(matching)
                         if entry.first_line <= previous_line <= entry.last_line),
                        None)
+            if row is None:
+                row = next((i for i, entry in enumerate(matching)
+                            if entry.first_line >= previous_line), None)
             if row is not None:
                 self.filtered_list.setCurrentIndex(self.filtered_model.index(row))
         else:
             self.filtered_list.clearSelection()
+
+    def _filtered_statement_text(self, entry):
+        document = self.editor.document()
+        first = document.findBlockByNumber(entry.first_line)
+        last = document.findBlockByNumber(entry.last_line)
+        if not first.isValid() or not last.isValid():
+            return ""
+        cursor = QTextCursor(document)
+        cursor.setPosition(first.position())
+        cursor.setPosition(last.position() + len(last.text()),
+                           QTextCursor.MoveMode.KeepAnchor)
+        return cursor.selectedText().replace("\u2029", "\n")
+
+    def _replace_filtered_statement(self, entry, text):
+        """Replace only a bounded visible declaration in the real source.
+
+        Preserve hidden comments/definitions even when several categories
+        are excluded. The original QTextDocument retains undo and is the
+        only source for compilation, renaming, saving and export.
+        """
+        if not self._ready or self._filter_cache_revision != self.revision:
+            return False
+        original = self._filtered_statement_text(entry)
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if text == original:
+            return True
+        document = self.editor.document()
+        first = document.findBlockByNumber(entry.first_line)
+        last = document.findBlockByNumber(entry.last_line)
+        if not first.isValid() or not last.isValid():
+            return False
+        self._filter_return_line = entry.first_line
+        self._filtered_edit_active = True
+        try:
+            # Position the canonical caret for automatic pointer rename and
+            # source-target inspection before applying the change.
+            self.editor.setTextCursor(QTextCursor(first))
+            cursor = QTextCursor(document)
+            cursor.beginEditBlock()
+            cursor.setPosition(first.position())
+            cursor.setPosition(last.position() + len(last.text()),
+                               QTextCursor.MoveMode.KeepAnchor)
+            cursor.insertText(text)
+            cursor.endEditBlock()
+        finally:
+            self._filtered_edit_active = False
+        # A QTextCursor replacement can emit intermediate textChanged signals
+        # (deleting the old multiline statement before inserting the new).
+        # Track a declaration-label rename from complete before/after text,
+        # not those intermediate snapshots, so references in filtered-out
+        # LIST/FACE/SWITCH statements are updated as normal.
+        old_label = edited_declaration_label(original, text, 0)
+        if old_label is not None and self.auto_rename.isChecked():
+            self._rename_pending = (entry.first_line, old_label)
+            self._rename_timer.start()
+        self._rename_snapshot = self.editor.toPlainText()
+        # Rebuild after the delegate has closed; a synchronous model reset
+        # inside setModelData would destroy its active editing widget.
+        QTimer.singleShot(0, self._apply_filters)
+        return True
 
     def _inspect_filtered_entry(self, index, *_):
         if not index.isValid():
