@@ -305,6 +305,10 @@ def run(path):
                     app.quit()
                     return
                 view.frame_vertex()
+                # Restore the normal painter for the existing final BSP
+                # visibility and framebuffer assertions below.
+                window.mode_combo.setCurrentIndex(0)
+                view.frame_all()
                 vertex["done"] = True
 
         if (window._info and view._vao is not None and
