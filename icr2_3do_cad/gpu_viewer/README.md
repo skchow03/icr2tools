@@ -30,6 +30,34 @@ The optional --report path writes aggregate timings on close, omitting
 full paths, geometry coordinates and model source. Run once with RENO and
 once with a building or fixtures/roadcar.3do.
 
+## Car, Track, and Object workspaces
+
+The viewer now has three mode tabs **above a single shared GPU preview and
+editable .3D Source pane**. Change tabs at any time to show the tools
+appropriate to the current asset; tab changes do not reload the model, reset
+the camera, compile source, or discard unsaved edits.
+
+- **Car** groups appearance-wrapper/carshape resolution, body or external
+  material targets, livery MIP assignment, overrides, and RECOLOR status.
+  The external 3DO folder also resolves wheel and helmet models.
+- **Track** provides track-scene statistics (vertices, planes, external
+  instances, RES switches and unresolved references), an external 3DO folder
+  for trackside assets, and fallback texture controls.
+- **Object** provides standalone object diagnostics (polygons, MIP names,
+  DYNAMIC references), external 3DO resolution and fallback texture controls.
+
+Camera views, Open, Render/BSP, RES/LOD diagnostics, palette, MIP folder,
+texture toggles, Reload MIPs, and the **.3D Source** toggle remain available
+in all three modes. The Source pane still sits beside the same GPU viewport,
+with the same live compilation, save, and export behavior.
+
+The viewer suggests **Car** for recognized car geometry or individual-car
+appearance wrappers, **Track** for clearly named track models (including
+`track.3do` and `RENO.3D`), and leaves ambiguous filenames in the
+currently selected workspace rather than guessing their semantics.
+Select the correct mode manually for models whose names give no reliable hint.
+The mode is a UI organization choice, not a conversion between file formats.
+
 ## Controls
 
 - Left mouse drag: orbit
