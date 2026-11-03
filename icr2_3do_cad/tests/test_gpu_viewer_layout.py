@@ -43,6 +43,15 @@ class GPUViewerLayoutTests(unittest.TestCase):
         self.assertTrue(headers["Assets"].isChecked())
         headers["Assets"].setChecked(False)
 
+    def test_mip_uv_repeat_is_default_and_can_be_disabled(self):
+        checkbox = self.window.repeat_uv
+        self.assertTrue(checkbox.isChecked())
+        self.assertTrue(self.window.viewer.texture_repeat)
+        checkbox.setChecked(False)
+        self.assertFalse(self.window.viewer.texture_repeat)
+        checkbox.setChecked(True)
+        self.assertTrue(self.window.viewer.texture_repeat)
+
     def test_switch_distance_slider_and_modes(self):
         from n3_compile import compile_n3_text
         from gpu_viewer.scene import build_scene
