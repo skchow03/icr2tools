@@ -44,7 +44,7 @@ try:
         glUniform1i,
     )
     from PySide6.QtCore import Qt, QThread, Signal, QTimer
-    from PySide6.QtGui import QSurfaceFormat, QShortcut, QKeySequence
+    from PySide6.QtGui import (QSurfaceFormat, QShortcut, QKeySequence, QPainter, QColor, QFont)
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
         QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
@@ -65,6 +65,13 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.vertex_tab import VertexPane
+from gpu_viewer.vertex_tools import (
+    check_values, patch_vertex_source, project_vertices, pick_vertex,
+    drag_along_axis,
+)
+from text_3d import parse_document
+from vertex_labels import declaration_label, rename_vertex_in_source
 from gpu_viewer.workspaces import WORKSPACE_MODES, suggest_workspace, workspace_scene_summary
 
 
@@ -343,6 +350,8 @@ class TextureReloadWorker(QThread):
 
 
 class GLViewport(QOpenGLWidget):
+    vertexSelected = Signal(int)
+    vertexMoved = Signal(int, object)
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
     fixedCameraModeChanged = Signal(bool)
@@ -389,6 +398,18 @@ class GLViewport(QOpenGLWidget):
         self.fixed_camera_fov = 60.0
         self._saved_external_view = None
         self._drag = None
+        self.vertex_mode = False
+        self.vertex_dots = True
+        self.vertex_visible_only = True
+        self.vertex_label_mode = "Off"
+        self.vertex_names = {}
+        self.vertex_selected = None
+        self.vertex_axis = "X"
+        self.vertex_step = 100
+        self._vertex_projected = None
+        self._vertex_mvp = None
+        self._vertex_drag = None
+        self._vertex_override = None
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
         self.fps = 0.0
@@ -468,6 +489,10 @@ class GLViewport(QOpenGLWidget):
         self._visibility_dirty = True
         self._visible_set = frozenset()
         self._visibility_info = {}
+        self._vertex_projected = None
+        self._vertex_override = None
+        if self.vertex_selected not in model.vertices:
+            self.vertex_selected = None
         self._frametimes.clear()
         self._frame_count = 0
         if not preserve_view and not self.fixed_camera_mode:
@@ -686,7 +711,8 @@ class GLViewport(QOpenGLWidget):
                 self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
-        matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
+        mvp = projection @ view
+        matrix=np.ascontiguousarray(mvp.T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
         glUniform1i(self._texture_uniform, int(self.textures_enabled))
@@ -704,6 +730,97 @@ class GLViewport(QOpenGLWidget):
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
         glBindVertexArray(0)
         glUseProgram(0)
+        if self.vertex_mode:
+            self._draw_vertex_overlay(mvp)
+
+    def _draw_vertex_overlay(self, mvp):
+        """QPainter draws dots in logical widget pixels over the GPU scene.
+
+        The same screen projections are reused for nearest-dot picking.
+        No QPainter operations are performed inside OpenGL drawing calls.
+        """
+        if self._model is None or self._mesh is None:
+            self._vertex_projected = None
+            return
+        self._vertex_mvp = mvp
+        if self.render_mode == 'all' or not self.vertex_visible_only:
+            refs = sorted(self._model.vertices)
+        else:
+            active = set()
+            for off in self._visible_set:
+                poly = self._model.polygons.get(off)
+                if poly is not None:
+                    active.update(poly.unique_refs)
+            refs = sorted(active)
+        if self.vertex_selected in self._model.vertices and self.vertex_selected not in refs:
+            refs.append(self.vertex_selected)
+        if not refs:
+            self._vertex_projected = None
+            return
+        coords = np.array([self._model.vertices[ref].xyz for ref in refs],
+                          dtype=np.float64)
+        if (self._vertex_override is not None and
+                self.vertex_selected in refs):
+            coords[refs.index(self.vertex_selected)] = self._vertex_override
+        px, valid = project_vertices(
+            coords, self._mesh.center, self._mesh.scale, mvp,
+            self.width(), self.height())
+        self._vertex_projected = (np.asarray(refs, dtype=np.int64), px, valid)
+        if not self.vertex_dots and self.vertex_label_mode == "Off":
+            return
+        painter = QPainter(self)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setPen(Qt.PenStyle.NoPen)
+            if self.vertex_dots:
+                for i in np.flatnonzero(valid):
+                    if refs[i] == self.vertex_selected:
+                        continue
+                    painter.setBrush(QColor("#b8cced"))
+                    x, y = float(px[i, 0]), float(px[i, 1])
+                    painter.drawEllipse(int(x-2), int(y-2), 4, 4)
+                if self.vertex_selected in refs:
+                    i = refs.index(self.vertex_selected)
+                    if valid[i]:
+                        painter.setBrush(QColor("#ffdc68"))
+                        x, y = float(px[i, 0]), float(px[i, 1])
+                        painter.drawEllipse(int(x-5), int(y-5), 10, 10)
+            if self.vertex_label_mode != "Off":
+                font = QFont("Consolas", 9)
+                painter.setFont(font)
+                painter.setPen(QColor("#e7efff"))
+                occupied = set()
+                shown = 0
+                for i in np.flatnonzero(valid):
+                    ref = refs[i]
+                    x, y = float(px[i, 0]), float(px[i, 1])
+                    cell = (int(x//54), int(y//17))
+                    if ref != self.vertex_selected and cell in occupied:
+                        continue
+                    occupied.add(cell)
+                    name = (self.vertex_names.get(ref, f"@{ref}")
+                            if self.vertex_label_mode == "Names" else str(ref))
+                    painter.drawText(int(x+7), int(y-7), name)
+                    shown += 1
+                    if shown >= 650:
+                        break
+        finally:
+            painter.end()
+
+    def frame_vertex(self):
+        """Center a selected root vertex in the common GPU camera."""
+        if self._mesh is None or self._model is None:
+            return
+        ref = self.vertex_selected
+        if ref not in self._model.vertices:
+            return
+        if self.fixed_camera_mode:
+            self.set_fixed_camera_mode(False)
+        xyz = np.asarray(self._model.vertices[ref].xyz, dtype=np.float64)
+        self.target = (xyz - np.asarray(self._mesh.center)) * self._mesh.scale
+        self.half_height = min(self.half_height, 0.15)
+        self.distance = max(0.3, min(self.distance, 4.0))
+        self.invalidate_visibility()
 
     def _on_frame_swapped(self):
         now = perf_counter()
@@ -783,14 +900,57 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
+        if (self.vertex_mode and event.button() == Qt.MouseButton.LeftButton
+                and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                and self.vertex_dots and self._vertex_projected is not None):
+            refs, points, visible = self._vertex_projected
+            picked = pick_vertex(refs, points, visible,
+                                 event.position().x(), event.position().y())
+            if picked is not None:
+                self.vertex_selected = picked
+                self._vertex_drag = (
+                    picked, event.position(),
+                    tuple(self._model.vertices[picked].xyz))
+                self._vertex_override = None
+                self.vertexSelected.emit(picked)
+                self.update()
+                event.accept()
+                return
         self._drag = (event.position(), event.button())
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self._vertex_drag is not None:
+            ref, _, before = self._vertex_drag
+            after = self._vertex_override
+            self._vertex_drag = None
+            if after is not None and after != before:
+                self.vertexMoved.emit(ref, after)
+            else:
+                self._vertex_override = None
+                self.update()
+            event.accept()
+            return
         self._drag = None
         event.accept()
 
     def mouseMoveEvent(self, event):
+        if self._vertex_drag is not None:
+            ref, start, xyz = self._vertex_drag
+            dx = event.position().x() - start.x()
+            dy = event.position().y() - start.y()
+            if dx*dx+dy*dy < 16 and self._vertex_override is None:
+                return
+            try:
+                self._vertex_override = drag_along_axis(
+                    xyz, self.vertex_axis, dx, dy, self.vertex_step,
+                    self._mesh.center, self._mesh.scale, self._vertex_mvp,
+                    self.width(), self.height())
+                self.update()
+            except ValueError as error:
+                self.statsChanged.emit(str(error))
+            event.accept()
+            return
         if self._drag is None:
             return
         old, button = self._drag
