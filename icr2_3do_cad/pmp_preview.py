@@ -1,9 +1,11 @@
 """Read-only ICR2 PMP sprite decoding for 3DO PMP/PMP2 nodes.
 
 Observed from stock helmets and tree1..tree4 scenery:
-    Bytes 0..3 are NOT a fixed magic signature. They encode the extents of
-    the span records: (pixel_width, pixel_height, -min_x, -min_y), modulo
-    256 for the origin offsets. For example, tree2 starts 5b 7b af fb,
+    Bytes 0..3 are NOT a fixed magic signature. They encode an enclosing
+    sprite rectangle: (width, height, -left, -top), modulo 256 for origin
+    offsets. The rectangle may contain transparent padding: stock helmets
+    use a larger rectangle than their painted spans; all four observed
+    trees happen to use tight rectangles. Tree2 starts 5b 7b af fb,
     while tree1 starts 7a 79 be f9. Both describe valid PMP sprites.
     Byte 4: little-endian uint32 declared size.
     Byte 8: little-endian uint32 auxiliary field.
@@ -79,16 +81,21 @@ def load_pmp(path, palette):
 
     if not spans:
         raise PMPError(f'{path.name}: no visible spans')
-    expected_header = bytes((
-        max_x - min_x,
-        max_y - min_y + 1,
-        (-min_x) & 0xff,
-        (-min_y) & 0xff,
-    ))
-    if data[:4] != expected_header:
+    # These four bytes describe an *enclosing* image rectangle. Some
+    # helmets paint only part of that rectangle; insisting on a tight
+    # bounding-box equality would reject existing valid helmet sprites.
+    width, height, neg_left, neg_top = data[:4]
+    left = (-neg_left) & 0xff
+    top = (-neg_top) & 0xff
+    right = left + (width or 256)
+    bottom = top + (height or 256)
+    if (right > 256 or bottom > 256 or
+            not (left <= min_x and max_x <= right and
+                 top <= min_y and max_y + 1 <= bottom)):
         raise PMPError(
-            f'{path.name}: PMP extent header does not match color spans '
-            f'(found {data[:4].hex()}, expected {expected_header.hex()})')
+            f'{path.name}: PMP extent header does not enclose color spans '
+            f'(header {data[:4].hex()}, visible '
+            f'({min_x},{min_y},{max_x},{max_y+1}))')
 
     rgba = Image.new('RGBA', (256, 256), (0, 0, 0, 0))
     pix = rgba.load()
