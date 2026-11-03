@@ -624,8 +624,46 @@ class GLViewport(QOpenGLWidget):
             glBindBuffer(GL_ARRAY_BUFFER, 0)
             # One synchronization at load time; never in the render loop.
             glFinish()
+        self._upload_vertex_dots()
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+
+    def _upload_vertex_dots(self):
+        """Upload each root-model vertex exactly once, independent of BSP."""
+        if self._dot_vao is not None:
+            glDeleteVertexArrays(1, [self._dot_vao])
+            self._dot_vao = None
+        if self._dot_vbo is not None:
+            glDeleteBuffers(1, [self._dot_vbo])
+            self._dot_vbo = None
+        if self._dot_ebo is not None:
+            glDeleteBuffers(1, [self._dot_ebo])
+            self._dot_ebo = None
+        self._dot_cached_refs = None
+        self._vertex_cache_key = None
+        self._dot_index_count = 0
+        self._dot_indices = {}
+        if self._model is None or not self._model.vertices:
+            return
+        refs = sorted(self._model.vertices)
+        self._dot_indices = {ref: index for index, ref in enumerate(refs)}
+        coords = np.asarray(
+            [self._model.vertices[ref].xyz for ref in refs], dtype=np.float64)
+        positions = np.ascontiguousarray(
+            (coords - np.asarray(self._mesh.center)) / self._mesh.scale,
+            dtype=np.float32)
+        self._dot_vao = int(glGenVertexArrays(1))
+        self._dot_vbo = int(glGenBuffers(1))
+        self._dot_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._dot_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._dot_vbo)
+        glBufferData(GL_ARRAY_BUFFER, positions.nbytes, positions, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, ctypes.c_void_p(0))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._dot_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
 
     def _upload_texture_assets(self):
         """OpenGL texture setup is GUI-thread-only; never called on orbit."""
