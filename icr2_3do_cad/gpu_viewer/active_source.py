@@ -47,8 +47,19 @@ def plane_vertex_dependencies(source, model, entries=None):
         return {}
     mapping = label_offsets(model)
     lines = source.splitlines()
+    entries = tuple(entries if entries is not None else
+                    index_source_entries(source))
+    # A plane-defining N3 vertex can be compiled into the binary but not
+    # included in Model.vertices: that table only stores polygon and RES
+    # anchor vertices. Identify vertex declarations in the source instead
+    # of discarding legitimate FACE/BSP dependencies.
+    vertex_labels = {
+        match.group(1)
+        for entry in entries if entry.category == "Vertices"
+        if (match := _LABEL.match(entry.preview)) is not None
+    }
     dependencies = {}
-    for entry in entries if entries is not None else index_source_entries(source):
+    for entry in entries:
         if entry.category not in ("FACE", "BSP"):
             continue
         statement = "\n".join(lines[entry.first_line:entry.last_line + 1])
@@ -64,8 +75,9 @@ def plane_vertex_dependencies(source, model, entries=None):
         refs = [term.strip() for term in plane.group(1).split(",")]
         if len(refs) != 3 or not all(_IDENTIFIER.fullmatch(x) for x in refs):
             continue
-        vertices = {mapping.get(label) for label in refs}
-        dependencies[offset] = vertices & model.vertices.keys()
+        vertices = {mapping[label] for label in refs
+                    if label in vertex_labels and label in mapping}
+        dependencies[offset] = vertices
     return dependencies
 
 
