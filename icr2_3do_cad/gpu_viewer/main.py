@@ -65,7 +65,10 @@ from gpu_viewer.visibility import (
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.textures import build_atlas, load_palette
 from gpu_viewer.source_tab import SourcePane
-from gpu_viewer.workspaces import WORKSPACE_MODES, suggest_workspace, workspace_scene_summary
+from gpu_viewer.workspaces import (
+    WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
+    resolve_lod_distance,
+)
 
 
 VERTEX_SHADER = """
@@ -1542,10 +1545,8 @@ class Window(QMainWindow):
     def _lod_changed(self, *args):
         mode = self.lod_mode_combo.currentData()
         self.lod_spin.setEnabled(mode == "manual")
-        self.viewer.lod_distance = (
-            None if mode == "all" else
-            self.lod_spin.value() if mode == "manual" else "auto"
-        )
+        self.viewer.lod_distance = resolve_lod_distance(
+            mode, self.lod_spin.value())
         self.viewer.invalidate_visibility()
 
     def _visibility_updated(self, message):
