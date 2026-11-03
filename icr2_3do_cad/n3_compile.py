@@ -529,6 +529,9 @@ class Compiler:
         remapped=Document(
             [replace(s,offset=self.offsets[s.label]) for s in self.document.statements],
             self.document.prologue,self.document.epilogue,self.document.original_text)
+        # GUI source inspection must resolve authored names against compiled
+        # offsets, never the previous binary's ICR2_OFFSET annotations.
+        checked.n3_label_offsets={s.label:s.offset for s in remapped.statements}
         return checked,remapped
 
 

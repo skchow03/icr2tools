@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from gpu_viewer.source_inspection import index_source_targets
+
 # Same N3 token categories and error location heuristics as the CPU editor.
 LEX_RE = re.compile(
     r'(?P<comment>%[^\n]*)|(?P<string>"[^"\n]*")|'
@@ -69,6 +71,7 @@ class SourcePane(QWidget):
     compileRequested = Signal(int, str)
     saveRequested = Signal()
     exportRequested = Signal()
+    cursorTargetChanged = Signal(object)  # None or (kind, authored_label)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -80,6 +83,8 @@ class SourcePane(QWidget):
         self._last_error_line = None
         self._initial = ''
         self._ready = False
+        self._source_index = index_source_targets("")
+        self._last_cursor_target = None
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -154,6 +159,8 @@ class SourcePane(QWidget):
             self.editor.setReadOnly(False)
         finally:
             self._setting = False
+        self._source_index = index_source_targets(normalized)
+        self._cursor_changed()
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
         self._debounce.stop()
@@ -170,6 +177,8 @@ class SourcePane(QWidget):
             self.status.setText(status)
         finally:
             self._setting = False
+        self._source_index = index_source_targets("")
+        self._cursor_changed()
 
     def _edited(self):
         if self._setting or not self._ready:
@@ -179,6 +188,7 @@ class SourcePane(QWidget):
         self.editor.setExtraSelections([])
         self.status.setText('Editing… last valid GPU preview retained until compilation succeeds.')
         self._debounce.start()
+        self._emit_cursor_target()
 
     def apply_now(self):
         if not self._ready:
@@ -195,9 +205,11 @@ class SourcePane(QWidget):
         self.applied_revision = revision
         self._last_error_line = None
         self.editor.setExtraSelections([])
+        self._source_index = index_source_targets(self.editor.toPlainText())
         self.status.setText(
             f'Valid N3: {len(model.vertices):,} vertices, '
             f'{len(model.polygons):,} polygons. GPU preview updated (unsaved).')
+        self._emit_cursor_target()
 
     def mark_error(self, revision, error):
         if revision != self.revision:
@@ -214,6 +226,7 @@ class SourcePane(QWidget):
             selected.cursor = QTextCursor(block)
             self.editor.setExtraSelections([selected])
         self.status.setText(f'Line {line}: {error}. Last valid GPU preview retained.')
+        self._emit_cursor_target()
 
     def goto_error(self):
         if not self._last_error_line:
@@ -225,6 +238,22 @@ class SourcePane(QWidget):
             self.editor.centerCursor()
             self.editor.setFocus()
 
+    def current_target(self):
+        """Return a declaration only when its source matches the compiled model."""
+        if not self._ready or self.pending or self._last_error_line is not None:
+            return None
+        return self._source_index.at_line(self.editor.textCursor().blockNumber())
+
+    def _emit_cursor_target(self):
+        if self._setting:
+            return
+        target = self.current_target()
+        if target != self._last_cursor_target:
+            self._last_cursor_target = target
+            self.cursorTargetChanged.emit(target)
+
     def _cursor_changed(self):
         cursor = self.editor.textCursor()
-        self.position.setText(f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
+        self.position.setText(
+            f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
+        self._emit_cursor_target()

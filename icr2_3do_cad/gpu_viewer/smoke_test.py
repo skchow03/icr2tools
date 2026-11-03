@@ -25,7 +25,11 @@ from PySide6.QtGui import QSurfaceFormat, QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from gpu_viewer.main import Window
+from gpu_viewer.main import Window, ortho_projection, perspective_projection
+from gpu_viewer.source_inspection import (
+    index_source_targets, target_offset, polygon_mesh_range,
+    vertex_screen_position,
+)
 
 
 def _make_smoke_child(path):
@@ -116,6 +120,7 @@ def run(path):
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
     fixed = {"tested": False}
+    inspection = {"tested": False}
     live = {"opened":False, "invalid_sent":False, "invalid_seen":False,
             "valid_sent":False, "valid_seen":False,
             "vbo":None, "azimuth":None, "source":None}
@@ -223,11 +228,83 @@ def run(path):
                 window.close()
                 app.quit()
                 return
+        if (dynamic_test and live["valid_seen"] and fixed["tested"] and
+                not inspection["tested"]):
+            pane = window.source_pane
+            inspected_vbo = view._vbo
+            targets = index_source_targets(pane.get_source()).targets
+            poly = next((
+                item for item in targets
+                if item.kind == "polygon" and
+                polygon_mesh_range(
+                    view._scene, view._mesh,
+                    target_offset(view._model, item.kind, item.label))
+            ), None)
+            if poly is None:
+                result["error"] = "Source POLY target cannot be mapped to visible GPU geometry"
+            else:
+                pane.editor.setTextCursor(QTextCursor(
+                    pane.editor.document().findBlockByNumber(poly.first_line)))
+                expected = target_offset(view._model, "polygon", poly.label)
+                if (view.inspection_kind != "polygon" or
+                        view.inspection_offset != expected):
+                    result["error"] = "Source POLY cursor did not activate GPU highlight"
+                elif view.grabFramebuffer().isNull():
+                    result["error"] = "Rendering highlighted POLY produced an empty framebuffer"
+                else:
+                    view_matrix, _, _ = view._camera_view_matrix()
+                    aspect = max(1, view.width()) / max(1, view.height())
+                    near = 0.001
+                    far = max(100.0, 40.0 * view.distance)
+                    if view.perspective:
+                        projection = perspective_projection(
+                            aspect, near, far,
+                            view.fixed_camera_fov if view.fixed_camera_mode else 60.0)
+                    else:
+                        projection = ortho_projection(view.half_height,
+                                                      aspect, near, far)
+                    candidates = []
+                    for item in targets:
+                        if item.kind != "vertex":
+                            continue
+                        offset = target_offset(view._model, item.kind, item.label)
+                        point = vertex_screen_position(
+                            view._model, view._mesh, offset,
+                            projection @ view_matrix, view.width(), view.height())
+                        if point is not None and (
+                                10 <= point[0] < view.width() - 10 and
+                                10 <= point[1] < view.height() - 10):
+                            candidates.append((item, offset, point))
+                    if not candidates:
+                        result["error"] = "No onscreen source vertex available to test marker"
+                    else:
+                        item, offset, point = candidates[len(candidates) // 2]
+                        pane.editor.setTextCursor(QTextCursor(
+                            pane.editor.document().findBlockByNumber(item.first_line)))
+                        if (view.inspection_kind != "vertex" or
+                                view.inspection_offset != offset):
+                            result["error"] = "Source vertex cursor did not activate GPU dot"
+                        else:
+                            picture = view.grabFramebuffer()
+                            pixel = picture.pixelColor(
+                                int(round(point[0])), int(round(point[1])))
+                            if (picture.isNull() or pixel.red() < 210 or
+                                    pixel.green() < 190 or pixel.blue() > 150):
+                                result["error"] = "Vertex dot was not visible in framebuffer"
+                            elif view._vbo != inspected_vbo:
+                                result["error"] = "Moving the source caret rebuilt GPU geometry"
+            inspection["tested"] = True
+            if result["error"] != "timed out":
+                timer.stop()
+                window.close()
+                app.quit()
+                return
         if (window._info and view._vao is not None and
                 view._frame_count >= 8 and elapsed >= 1.25 and
                 (not dynamic_test or
                  (reload_state["completed"] and not window.worker.isRunning()
-                  and live["valid_seen"] and fixed["tested"]))):
+                  and live["valid_seen"] and fixed["tested"]
+                  and inspection["tested"]))):
             image = view.grabFramebuffer()
             if image.isNull() or image.width() < 200 or image.height() < 200:
                 result["error"] = "Empty OpenGL framebuffer"
@@ -291,6 +368,7 @@ def run(path):
                     f"MIP hot reload {reload_state['completed']}; "
                     f"N3 invalid/valid preview {live['invalid_seen']}/{live['valid_seen']}; "
                     f"fixed camera XYZ {fixed['tested']}; "
+                    f"source POLY/vertex inspected {inspection['tested']}; "
                     f"observed {view.fps:.1f} FPS; screenshot {screenshot}",
                     flush=True,
                 )
