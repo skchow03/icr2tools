@@ -44,7 +44,11 @@ or discard unsaved edits.
   The external 3DO folder also resolves wheel and helmet models.
 - **Track** provides track-scene statistics (vertices, planes, external
   instances, RES switches and unresolved references), an external 3DO folder
-  for trackside assets, and fallback texture controls.
+  for trackside assets, fallback texture controls, and a **Track section detail**
+  selector for indexed Papyrus track models. The selector defaults to **HI** and
+  switches among **HI** (four section slots), **MED** (two), and **LO** (one).
+  Only the chosen tier is drawn; empty/NIL slots stay empty. The control is
+  disabled for models without a recognized track section table.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
@@ -59,7 +63,8 @@ used before source has been prepared, the Source pane opens and generates it
 first; repeat the requested action once preparation is complete.
 
 The viewer suggests **Car** for recognized car geometry or individual-car
-appearance wrappers, **Track** for clearly named track models (including
+appearance wrappers, **Track** for structurally recognized track section tables
+(such as PUTNAM.3D) or clearly named track models (including
 `track.3do` and `RENO.3D`), and leaves ambiguous filenames in the
 currently selected workspace rather than guessing their semantics.
 Select the correct mode manually for models whose names give no reliable hint.
@@ -123,8 +128,16 @@ The mode is a UI organization choice, not a conversion between file formats.
   BSPF/BSPA/BSP2/BSPN nodes from the actual camera position and paints
   selected polygon triangles in the model's back-to-front order, with GPU
   depth testing disabled. **BSP selection + GPU depth** uses the same selected
-  triangles with depth testing. **All polygons + GPU depth** ignores BSP/LOD
-  and is the legacy full-geometry diagnostic mode.
+  triangles with depth testing. **All polygons + GPU depth** ignores BSP/RES
+  and is the legacy full-geometry diagnostic mode for non-track models. For
+  recognized indexed tracks it still honors the selected HI/MED/LO section tier,
+  so the three alternative surfaces are not overlaid.
+- **Track section detail** is independent of **SWITCH DISTANCE / RES**. It
+  selects one tier from the track's trailing `secN_lN: LIST` pointer tables;
+  the viewer does not combine all seven slots as if they were scene geometry.
+  Switching is immediate (GPU indices only), without recompiling or changing
+  the source/binary file. Cars and ordinary standalone objects retain their
+  existing RES behavior.
 - **SWITCH DISTANCE / RES** in **Display** has a horizontal slider from
   **0 to the highest RES threshold** found in the loaded model and resolved
   external 3DO instances. The exact raw-unit value is editable beside the
