@@ -52,6 +52,28 @@ class GPUViewerLayoutTests(unittest.TestCase):
         checkbox.setChecked(True)
         self.assertTrue(self.window.viewer.texture_repeat)
 
+    def test_track_window_counts_and_adaptive_mode_are_available(self):
+        # No TRK is loaded in this layout smoke test. The adaptive choice
+        # is visible but disabled until validated DLONG metadata arrives.
+        selector = self.window.track_detail_combo
+        adaptive = selector.findData("window")
+        self.assertGreaterEqual(adaptive, 0)
+        self.assertFalse(selector.model().item(adaptive).isEnabled())
+        self.assertEqual(selector.currentData(), "hi")
+        controls = self.window.track_window_spins
+        self.assertEqual([spin.value() for spin in controls], [8, 5, 3])
+        self.assertTrue(all(not spin.isEnabled() for spin in controls))
+        self.assertEqual(self.window.viewer.track_window_counts, (8, 5, 3))
+
+        # The edits change the shared rendering state without recompiling.
+        controls[0].setValue(9)
+        self.assertEqual(self.window.viewer.track_window_counts, (9, 5, 3))
+        controls[1].setValue(0)
+        self.assertEqual(self.window.viewer.track_window_counts, (9, 0, 3))
+        controls[0].setValue(8)
+        controls[1].setValue(5)
+        self.assertEqual(self.window.viewer.track_window_counts, (8, 5, 3))
+
     def test_switch_distance_slider_and_modes(self):
         from n3_compile import compile_n3_text
         from gpu_viewer.scene import build_scene

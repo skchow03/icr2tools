@@ -15,7 +15,10 @@ import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
 from gpu_viewer.car import recolor_table, recolor_index
-from gpu_viewer.track_lod import detect_track_section_lods, selected_track_section_lists
+from gpu_viewer.track_lod import (
+    detect_track_section_lods, selected_track_section_lists,
+    selected_track_section_window_lists, track_section_dlongs,
+)
 from car_appearance import read_car_appearance, locate_base_geometry, AppearanceError
 from three_do import Model
 
@@ -42,6 +45,7 @@ class GPUScene:
     recolor_pairs: int = 0
     appearance: object | None = None
     track_section_lods: dict | None = None
+    track_section_dlongs: dict | None = None
     skybox: object | None = None
     skybox_error: str | None = None
     track_navigation: object | None = None
@@ -184,15 +188,18 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
         polygon_materials=polygon_materials,
         polygon_sources=polygon_sources,
         body_polygons=frozenset(body_polygons))
+    sections = detect_track_section_lods(root)
     return GPUScene(root, instances, links, polygon_lookup,
                     geometry, tuple(dict.fromkeys(warnings)),
                     len(root_recolor), appearance,
-                    track_section_lods=detect_track_section_lods(root))
+                    track_section_lods=sections,
+                    track_section_dlongs=track_section_dlongs(root, sections))
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                           view_direction=None, with_sprites=False,
-                          track_detail=None, bsp_mode='original'):
+                          track_detail=None, track_window=None,
+                          bsp_mode='original'):
     """Expand BSP/DYNAMIC painter order with optional PMP insertion markers.
 
     Default three-value result remains compatible with existing callers.
@@ -200,9 +207,16 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
     (instance_id, sprite record offset)) for each active PMP/PMP2, preserving
     its location between polygons rather than drawing sprites on top.
     """
-    overrides = (selected_track_section_lists(
-        scene.track_section_lods, track_detail, model=scene.root)
-        if track_detail is not None and scene.track_section_lods else None)
+    if track_window is not None and scene.track_section_lods:
+        overrides = selected_track_section_window_lists(
+            scene.track_section_lods, scene.track_section_dlongs,
+            model=scene.root, camera_dlong=track_window[0],
+            track_length=track_window[1], counts=track_window[2])
+    elif track_detail is not None and scene.track_section_lods:
+        overrides = selected_track_section_lists(
+            scene.track_section_lods, track_detail, model=scene.root)
+    else:
+        overrides = None
     spans = []
     sprite_events = []
     element_count = 0

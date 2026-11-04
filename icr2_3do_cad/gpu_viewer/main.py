@@ -68,6 +68,7 @@ from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_mod
 from gpu_viewer.skybox import (
     find_track_skybox, load_track_skybox, skybox_view_matrix,
 )
+from gpu_viewer.track_lod import DEFAULT_WINDOW_COUNTS
 from gpu_viewer.track_navigation import (
     find_matching_trk, TrackNavigation, DEFAULT_LONG_STEP_FT,
     DEFAULT_LAT_STEP_FT, UNITS_PER_FOOT,
@@ -477,7 +478,8 @@ class GLViewport(QOpenGLWidget):
         self.inspection_offset = None
         self.render_mode = 'painter'  # painter | depth | all
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
-        self.track_detail = 'hi'  # track indexed section tables only; not car RES
+        self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
+        self.track_window_counts = DEFAULT_WINDOW_COUNTS
         self._visibility_dirty = True
         self._index_count = 0
         self._visible_set = frozenset()
@@ -920,12 +922,22 @@ class GLViewport(QOpenGLWidget):
                 -math.cos(self.elevation) * math.cos(self.azimuth),
                 math.sin(self.elevation),
             )
+        window = None
+        detail = self.track_detail if self._track_lod_active() else None
+        if detail == 'window':
+            navigation = self.track_navigation
+            if (navigation is not None and self._scene.track_section_dlongs):
+                window = (navigation.dlong, navigation.length,
+                          self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'  # No TRK/metadata: safe global HI fallback.
         indices, visible, info, sprite_events = ordered_scene_indices(
             self._scene, self._mesh, eye,
             None if self.render_mode == 'all' else self.lod_distance,
             view_direction=direction, with_sprites=True,
             bsp_mode='off' if self.render_mode == 'all' else 'original',
-            track_detail=self.track_detail if self._track_lod_active() else None)
+            track_detail=detail, track_window=window)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
@@ -1550,19 +1562,41 @@ class Window(QMainWindow):
         track_layout.addWidget(self.track_status)
         track_layout.addWidget(QLabel("Track section detail"))
         self.track_detail_combo = QComboBox()
+        self.track_detail_combo.addItem("Camera window (HI / MED / LO)", "window")
         self.track_detail_combo.addItem("HI (4 geometry slots)", "hi")
         self.track_detail_combo.addItem("MED (2 geometry slots)", "med")
         self.track_detail_combo.addItem("LO (1 geometry slot)", "lo")
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData('hi'))
+        self.track_detail_combo.model().item(0).setEnabled(False)
         self.track_detail_combo.setEnabled(False)
         self.track_detail_combo.setToolTip(
-            "Show only the chosen tier from each indexed track section LIST. "
-            "This does not affect car/object RES switches or saved geometry.")
+            "Camera window uses section DATA DLONG positions and the TRK "
+            "camera (8 HI, 5 MED, 3 LO ahead and behind). Other sections "
+            "are omitted. Global HI/MED/LO remain available for overview.")
         self.track_detail_combo.currentIndexChanged.connect(self._track_detail_changed)
         track_layout.addWidget(self.track_detail_combo)
         self.track_detail_status = QLabel(
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        track_layout.addWidget(QLabel(
+            "Camera window sections each way (current section always HI)"))
+        window_counts = QHBoxLayout()
+        self.track_window_spins = []
+        for label, count in zip(('HI', 'MED', 'LO'), DEFAULT_WINDOW_COUNTS):
+            window_counts.addWidget(QLabel(label))
+            spin = QSpinBox()
+            spin.setRange(0, 250)
+            spin.setValue(count)
+            spin.setEnabled(False)
+            spin.setToolTip(
+                f"Number of {label} sections in each direction from the "
+                "camera. Zero disables this tier; overlaps use closer detail.")
+            spin.valueChanged.connect(self._track_window_changed)
+            window_counts.addWidget(spin)
+            self.track_window_spins.append(spin)
+        track_layout.addLayout(window_counts)
         self.track_drive_checkbox = QCheckBox("TRK camera — follow racing direction")
         self.track_drive_checkbox.setEnabled(False)
         self.track_drive_checkbox.setToolTip(
@@ -2196,6 +2230,16 @@ class Window(QMainWindow):
         self.viewer.sky_enabled = bool(checked)
         self.viewer.update()
 
+    def _track_window_changed(self, *_):
+        self.viewer.track_window_counts = tuple(
+            spin.value() for spin in self.track_window_spins)
+        if self.viewer.track_detail == 'window':
+            hi, med, lo = self.viewer.track_window_counts
+            self.track_detail_status.setText(
+                f"Camera window: current section HI, {hi} HI / {med} MED / "
+                f"{lo} LO sections in each direction; all others omitted")
+            self.viewer.invalidate_visibility()
+
     def _track_detail_changed(self, *args):
         self.viewer.track_detail = self.track_detail_combo.currentData()
         self.viewer.invalidate_visibility()
@@ -2483,12 +2527,39 @@ class Window(QMainWindow):
                 if scene.track_section_lods else
                 "Skybox only available for recognized indexed tracks")
         section_count = stats.get('track_section_lists', 0)
+        metadata_count = len(scene.track_section_dlongs or {})
+        can_window = (section_count > 0 and metadata_count == section_count
+                      and self.viewer.track_navigation is not None)
+        self.track_detail_combo.model().item(
+            self.track_detail_combo.findData('window')).setEnabled(can_window)
         self.track_detail_combo.setEnabled(bool(section_count))
-        self.track_detail_status.setText(
-            f"{section_count} indexed section LISTs detected. HI/MED/LO "
-            "are mutually exclusive and independent of RES distance."
-            if section_count else
-            "No eight-entry Papyrus track section index detected")
+        for spin in self.track_window_spins:
+            spin.setEnabled(can_window)
+        # New matching track defaults to adaptive DLONG selection; retaining
+        # another mode on source compile/reload is intentional.
+        current_detail = self.track_detail_combo.currentData()
+        if not was_reloading and not from_source:
+            current_detail = 'window' if can_window else 'hi'
+        elif current_detail == 'window' and not can_window:
+            current_detail = 'hi'
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData(current_detail))
+        self.viewer.track_detail = current_detail
+        self.viewer.invalidate_visibility()
+        if section_count:
+            self.track_detail_status.setText(
+                f"{section_count} indexed sections | DLONG DATA recovered: "
+                f"{metadata_count}/{section_count} | "
+                + (f"Camera window enabled ({self.viewer.track_window_counts[0]} HI / "
+                   f"{self.viewer.track_window_counts[1]} MED / "
+                   f"{self.viewer.track_window_counts[2]} LO each way). "
+                   "Current section is HI; everything outside is omitted."
+                   if can_window else
+                   "Camera-local LOD requires matching TRK and valid DATA; "
+                   "global HI/MED/LO remains available."))
+        else:
+            self.track_detail_status.setText(
+                "No Papyrus track section index detected")
         self.object_status.setText(workspace_scene_summary("object", stats))
         previous_ref = self.car_ref_combo.currentData()
         self.car_ref_combo.blockSignals(True)

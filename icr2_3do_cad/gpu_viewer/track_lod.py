@@ -20,6 +20,7 @@ index as well, which would draw all three LOD tiers simultaneously.
 from __future__ import annotations
 
 import struct
+from bisect import bisect_right
 
 
 DETAIL_SLOTS = {"hi": (0, 4), "med": (4, 6), "lo": (6, 7)}
@@ -138,3 +139,129 @@ def selected_track_section_lists(sections, detail, *, model=None):
 def model_kind(model, pointer):
     """NIL is either a zero pointer or a reference to flavor-zero."""
     return model.records.get(pointer) if model is not None else None
+
+
+# The four DATA integers are the DLONG start of the corresponding HI
+# subsegments. The source layout refers to this DATA directly as LIST slot 8.
+# Papyrus' original binary compiler leaves a 20-byte DATA record directly
+# BEFORE each seven-pointer section LIST, but unlinks it from the scene graph.
+# Consequently Model.records does not know about these compiled DATA records.
+_DATA_TAG = -(1 << 31) + 17
+DEFAULT_WINDOW_COUNTS = (8, 5, 3)  # each side of camera; current = HI
+
+
+def _section_data_values(model, offset):
+    """Read a four-DLONG DATA record at a known body offset, if valid."""
+    if offset < 0 or offset + 20 > len(model.body):
+        return None
+    tag, *values = struct.unpack_from("<5i", model.body, offset)
+    if (tag != _DATA_TAG or any(value < 0 for value in values)
+            or values != sorted(values)):
+        return None
+    return tuple(values)
+
+
+def track_section_dlongs(model, sections):
+    """Get four DLONG start positions for every detected track section.
+
+    For .3D, the eighth LIST pointer addresses DATA; for original .3DO,
+    the unlinked DATA bytes precede each seven-pointer LIST. Binary alias
+    LISTs can refer to the same geometry and some initial aliases lack a
+    preceding DATA record: look up the equivalent four values from the other
+    copies of the same seven-pointer signature in the full expanded index.
+
+    Return an empty mapping if metadata is missing or ambiguous. This avoids
+    placing a moving camera on guessed coordinates. The legacy global HI/MED/
+    LO selection remains available if metadata cannot be recovered.
+    """
+    if not sections:
+        return {}
+    root = _list_slots(model, model.root_offset)
+    if not root:
+        return {}
+    source = model.records.get(root[0]) == 17
+    candidates = (root[1:] if source else
+                  _list_slots(model, root[0]) or ())
+    by_signature = {}
+    for offset in candidates:
+        slots = _list_slots(model, offset)
+        if slots is None:
+            continue
+        signature = slots[:7]
+        if source:
+            metadata = (_section_data_values(model, slots[7])
+                        if len(slots) == 8 else None)
+        else:
+            metadata = (_section_data_values(model, offset - 20)
+                        if len(slots) == 7 else None)
+        if metadata is None:
+            continue
+        if signature in by_signature and by_signature[signature] != metadata:
+            # Conflicting copies cannot safely be correlated with one DLONG.
+            return {}
+        by_signature[signature] = metadata
+
+    result = {}
+    for offset, geometry in sections.items():
+        metadata = by_signature.get(tuple(geometry))
+        if metadata is None:
+            return {}
+        result[offset] = metadata
+    if len(set(values[0] for values in result.values())) != len(result):
+        # Two different section layouts claiming the same start are ambiguous.
+        return {}
+    return result
+
+
+def selected_track_section_window_lists(
+        sections, dlongs, *, model, camera_dlong, track_length,
+        counts=DEFAULT_WINDOW_COUNTS):
+    """Build camera-local HI/MED/LO LIST overrides, omitting all other sections.
+
+    The section containing DLONG (from the DATA start values) is HI.
+    In BOTH directions from that section, the next counts[0] sections use
+    HI, then counts[1] MED, then counts[2] LO. Other sections are omitted.
+    On closed tracks this wraps across the start/finish line. A section may
+    appear in overlapping windows on short tracks; closest/highest detail wins.
+
+    Returns an empty root override if all requested counts are zero except
+    for the current section. Does not mutate the model or its polygon VBO.
+    """
+    if not sections or set(dlongs) != set(sections):
+        raise ValueError("Track section DLONG metadata is incomplete")
+    if (not isinstance(counts, (tuple, list)) or len(counts) != 3
+            or any(not isinstance(n, int) or n < 0 for n in counts)):
+        raise ValueError("HI/MED/LO window counts must be three nonnegative integers")
+    if not isinstance(track_length, (int, float)) or track_length <= 0:
+        raise ValueError("Track lap length must be positive")
+    if not isinstance(camera_dlong, (int, float)):
+        raise ValueError("Camera DLONG must be numeric")
+
+    ordered = sorted(sections, key=lambda offset: dlongs[offset][0])
+    starts = [dlongs[offset][0] for offset in ordered]
+    if starts[0] != 0 or starts[-1] >= track_length:
+        raise ValueError("Section starts must cover DLONG zero within track length")
+
+    current = bisect_right(starts, camera_dlong % track_length) - 1
+    n = len(ordered)
+    ranks = {ordered[current]: "hi"}
+    hi, med, lo = counts
+    for distance in range(1, min(n, hi + med + lo + 1)):
+        tier = ("hi" if distance <= hi else
+                "med" if distance <= hi + med else "lo")
+        for direction in (1, -1):
+            offset = ordered[(current + direction * distance) % n]
+            # The closest window has priority on short tracks.
+            ranks.setdefault(offset, tier)
+
+    overrides = {}
+    for offset, tier in ranks.items():
+        start, end = DETAIL_SLOTS[tier]
+        overrides[offset] = tuple(
+            p for p in sections[offset][start:end]
+            if p and model_kind(model, p) != 0)
+    # Use the track's original painter order for the selected sections,
+    # not DLONG-sorted order, so polygons preserve their authored ordering.
+    overrides[model.root_offset] = tuple(
+        offset for offset in sections if offset in ranks)
+    return overrides
