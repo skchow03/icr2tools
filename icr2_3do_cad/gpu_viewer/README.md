@@ -232,10 +232,13 @@ the viewport so those letters can be typed normally in the N3 editor.
   so the three alternative surfaces are not overlaid. **Wireframe (polygon
   outlines only)** draws original polygon boundary edges as pale lines against
   the dark viewport, with no filled triangles, triangulation diagonals,
-  textures, PMP sprites, or skybox. Its see-through view ignores BSP/RES
-  culling, but still respects the selected HI/MED/LO track section detail so
-  tracks do not show all surface variants stacked together. Selected source
-  polygons receive an amber outline and vertex inspection markers still work.
+  textures, PMP sprites, or skybox. Its see-through view ignores BSP
+  face culling but **honors the same SWITCH DISTANCE / RES selection** as
+  the filled modes. Automatic chooses by camera-to-anchor distance; Manual
+  uses the slider value; All levels shows all RES branches. Selected HI/MED/LO
+  track section detail still applies to avoid stacking track surface variants.
+  Selected source polygons receive an amber outline and vertex inspection
+  markers still work.
   The edge buffer is built only on first use and reused when orbiting;
   loading or recompiling new geometry invalidates it.
 - **Track section detail** is independent of **SWITCH DISTANCE / RES**. It
@@ -244,14 +247,16 @@ the viewport so those letters can be typed normally in the N3 editor.
   Switching is immediate (GPU indices only), without recompiling or changing
   the source/binary file. Cars and ordinary standalone objects retain their
   existing RES behavior.
-- **SWITCH DISTANCE / RES** in **Display** has a horizontal slider from
-  **0 to the highest RES threshold** found in the loaded model and resolved
-  external 3DO instances. The exact raw-unit value is editable beside the
-  slider; changing either selects **Manual (slider)** automatically. The
-  range is recalculated and the value clamped when a different model loads
-  or valid source is recompiled. The slider is disabled if no positive
-  RES threshold is present. **Automatic (per RES anchor)** remains the
-  default, and **Show all detail levels** still renders every branch.
+- **SWITCH DISTANCE / RES** is now in a compact strip **immediately
+  above the GPU viewport**, rather than hidden in Display Settings. It
+  provides **Auto / Manual / All levels**, a horizontal slider from **0 to
+  the highest RES threshold**, and an exact raw-unit spin box. Dragging
+  the slider or changing the number automatically selects **Manual**;
+  **Auto** uses the camera-to-anchor distance; **All levels** shows every
+  RES branch. The range is recalculated and clamped on model reload or
+  valid source recompilation; controls are disabled when no positive
+  RES threshold exists. The same setting controls filled and wireframe
+  modes, including resolved external 3DO instances.
   Automatic computes each RES distance in local model coordinates, including
   transformed DYNAMIC objects, using Euclidean distance as an approximation
   rather than verified game-exact behavior.
