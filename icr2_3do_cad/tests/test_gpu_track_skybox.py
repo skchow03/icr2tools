@@ -10,7 +10,8 @@ from pathlib import Path
 import numpy as np
 
 from gpu_viewer.skybox import (
-    SKY_EYE, find_track_skybox, load_track_skybox, skybox_view_matrix,
+    SKY_EYE, find_track_skybox, load_track_skybox,
+    load_preferred_track_skybox, skybox_view_matrix,
 )
 from gpu_viewer.scene import build_scene
 from n3_compile import compile_n3_text
@@ -59,6 +60,62 @@ class TrackSkyboxTests(unittest.TestCase):
         nested.write_bytes(self.model.raw)
         self.assertEqual(find_track_skybox(track, objects), nested)
         self.assertIsNone(find_track_skybox(self.folder / "other" / "track.3do"))
+
+    def test_horiz_n3_fallback_compiles_without_binary(self):
+        track = self.folder / "track.3d"
+        track.touch()
+        source = self.folder / "HoRiZ.3D"
+        source.write_text(SKY_SOURCE, encoding="utf-8")
+        self.assertEqual(find_track_skybox(track), source)
+        sky, warning = load_preferred_track_skybox(track, self.palette)
+        self.assertIsNone(warning)
+        self.assertEqual(sky.path, source)
+        self.assertEqual(sky.mesh.polygon_count, 6)
+        self.assertEqual(sky.indices.size, sky.mesh.triangle_count * 3)
+        self.assertEqual(source.read_text(), SKY_SOURCE)
+
+    def test_corrupt_horiz_3do_uses_valid_horiz_3d(self):
+        track = self.folder / "track.3do"
+        track.touch()
+        invalid = self.folder / "HORIZ.3DO"
+        invalid.write_bytes(b"broken")
+        alternative = self.folder / "horiz.3d"
+        alternative.write_text(SKY_SOURCE, encoding="utf-8")
+        self.assertEqual(find_track_skybox(track), alternative)
+        sky, warning = load_preferred_track_skybox(track, self.palette)
+        self.assertEqual(sky.path, alternative)
+        self.assertIn("HORIZ.3DO", warning)
+        self.assertEqual(invalid.read_bytes(), b"broken")
+
+    def test_valid_binary_precedes_n3_across_search_folders(self):
+        track = self.folder / "track.3do"
+        track.touch()
+        source = self.folder / "horiz.3d"
+        source.write_text(SKY_SOURCE, encoding="utf-8")
+        objects = self.folder / "objects"
+        objects.mkdir()
+        binary = objects / "HORIZ.3DO"
+        binary.write_bytes(self.model.raw)
+        self.assertEqual(find_track_skybox(track), binary)
+        sky, warning = load_preferred_track_skybox(track, self.palette)
+        self.assertIsNone(warning)
+        self.assertEqual(sky.path, binary)
+
+    def test_nonrenderable_binary_falls_back_to_renderable_n3(self):
+        track = self.folder / "track.3do"
+        track.touch()
+        binary = self.folder / "horiz.3do"
+        source_empty = """3D VERSION 3.0;
+root: DYNAMIC 0,0,0,0,0,0,1, EXTERN "missing";
+"""
+        empty, _ = compile_n3_text(
+            source_empty, binary, associate_planes=False)
+        binary.write_bytes(empty.raw)
+        alternative = self.folder / "horiz.3d"
+        alternative.write_text(SKY_SOURCE, encoding="utf-8")
+        sky, warning = load_preferred_track_skybox(track, self.palette)
+        self.assertEqual(sky.path, alternative)
+        self.assertIn("no renderable skybox polygons", warning)
 
     def test_background_mesh_is_independent_and_preserves_binary(self):
         path = self.folder / "horiz.3do"
