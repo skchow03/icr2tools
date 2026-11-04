@@ -126,6 +126,9 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         info = self.wait_loaded(without)
         self.assertFalse(info["palette_auto"])
         self.assertIsNone(info["palette_warning"])
+        self.assertTrue(self.window.load_error_dialog.isHidden())
+        self.assertIn("no reported load issues",
+                      self.window.load_error_summary.text())
         self.assertEqual(self.window.palette_path, previous)
 
         broken = self.make3d(self.folder / "broken", "badpalette.3d")
@@ -134,6 +137,9 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         self.assertFalse(info["palette_auto"])
         self.assertIn("SUNNY.PCX", info["palette_warning"])
         self.assertIn("using", info["palette_warning"])
+        self.assertFalse(self.window.load_error_dialog.isHidden())
+        self.assertIn("SUNNY.PCX", self.window.load_error_text.toPlainText())
+        self.window.load_error_dialog.close()
         self.assertEqual(self.window.palette_path, previous)
         self.assertIn("SUNNY.PCX", self.window.statusBar().currentMessage())
         self.assertTrue(np.array_equal(
