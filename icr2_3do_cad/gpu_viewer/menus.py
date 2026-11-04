@@ -163,6 +163,7 @@ def install_menus(window):
                 lambda: window.open_settings_dialog("display"))
     _add_action(view, "Advanced &Diagnostics…",
                 lambda: window.open_settings_dialog("advanced"))
+    _add_action(view, "Load &Error Log…", window.open_load_error_log)
     options = view.addMenu("Display &Options")
     _bind_checkbox(options, "Textures", window.show_textures)
     _bind_checkbox(options, "PMP sprites", window.show_sprites)
