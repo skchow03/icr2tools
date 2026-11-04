@@ -13,10 +13,16 @@ class TrackNavigationUITests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
+            from PySide6.QtGui import QSurfaceFormat
             from PySide6.QtWidgets import QApplication
             from gpu_viewer.main import Window
         except (ImportError, SystemExit) as exc:
             raise unittest.SkipTest(str(exc))
+        fmt = QSurfaceFormat()
+        fmt.setVersion(3, 3)
+        fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+        fmt.setDepthBufferSize(24)
+        QSurfaceFormat.setDefaultFormat(fmt)
         cls.app = QApplication.instance() or QApplication([])
         cls.window = Window()
         cls.window.show()
