@@ -434,6 +434,8 @@ class GLViewport(QOpenGLWidget):
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
     fixedCameraModeChanged = Signal(bool)
+    trackDriveModeChanged = Signal(bool)
+    trackDrivePositionChanged = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -488,6 +490,12 @@ class GLViewport(QOpenGLWidget):
         self.half_height = 1.6
         self.perspective = False
         self.fixed_camera_mode = False
+        self.track_navigation = None
+        self.track_drive_enabled = False
+        self._track_drive_pose = None
+        self._saved_track_view = None
+        self.track_forward_step_ft = DEFAULT_LONG_STEP_FT
+        self.track_lateral_step_ft = DEFAULT_LAT_STEP_FT
         self.fixed_camera_eye = tuple(FIXED_CAMERA_DEFAULT_EYE)
         self.fixed_camera_fov = 60.0
         self._saved_external_view = None
@@ -877,6 +885,8 @@ class GLViewport(QOpenGLWidget):
 
     def _camera_eye_model(self):
         """Unscaled Papyrus eye used for BSP and automatic RES switches."""
+        if self.track_drive_enabled and self._track_drive_pose is not None:
+            return self._track_drive_pose.eye
         if self.fixed_camera_mode:
             return self.fixed_camera_eye
         return camera_in_model_units(
@@ -884,9 +894,14 @@ class GLViewport(QOpenGLWidget):
             self.azimuth, self.elevation, self.distance)
 
     def _camera_view_matrix(self):
-        """Fixed Camera changes look direction without moving its eye."""
+        """Fixed and track cameras change orientation without moving their eye."""
         target = self.target
-        if self.fixed_camera_mode and self._mesh is not None:
+        if (self.track_drive_enabled and self._track_drive_pose is not None
+                and self._mesh is not None):
+            target = fixed_eye_view_target(
+                self._mesh.center, self._mesh.scale, self._track_drive_pose.eye,
+                self.azimuth, self.elevation, self.distance)
+        elif self.fixed_camera_mode and self._mesh is not None:
             target = fixed_eye_view_target(
                 self._mesh.center, self._mesh.scale, self.fixed_camera_eye,
                 self.azimuth, self.elevation, self.distance)
