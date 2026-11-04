@@ -1,4 +1,4 @@
-"""Small UI smoke tests for the GPU viewer's simplified inspector layout.
+"""UI smoke tests for the GPU viewer's viewport-first layout.
 
 Requires a Qt-capable desktop (or xvfb-run) and the gpu_viewer requirements.
 No OpenGL model is loaded, so these tests do not exercise rendering.
@@ -18,11 +18,12 @@ class GPUViewerLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication, QScrollArea
             from gpu_viewer.main import Window
         except (ImportError, SystemExit) as error:
             raise unittest.SkipTest(f"GPU viewer requirements unavailable: {error}")
         cls.app = QApplication.instance() or QApplication([])
+        cls.QScrollArea = QScrollArea
         cls.window = Window()
 
     @classmethod
@@ -46,7 +47,7 @@ class GPUViewerLayoutTests(unittest.TestCase):
                 self.assertFalse(dialog.isModal())
                 self.assertTrue(dialog.isHidden())
                 self.assertIsNotNone(dialog.findChild(
-                    QScrollArea))
+                    self.QScrollArea))
         self.window.open_settings_dialog("model", workspace=1)
         self.assertEqual(self.window.workspace_tabs.currentIndex(), 1)
         self.assertFalse(self.window.settings_dialogs["model"].isHidden())
