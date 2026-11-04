@@ -46,9 +46,24 @@ or discard unsaved edits.
   instances, RES switches and unresolved references), an external 3DO folder
   for trackside assets, fallback texture controls, and a **Track section detail**
   selector for indexed Papyrus track models. The selector defaults to **HI** and
-  switches among **HI** (four section slots), **MED** (two), and **LO** (one).
-  Only the chosen tier is drawn; empty/NIL slots stay empty. The control is
-  disabled for models without a recognized track section table. The **Skybox
+  switches among **HI** (four section slots), **MED** (two), and **LO** (one)
+  as global preview modes. With a matching same-folder TRK and section DLONG
+  metadata, the default is **Camera window (HI / MED / LO)**: the section
+  currently containing the camera's DLONG and the next **8 sections in each
+  direction** are drawn at HI; the next **5 each way** at MED; then **3 each
+  way** at LO. All farther sections are omitted. The three per-direction
+  counts are independently adjustable in the Track tab, including zero;
+  near/far windows wrap across DLONG zero for closed tracks. Overlap on
+  short tracks prioritizes the nearer/highest detail. The camera window
+  works with ordinary `.3D` source DATA (the eighth section LIST slot) and
+  with original compiled `.3do`, where the compiler preserves the four
+  DLONG values in otherwise unreferenced DATA immediately preceding each
+  seven-pointer section LIST. Identical compiled LIST aliases share their
+  metadata. Missing/ambiguous metadata disables adaptive mode, while global
+  HI/MED/LO continues to work. The mode never modifies source or binaries,
+  reuploads the full polygon VBO on movement, or affects car/object RES.
+  Empty/NIL slots stay empty. The selector is disabled for models without
+  a recognized track section table. The **Skybox
   (horiz.3do)** checkbox is enabled and on by default if a readable
   `horiz.3do` is found beside an indexed track or in its `objects`/
   configured external 3DO folder; recognition is case-insensitive. The skybox
