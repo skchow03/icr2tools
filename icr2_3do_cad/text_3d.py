@@ -185,6 +185,35 @@ def _export_default(model):
     return "\n".join(lines)+"\n"
 
 
+def export_compilable_text(model: Model) -> str:
+    """Generate clean, independent N3 source for a binary 3DO.
+
+    This is for the GPU viewer's edit/recompile/export workflow, where the
+    source is compiled into a *new* binary. The conservative CAD import path
+    still uses export_text() with ICR2_OFFSET identities to patch the
+    corresponding records of the original loaded 3DO.
+    """
+    checked = Model(model.path, raw_data=model.build_modified_bytes()[0])
+    offsets = _all_offsets(checked)
+    root = checked.root_offset
+    if root not in offsets:
+        raise FormatError("Cannot export independent N3 source: root record missing")
+    labels = {off: ("root" if off == root else f"_{off}") for off in offsets}
+    lines = ["3D VERSION 3.0;", ""]
+    for off in offsets:
+        command = _command(checked, off)
+        # Replace actual pointer tokens, not numerals, quoted asset names or
+        # portions of longer identifiers. All references to the binary root
+        # now point to the human-readable 'root' declaration.
+        command = re.sub(
+            r'"[^"]*"|(?<![A-Za-z_0-9])_(\d+)\b',
+            lambda m: (m.group(0) if m.group(0).startswith('"')
+                       else labels.get(int(m.group(1)), m.group(0))),
+            command)
+        lines.append(f"{labels[off]}: {command};")
+    return "\n".join(lines) + "\n"
+
+
 def _without_comment(line):
     # N3 uses % as the comment introducer, including indented full-line comments.
     # Preserve the comment verbatim in each statement's trailing field.
