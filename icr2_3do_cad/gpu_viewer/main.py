@@ -49,8 +49,9 @@ try:
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
     )
     from PySide6.QtWidgets import (
-        QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QLabel,
-        QLineEdit, QMainWindow, QMessageBox, QPushButton, QSpinBox,
+        QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+        QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+        QMessageBox, QPushButton, QSpinBox,
         QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -1381,61 +1382,16 @@ class Window(QMainWindow):
         root = QWidget()
         layout = QVBoxLayout(root)
         # Collapsible, scrollable settings leave the majority of the window to the model.
-        self.sidebar_content = QWidget()
-        side_layout = QVBoxLayout(self.sidebar_content)
-        side_layout.setContentsMargins(8, 8, 8, 8)
-        side_layout.setSpacing(6)
-        self.section_buttons = {}
+        # The document area contains only the GPU viewport and N3 editor.
+        # The former sidebar widgets live in nonmodal, scrollable dialogs,
+        # so all existing controls and signal connections remain intact.
+        self.settings_dialogs = {}
+        model_layout = self._make_settings_dialog("model", "Model Settings")
+        display_layout = self._make_settings_dialog("display", "Display Settings")
+        assets_layout = self._make_settings_dialog("assets", "Asset Settings")
+        advanced_layout = self._make_settings_dialog(
+            "advanced", "Advanced Diagnostics")
 
-        def section(title, expanded):
-            header = QToolButton()
-            header.setText(title)
-            header.setCheckable(True)
-            header.setChecked(expanded)
-            header.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-            header.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
-            side_layout.addWidget(header)
-            self.section_buttons[title] = header
-            panel = QWidget()
-            content = QVBoxLayout(panel)
-            content.setContentsMargins(4, 2, 4, 8)
-            content.setSpacing(6)
-            panel.setVisible(expanded)
-            side_layout.addWidget(panel)
-
-            def toggle(checked, target=panel, button=header):
-                target.setVisible(checked)
-                button.setArrowType(
-                    Qt.ArrowType.DownArrow if checked else Qt.ArrowType.RightArrow)
-            header.toggled.connect(toggle)
-            return content
-
-        model_layout = section("Model", True)
-        display_layout = section("Display", True)
-        assets_layout = section("Assets", False)
-        advanced_layout = section("Advanced diagnostics", False)
-        side_layout.addStretch()
-
-        toolbar = QHBoxLayout()
-        open_button = QPushButton("Open…")
-        open_button.clicked.connect(self.open_dialog)
-        toolbar.addWidget(open_button)
-        save_source = QPushButton("Save Source")
-        save_source.clicked.connect(
-            lambda: self._source_toolbar_action(self._save_source))
-        toolbar.addWidget(save_source)
-        export_3do = QPushButton("Export 3DO")
-        export_3do.clicked.connect(
-            lambda: self._source_toolbar_action(self._export_compiled_source))
-        toolbar.addWidget(export_3do)
-        frame_button = QPushButton("Frame All (F)")
-        frame_button.clicked.connect(self.viewer.frame_all)
-        toolbar.addWidget(frame_button)
-        for name in ("3D", "Top", "Front", "Side"):
-            button = QPushButton(name)
-            button.clicked.connect(
-                lambda checked=False, mode=name: self.viewer.set_view(mode))
-            toolbar.addWidget(button)
         self.fixed_camera_button = QPushButton("Fixed Camera")
         self.fixed_camera_button.setCheckable(True)
         self.fixed_camera_button.setToolTip(
@@ -1448,15 +1404,15 @@ class Window(QMainWindow):
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
         display_layout.addWidget(self.perspective_toggle)
-        self.source_toggle = QPushButton('.3D Source')
+        # Menu state is backed by this control, but there is no toolbar.
+        self.source_toggle = QPushButton(".3D Source", self)
         self.source_toggle.setCheckable(True)
         self.source_toggle.toggled.connect(self._toggle_source)
-        toolbar.addWidget(self.source_toggle)
+        self.source_toggle.hide()
         self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
         self.benchmark_toggle.setChecked(benchmark)
         advanced_layout.addWidget(self.benchmark_toggle)
-        toolbar.addStretch()
-        layout.addLayout(toolbar)
+
         # Expose raw Papyrus coordinates while Fixed Camera is active.
         # Keep these controls outside the already-crowded view toolbar.
         self.fixed_camera_controls = QWidget(root)
@@ -1707,40 +1663,12 @@ class Window(QMainWindow):
         model_layout.addWidget(self.load_label)
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.editor_splitter.addWidget(self.viewer)
-        self.source_tabs = QTabWidget()
         self.source_pane = SourcePane()
-        self.source_tabs.addTab(self.source_pane, '.3D Source')
-        source_help = QLabel(
-            'Edit Papyrus N3 text; after a 650 ms pause, valid source '
-            'recompiles off the GUI thread and updates the GPU viewport.\\n\\n'
-            'An invalid edit retains the last valid model. '
-            'Use Apply now to compile immediately, and Save .3D as… '
-            'to save the source text. Export compiled .3DO… writes a '
-            'separate binary only after successful compilation.\\n\\n'
-            'When a car appearance wrapper is open, the source is for '
-            'its shared base geometry; the livery and RECOLOR remain '
-            'read-only overlays. The original source files are never '
-            'overwritten without explicit confirmation.')
-        source_help.setWordWrap(True)
-        source_help.setAlignment(Qt.AlignmentFlag.AlignTop)
-        source_help.setMargin(16)
-        self.source_tabs.addTab(source_help, 'Help')
-        self.editor_splitter.addWidget(self.source_tabs)
+        self.editor_splitter.addWidget(self.source_pane)
         self.editor_splitter.setStretchFactor(0, 2)
         self.editor_splitter.setStretchFactor(1, 1)
-        self.source_tabs.hide()
-        sidebar = QScrollArea()
-        sidebar.setWidgetResizable(True)
-        sidebar.setWidget(self.sidebar_content)
-        sidebar.setMinimumWidth(265)
-        sidebar.setMaximumWidth(410)
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.main_splitter.addWidget(self.editor_splitter)
-        self.main_splitter.addWidget(sidebar)
-        self.main_splitter.setStretchFactor(0, 1)
-        self.main_splitter.setStretchFactor(1, 0)
-        self.main_splitter.setSizes([970, 300])
-        layout.addWidget(self.main_splitter, stretch=1)
+        self.source_pane.hide()
+        layout.addWidget(self.editor_splitter, stretch=1)
         for label in (self.stats_label, self.visibility_label,
                       self.polygon_status, self.palette_status,
                       self.texture_status, self.sprite_status,
@@ -1754,6 +1682,8 @@ class Window(QMainWindow):
         assets_layout.addWidget(self.texture_status)
         assets_layout.addWidget(self.sprite_status)
         self.setCentralWidget(root)
+        # Source is the only secondary pane, shown alongside the viewport.
+        self.source_toggle.setChecked(True)
         install_menus(self)
         self._workspace_changed(self.workspace_tabs.currentIndex())
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
@@ -1782,6 +1712,37 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _make_settings_dialog(self, key, title):
+        """Create an optional settings window without occupying viewport space."""
+        dialog = QDialog(self)
+        dialog.setObjectName(f"{key}SettingsDialog")
+        dialog.setWindowTitle(f"{title} — ICR2 GPU Viewer")
+        dialog.setModal(False)
+        dialog.resize(520, 640)
+        outer = QVBoxLayout(dialog)
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        controls = QVBoxLayout(content)
+        controls.setContentsMargins(12, 12, 12, 12)
+        controls.setSpacing(8)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.close)
+        outer.addWidget(buttons)
+        self.settings_dialogs[key] = dialog
+        return controls
+
+    def open_settings_dialog(self, key, *, workspace=None):
+        """Open a dialog on demand; never transfer/recreate control state."""
+        if workspace is not None:
+            self.workspace_tabs.setCurrentIndex(workspace)
+        dialog = self.settings_dialogs[key]
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _workspace_changed(self, index):
         if 0 <= index < self.workspace_tabs.count():
@@ -1870,10 +1831,9 @@ class Window(QMainWindow):
             f"Shift = 5x")
 
     def _toggle_source(self, checked):
-        self.source_tabs.setVisible(checked)
+        self.source_pane.setVisible(checked)
         if checked:
             self.editor_splitter.setSizes([780, 480])
-            self.source_tabs.setCurrentIndex(0)
             self._ensure_source_loaded()
             self._source_target_changed(self.source_pane.current_target())
         else:
