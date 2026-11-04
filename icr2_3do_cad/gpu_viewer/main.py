@@ -2229,6 +2229,12 @@ class Window(QMainWindow):
         self.viewer.sky_enabled = bool(checked)
         self.viewer.update()
 
+    def _track_window_changed(self, *_):
+        self.viewer.track_window_counts = tuple(
+            spin.value() for spin in self.track_window_spins)
+        if self.viewer.track_detail == 'window':
+            self.viewer.invalidate_visibility()
+
     def _track_detail_changed(self, *args):
         self.viewer.track_detail = self.track_detail_combo.currentData()
         self.viewer.invalidate_visibility()
@@ -2516,12 +2522,37 @@ class Window(QMainWindow):
                 if scene.track_section_lods else
                 "Skybox only available for recognized indexed tracks")
         section_count = stats.get('track_section_lists', 0)
+        metadata_count = len(scene.track_section_dlongs or {})
+        can_window = (section_count > 0 and metadata_count == section_count
+                      and self.viewer.track_navigation is not None)
+        self.track_detail_combo.model().item(
+            self.track_detail_combo.findData('window')).setEnabled(can_window)
         self.track_detail_combo.setEnabled(bool(section_count))
-        self.track_detail_status.setText(
-            f"{section_count} indexed section LISTs detected. HI/MED/LO "
-            "are mutually exclusive and independent of RES distance."
-            if section_count else
-            "No eight-entry Papyrus track section index detected")
+        for spin in self.track_window_spins:
+            spin.setEnabled(can_window)
+        # New matching track defaults to adaptive DLONG selection; retaining
+        # another mode on source compile/reload is intentional.
+        current_detail = self.track_detail_combo.currentData()
+        if not was_reloading and not from_source:
+            current_detail = 'window' if can_window else 'hi'
+        elif current_detail == 'window' and not can_window:
+            current_detail = 'hi'
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData(current_detail))
+        self.viewer.track_detail = current_detail
+        self.viewer.invalidate_visibility()
+        if section_count:
+            self.track_detail_status.setText(
+                f"{section_count} indexed sections | DLONG DATA recovered: "
+                f"{metadata_count}/{section_count} | "
+                + ("Camera window enabled (8 HI / 5 MED / 3 LO each way). "
+                   "Current section is HI; everything outside is omitted."
+                   if can_window else
+                   "Camera-local LOD requires matching TRK and valid DATA; "
+                   "global HI/MED/LO remains available."))
+        else:
+            self.track_detail_status.setText(
+                "No Papyrus track section index detected")
         self.object_status.setText(workspace_scene_summary("object", stats))
         previous_ref = self.car_ref_combo.currentData()
         self.car_ref_combo.blockSignals(True)
