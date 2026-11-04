@@ -63,7 +63,16 @@ or discard unsaved edits.
   HI/MED/LO continues to work. The mode never modifies source or binaries,
   reuploads the full polygon VBO on movement, or affects car/object RES.
   Empty/NIL slots stay empty. The selector is disabled for models without
-  a recognized track section table. The **Skybox
+  a recognized track section table. **Recognized Track files default to
+  BSP selection + GPU depth** (cars and standalone objects keep their
+  painter-order default). The viewer identifies **TSD / DetailList** track
+  surface markings from the alternating POLY + LINE/NIL record signature,
+  including original compiled 3DOs without source names. Only visible TSD
+  triangles are redrawn in one batched, depth-biased OpenGL overlay pass,
+  preventing stripes and road-texture Z-fighting while preserving ordinary
+  depth occlusion from closer scenery. No source vertex heights, MIP data or
+  BSP/LOD selections are changed; global rendering modes remain selectable.
+  The **Skybox
   (horiz.3do)** checkbox is enabled and on by default if a readable
   `horiz.3do` is found beside an indexed track or in its `objects`/
   configured external 3DO folder; recognition is case-insensitive. The skybox
