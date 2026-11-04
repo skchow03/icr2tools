@@ -35,8 +35,18 @@ class GPUViewerLayoutTests(unittest.TestCase):
         main_layout = self.window.centralWidget().layout()
         self.assertEqual(main_layout.count(), 1)
         self.assertEqual(self.window.editor_splitter.count(), 2)
-        self.assertIs(self.window.editor_splitter.widget(0), self.window.viewer)
+        self.assertIs(self.window.editor_splitter.widget(0), self.window.viewport_panel)
         self.assertIs(self.window.editor_splitter.widget(1), self.window.source_pane)
+        self.assertIs(self.window.viewport_layout.itemAt(0).widget(),
+                      self.window.distance_bar)
+        self.assertIs(self.window.viewport_layout.itemAt(1).widget(),
+                      self.window.viewer)
+        self.assertIs(self.window.lod_slider.parentWidget(),
+                      self.window.distance_bar)
+        self.assertIs(self.window.lod_mode_combo.parentWidget(),
+                      self.window.distance_bar)
+        self.assertIs(self.window.lod_spin.parentWidget(),
+                      self.window.distance_bar)
         self.assertTrue(self.window.source_toggle.isChecked())
         self.assertFalse(self.window.source_pane.isHidden())
 
