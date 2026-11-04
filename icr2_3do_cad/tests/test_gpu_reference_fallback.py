@@ -10,7 +10,7 @@ from gpu_viewer.model_assets import (
     candidate_model_paths, choose_reference, load_model_candidate,
     reference_directories,
 )
-from gpu_viewer.scene import build_scene
+from gpu_viewer.scene import build_scene, load_car_or_model
 from n3_compile import compile_n3_text
 
 
@@ -86,6 +86,30 @@ class GPUReferenceFallbackTests(unittest.TestCase):
         self.assertEqual(next(iter(scene.instances[1].model.polygons.values())).color, 55)
         self.assertEqual(scene.warnings, ())
         self.assertTrue(source.is_file())
+
+    def test_binary_parent_can_resolve_n3_dynamic_child(self):
+        parent = self.write_3do("parent", PARENT)
+        child = self.write_n3("child")
+        raw = parent.read_bytes()
+        model, scene, appearance = load_car_or_model(parent)
+        self.assertIsNone(appearance)
+        self.assertEqual(scene.root.path, parent)
+        self.assertEqual(scene.loaded_instances, 1)
+        self.assertEqual(scene.instances[1].model.path, child)
+        self.assertEqual(parent.read_bytes(), raw)
+
+    def test_invalid_local_binary_does_not_shadow_valid_later_binary(self):
+        self.write_n3("child")
+        (self.folder / "child.3do").write_bytes(b"corrupt")
+        others = self.folder / "assets"
+        others.mkdir()
+        valid_binary = self.write_3do("CHILD", folder=others)
+        root_path = self.write_n3("parent", PARENT)
+        model, _ = compile_n3_text(
+            PARENT, root_path, associate_planes=False)
+        scene = build_scene(model, objects_folder=others)
+        self.assertEqual(scene.instances[1].model.path, valid_binary)
+        self.assertTrue(any("child.3do" in issue for issue in scene.warnings))
 
     def test_bad_binary_falls_back_to_valid_source(self):
         source = self.write_n3("child")
