@@ -68,6 +68,10 @@ from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_mod
 from gpu_viewer.skybox import (
     find_track_skybox, load_track_skybox, skybox_view_matrix,
 )
+from gpu_viewer.track_navigation import (
+    find_matching_trk, TrackNavigation, DEFAULT_LONG_STEP_FT,
+    DEFAULT_LAT_STEP_FT, UNITS_PER_FOOT,
+)
 from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.sprite_gl import PMPGLRenderer
 from gpu_viewer.textures import (build_atlas, load_palette,
@@ -280,6 +284,17 @@ class LoadWorker(QThread):
                             texture_folder=self.texture_folder)
                     except (OSError, ValueError) as exc:
                         scene.skybox_error = f"{sky_path.name}: {exc}"
+            # A companion <trackstem>.TRK supplies physics centerline XYZ,
+            # tangent and elevation for the camera, independently of 3DO BSP.
+            # Ignore unrelated .TRK files in the directory.
+            if scene.track_section_lods:
+                trk_path = find_matching_trk(self.path)
+                if trk_path is not None:
+                    try:
+                        scene.track_navigation = TrackNavigation.from_file(trk_path)
+                    except (OSError, ValueError, IndexError, TypeError,
+                            OverflowError, ZeroDivisionError) as exc:
+                        scene.track_navigation_error = f"{trk_path.name}: {exc}"
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
@@ -322,6 +337,9 @@ class LoadWorker(QThread):
                 "track_section_lists": len(scene.track_section_lods or {}),
                 "skybox_path": str(scene.skybox.path) if scene.skybox else "",
                 "skybox_error": scene.skybox_error or "",
+                "trk_path": (str(scene.track_navigation.path)
+                             if scene.track_navigation else ""),
+                "trk_error": scene.track_navigation_error or "",
                 "skybox_missing_mips": (scene.skybox.atlas.missing_names
                                         if scene.skybox else ()),
                 "recolor_pairs": scene.recolor_pairs,
