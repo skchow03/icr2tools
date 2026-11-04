@@ -33,13 +33,13 @@ class LoadDiagnosticsTests(unittest.TestCase):
         issues = collect_load_issues(stats)
         # 2 unique external, 12 missing MIPs, 1 MIP error, 1 PMP,
         # 1 palette, 1 skybox, 2 sky MIPs, 1 sky MIP error, 1 TRK.
-        self.assertEqual(len(issues), 21)
+        self.assertEqual(len(issues), 22)
         self.assertEqual(
             sum(issue.category == "Referenced objects" for issue in issues), 2)
         self.assertEqual(
             sum(issue.category == "Missing MIP textures" for issue in issues), 12)
         report = format_load_log("/folder/track.3do", issues)
-        self.assertIn("21 issues reported", report)
+        self.assertIn("22 issues reported", report)
         self.assertIn("wall0.mip", report)
         self.assertIn("wall11.mip", report)
         self.assertIn("Referenced objects (2)", report)
