@@ -60,6 +60,23 @@ or discard unsaved edits.
   Track tab. The toggle never changes track geometry, source, BSP or LOD.
   **Reload MIPs (R)** reloads both track and sky atlases (rebuilding the
   scene while preserving the camera and current editable source).
+  **TRK camera — follow racing direction** automatically searches the same
+  folder for `<model-stem>.trk` (case-insensitive) whenever a recognized
+  track `.3D` or `.3DO` opens. If found, it loads the physics course using
+  the shared `icr2_core.trk` parser and enables a perspective camera at
+  `DLONG=0, DLAT=0`, six feet above the TRK ground, oriented along the
+  centerline's direction of travel. Click the GPU viewport to focus it, then
+  **W / Up** = forward (increasing DLONG), **S / Down** = backward,
+  **A / Left** = left (positive DLAT), and **D / Right** = right (negative
+  DLAT). Hold Shift for 5x movement; configurable defaults are 10 feet
+  longitudinal and 2 feet lateral per keypress. DLONG wraps around the lap;
+  continuous bends change the heading automatically. The Track tab reports
+  the section, DLONG/DLAT in raw units and feet, and camera XYZ, and has a
+  reset-to-zero button. Uncheck TRK camera to restore the prior orbit view.
+  Missing or malformed matching TRK files never stop geometry from opening.
+  Recompiles preserve the TRK position and on/off state; loading another
+  track starts at the new track's DLONG zero. Geometry, physics TRK, MIPs
+  and source are all read-only in this mode.
   Original compiled track `.3do` files use seven-pointer section
   records and a special expanded root index (rather than the `.3D` source's
   eight-pointer lists and DATA hash). The viewer recognizes both formats,
