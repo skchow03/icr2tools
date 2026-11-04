@@ -72,15 +72,18 @@ reload the model, reset the camera, compile source, or discard unsaved edits.
   preventing stripes and road-texture Z-fighting while preserving ordinary
   depth occlusion from closer scenery. No source vertex heights, MIP data or
   BSP/LOD selections are changed; global rendering modes remain selectable.
-  The **Skybox
-  (horiz.3do)** checkbox is enabled and on by default if a readable
-  `horiz.3do` is found beside an indexed track or in its `objects`/
-  configured external 3DO folder; recognition is case-insensitive. The skybox
+  The **Skybox (horiz.3do / horiz.3d)** checkbox is enabled and on
+  by default if a valid `horiz.3do` is found beside an indexed track
+  or in its `objects` / configured external objects folder. If no
+  valid binary exists, the viewer compiles a valid `horiz.3d` instead.
+  Case-insensitive discovery tries all binary candidates before any
+  source candidate; an invalid/nonrenderable binary does not prevent
+  trying source. The skybox
   is rendered in an independent background pass: its virtual eye stays at
   raw `(0,0,1000)`, while camera yaw/pitch/tilt follows the viewer. Panning,
   zooming or moving a fixed camera does not translate the sky. The sky's
   named MIPs (`skyindex`, `page03b`, `page03` for the reference model)
-  are resolved beside `horiz.3do`, and missing textures are reported on the
+  are resolved beside the selected HORIZ file, and missing textures are reported on the
   Track tab. The toggle never changes track geometry, source, BSP or LOD.
   **Reload MIPs (R)** reloads both track and sky atlases (rebuilding the
   scene while preserving the camera and current editable source).
@@ -307,12 +310,17 @@ the viewport so those letters can be typed normally in the N3 editor.
   Saving edits to the MIP in your image/conversion tool then pressing R
   previews a revised livery. No file writing or automatic file watcher.
 - **3DO objects folder…**: optionally choose a folder containing the model's
-  DYNAMIC/external `.3do` references. Models beside the parent and common
-  adjacent object directories are also searched automatically. Nested child
-  models use their own BSP planes, camera-local coordinates and RES anchors.
-  Reused objects receive separate translated/rotated instances. Missing
-  models and cyclic references are reported without preventing the parent
-  from loading. No source objects are written.
+  DYNAMIC/external references. For each child, the viewer first searches
+  for a **valid .3do** (case-insensitive, across all standard directories);
+  if no valid binary exists it compiles a **.3d N3 source** in memory.
+  This also works for nested DYNAMIC references and negative EXTERN pointers,
+  regardless of whether the parent was opened from .3D or .3DO. Models beside
+  the parent and common adjacent object directories are searched automatically.
+  Explicit per-object overrides still take precedence. Nested children retain
+  their BSP, camera-local coordinates and RES anchors, and repeated placements
+  share a parsed model but have independent transforms. Invalid files,
+  missing models and cycles are reported without preventing the parent from
+  loading. No referenced files are modified.
 - **MIP folder…**: choose a folder containing the model's named `.mip`
   files. The loader also searches the model's directory and its `textures`,
   `mip` and `mips` subfolders, without case-sensitive filename assumptions.
