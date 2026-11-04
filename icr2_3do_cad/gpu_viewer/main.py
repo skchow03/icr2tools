@@ -1589,6 +1589,7 @@ class Window(QMainWindow):
             spin = QSpinBox()
             spin.setRange(0, 250)
             spin.setValue(count)
+            spin.setEnabled(False)
             spin.setToolTip(
                 f"Number of {label} sections in each direction from the "
                 "camera. Zero disables this tier; overlaps use closer detail.")
