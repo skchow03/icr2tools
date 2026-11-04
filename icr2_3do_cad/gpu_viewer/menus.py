@@ -68,7 +68,7 @@ def update_model_actions(window):
 def _add_action(menu, title, callback, shortcut=None):
     action = menu.addAction(title)
     if shortcut is not None:
-        action.setShortcut(shortcut)
+        action.setShortcut(QKeySequence(shortcut))
     action.triggered.connect(callback)
     return action
 
