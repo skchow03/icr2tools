@@ -2314,7 +2314,8 @@ class Window(QMainWindow):
         self.fixed_camera_controls.setVisible(enabled)
         self.perspective_toggle.blockSignals(True)
         self.perspective_toggle.setChecked(self.viewer.perspective)
-        self.perspective_toggle.setEnabled(not enabled)
+        self.perspective_toggle.setEnabled(
+            not enabled and not self.viewer.track_drive_enabled)
         self.perspective_toggle.blockSignals(False)
         self.statusBar().showMessage(
             "Fixed Camera | raw XYZ "
@@ -2415,6 +2416,24 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        self.viewer.set_track_navigation(
+            scene.track_navigation, preserve=was_reloading or from_source)
+        nav = self.viewer.track_navigation
+        self.track_drive_checkbox.setEnabled(nav is not None)
+        self.trk_reset_button.setEnabled(nav is not None)
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(self.viewer.track_drive_enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        if nav is not None:
+            self._update_trk_status()
+        elif scene.track_navigation_error:
+            self.trk_drive_status.setText(
+                f"TRK could not be loaded: {scene.track_navigation_error}")
+        else:
+            self.trk_drive_status.setText(
+                f"No {self.model_path.stem}.trk found beside this model"
+                if scene.track_section_lods else
+                "TRK navigation is available for recognized tracks only")
         self._configure_switch_distance(scene)
         self._preserve_view = False
         self._sync_source_distance_filter()
@@ -2535,6 +2554,8 @@ class Window(QMainWindow):
                else "Ready"))
         if not from_source and self.source_toggle.isChecked():
             self._ensure_source_loaded()
+        if self.viewer.track_drive_enabled and not was_reloading and not from_source:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
