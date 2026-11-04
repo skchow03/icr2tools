@@ -26,7 +26,7 @@ if str(CAD_ROOT) not in sys.path:
 try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
-        GL_DEPTH_TEST, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_DEPTH_TEST, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
         GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
@@ -39,6 +39,7 @@ try:
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
         glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
         glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
+        glPolygonOffset,
         glViewport, glGenTextures, glDeleteTextures, glBindTexture,
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
         glUniform1i,
@@ -470,6 +471,8 @@ class GLViewport(QOpenGLWidget):
         self._resources_released = False
         self._vbo = None
         self._ebo = None
+        self._surface_ebo = None
+        self._surface_index_count = 0
         self._vao = None
         self._mesh = None
         self._model = None
@@ -607,6 +610,10 @@ class GLViewport(QOpenGLWidget):
             if self._ebo is not None:
                 glDeleteBuffers(1, [self._ebo])
                 self._ebo = None
+            if self._surface_ebo is not None:
+                glDeleteBuffers(1, [self._surface_ebo])
+                self._surface_ebo = None
+            self._surface_index_count = 0
             self._delete_skybox_buffers()
             textures = [tex for tex in (self._atlas_texture, self._palette_texture)
                         if tex is not None]
@@ -627,6 +634,7 @@ class GLViewport(QOpenGLWidget):
         self._model = model
         self._scene = scene
         self._sprite_events = ()
+        self._surface_index_count = 0
         self.inspection_kind = None
         self.inspection_offset = None
         self._atlas = atlas
@@ -674,6 +682,10 @@ class GLViewport(QOpenGLWidget):
         if self._ebo is not None:
             glDeleteBuffers(1, [self._ebo])
             self._ebo = None
+        if self._surface_ebo is not None:
+            glDeleteBuffers(1, [self._surface_ebo])
+            self._surface_ebo = None
+        self._surface_index_count = 0
         self._visibility_dirty = True
         has_sprites = (self._scene is not None and
                        getattr(self._scene, "sprite_resources", None) is not None and
@@ -686,6 +698,7 @@ class GLViewport(QOpenGLWidget):
             self._vao = int(glGenVertexArrays(1))
             self._vbo = int(glGenBuffers(1))
             self._ebo = int(glGenBuffers(1))
+            self._surface_ebo = int(glGenBuffers(1))
             glBindVertexArray(self._vao)
             glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
             glBufferData(GL_ARRAY_BUFFER, len(payload),
@@ -932,17 +945,34 @@ class GLViewport(QOpenGLWidget):
                 detail = None
             else:
                 detail = 'hi'  # No TRK/metadata: safe global HI fallback.
-        indices, visible, info, sprite_events = ordered_scene_indices(
+        use_tsd = bool(self.render_mode == 'depth'
+                       and self._scene.track_surface_details)
+        traversal = ordered_scene_indices(
             self._scene, self._mesh, eye,
             None if self.render_mode == 'all' else self.lod_distance,
             view_direction=direction, with_sprites=True,
+            with_surface_details=use_tsd,
             bsp_mode='off' if self.render_mode == 'all' else 'original',
             track_detail=detail, track_window=window)
+        if use_tsd:
+            indices, visible, info, sprite_events, surface_indices = traversal
+        else:
+            indices, visible, info, sprite_events = traversal
+            surface_indices = np.empty(0, dtype=np.uint32)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
                      indices if indices.size else None, GL_DYNAMIC_DRAW)
+        if self._surface_ebo is not None:
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._surface_ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, surface_indices.nbytes,
+                         surface_indices if surface_indices.size else None,
+                         GL_DYNAMIC_DRAW)
+            # The regular EBO is the VAO's persistent binding; after drawing
+            # decals below it must be restored too.
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBindVertexArray(0)
+        self._surface_index_count = int(surface_indices.size)
         self._index_count = len(indices)
         self._sprite_events = sprite_events
         self._visible_set = visible
@@ -1029,6 +1059,25 @@ class GLViewport(QOpenGLWidget):
                         self._draw_pmp(placement, projection, view)
         elif self._index_count:
             glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+
+        # Papyrus TSDs are coplanar or nearly coplanar POLYs painted onto
+        # textured road sections. With GPU depth testing, drawing them only
+        # once can lose depth tests and interleave road/marking pixels. Keep
+        # authored BSP selection, then redraw ONLY the visible TSD triangles
+        # with a slight depth bias toward the eye. Depth still rejects road
+        # markings hidden by genuinely closer scenery. No source XYZ edits.
+        # One batched draw avoids a GL call per stripe/line section.
+        if (self.render_mode == 'depth' and self._surface_index_count and
+                self._surface_ebo is not None):
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-1.0, -4.0)
+            try:
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._surface_ebo)
+                glDrawElements(GL_TRIANGLES, self._surface_index_count,
+                               GL_UNSIGNED_INT, None)
+            finally:
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+                glDisable(GL_POLYGON_OFFSET_FILL)
 
         # Source highlighting must never force a BSP/LOD-excluded polygon
         # into the scene. Only brighten polygons selected for this view.
@@ -1431,7 +1480,7 @@ class Window(QMainWindow):
         advanced_layout.addWidget(self.fixed_camera_controls)
         advanced_layout.addWidget(QLabel("Rendering method"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Papyrus drawing order (default)", "painter")
+        self.mode_combo.addItem("Papyrus drawing order (no depth)", "painter")
         self.mode_combo.addItem("BSP selection + GPU depth", "depth")
         self.mode_combo.addItem("All polygons + GPU depth", "all")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
@@ -2460,6 +2509,12 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        # Indexed tracks default to BSP-selected polygons with GPU depth;
+        # car/object modes keep their original painter default. Preserve an
+        # explicitly chosen method across recompiles and asset reloads.
+        if not was_reloading and not from_source:
+            requested = 'depth' if scene.track_section_lods else 'painter'
+            self.mode_combo.setCurrentIndex(self.mode_combo.findData(requested))
         self.viewer.set_track_navigation(
             scene.track_navigation, preserve=was_reloading or from_source)
         nav = self.viewer.track_navigation
