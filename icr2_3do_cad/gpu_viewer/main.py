@@ -1563,6 +1563,36 @@ class Window(QMainWindow):
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        self.track_drive_checkbox = QCheckBox("TRK camera — follow racing direction")
+        self.track_drive_checkbox.setEnabled(False)
+        self.track_drive_checkbox.setToolTip(
+            "Find a same-named .TRK beside this track. Follow its physics "
+            "centerline from DLONG=0 at 6 feet above the surface. Click the "
+            "3D viewport, then W/Up forward, S/Down back, A/Left left "
+            "(+DLAT), D/Right right (-DLAT); hold Shift for 5x movement.")
+        self.track_drive_checkbox.toggled.connect(self._track_drive_toggled)
+        track_layout.addWidget(self.track_drive_checkbox)
+        self.trk_drive_status = QLabel("No matching .TRK loaded")
+        self.trk_drive_status.setWordWrap(True)
+        track_layout.addWidget(self.trk_drive_status)
+        track_steps = QHBoxLayout()
+        track_steps.addWidget(QLabel("Forward ft/key"))
+        self.trk_forward_step = QSpinBox()
+        self.trk_forward_step.setRange(1, 1000)
+        self.trk_forward_step.setValue(int(DEFAULT_LONG_STEP_FT))
+        self.trk_forward_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_forward_step)
+        track_steps.addWidget(QLabel("Lateral ft/key"))
+        self.trk_lateral_step = QSpinBox()
+        self.trk_lateral_step.setRange(1, 100)
+        self.trk_lateral_step.setValue(int(DEFAULT_LAT_STEP_FT))
+        self.trk_lateral_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_lateral_step)
+        track_layout.addLayout(track_steps)
+        self.trk_reset_button = QPushButton("Go to DLONG = 0 / DLAT = 0")
+        self.trk_reset_button.setEnabled(False)
+        self.trk_reset_button.clicked.connect(self._reset_trk_camera)
+        track_layout.addWidget(self.trk_reset_button)
         self.show_skybox = QCheckBox("Skybox (horiz.3do)")
         self.show_skybox.setChecked(True)
         self.show_skybox.setEnabled(False)
@@ -1651,6 +1681,8 @@ class Window(QMainWindow):
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
         self.viewer.fixedCameraModeChanged.connect(self._fixed_camera_mode_changed)
+        self.viewer.trackDriveModeChanged.connect(self._track_drive_mode_changed)
+        self.viewer.trackDrivePositionChanged.connect(self._track_drive_position_changed)
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
@@ -1695,6 +1727,58 @@ class Window(QMainWindow):
     def _repeat_toggled(self, checked):
         self.viewer.texture_repeat = checked
         self.viewer.update()
+
+    def _trk_steps_changed(self, *_):
+        self.viewer.track_forward_step_ft = float(self.trk_forward_step.value())
+        self.viewer.track_lateral_step_ft = float(self.trk_lateral_step.value())
+
+    def _track_drive_toggled(self, enabled):
+        self.viewer.set_track_drive_enabled(enabled)
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _reset_trk_camera(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        nav.set_coordinates(0.0, 0.0)
+        if not self.viewer.track_drive_enabled:
+            self.viewer.set_track_drive_enabled(True)
+        else:
+            self.viewer._update_track_drive_pose()
+        self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _track_drive_mode_changed(self, enabled):
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        self.perspective_toggle.blockSignals(True)
+        self.perspective_toggle.setChecked(self.viewer.perspective)
+        self.perspective_toggle.setEnabled(
+            not enabled and not self.viewer.fixed_camera_mode)
+        self.perspective_toggle.blockSignals(False)
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._update_trk_status()
+
+    def _track_drive_position_changed(self, pose):
+        self._update_trk_status()
+
+    def _update_trk_status(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        pose = nav.pose()
+        state = "Driving" if self.viewer.track_drive_enabled else "Available, off"
+        self.trk_drive_status.setText(
+            f"{nav.path.name}: {state} | section {pose.section} | "
+            f"DLONG {pose.dlong/UNITS_PER_FOOT:,.1f} ft "
+            f"({pose.dlong:,.0f} units) | "
+            f"DLAT {pose.dlat/UNITS_PER_FOOT:+,.1f} ft "
+            f"({pose.dlat:+,.0f} units) | "
+            f"camera XYZ ({pose.eye[0]:,.0f}, {pose.eye[1]:,.0f}, "
+            f"{pose.eye[2]:,.0f}) | Click viewport, use WASD/arrows; "
+            f"Shift = 5x")
 
     def _toggle_source(self, checked):
         self.source_tabs.setVisible(checked)
