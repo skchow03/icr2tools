@@ -192,7 +192,7 @@ def install_menus(window):
 
     def sync_perspective_availability(*_):
         perspective.setEnabled(
-            not window.viewer.fixed_camera_enabled and
+            not window.viewer.fixed_camera_mode and
             not window.viewer.track_drive_enabled)
 
     # Fixed/TRK camera modes require perspective; the menu must not offer
