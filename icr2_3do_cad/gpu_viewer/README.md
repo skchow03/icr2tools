@@ -32,12 +32,12 @@ once with a building or fixtures/roadcar.3do.
 
 ## Car, Track, and Object workspaces
 
-The viewer has a large GPU viewport and a **scrollable right-hand inspector**
-with collapsible **Model**, **Display**, **Assets**, and **Advanced diagnostics**
-sections. **Model** contains the Car / Track / Object workspace tabs.
-Change workspaces at any time to show the tools appropriate to the current
-asset; tab changes do not reload the model, reset the camera, compile source,
-or discard unsaved edits.
+The main window is a **GPU viewport and a side-by-side editable .3D source
+pane**, without a permanent inspector, toolbar or source Help tab.
+Use **Model → Workspace** to select Car, Track or Object, or open
+**Model → Model Settings…** for the full workspace controls. These controls
+reside in a separate, scrollable dialog, and changing workspace does not
+reload the model, reset the camera, compile source, or discard unsaved edits.
 
 - **Car** groups appearance-wrapper/carshape resolution, body or external
   material targets, livery MIP assignment, overrides, and RECOLOR status.
@@ -112,15 +112,16 @@ or discard unsaved edits.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
-The top bar retains **Open**, **Save Source**, **Export 3DO**, **Frame All**,
-camera views, and the **.3D Source** toggle. Display keeps projection,
-textures and a single detail-level selector. Assets groups palette, MIP and
-external-3DO resolution; Advanced diagnostics contains BSP rendering method,
-fixed camera, polygon-offset lookup, benchmark and performance information.
-The Source pane still opens beside the GPU viewport, with the same live
-compilation, save, and export behavior. When Save Source or Export 3DO is
-used before source has been prepared, the Source pane opens and generates it
-first; repeat the requested action once preparation is complete.
+**View → Display Settings…** provides projection, texture and RES distance
+controls. **Assets → Asset Settings…** provides palette, MIP and external-3DO
+configuration. **View → Advanced Diagnostics…** provides BSP rendering mode,
+fixed-camera coordinates, polygon-offset lookup, benchmark and performance
+information. These are nonmodal dialogs: change settings without shrinking
+the viewport, and close the dialogs whenever they are no longer needed.
+The source pane starts visible beside the GPU viewport, with the same live
+compilation, save, and export behavior. If source preparation is still in
+progress when Save Source or Export 3DO is requested, repeat the action once
+the source pane reports that it is ready.
 
 The viewer suggests **Car** for recognized car geometry or individual-car
 appearance wrappers, **Track** for structurally recognized track section tables
@@ -134,17 +135,19 @@ indexed tracks, even if another model happens to be in the Track workspace.
 
 ## Desktop menus
 
-The GPU viewer now has a conventional **File / View / Assets / Help** menu
-bar in addition to its existing toolbar and inspector.
+The GPU viewer uses a conventional **File / View / Model / Assets / Help**
+menu bar. There is no toolbar or permanent right sidebar.
 
 - **File:** Open Model (**Ctrl+O**), Open Recent, Reload Model from Disk,
   Save Source (**Ctrl+S**), Save Source As (**Ctrl+Shift+S**),
   Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
 - **View:** Frame All, 3D/Top/Front/Side presets, Perspective, Fixed Camera,
-  Show .3D Source, Workspace, display toggles, and Advanced diagnostics.
-  The checkmarks stay synchronized with the existing controls.
-- **Assets:** palette selection/reset, MIP and external 3DO folders,
-  fallback MIP selection/reset, and Reload MIPs.
+  show/hide .3D Source, common display toggles, Display Settings and Advanced
+  Diagnostics dialogs. Menu checkmarks track current camera/display state.
+- **Model:** Car/Track/Object workspace selection and the on-demand Model
+  Settings dialog, with direct entries to each workspace's controls.
+- **Assets:** Asset Settings dialog, palette selection/reset, MIP and
+  external-3DO folders, fallback MIP selection/reset, and Reload MIPs.
 - **Help:** keyboard/mouse controls and an About dialog.
 
 The first **Save Source** prompts for a .3D output path (by default an
@@ -190,11 +193,12 @@ the viewport so those letters can be typed normally in the N3 editor.
 - Frame All (F): recenter and fit the model; exits Fixed Camera
 - Open: load a different .3D or .3do without restarting. If source edits
   are unsaved, the viewer requests confirmation before discarding them.
-- **.3D Source**: open the side-by-side N3 source tab. For a loaded .3D
-  file it retains the original text and comments; for a binary .3do it
-  generates editable N3 declarations using the same exporter as CPU CAD.
-  Source generation is lazy and runs on a background thread. The GPU
-  viewport stays visible and interactive beside the editor.
+- **.3D Source**: the editor is shown beside the GPU viewport by default,
+  without a separate Help tab. Choose **View → Show .3D Source** to hide or
+  restore it. For a loaded .3D file it retains the original text and comments;
+  for a binary .3do it generates editable N3 declarations using the same
+  exporter as CPU CAD. Source generation runs on a background thread; the
+  GPU viewport stays interactive beside the editor.
 - **Live updates**: after 650 ms without typing, the existing N3 compiler
   runs on a worker and rebuilds geometry/atlases if the new source is valid.
   Only the latest text revision may replace the GPU model. Invalid source
