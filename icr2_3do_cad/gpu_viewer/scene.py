@@ -15,6 +15,7 @@ import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
 from gpu_viewer.car import recolor_table, recolor_index
+from gpu_viewer.track_surface_details import detect_track_surface_details
 from gpu_viewer.track_lod import (
     detect_track_section_lods, selected_track_section_lists,
     selected_track_section_window_lists, track_section_dlongs,
@@ -45,6 +46,7 @@ class GPUScene:
     recolor_pairs: int = 0
     appearance: object | None = None
     track_section_lods: dict | None = None
+    track_surface_details: frozenset = frozenset()
     track_section_dlongs: dict | None = None
     skybox: object | None = None
     skybox_error: str | None = None
@@ -193,11 +195,14 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                     geometry, tuple(dict.fromkeys(warnings)),
                     len(root_recolor), appearance,
                     track_section_lods=sections,
+                    track_surface_details=(detect_track_surface_details(root)
+                                           if sections else frozenset()),
                     track_section_dlongs=track_section_dlongs(root, sections))
 
 
 def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                           view_direction=None, with_sprites=False,
+                          with_surface_details=False,
                           track_detail=None, track_window=None,
                           bsp_mode='original'):
     """Expand BSP/DYNAMIC painter order with optional PMP insertion markers.
@@ -218,6 +223,7 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
     else:
         overrides = None
     spans = []
+    surface_spans = []
     sprite_events = []
     element_count = 0
     root_visible = set()
@@ -256,6 +262,9 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                 if span is None:
                     continue
                 spans.append(span)
+                if (with_surface_details and instance_id == 0 and
+                        old in scene.track_surface_details):
+                    surface_spans.append(span)
                 element_count += span[1]
                 stats['mesh_polygons'] += 1
             elif kind == 'pmp':
@@ -276,8 +285,20 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
                                                  dtype=np.uint32)
         cursor += count
     stats['triangles'] = cursor // 3
+    stats['surface_detail_polygons'] = len(surface_spans)
     result = (indices, frozenset(root_visible), stats)
-    return (*result, tuple(sprite_events)) if with_sprites else result
+    if with_sprites:
+        result = (*result, tuple(sprite_events))
+    if with_surface_details:
+        surface_indices = np.empty(
+            sum(count for _, count in surface_spans), dtype=np.uint32)
+        pos = 0
+        for first, count in surface_spans:
+            surface_indices[pos:pos+count] = np.arange(
+                first, first+count, dtype=np.uint32)
+            pos += count
+        result = (*result, surface_indices)
+    return result
 
 
 def load_car_or_model(path, *, existing_model=None, objects_folder=None,
