@@ -4,13 +4,18 @@ The standalone N3 compiler retains the source layout:
     index: LIST { DATA hash, sec0_l0, ... }
     secN_lM: LIST { HI x4, MED x2, LO x1, DATA metadata }
 
-The original track .3DO compiler instead expands the hash into the root:
+Original track .3DO compilers instead expand the index into the root:
     root: LIST { expanded LIST, section-pointer-per-hash-bin, ... }
     section LIST: { HI x4, MED x2, LO x1 } (seven pointers)
 
-The expanded LIST references the same polygons as the section pointers, and
-must be skipped for a fixed-section-detail view. Both formats are identified
-structurally, without relying on source labels or file extensions.
+The expanded index references *all* sections in order. The root's hash
+entries reference only some of them, often multiple times. Most other
+expanded entries alias the same seven LOD pointers, but in some tracks
+(e.g. St. Petersburg and Washington, D.C.) a few carry additional
+geometry. Keep one representative per distinct seven-slot signature
+rather than assuming the expanded index has exactly twice as many entries
+as the hash's unique pointers. Do not render the root's original expanded
+index as well, which would draw all three LOD tiers simultaneously.
 """
 from __future__ import annotations
 
@@ -30,12 +35,29 @@ def _list_slots(model, offset):
     return struct.unpack_from(f"<{count}i", model.body, offset + 8)
 
 
-def detect_track_section_lods(model):
-    """Map each recognized section LIST to its seven positional LOD pointers.
+def _section_geometry_slots(model, offset, *, source_layout):
+    """Validate the full positional LOD table, returning seven slots."""
+    slots = _list_slots(model, offset)
+    if slots is None or len(slots) != (8 if source_layout else 7):
+        return None
+    if source_layout and (slots[7] <= 0 or model.records.get(slots[7]) != 17):
+        return None
+    geometry = slots[:7]
+    if not any(p and model.records.get(p) not in (0, None) for p in geometry):
+        return None
+    if any(p < 0 or (p and model.records.get(p) in (None, 17))
+           for p in geometry):
+        return None
+    return geometry
 
-    A binary NIL may be a nonzero pointer to a flavor-zero record; preserve
-    that reference because Model.switched_polygons already ignores such nodes.
-    Return an empty mapping rather than guessing on an unfamiliar structure.
+
+def detect_track_section_lods(model):
+    """Map recognized section LIST offsets to seven positional LOD pointers.
+
+    For a compiled binary track, this includes extra sections present only
+    in the expanded index. Exact duplicate seven-slot layouts are reduced
+    to their first representative to avoid drawing identical polygons twice.
+    A binary NIL may be a nonzero pointer to a flavor-zero record.
     """
     root_items = _list_slots(model, model.root_offset)
     if not root_items or len(root_items) < 2:
@@ -43,55 +65,53 @@ def detect_track_section_lods(model):
 
     first_kind = model.records.get(root_items[0])
     if first_kind == 17:
-        # Standalone .3D compiled in memory: hash DATA, then eight-slot
-        # section records whose eighth entry is their metadata DATA.
-        section_offsets = root_items[1:]
-        source_layout = True
-    elif first_kind == 11:
-        # Original .3DO track: generated root LIST contains an expanded
-        # index and repeated section pointers corresponding to hash bins.
-        # Deduplicate pointers; the reference order is the source section order.
-        section_offsets = tuple(dict.fromkeys(root_items[1:]))
-        expanded = _list_slots(model, root_items[0])
-        if not expanded or len(root_items) - 1 <= len(section_offsets):
-            return {}
-        if len(expanded) != 2 * len(section_offsets):
-            return {}
-        # The middle half of this track-index variant is exactly the
-        # sequential section list. Require that signature to avoid treating
-        # ordinary 3DO LIST models as tracks.
-        start = (len(expanded) - len(section_offsets)) // 2
-        if expanded[start:start + len(section_offsets)] != section_offsets:
-            return {}
-        source_layout = False
-    else:
+        # Source .3D: DATA hash, followed by indexed 8-entry sections.
+        offsets = root_items[1:]
+        sections = {}
+        for offset in offsets:
+            geometry = _section_geometry_slots(
+                model, offset, source_layout=True)
+            if geometry is None:
+                return {}
+            sections[offset] = geometry
+        return sections
+
+    if first_kind != 11:
+        return {}
+
+    # Binary .3DO: a large expanded LIST followed by the hash's repeated
+    # section references. The hash subset occurs, in sequence, within the
+    # expanded list; intervening/outer sections can be genuinely distinct.
+    indexed = tuple(dict.fromkeys(root_items[1:]))
+    expanded = _list_slots(model, root_items[0])
+    if (not expanded or len(root_items) - 1 <= len(indexed)
+            or len(expanded) < len(indexed)):
+        return {}
+    indexed_set = set(indexed)
+    if tuple(off for off in expanded if off in indexed_set) != indexed:
         return {}
 
     sections = {}
-    for offset in section_offsets:
-        slots = _list_slots(model, offset)
-        if slots is None or len(slots) != (8 if source_layout else 7):
+    signatures = set()
+    for offset in expanded:
+        geometry = _section_geometry_slots(
+            model, offset, source_layout=False)
+        if geometry is None:
             return {}
-        if source_layout and (slots[7] <= 0 or
-                              model.records.get(slots[7]) != 17):
-            return {}
-        geometry_slots = slots[:7]
-        if not any(model.records.get(p) not in (0, None) for p in geometry_slots):
-            return {}
-        if any(p < 0 or (p and model.records.get(p) in (None, 17))
-               for p in geometry_slots):
-            return {}
-        sections[offset] = geometry_slots
+        if geometry not in signatures:
+            signatures.add(geometry)
+            sections[offset] = geometry
     return sections
 
 
 def selected_track_section_lists(sections, detail, *, model=None):
-    """Override the section nodes with exactly one HI/MED/LO tier.
+    """Override source sections and root with exactly one HI/MED/LO tier.
 
-    The root override suppresses the generated .3DO index LIST, which
-    otherwise traverses every LOD before the chosen section pointers.
-    For standalone .3D it also suppresses the non-renderable hash DATA.
-    No geometry or bytes are modified.
+    Binary root indices have an expanded LIST and repeated hash pointers.
+    Select only the structurally deduplicated expanded section sequence;
+    this includes extra sections absent from the hash, without rendering
+    the expanded prelude (which otherwise draws all tiers unfiltered).
+    A missing slot remains NIL, not a fallback from another tier.
     """
     if detail not in DETAIL_SLOTS:
         raise ValueError(f"Unknown track section detail: {detail!r}")
@@ -102,7 +122,14 @@ def selected_track_section_lists(sections, detail, *, model=None):
     if model is not None and sections:
         root_items = _list_slots(model, model.root_offset)
         if root_items:
-            ordered = tuple(dict.fromkeys(root_items[1:]))
+            first_kind = model.records.get(root_items[0])
+            if first_kind == 17:
+                ordered = tuple(dict.fromkeys(root_items[1:]))
+            elif first_kind == 11:
+                expanded = _list_slots(model, root_items[0])
+                ordered = tuple(off for off in expanded if off in sections) if expanded else ()
+            else:
+                ordered = ()
             if len(ordered) == len(sections) and set(ordered) == set(sections):
                 result[model.root_offset] = ordered
     return result

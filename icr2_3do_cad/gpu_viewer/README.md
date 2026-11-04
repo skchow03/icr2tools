@@ -60,11 +60,14 @@ or discard unsaved edits.
   Track tab. The toggle never changes track geometry, source, BSP or LOD.
   **Reload MIPs (R)** reloads both track and sky atlases (rebuilding the
   scene while preserving the camera and current editable source).
-  Original
-  compiled track `.3do` files use seven-pointer section records and a special
-  expanded root index (rather than the `.3D` source's eight-pointer lists and
-  DATA hash). The viewer recognizes both representations and skips the binary
-  index prelude in fixed HI/MED/LO views so it cannot draw all tiers first.
+  Original compiled track `.3do` files use seven-pointer section
+  records and a special expanded root index (rather than the `.3D` source's
+  eight-pointer lists and DATA hash). The viewer recognizes both formats,
+  including compiled tracks whose expanded index contains extra sections
+  absent from the repeated root hash (e.g. St. Petersburg 2024 and Washington
+  D.C.). It keeps every distinct seven-slot LOD table, removes exact aliases,
+  and replaces the root traversal in fixed HI/MED/LO views so the expanded
+  prelude cannot draw all tiers unfiltered.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
