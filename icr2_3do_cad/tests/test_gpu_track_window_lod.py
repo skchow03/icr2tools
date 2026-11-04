@@ -3,6 +3,7 @@
 These cases synthesize exact Papyrus index/DATA structures without
 redistributing track binaries or depending on the GUI/OpenGL.
 """
+import struct
 import unittest
 
 from gpu_viewer.mesh import make_mesh
@@ -55,18 +56,18 @@ l2: POLY <62> {a,b,c};
 h3: POLY <43> {a,b,c};
 m3: POLY <53> {a,b,c};
 l3: POLY <63> {a,b,c};
-alias_meta3: DATA {300000, 325000, 350000, 375000};
-alias3: LIST {h3, nil, nil, nil, m3, nil, l3};
-data0: DATA {0, 25000, 50000, 75000};
-sec0: LIST {h0, nil, nil, nil, m0, nil, l0};
-data1: DATA {100000, 125000, 150000, 175000};
-sec1: LIST {h1, nil, nil, nil, m1, nil, l1};
-data2: DATA {200000, 225000, 250000, 275000};
-sec2: LIST {h2, nil, nil, nil, m2, nil, l2};
-data3: DATA {300000, 325000, 350000, 375000};
-sec3: LIST {h3, nil, nil, nil, m3, nil, l3};
-alias_meta0: DATA {0, 25000, 50000, 75000};
-alias0: LIST {h0, nil, nil, nil, m0, nil, l0};
+alias3: LIST {h3, nil, nil, nil, m3, nil, l3,
+              DATA {300000, 325000, 350000, 375000}};
+sec0: LIST {h0, nil, nil, nil, m0, nil, l0,
+             DATA {0, 25000, 50000, 75000}};
+sec1: LIST {h1, nil, nil, nil, m1, nil, l1,
+             DATA {100000, 125000, 150000, 175000}};
+sec2: LIST {h2, nil, nil, nil, m2, nil, l2,
+             DATA {200000, 225000, 250000, 275000}};
+sec3: LIST {h3, nil, nil, nil, m3, nil, l3,
+             DATA {300000, 325000, 350000, 375000}};
+alias0: LIST {h0, nil, nil, nil, m0, nil, l0,
+              DATA {0, 25000, 50000, 75000}};
 expanded: LIST {alias3, sec0, sec1, sec2, sec3, alias0};
 index: LIST {expanded, sec0, sec0, sec1, sec2, sec2};
 """
@@ -159,13 +160,35 @@ class CameraSectionWindowTests(unittest.TestCase):
                 camera_dlong=0, track_length=0)
 
 
+def make_compiled_track_bytes():
+    """Convert the synthetic source sections to original seven-slot layout.
+
+    The standalone compiler creates eight-slot LISTs with inline DATA.
+    In original binaries that DATA stays exactly 20 bytes before each LIST,
+    but the section count becomes seven and the DATA pointer is unlinked.
+    Patching only those counts reproduces that format without proprietary
+    assets or hand-maintained opaque binary fixtures.
+    """
+    compiler, _ = compile_n3_text(
+        BINARY_METADATA_SOURCE, "binary_data.3d",
+        associate_planes=False)
+    raw = bytearray(compiler.raw)
+    for label in ("alias3", "sec0", "sec1", "sec2", "sec3", "alias0"):
+        section = compiler.n3_label_offsets[label]
+        assert struct.unpack_from("<i", raw,
+                                  compiler.body_start + section + 4)[0] == 8
+        assert struct.unpack_from("<i", raw,
+                                  compiler.body_start + section - 20)[0] == (
+                                      -(1 << 31) + 17)
+        struct.pack_into("<i", raw, compiler.body_start + section + 4, 7)
+    return raw, compiler
+
+
 class OriginalBinaryDataTests(unittest.TestCase):
     def setUp(self):
-        compiler, _ = compile_n3_text(
-            BINARY_METADATA_SOURCE, "binary_data.3d",
-            associate_planes=False)
+        raw, _ = make_compiled_track_bytes()
         self.model = Model(
-            "binary_data.3do", raw_data=compiler.raw,
+            "binary_data.3do", raw_data=raw,
             associate_planes=False)
         self.sections = detect_track_section_lods(self.model)
 
@@ -200,12 +223,12 @@ class OriginalBinaryDataTests(unittest.TestCase):
         self.assertEqual(indices.size, 9)
 
     def test_missing_binary_data_safely_disables_window_mode(self):
-        compiler, _ = compile_n3_text(
-            BINARY_METADATA_SOURCE.replace(
-                "data1: DATA {100000, 125000, 150000, 175000};",
-                "data1: NIL;"),
-            "binary_missing_data.3d", associate_planes=False)
-        binary = Model("missing.3do", raw_data=compiler.raw,
+        raw, compiler = make_compiled_track_bytes()
+        # The standalone N3 DATA record is already unlinked from the
+        # seven-slot section; corrupt its tag and ensure safe fallback.
+        section = compiler.n3_label_offsets["sec1"]
+        struct.pack_into("<i", raw, compiler.body_start + section - 20, 0)
+        binary = Model("missing.3do", raw_data=raw,
                        associate_planes=False)
         sections = detect_track_section_lods(binary)
         self.assertEqual(len(sections), 4)
