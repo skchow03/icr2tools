@@ -132,6 +132,33 @@ The mode is a UI organization choice, not a conversion between file formats.
 Skybox discovery is intentionally restricted to structurally recognized
 indexed tracks, even if another model happens to be in the Track workspace.
 
+## Desktop menus
+
+The GPU viewer now has a conventional **File / View / Assets / Help** menu
+bar in addition to its existing toolbar and inspector.
+
+- **File:** Open Model (**Ctrl+O**), Open Recent, Reload Model from Disk,
+  Save Source (**Ctrl+S**), Save Source As (**Ctrl+Shift+S**),
+  Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
+- **View:** Frame All, 3D/Top/Front/Side presets, Perspective, Fixed Camera,
+  Show .3D Source, Workspace, display toggles, and Advanced diagnostics.
+  The checkmarks stay synchronized with the existing controls.
+- **Assets:** palette selection/reset, MIP and external 3DO folders,
+  fallback MIP selection/reset, and Reload MIPs.
+- **Help:** keyboard/mouse controls and an About dialog.
+
+The first **Save Source** prompts for a .3D output path (by default an
+`_edited.3d` name). Later Saves reuse that explicitly chosen path;
+**Save Source As** always asks for another location. Saving source marks
+the current text as saved, even if it cannot yet compile. Export Compiled
+3DO continues to require validated source and protects the original
+binary from replacement. Open, Reload Model, and Exit ask before
+discarding unsaved source edits. Recent models are kept in the user's
+Qt settings, and failed opens are not added to the list.
+
+Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
+the viewport so those letters can be typed normally in the N3 editor.
+
 ## Controls
 
 - Left mouse drag: orbit
