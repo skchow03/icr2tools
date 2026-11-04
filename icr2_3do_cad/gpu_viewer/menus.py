@@ -1,6 +1,6 @@
 """Standard desktop menus for the ICR2 GPU viewer.
 
-Menus call the same guarded operations as the existing toolbar/inspector.
+Menus call the existing guarded operations; dialogs host former sidebar tools.
 They do not introduce a second file-writing or model-loading code path.
 """
 from pathlib import Path
@@ -74,7 +74,7 @@ def _add_action(menu, title, callback, shortcut=None):
 
 
 def _bind_checkbox(menu, title, widget):
-    """Keep a menu check and its existing toolbar/inspector toggle in sync."""
+    """Keep a menu check and its existing control state in sync."""
     action = menu.addAction(title)
     action.setCheckable(True)
     action.setChecked(widget.isChecked())
@@ -105,7 +105,7 @@ def _show_controls(window):
 
 
 def install_menus(window):
-    """Install menus after all viewer and inspector controls exist."""
+    """Install menus after all viewer and settings-dialog controls exist."""
     bar = window.menuBar()
     file_menu = bar.addMenu("&File")
     _add_action(file_menu, "&Open Model…", window.open_dialog,
@@ -144,8 +144,17 @@ def install_menus(window):
     _bind_checkbox(view, "&Fixed Camera", window.fixed_camera_button)
     _bind_checkbox(view, "Show &.3D Source", window.source_toggle)
     view.addSeparator()
+    _add_action(view, "&Display Settings…",
+                lambda: window.open_settings_dialog("display"))
+    _add_action(view, "Advanced &Diagnostics…",
+                lambda: window.open_settings_dialog("advanced"))
+    options = view.addMenu("Display &Options")
+    _bind_checkbox(options, "Textures", window.show_textures)
+    _bind_checkbox(options, "PMP sprites", window.show_sprites)
+    _bind_checkbox(options, "Repeat UV (tile MIPs)", window.repeat_uv)
 
-    workspace = view.addMenu("&Workspace")
+    model = bar.addMenu("&Model")
+    workspace = model.addMenu("&Workspace")
     group = QActionGroup(window)
     group.setExclusive(True)
     for index in range(window.workspace_tabs.count()):
@@ -158,15 +167,18 @@ def install_menus(window):
     window.workspace_tabs.currentChanged.connect(
         lambda index: [action.setChecked(i == index)
                        for i, action in enumerate(group.actions())])
-
-    options = view.addMenu("Display &Options")
-    _bind_checkbox(options, "Textures", window.show_textures)
-    _bind_checkbox(options, "PMP sprites", window.show_sprites)
-    _bind_checkbox(options, "Repeat UV (tile MIPs)", window.repeat_uv)
-    _bind_checkbox(view, "Advanced diagnostics",
-                   window.section_buttons["Advanced diagnostics"])
+    model.addSeparator()
+    _add_action(model, "&Model Settings…",
+                lambda: window.open_settings_dialog("model"))
+    for index, title in enumerate(("Car", "Track", "Object")):
+        _add_action(model, f"{title} &Settings…",
+                    lambda checked=False, mode=index:
+                    window.open_settings_dialog("model", workspace=mode))
 
     assets = bar.addMenu("&Assets")
+    _add_action(assets, "Asset &Settings…",
+                lambda: window.open_settings_dialog("assets"))
+    assets.addSeparator()
     _add_action(assets, "Open PCX &Palette…", window.open_palette_dialog)
     _add_action(assets, "&Default Palette", window.restore_palette)
     assets.addSeparator()
