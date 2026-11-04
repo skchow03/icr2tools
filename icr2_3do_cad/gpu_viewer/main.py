@@ -374,14 +374,16 @@ class SourceExportWorker(QThread):
 
     def run(self):
         try:
-            from text_3d import export_text
+            from text_3d import export_compilable_text
             if self.opened_path.suffix.lower() == '.3d':
+                # Preserve authored N3 source, including user comments/names.
                 source = self.opened_path.read_text(encoding='utf-8-sig')
                 target = self.opened_path
             else:
                 # For individual-car wrappers, export BASE geometry, not the
-                # zero-polygon MATERIAL->RECOLOR wrapper.
-                source = export_text(self.model)
+                # zero-polygon MATERIAL->RECOLOR wrapper. Standalone source
+                # does not need original 3DO offsets to recompile.
+                source = export_compilable_text(self.model)
                 target = self.model.path.with_suffix('.3d')
             self.ready.emit(source, target)
         except Exception as exc:

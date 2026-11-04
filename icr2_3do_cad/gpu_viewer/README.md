@@ -195,10 +195,14 @@ the viewport so those letters can be typed normally in the N3 editor.
   are unsaved, the viewer requests confirmation before discarding them.
 - **.3D Source**: the editor is shown beside the GPU viewport by default,
   without a separate Help tab. Choose **View → Show .3D Source** to hide or
-  restore it. For a loaded .3D file it retains the original text and comments;
-  for a binary .3do it generates editable N3 declarations using the same
-  exporter as CPU CAD. Source generation runs on a background thread; the
-  GPU viewport stays interactive beside the editor.
+  restore it. For a loaded .3D file it retains the original text and comments.
+  Opening a binary .3do generates standalone, compilable N3 source with a
+  named `root` declaration and no internal `ICR2_OFFSET` or `ICR2_ROOT`
+  comments. This source can be edited and exported as a new .3DO without the
+  original binary. The separate CPU CAD **Import N3 onto current 3DO**
+  workflow still needs its annotated export because it patches original
+  binary records instead of recompiling a new model. Source generation runs
+  on a background thread; the GPU viewport stays interactive beside the editor.
 - **Live updates**: after 650 ms without typing, the existing N3 compiler
   runs on a worker and rebuilds geometry/atlases if the new source is valid.
   Only the latest text revision may replace the GPU model. Invalid source
