@@ -200,7 +200,10 @@ class BinaryTrackSectionLODTests(unittest.TestCase):
         # 4-byte zero-flavor NIL record, unlike the standalone N3 compiler.
         import struct
         raw = bytearray(self.model.raw)
-        section = next(iter(self.sections))
+        # Use an existing NIL slot rather than breaking an alias signature:
+        # the expanded list contains a duplicate of wrap0's seven pointers.
+        section = next(off for off, slots in self.sections.items()
+                       if self.model.records.get(slots[1]) in (0, None))
         new_nil = len(self.model.body)
         raw.extend(b"\x00" * 4)
         struct.pack_into("<i", raw, 0, len(self.model.body) + 4)
