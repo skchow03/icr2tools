@@ -157,17 +157,17 @@ root: LIST {res};
         from gpu_viewer.wireframe import make_wireframe
 
         source = """3D VERSION 3.0;
-a: [<0,0,0>]; b: [<100,0,0>];
+a: [<0,0,0>];
+b: [<100,0,0>];
 c: [<0,100,0>];
-d: [<1000,0,0>]; e: [<1100,0,0>];
+d: [<1000,0,0>];
+e: [<1100,0,0>];
 f: [<1000,100,0>];
 near_poly: POLY <44> {a,b,c};
 far_poly: POLY <55> {d,e,f};
 res: SWITCH DISTANCE (a) > {(1200 ? far_poly), (0 ? near_poly)};
 root: LIST {res};
 """
-        # One declaration per line is required by the N3 source parser.
-        source = source.replace("; b:", ";\\nb:").replace("; e:", ";\\ne:")
         model, _ = compile_n3_text(source, "wire_slider.3d",
                                    associate_planes=False)
         scene = build_scene(model)
