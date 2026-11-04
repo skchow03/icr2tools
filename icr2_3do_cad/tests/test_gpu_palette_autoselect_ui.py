@@ -126,6 +126,9 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         info = self.wait_loaded(without)
         self.assertFalse(info["palette_auto"])
         self.assertIsNone(info["palette_warning"])
+        self.assertTrue(self.window.load_error_dialog.isHidden())
+        self.assertIn("no reported load issues",
+                      self.window.load_error_summary.text())
         self.assertEqual(self.window.palette_path, previous)
 
         broken = self.make3d(self.folder / "broken", "badpalette.3d")
@@ -134,10 +137,36 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         self.assertFalse(info["palette_auto"])
         self.assertIn("SUNNY.PCX", info["palette_warning"])
         self.assertIn("using", info["palette_warning"])
+        self.assertFalse(self.window.load_error_dialog.isHidden())
+        self.assertIn("SUNNY.PCX", self.window.load_error_text.toPlainText())
+        self.window.load_error_dialog.close()
         self.assertEqual(self.window.palette_path, previous)
         self.assertIn("SUNNY.PCX", self.window.statusBar().currentMessage())
         self.assertTrue(np.array_equal(
             self.window.viewer._palette, load_palette(previous)))
+
+    def test_missing_dynamic_and_mip_open_combined_error_log(self):
+        source = """3D VERSION 3.0;
+a: [<0,0,0>, T=<0,0>];
+b: [<100,0,0>, T=<128,0>];
+c: [<0,100,0>, T=<0,128>];
+surface: MATERIAL MIP="nomip123", GROUP=3, POLY [T] <44> {a,b,c};
+wheel: DYNAMIC 0, 0, 0, 0, 0, 0, 1, EXTERN "nxref123";
+root: LIST {surface, wheel};
+"""
+        folder = self.folder / "missing_refs"
+        path = self.make3d(folder, "missing_refs.3d")
+        path.write_text(source, encoding="utf-8")
+        stats = self.wait_loaded(path)
+        self.assertTrue(stats["external_warnings"])
+        self.assertIn("nomip123", stats["missing_textures"])
+        self.assertFalse(self.window.load_error_dialog.isHidden())
+        report = self.window.load_error_text.toPlainText()
+        self.assertIn("Referenced objects", report)
+        self.assertIn("nxref123", report)
+        self.assertIn("Missing MIP textures", report)
+        self.assertIn("nomip123", report)
+        self.window.load_error_dialog.close()
 
     def test_failed_geometry_does_not_commit_detected_palette(self):
         previous = self.window.palette_path

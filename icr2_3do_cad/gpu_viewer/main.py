@@ -51,7 +51,7 @@ try:
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
-        QMessageBox, QPushButton, QSpinBox,
+        QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -90,6 +90,7 @@ from gpu_viewer.workspaces import (
     resolve_lod_distance, max_switch_distance,
 )
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
+from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 
 
 VERTEX_SHADER = """
@@ -357,6 +358,8 @@ class LoadWorker(QThread):
                 "trk_error": scene.track_navigation_error or "",
                 "skybox_missing_mips": (scene.skybox.atlas.missing_names
                                         if scene.skybox else ()),
+                "skybox_texture_errors": (scene.skybox.atlas.errors
+                                          if scene.skybox else ()),
                 "recolor_pairs": scene.recolor_pairs,
                 "appearance_geometry": (appearance.geometry_name if appearance else ""),
                 "appearance_mip": (appearance.texture_name if appearance else ""),
@@ -1555,6 +1558,9 @@ class Window(QMainWindow):
         # The former sidebar widgets live in nonmodal, scrollable dialogs,
         # so all existing controls and signal connections remain intact.
         self.settings_dialogs = {}
+        self._load_issues = ()
+        self._load_log_file = None
+        self._init_load_error_dialog()
         model_layout = self._make_settings_dialog("model", "Model Settings")
         display_layout = self._make_settings_dialog("display", "Display Settings")
         assets_layout = self._make_settings_dialog("assets", "Asset Settings")
@@ -1900,6 +1906,61 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _init_load_error_dialog(self):
+        """One nonmodal window for the latest model-load diagnostics."""
+        dialog = QDialog(self)
+        dialog.setObjectName("loadErrorLogDialog")
+        dialog.setWindowTitle("Load Error Log — ICR2 GPU Viewer")
+        dialog.setModal(False)
+        dialog.resize(720, 480)
+        layout = QVBoxLayout(dialog)
+        self.load_error_summary = QLabel("No model loaded")
+        self.load_error_summary.setWordWrap(True)
+        layout.addWidget(self.load_error_summary)
+        self.load_error_text = QPlainTextEdit(dialog)
+        self.load_error_text.setObjectName("loadErrorLogText")
+        self.load_error_text.setReadOnly(True)
+        self.load_error_text.setPlainText(
+            "No model has been loaded yet.\n")
+        layout.addWidget(self.load_error_text, stretch=1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        copy_button = buttons.addButton(
+            "Copy Log", QDialogButtonBox.ButtonRole.ActionRole)
+        copy_button.clicked.connect(
+            lambda: QApplication.clipboard().setText(
+                self.load_error_text.toPlainText()))
+        buttons.rejected.connect(dialog.close)
+        layout.addWidget(buttons)
+        self.load_error_dialog = dialog
+
+    def _update_load_error_log(self, filename, issues, *, auto_show=False):
+        """Replace stale diagnostics; auto-popup only after user model loads."""
+        self._load_log_file = str(filename)
+        self._load_issues = tuple(issues)
+        count = len(self._load_issues)
+        basename = Path(filename).name
+        self.load_error_summary.setText(
+            f"{basename}: {count} load issue{'s' if count != 1 else ''}"
+            if count else f"{basename}: no reported load issues")
+        self.load_error_text.setPlainText(
+            format_load_log(filename, self._load_issues))
+        self.load_error_text.moveCursor(
+            self.load_error_text.textCursor().MoveOperation.Start)
+        if auto_show:
+            if count:
+                self.open_load_error_log()
+            else:
+                # Don't leave a previous model's automatic issue popup open
+                # after a fresh, clean model load.
+                self.load_error_dialog.hide()
+
+    def open_load_error_log(self):
+        """View the latest log even after dismissing its automatic popup."""
+        dialog = self.load_error_dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
 
     def _make_settings_dialog(self, key, title):
         """Create an optional settings window without occupying viewport space."""
@@ -2431,6 +2492,11 @@ class Window(QMainWindow):
             f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
             f" | base: {self._info.get('geometry_file','')}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        # MIP reload may repair or introduce errors. Refresh the menu log
+        # without interrupting interactive texture iteration with popups.
+        self._update_load_error_log(
+            self.model_path or stats.get("file", "(no model)"),
+            collect_load_issues(self._info))
         if stats['missing_textures'] or stats['texture_errors']:
             self.statusBar().showMessage(
                 "MIP issues: " + "; ".join(
@@ -2846,17 +2912,17 @@ class Window(QMainWindow):
             f"fallback fans {mesh.fan_fallbacks:,}  |  "
             f"buffer {mesh.size_bytes / 1048576:.1f} MiB | "
             f"PMP {stats['pmp_images']} images")
-        problem_count = (len(stats['external_warnings']) +
-                         len(stats['missing_textures']) +
-                         len(stats['texture_errors']) +
-                         len(stats['pmp_warnings']) +
-                         int(bool(stats.get('palette_warning'))))
+        issues = collect_load_issues(stats)
+        self._update_load_error_log(
+            self.model_path or stats['file'], issues,
+            auto_show=not from_source and not was_reloading)
+        problem_count = len(issues)
         self.statusBar().showMessage(
             f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
-            + (stats['palette_warning']
-               if stats.get('palette_warning') else
-               f"{problem_count} asset warnings — see Assets" if problem_count
-               else "Ready"))
+            + ((f"{stats['palette_warning']} — View > Load Error Log")
+               if stats.get("palette_warning") else
+               (f"{problem_count} load issues — View > Load Error Log")
+               if problem_count else "Ready"))
         if not from_source and not was_reloading and self.model_path is not None:
             remember_recent_model(self, self.model_path)
         update_model_actions(self)
@@ -2868,7 +2934,11 @@ class Window(QMainWindow):
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
         self.stats_label.setText(message)
-        QMessageBox.critical(self, "Cannot load Papyrus model", message)
+        self._update_load_error_log(
+            self.model_path or "(no model)",
+            (LoadIssue("Model load", message),), auto_show=True)
+        self.statusBar().showMessage(
+            "Model load failed — View > Load Error Log")
 
     def closeEvent(self, event):
         if self.source_pane.dirty:
