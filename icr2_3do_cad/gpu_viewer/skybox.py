@@ -1,4 +1,4 @@
-"""Track-only, read-only Papyrus HORIZ.3DO background scene.
+"""Track-only, read-only Papyrus HORIZ.3DO/HORIZ.3D background scene.
 
 Skybox is a separate GPU pass: its eye remains at raw (0, 0, 1000)
 while its orientation follows the main camera. This avoids translation
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from three_do import Model
+from gpu_viewer.model_assets import candidate_model_paths, load_model_candidate
 from gpu_viewer.mesh import make_mesh
 from gpu_viewer.scene import build_scene, ordered_scene_indices
 from gpu_viewer.textures import build_atlas
@@ -22,49 +22,58 @@ SKY_EYE = (0.0, 0.0, 1000.0)
 @dataclass
 class TrackSkybox:
     path: Path
-    model: Model
+    model: object
     mesh: object
     atlas: object
     indices: np.ndarray
 
 
-def find_track_skybox(track_path, objects_folder=None):
-    """Find HORIZ.3DO beside the track or in its configured objects folder.
-
-    Lookup is case insensitive on Linux as well as Windows. Never search
-    globally or load an unrelated model's skybox.
-    """
+def skybox_candidates(track_path, objects_folder=None):
+    """Search track directories, trying every .3do before any .3d."""
     path = Path(track_path)
-    folders = (path.parent, path.parent / "objects", objects_folder)
-    for folder in folders:
-        if folder is None:
+    return candidate_model_paths(
+        "horiz", (path.parent, path.parent / "objects", objects_folder))
+
+
+def find_track_skybox(track_path, objects_folder=None):
+    """Find valid HORIZ.3DO or a standalone HORIZ.3D alternative."""
+    for candidate in skybox_candidates(track_path, objects_folder):
+        try:
+            load_model_candidate(candidate)
+        except (OSError, ValueError, UnicodeError, OverflowError):
             continue
-        folder = Path(folder)
-        if not folder.is_dir():
-            continue
-        exact = folder / "horiz.3do"
-        if exact.is_file():
-            return exact
-        for candidate in folder.iterdir():
-            if candidate.is_file() and candidate.name.casefold() == "horiz.3do":
-                return candidate
+        return candidate
     return None
 
 
 def load_track_skybox(path, palette, *, texture_folder=None):
-    """Prepare an independent sky mesh/atlas on the worker, with no GL calls."""
+    """Prepare background geometry on a worker without OpenGL operations."""
     path = Path(path)
-    model = Model(path, associate_planes=False)
+    model = load_model_candidate(path)
     scene = build_scene(model)
     atlas = build_atlas(scene.geometry, path, texture_folder=texture_folder)
     mesh = make_mesh(scene.geometry, palette, atlas)
-    # The camera is fixed inside the sky, and the sky is authored as a
-    # background enclosure. Do not camera-cull its back-facing wall polygons.
+    # The eye stays fixed at the raw HORIZ coordinates.
     indices, _, _ = ordered_scene_indices(
         scene, mesh, SKY_EYE, None, bsp_mode="off")
     if indices.size == 0:
         raise ValueError(f"{path.name} contains no renderable skybox polygons")
     return TrackSkybox(path, model, mesh, atlas, indices)
+
+
+def load_preferred_track_skybox(track_path, palette, *,
+                                objects_folder=None, texture_folder=None):
+    """Find fully renderable sky: valid .3do first, then valid .3d."""
+    problems = []
+    for candidate in skybox_candidates(track_path, objects_folder):
+        try:
+            sky = load_track_skybox(
+                candidate, palette, texture_folder=texture_folder)
+        except (OSError, ValueError, UnicodeError, OverflowError) as exc:
+            problems.append(f"{candidate.name}: {exc}")
+            continue
+        return sky, "; ".join(problems) if problems else None
+    return None, "; ".join(problems) if problems else None
 
 
 def skybox_view_matrix(camera_view, mesh, eye=SKY_EYE):
