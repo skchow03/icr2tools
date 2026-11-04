@@ -87,6 +87,7 @@ from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
     resolve_lod_distance, max_switch_distance,
 )
+from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 
 
 VERTEX_SHADER = """
@@ -1365,6 +1366,7 @@ class Window(QMainWindow):
         self._source_export_model = None
         self._source_applied = False
         self._last_valid_source_text = None
+        self._source_save_target = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -1752,6 +1754,7 @@ class Window(QMainWindow):
         assets_layout.addWidget(self.texture_status)
         assets_layout.addWidget(self.sprite_status)
         self.setCentralWidget(root)
+        install_menus(self)
         self._workspace_changed(self.workspace_tabs.currentIndex())
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
         # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
@@ -1999,21 +2002,30 @@ class Window(QMainWindow):
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
-    def _save_source(self):
+    def _save_source(self, *, save_as=False):
+        """Save editable N3 text; Save As always chooses a destination.
+
+        The first regular Save also asks for a path so the original input
+        file is never overwritten without an explicit user decision.
+        """
         if not self.source_pane.ready:
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self, 'Save editable N3 source',
-            str(self.source_pane.source_path.with_name(
-                self.source_pane.source_path.stem + '_edited.3d')),
-            'Papyrus N3 (*.3d);;All files (*)')
-        if not path:
-            return
-        target = Path(path)
+            return False
+        target = None if save_as else self._source_save_target
+        if target is None:
+            suggested = self._source_save_target
+            if suggested is None:
+                suggested = self.source_pane.source_path.with_name(
+                    self.source_pane.source_path.stem + '_edited.3d')
+            path, _ = QFileDialog.getSaveFileName(
+                self, 'Save editable N3 source', str(suggested),
+                'Papyrus N3 (*.3d);;All files (*)')
+            if not path:
+                return False
+            target = Path(path)
         if target.suffix.lower() != '.3d':
             QMessageBox.warning(self, 'Invalid source extension',
                                 'Save N3 source with a .3D extension.')
-            return
+            return False
         if target.resolve() == self.source_pane.source_path.resolve():
             reply = QMessageBox.question(
                 self, 'Overwrite original N3 source?',
@@ -2021,7 +2033,7 @@ class Window(QMainWindow):
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No)
             if reply != QMessageBox.StandardButton.Yes:
-                return
+                return False
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             fd, temporary = tempfile.mkstemp(
@@ -2035,11 +2047,14 @@ class Window(QMainWindow):
                     os.unlink(temporary)
         except (OSError, UnicodeError) as error:
             QMessageBox.warning(self, 'Save failed', str(error))
-            return
+            return False
+        self._source_save_target = target
+        self.source_pane.mark_saved()
         self.source_pane.status.setText(
             f'Saved {target.name}.' +
             (' Source is not currently valid; GPU preview still shows last valid model.'
              if self._source_invalid or self.source_pane.pending else ''))
+        return True
 
     def _export_compiled_source(self):
         if not self.source_pane.ready or self.viewer._model is None:
@@ -2469,6 +2484,7 @@ class Window(QMainWindow):
             self._source_invalid = False
             self._source_applied = False
             self._last_valid_source_text = None
+            self._source_save_target = None
             self._source_queued = None
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
@@ -2678,6 +2694,9 @@ class Window(QMainWindow):
                if stats.get('palette_warning') else
                f"{problem_count} asset warnings — see Assets" if problem_count
                else "Ready"))
+        if not from_source and not was_reloading and self.model_path is not None:
+            remember_recent_model(self, self.model_path)
+        update_model_actions(self)
         if not from_source and self.source_toggle.isChecked():
             self._ensure_source_loaded()
         if self.viewer.track_drive_enabled and not was_reloading and not from_source:
@@ -2689,6 +2708,15 @@ class Window(QMainWindow):
         QMessageBox.critical(self, "Cannot load Papyrus model", message)
 
     def closeEvent(self, event):
+        if self.source_pane.dirty:
+            answer = QMessageBox.question(
+                self, "Unsaved .3D source",
+                "Close the viewer and discard unsaved .3D source edits?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
         self._timer.stop()
         if self._source_export_worker is not None and self._source_export_worker.isRunning():
             self._source_export_worker.wait()
