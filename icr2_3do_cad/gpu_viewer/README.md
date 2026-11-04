@@ -146,8 +146,8 @@ menu bar. There is no toolbar or permanent right sidebar.
   Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
 - **View:** Frame All, 3D/Top/Front/Side presets, Perspective, Fixed Camera,
   show/hide .3D Source, **Rendering Mode** (including Wireframe), common display
-  toggles, Display Settings and Advanced Diagnostics. The Rendering Mode
-  menu and Advanced Diagnostics combo always show the same selection.
+  toggles, Display Settings, Advanced Diagnostics and **Load Error Log…**.
+  The Rendering Mode menu and Advanced Diagnostics combo stay synchronized.
 - **Model:** Car/Track/Object workspace selection and the on-demand Model
   Settings dialog, with direct entries to each workspace's controls.
 - **Assets:** Asset Settings dialog, palette selection/reset, MIP and
@@ -162,6 +162,19 @@ the current text as saved, even if it cannot yet compile. Export Compiled
 binary from replacement. Open, Reload Model, and Exit ask before
 discarding unsaved source edits. Recent models are kept in the user's
 Qt settings, and failed opens are not added to the list.
+
+**Load Error Log:** On opening a .3D or .3DO, any recoverable loading
+problems automatically open one scrollable, nonmodal report. It groups the
+full list of unresolved DYNAMIC/EXTERN assets, missing or invalid MIPs,
+PMP sprites, palette problems, skybox failures and skybox MIPs, and malformed
+TRK navigation. There is no automatic popup if nothing went wrong, and
+simply omitting an optional skybox/TRK is not an error. The report remains
+available after closing it under **View → Load Error Log…**; the menu can
+also show a clean-load report. **Copy Log** copies the full text for
+troubleshooting. Opening a different model replaces the old report.
+A fatal file-load error is also preserved in this report, even when the
+previous preview remains visible. Live source recompilation and MIP
+reloads refresh the report without repeatedly opening new windows.
 
 Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
 the viewport so those letters can be typed normally in the N3 editor.
