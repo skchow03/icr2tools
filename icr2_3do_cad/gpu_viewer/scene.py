@@ -1,4 +1,4 @@
-"""Read-only GPU scene graph for Papyrus DYNAMIC and external 3DO children.
+"""Read-only GPU scene graph for Papyrus DYNAMIC and external 3DO/N3 children.
 
 Discover the complete referenced hierarchy once on the worker, and flatten all
 instance-transformed geometry into ONE VBO/texture atlas. At draw time expand
@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import numpy as np
 
 from dynamic_scene import ExternalResolver, Transform, placement_transform
+from gpu_viewer.model_assets import choose_reference, reference_directories
 from gpu_viewer.car import recolor_table, recolor_index
 from gpu_viewer.track_surface_details import detect_track_surface_details
 from gpu_viewer.track_lod import (
@@ -62,10 +63,9 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                 appearance=None, max_depth=4, max_instances=2000):
     """Resolve instances including inactive LOD/BSP branches (no GL calls).
 
-    Reusing a child 3DO file is cheap: the parsed Model is cached, while each
+    Reusing a child 3DO/N3 file is cheap: the parsed Model is cached, while each
     DYNAMIC placement receives a distinct transformed instance of its faces.
     """
-    resolver = ExternalResolver(objects_folder)
     overrides = {str(name).casefold(): Path(path)
                  for name, path in (object_overrides or {}).items()}
     cache = {}
@@ -105,31 +105,22 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                 # pointers can be reused by distinct MATERIAL wrappers; the
                 # source traversal currently cannot distinguish those sites.
                 continue
-            location = overrides.get(name.casefold())
-            if location is not None and not location.is_file():
-                warnings.append(f'{name}: override file missing: {location.name}')
-                continue
+            location, child, issues = choose_reference(
+                name, reference_directories(
+                    instance.model.path, objects_folder),
+                cache, override=overrides.get(name.casefold()))
+            warnings.extend(issues)
             if location is None:
-                location = resolver.find(name, instance.model.path)
-            if location is None:
-                warnings.append(f'{instance.model.path.name}: missing {name}.3do')
                 continue
             key = location.resolve()
             if key in instance.ancestry:
-                warnings.append(f'{location.name}: recursive 3DO reference')
+                warnings.append(f'{location.name}: recursive 3DO/N3 reference')
                 continue
             if instance.depth >= max_depth:
                 warnings.append(f'{location.name}: max nesting depth {max_depth} reached')
                 continue
             if len(instances) >= max_instances:
                 warnings.append(f'Maximum {max_instances} external instances reached')
-                continue
-            try:
-                if key not in cache:
-                    cache[key] = Model(location, associate_planes=False)
-                child = cache[key]
-            except (OSError, ValueError) as exc:
-                warnings.append(f'{location.name}: {exc}')
                 continue
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
