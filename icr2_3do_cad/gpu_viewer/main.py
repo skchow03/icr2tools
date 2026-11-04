@@ -1077,6 +1077,100 @@ class GLViewport(QOpenGLWidget):
             if duration > 0.25:
                 self.fps = (len(self._frametimes) - 1) / duration
 
+    def set_track_navigation(self, navigation, *, preserve=False):
+        """Attach a TRK without changing the already loaded geometry.
+
+        Recompiling a track retains DLONG/DLAT and the user's on/off choice.
+        Opening a different track starts at the start/finish line.
+        """
+        previous = self.track_navigation
+        same = bool(preserve and navigation is not None and previous is not None
+                    and navigation.path.resolve() == previous.path.resolve())
+        active = self.track_drive_enabled
+        if same:
+            navigation.set_coordinates(previous.dlong, previous.dlat)
+        elif active:
+            self.set_track_drive_enabled(False)
+        self.track_navigation = navigation
+        if navigation is None:
+            self._track_drive_pose = None
+            return
+        if same:
+            if active:
+                self._update_track_drive_pose()
+        else:
+            self.set_track_drive_enabled(True)
+
+    def set_track_drive_enabled(self, enabled):
+        """Follow TRK centerline in perspective, or restore prior orbit."""
+        enabled = bool(enabled)
+        if enabled and self.track_navigation is None:
+            return
+        if enabled == self.track_drive_enabled:
+            return
+        if enabled:
+            if self.fixed_camera_mode:
+                self.set_fixed_camera_mode(False)
+            self._saved_track_view = (
+                self.target.copy(), self.distance, self.half_height,
+                self.perspective, self.azimuth, self.elevation)
+            self.track_drive_enabled = True
+            self.perspective = True
+            self.fixed_camera_fov = 60.0
+            self._update_track_drive_pose()
+        else:
+            self.track_drive_enabled = False
+            self._track_drive_pose = None
+            if self._saved_track_view is not None:
+                (target, self.distance, self.half_height, self.perspective,
+                 self.azimuth, self.elevation) = self._saved_track_view
+                self.target = target.copy()
+            self._saved_track_view = None
+            self.invalidate_visibility()
+        self.trackDriveModeChanged.emit(enabled)
+
+    def _update_track_drive_pose(self):
+        if not self.track_drive_enabled or self.track_navigation is None:
+            return
+        pose = self.track_navigation.pose()
+        self._track_drive_pose = pose
+        self.azimuth, self.elevation = pose.azimuth, pose.elevation
+        self.trackDrivePositionChanged.emit(pose)
+        self.invalidate_visibility()
+
+    def move_track_drive(self, *, forward_feet=0.0, left_feet=0.0):
+        if not self.track_drive_enabled or self.track_navigation is None:
+            return False
+        self.track_navigation.move(
+            forward_feet=forward_feet, left_feet=left_feet)
+        self._update_track_drive_pose()
+        return True
+
+    def keyPressEvent(self, event):
+        """W/Up forward, S/Down backward, A/Left left, D/Right right."""
+        if self.track_drive_enabled and not (
+                event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                     | Qt.KeyboardModifier.AltModifier)):
+            multiplier = (5 if event.modifiers()
+                          & Qt.KeyboardModifier.ShiftModifier else 1)
+            key = event.key()
+            forward, left = 0.0, 0.0
+            if key in (Qt.Key.Key_W, Qt.Key.Key_Up):
+                forward = self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_S, Qt.Key.Key_Down):
+                forward = -self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_A, Qt.Key.Key_Left):
+                left = self.track_lateral_step_ft * multiplier
+            elif key in (Qt.Key.Key_D, Qt.Key.Key_Right):
+                left = -self.track_lateral_step_ft * multiplier
+            else:
+                super().keyPressEvent(event)
+                return
+            self.move_track_drive(forward_feet=forward, left_feet=left)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def set_fixed_camera_eye(self, x, y, z):
         """Update the raw Papyrus XYZ eye without changing orbit, mesh or FOV."""
         eye = tuple(float(v) for v in (x, y, z))
