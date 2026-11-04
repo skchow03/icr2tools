@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import ctypes
 import numpy as np
+from gpu_viewer.sprites import PMP_ANCHOR_ROW
 from OpenGL.GL import (
     GL_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FALSE, GL_FLOAT, GL_TRIANGLES,
     GL_UNSIGNED_BYTE, GL_VERTEX_SHADER, GL_FRAGMENT_SHADER,
@@ -36,17 +37,16 @@ uniform vec3 u_anchor;
 uniform vec3 u_right;
 uniform vec3 u_up;
 uniform float u_pixel_world;
+uniform float u_anchor_row;
 uniform vec4 u_bounds;
 out vec2 v_uv;
 void main() {
     vec2 point = mix(u_bounds.xy, u_bounds.zw, in_corner);
-    // Papyrus PMP/PMP2 anchors refer to the visible sprite's vertical
-    // midpoint, not row 128 of the 256x256 source canvas. Many scenery
-    // sprites paint only the top half of that canvas (e.g. trees end at
-    // y=128), so row-128 anchoring incorrectly placed their feet at Z=0.
-    // Center the actually painted (cropped) height around the 3DO vertex.
-    float center_y = 0.5 * (u_bounds.y + u_bounds.w);
-    vec2 relative = vec2(point.x - 128.0, center_y - point.y) * u_pixel_world;
+    // Cropping trims transparent pixels but does NOT move the sprite's
+    // origin. Its 3DO placement vertex is always at source canvas row 127,
+    // normally the bottom of a tree/trackside object, not the middle of the
+    // painted extent. The incoming bounds retain original 256x256 coords.
+    vec2 relative = vec2(point.x - 128.0, u_anchor_row - point.y) * u_pixel_world;
     vec3 world = u_anchor + u_right * relative.x + u_up * relative.y;
     gl_Position = u_mvp * vec4(world, 1.0);
     v_uv = in_corner;
@@ -104,7 +104,8 @@ class PMPGLRenderer:
         self.program = _program()
         self.uniforms = {name: glGetUniformLocation(self.program, name)
                          for name in ("u_mvp", "u_anchor", "u_right",
-                                      "u_up", "u_pixel_world", "u_bounds")}
+                                      "u_up", "u_pixel_world", "u_anchor_row",
+                                      "u_bounds")}
         self.vao = int(glGenVertexArrays(1))
         self.vbo = int(glGenBuffers(1))
         # Top-left, bottom-left, bottom-right, top-left, bottom-right, top-right.
@@ -170,6 +171,7 @@ class PMPGLRenderer:
         glUniform3f(self.uniforms["u_up"], *map(float, up))
         glUniform1f(self.uniforms["u_pixel_world"],
                     float(placement.normalized_pixel_size / scale))
+        glUniform1f(self.uniforms["u_anchor_row"], PMP_ANCHOR_ROW)
         glUniform4f(self.uniforms["u_bounds"], *map(float, bounds))
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, tex)
