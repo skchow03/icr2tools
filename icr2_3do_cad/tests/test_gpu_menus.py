@@ -72,7 +72,7 @@ class GPUViewerMenuTests(unittest.TestCase):
         self.assertEqual(
             [a.text().replace("&", "") for a in
              self.window.menuBar().actions()],
-            ["File", "View", "Assets", "Help"])
+            ["File", "View", "Model", "Assets", "Help"])
         file_menu = self._menu("File")
         for title in ("Open Model…", "Save Source", "Save Source As…",
                       "Export Compiled 3DO…", "Exit"):
@@ -92,11 +92,11 @@ class GPUViewerMenuTests(unittest.TestCase):
     def test_view_menu_tracks_existing_widgets(self):
         view = self._menu("View")
         source = self._action(view, "Show .3D Source")
-        self.assertFalse(source.isChecked())
-        source.setChecked(True)
-        self.assertTrue(self.window.source_toggle.isChecked())
-        self.window.source_toggle.setChecked(False)
-        self.assertFalse(source.isChecked())
+        self.assertTrue(source.isChecked())
+        source.setChecked(False)
+        self.assertFalse(self.window.source_toggle.isChecked())
+        self.window.source_toggle.setChecked(True)
+        self.assertTrue(source.isChecked())
 
         display = self._action(view, "Display Options").menu()
         textures = self._action(display, "Textures")
@@ -105,12 +105,27 @@ class GPUViewerMenuTests(unittest.TestCase):
         self.window.show_textures.setChecked(True)
         self.assertTrue(textures.isChecked())
 
-        workspace = self._action(view, "Workspace").menu()
+        model = self._menu("Model")
+        workspace = self._action(model, "Workspace").menu()
         track = self._action(workspace, "Track")
         track.trigger()
         self.assertEqual(self.window.workspace_tabs.currentIndex(), 1)
         self.assertTrue(track.isChecked())
         self.window.workspace_tabs.setCurrentIndex(2)
+
+    def test_settings_actions_open_correct_dialogs(self):
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("View"), "Display Settings…").trigger()
+            show.assert_called_once_with("display")
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("View"), "Advanced Diagnostics…").trigger()
+            show.assert_called_once_with("advanced")
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("Model"), "Track Settings…").trigger()
+            show.assert_called_once_with("model", workspace=1)
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("Assets"), "Asset Settings…").trigger()
+            show.assert_called_once_with("assets")
 
     def test_save_and_save_as_track_clean_source(self):
         source = self.window.source_pane
