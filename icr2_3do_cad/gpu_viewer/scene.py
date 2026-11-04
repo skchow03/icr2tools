@@ -44,6 +44,8 @@ class GPUScene:
     track_section_lods: dict | None = None
     skybox: object | None = None
     skybox_error: str | None = None
+    track_navigation: object | None = None
+    track_navigation_error: str | None = None
 
     @property
     def loaded_instances(self):
