@@ -68,6 +68,10 @@ from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_mod
 from gpu_viewer.skybox import (
     find_track_skybox, load_track_skybox, skybox_view_matrix,
 )
+from gpu_viewer.track_navigation import (
+    find_matching_trk, TrackNavigation, DEFAULT_LONG_STEP_FT,
+    DEFAULT_LAT_STEP_FT, UNITS_PER_FOOT,
+)
 from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.sprite_gl import PMPGLRenderer
 from gpu_viewer.textures import (build_atlas, load_palette,
@@ -280,6 +284,17 @@ class LoadWorker(QThread):
                             texture_folder=self.texture_folder)
                     except (OSError, ValueError) as exc:
                         scene.skybox_error = f"{sky_path.name}: {exc}"
+            # A companion <trackstem>.TRK supplies physics centerline XYZ,
+            # tangent and elevation for the camera, independently of 3DO BSP.
+            # Ignore unrelated .TRK files in the directory.
+            if scene.track_section_lods:
+                trk_path = find_matching_trk(self.path)
+                if trk_path is not None:
+                    try:
+                        scene.track_navigation = TrackNavigation.from_file(trk_path)
+                    except (OSError, ValueError, IndexError, TypeError,
+                            OverflowError, ZeroDivisionError) as exc:
+                        scene.track_navigation_error = f"{trk_path.name}: {exc}"
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
@@ -322,6 +337,9 @@ class LoadWorker(QThread):
                 "track_section_lists": len(scene.track_section_lods or {}),
                 "skybox_path": str(scene.skybox.path) if scene.skybox else "",
                 "skybox_error": scene.skybox_error or "",
+                "trk_path": (str(scene.track_navigation.path)
+                             if scene.track_navigation else ""),
+                "trk_error": scene.track_navigation_error or "",
                 "skybox_missing_mips": (scene.skybox.atlas.missing_names
                                         if scene.skybox else ()),
                 "recolor_pairs": scene.recolor_pairs,
@@ -416,6 +434,8 @@ class GLViewport(QOpenGLWidget):
     statsChanged = Signal(str)
     visibilityChanged = Signal(str)
     fixedCameraModeChanged = Signal(bool)
+    trackDriveModeChanged = Signal(bool)
+    trackDrivePositionChanged = Signal(object)
 
     def __init__(self):
         super().__init__()
@@ -470,6 +490,12 @@ class GLViewport(QOpenGLWidget):
         self.half_height = 1.6
         self.perspective = False
         self.fixed_camera_mode = False
+        self.track_navigation = None
+        self.track_drive_enabled = False
+        self._track_drive_pose = None
+        self._saved_track_view = None
+        self.track_forward_step_ft = DEFAULT_LONG_STEP_FT
+        self.track_lateral_step_ft = DEFAULT_LAT_STEP_FT
         self.fixed_camera_eye = tuple(FIXED_CAMERA_DEFAULT_EYE)
         self.fixed_camera_fov = 60.0
         self._saved_external_view = None
@@ -772,7 +798,7 @@ class GLViewport(QOpenGLWidget):
         # editor, so the enclosed sky always fills the distant background.
         sky_projection = perspective_projection(
             aspect, 0.001, 100.0,
-            self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
+            self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
         sky_view = skybox_view_matrix(view, sky.mesh)
         mvp = np.ascontiguousarray(
             (sky_projection @ sky_view).T, dtype=np.float32)
@@ -859,6 +885,8 @@ class GLViewport(QOpenGLWidget):
 
     def _camera_eye_model(self):
         """Unscaled Papyrus eye used for BSP and automatic RES switches."""
+        if self.track_drive_enabled and self._track_drive_pose is not None:
+            return self._track_drive_pose.eye
         if self.fixed_camera_mode:
             return self.fixed_camera_eye
         return camera_in_model_units(
@@ -866,9 +894,14 @@ class GLViewport(QOpenGLWidget):
             self.azimuth, self.elevation, self.distance)
 
     def _camera_view_matrix(self):
-        """Fixed Camera changes look direction without moving its eye."""
+        """Fixed and track cameras change orientation without moving their eye."""
         target = self.target
-        if self.fixed_camera_mode and self._mesh is not None:
+        if (self.track_drive_enabled and self._track_drive_pose is not None
+                and self._mesh is not None):
+            target = fixed_eye_view_target(
+                self._mesh.center, self._mesh.scale, self._track_drive_pose.eye,
+                self.azimuth, self.elevation, self.distance)
+        elif self.fixed_camera_mode and self._mesh is not None:
             target = fixed_eye_view_target(
                 self._mesh.center, self._mesh.scale, self.fixed_camera_eye,
                 self.azimuth, self.elevation, self.distance)
@@ -938,7 +971,7 @@ class GLViewport(QOpenGLWidget):
         if self.perspective:
             projection=perspective_projection(
                 aspect, near, far,
-                self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
+                self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
@@ -1044,6 +1077,100 @@ class GLViewport(QOpenGLWidget):
             if duration > 0.25:
                 self.fps = (len(self._frametimes) - 1) / duration
 
+    def set_track_navigation(self, navigation, *, preserve=False):
+        """Attach a TRK without changing the already loaded geometry.
+
+        Recompiling a track retains DLONG/DLAT and the user's on/off choice.
+        Opening a different track starts at the start/finish line.
+        """
+        previous = self.track_navigation
+        same = bool(preserve and navigation is not None and previous is not None
+                    and navigation.path.resolve() == previous.path.resolve())
+        active = self.track_drive_enabled
+        if same:
+            navigation.set_coordinates(previous.dlong, previous.dlat)
+        elif active:
+            self.set_track_drive_enabled(False)
+        self.track_navigation = navigation
+        if navigation is None:
+            self._track_drive_pose = None
+            return
+        if same:
+            if active:
+                self._update_track_drive_pose()
+        else:
+            self.set_track_drive_enabled(True)
+
+    def set_track_drive_enabled(self, enabled):
+        """Follow TRK centerline in perspective, or restore prior orbit."""
+        enabled = bool(enabled)
+        if enabled and self.track_navigation is None:
+            return
+        if enabled == self.track_drive_enabled:
+            return
+        if enabled:
+            if self.fixed_camera_mode:
+                self.set_fixed_camera_mode(False)
+            self._saved_track_view = (
+                self.target.copy(), self.distance, self.half_height,
+                self.perspective, self.azimuth, self.elevation)
+            self.track_drive_enabled = True
+            self.perspective = True
+            self.fixed_camera_fov = 60.0
+            self._update_track_drive_pose()
+        else:
+            self.track_drive_enabled = False
+            self._track_drive_pose = None
+            if self._saved_track_view is not None:
+                (target, self.distance, self.half_height, self.perspective,
+                 self.azimuth, self.elevation) = self._saved_track_view
+                self.target = target.copy()
+            self._saved_track_view = None
+            self.invalidate_visibility()
+        self.trackDriveModeChanged.emit(enabled)
+
+    def _update_track_drive_pose(self):
+        if not self.track_drive_enabled or self.track_navigation is None:
+            return
+        pose = self.track_navigation.pose()
+        self._track_drive_pose = pose
+        self.azimuth, self.elevation = pose.azimuth, pose.elevation
+        self.trackDrivePositionChanged.emit(pose)
+        self.invalidate_visibility()
+
+    def move_track_drive(self, *, forward_feet=0.0, left_feet=0.0):
+        if not self.track_drive_enabled or self.track_navigation is None:
+            return False
+        self.track_navigation.move(
+            forward_feet=forward_feet, left_feet=left_feet)
+        self._update_track_drive_pose()
+        return True
+
+    def keyPressEvent(self, event):
+        """W/Up forward, S/Down backward, A/Left left, D/Right right."""
+        if self.track_drive_enabled and not (
+                event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                     | Qt.KeyboardModifier.AltModifier)):
+            multiplier = (5 if event.modifiers()
+                          & Qt.KeyboardModifier.ShiftModifier else 1)
+            key = event.key()
+            forward, left = 0.0, 0.0
+            if key in (Qt.Key.Key_W, Qt.Key.Key_Up):
+                forward = self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_S, Qt.Key.Key_Down):
+                forward = -self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_A, Qt.Key.Key_Left):
+                left = self.track_lateral_step_ft * multiplier
+            elif key in (Qt.Key.Key_D, Qt.Key.Key_Right):
+                left = -self.track_lateral_step_ft * multiplier
+            else:
+                super().keyPressEvent(event)
+                return
+            self.move_track_drive(forward_feet=forward, left_feet=left)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def set_fixed_camera_eye(self, x, y, z):
         """Update the raw Papyrus XYZ eye without changing orbit, mesh or FOV."""
         eye = tuple(float(v) for v in (x, y, z))
@@ -1058,6 +1185,8 @@ class GLViewport(QOpenGLWidget):
     def set_fixed_camera_mode(self, enabled):
         """Toggle a stationary perspective eye at user-specified raw XYZ."""
         enabled = bool(enabled)
+        if enabled and self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if self.fixed_camera_mode == enabled:
             return
         if enabled:
@@ -1080,6 +1209,8 @@ class GLViewport(QOpenGLWidget):
         self.invalidate_visibility()
 
     def frame_all(self):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if self.fixed_camera_mode:
             self.set_fixed_camera_mode(False)
         self.target[:] = 0
@@ -1088,6 +1219,8 @@ class GLViewport(QOpenGLWidget):
         self.invalidate_visibility()
 
     def set_view(self, name):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if name == "3D":
             self.azimuth, self.elevation = math.radians(35), math.radians(28)
         elif name == "Top":
@@ -1101,8 +1234,8 @@ class GLViewport(QOpenGLWidget):
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
-        if self.fixed_camera_mode:
-            # Do not dolly away from (0,0,0). Wheel adjusts field of view,
+        if self.fixed_camera_mode or self.track_drive_enabled:
+            # Fixed/track camera position stays put; wheel changes FOV.
             # letting skybox authors examine details while stationary.
             self.fixed_camera_fov = min(110.0, max(20.0, self.fixed_camera_fov * multiplier))
             self.update()
@@ -1113,6 +1246,7 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         self._drag = (event.position(), event.button())
         event.accept()
 
@@ -1130,7 +1264,7 @@ class GLViewport(QOpenGLWidget):
         if button == Qt.MouseButton.MiddleButton or (
             event.modifiers() & Qt.KeyboardModifier.ShiftModifier
         ):
-            if not self.fixed_camera_mode:
+            if not self.fixed_camera_mode and not self.track_drive_enabled:
                 _, right, up = self._camera_view_matrix()
                 world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
                 self.target += (-dx * right + dy * up) * world_per_pixel
@@ -1429,6 +1563,36 @@ class Window(QMainWindow):
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        self.track_drive_checkbox = QCheckBox("TRK camera — follow racing direction")
+        self.track_drive_checkbox.setEnabled(False)
+        self.track_drive_checkbox.setToolTip(
+            "Find a same-named .TRK beside this track. Follow its physics "
+            "centerline from DLONG=0 at 6 feet above the surface. Click the "
+            "3D viewport, then W/Up forward, S/Down back, A/Left left "
+            "(+DLAT), D/Right right (-DLAT); hold Shift for 5x movement.")
+        self.track_drive_checkbox.toggled.connect(self._track_drive_toggled)
+        track_layout.addWidget(self.track_drive_checkbox)
+        self.trk_drive_status = QLabel("No matching .TRK loaded")
+        self.trk_drive_status.setWordWrap(True)
+        track_layout.addWidget(self.trk_drive_status)
+        track_steps = QHBoxLayout()
+        track_steps.addWidget(QLabel("Forward ft/key"))
+        self.trk_forward_step = QSpinBox()
+        self.trk_forward_step.setRange(1, 1000)
+        self.trk_forward_step.setValue(int(DEFAULT_LONG_STEP_FT))
+        self.trk_forward_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_forward_step)
+        track_steps.addWidget(QLabel("Lateral ft/key"))
+        self.trk_lateral_step = QSpinBox()
+        self.trk_lateral_step.setRange(1, 100)
+        self.trk_lateral_step.setValue(int(DEFAULT_LAT_STEP_FT))
+        self.trk_lateral_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_lateral_step)
+        track_layout.addLayout(track_steps)
+        self.trk_reset_button = QPushButton("Go to DLONG = 0 / DLAT = 0")
+        self.trk_reset_button.setEnabled(False)
+        self.trk_reset_button.clicked.connect(self._reset_trk_camera)
+        track_layout.addWidget(self.trk_reset_button)
         self.show_skybox = QCheckBox("Skybox (horiz.3do)")
         self.show_skybox.setChecked(True)
         self.show_skybox.setEnabled(False)
@@ -1517,6 +1681,8 @@ class Window(QMainWindow):
         self.viewer.statsChanged.connect(self.statusBar().showMessage)
         self.viewer.visibilityChanged.connect(self._visibility_updated)
         self.viewer.fixedCameraModeChanged.connect(self._fixed_camera_mode_changed)
+        self.viewer.trackDriveModeChanged.connect(self._track_drive_mode_changed)
+        self.viewer.trackDrivePositionChanged.connect(self._track_drive_position_changed)
         self.source_pane.compileRequested.connect(self._source_requested)
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
@@ -1561,6 +1727,58 @@ class Window(QMainWindow):
     def _repeat_toggled(self, checked):
         self.viewer.texture_repeat = checked
         self.viewer.update()
+
+    def _trk_steps_changed(self, *_):
+        self.viewer.track_forward_step_ft = float(self.trk_forward_step.value())
+        self.viewer.track_lateral_step_ft = float(self.trk_lateral_step.value())
+
+    def _track_drive_toggled(self, enabled):
+        self.viewer.set_track_drive_enabled(enabled)
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _reset_trk_camera(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        nav.set_coordinates(0.0, 0.0)
+        if not self.viewer.track_drive_enabled:
+            self.viewer.set_track_drive_enabled(True)
+        else:
+            self.viewer._update_track_drive_pose()
+        self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _track_drive_mode_changed(self, enabled):
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        self.perspective_toggle.blockSignals(True)
+        self.perspective_toggle.setChecked(self.viewer.perspective)
+        self.perspective_toggle.setEnabled(
+            not enabled and not self.viewer.fixed_camera_mode)
+        self.perspective_toggle.blockSignals(False)
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._update_trk_status()
+
+    def _track_drive_position_changed(self, pose):
+        self._update_trk_status()
+
+    def _update_trk_status(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        pose = nav.pose()
+        state = "Driving" if self.viewer.track_drive_enabled else "Available, off"
+        self.trk_drive_status.setText(
+            f"{nav.path.name}: {state} | section {pose.section} | "
+            f"DLONG {pose.dlong/UNITS_PER_FOOT:,.1f} ft "
+            f"({pose.dlong:,.0f} units) | "
+            f"DLAT {pose.dlat/UNITS_PER_FOOT:+,.1f} ft "
+            f"({pose.dlat:+,.0f} units) | "
+            f"camera XYZ ({pose.eye[0]:,.0f}, {pose.eye[1]:,.0f}, "
+            f"{pose.eye[2]:,.0f}) | Click viewport, use WASD/arrows; "
+            f"Shift = 5x")
 
     def _toggle_source(self, checked):
         self.source_tabs.setVisible(checked)
@@ -2096,7 +2314,8 @@ class Window(QMainWindow):
         self.fixed_camera_controls.setVisible(enabled)
         self.perspective_toggle.blockSignals(True)
         self.perspective_toggle.setChecked(self.viewer.perspective)
-        self.perspective_toggle.setEnabled(not enabled)
+        self.perspective_toggle.setEnabled(
+            not enabled and not self.viewer.track_drive_enabled)
         self.perspective_toggle.blockSignals(False)
         self.statusBar().showMessage(
             "Fixed Camera | raw XYZ "
@@ -2197,6 +2416,24 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        self.viewer.set_track_navigation(
+            scene.track_navigation, preserve=was_reloading or from_source)
+        nav = self.viewer.track_navigation
+        self.track_drive_checkbox.setEnabled(nav is not None)
+        self.trk_reset_button.setEnabled(nav is not None)
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(self.viewer.track_drive_enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        if nav is not None:
+            self._update_trk_status()
+        elif scene.track_navigation_error:
+            self.trk_drive_status.setText(
+                f"TRK could not be loaded: {scene.track_navigation_error}")
+        else:
+            self.trk_drive_status.setText(
+                f"No {self.model_path.stem}.trk found beside this model"
+                if scene.track_section_lods else
+                "TRK navigation is available for recognized tracks only")
         self._configure_switch_distance(scene)
         self._preserve_view = False
         self._sync_source_distance_filter()
@@ -2317,6 +2554,8 @@ class Window(QMainWindow):
                else "Ready"))
         if not from_source and self.source_toggle.isChecked():
             self._ensure_source_loaded()
+        if self.viewer.track_drive_enabled and not was_reloading and not from_source:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _load_failed(self, message):
         self.load_label.setText("Load failed; previous model preserved")
