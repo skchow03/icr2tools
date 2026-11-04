@@ -2914,7 +2914,9 @@ class Window(QMainWindow):
         problem_count = len(issues)
         self.statusBar().showMessage(
             f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
-            + (f"{problem_count} load issues — View > Load Error Log"
+            + ((f"{stats['palette_warning']} — View > Load Error Log")
+               if stats.get("palette_warning") else
+               (f"{problem_count} load issues — View > Load Error Log")
                if problem_count else "Ready"))
         if not from_source and not was_reloading and self.model_path is not None:
             remember_recent_model(self, self.model_path)
