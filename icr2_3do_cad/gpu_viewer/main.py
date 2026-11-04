@@ -798,7 +798,7 @@ class GLViewport(QOpenGLWidget):
         # editor, so the enclosed sky always fills the distant background.
         sky_projection = perspective_projection(
             aspect, 0.001, 100.0,
-            self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
+            self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
         sky_view = skybox_view_matrix(view, sky.mesh)
         mvp = np.ascontiguousarray(
             (sky_projection @ sky_view).T, dtype=np.float32)
@@ -971,7 +971,7 @@ class GLViewport(QOpenGLWidget):
         if self.perspective:
             projection=perspective_projection(
                 aspect, near, far,
-                self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
+                self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
         else:
             projection=ortho_projection(self.half_height,aspect,near,far)
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
@@ -1185,6 +1185,8 @@ class GLViewport(QOpenGLWidget):
     def set_fixed_camera_mode(self, enabled):
         """Toggle a stationary perspective eye at user-specified raw XYZ."""
         enabled = bool(enabled)
+        if enabled and self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if self.fixed_camera_mode == enabled:
             return
         if enabled:
@@ -1207,6 +1209,8 @@ class GLViewport(QOpenGLWidget):
         self.invalidate_visibility()
 
     def frame_all(self):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if self.fixed_camera_mode:
             self.set_fixed_camera_mode(False)
         self.target[:] = 0
@@ -1215,6 +1219,8 @@ class GLViewport(QOpenGLWidget):
         self.invalidate_visibility()
 
     def set_view(self, name):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
         if name == "3D":
             self.azimuth, self.elevation = math.radians(35), math.radians(28)
         elif name == "Top":
@@ -1228,8 +1234,8 @@ class GLViewport(QOpenGLWidget):
     def wheelEvent(self, event):
         notches = event.angleDelta().y() / 120.0
         multiplier = math.exp(-notches * 0.15)
-        if self.fixed_camera_mode:
-            # Do not dolly away from (0,0,0). Wheel adjusts field of view,
+        if self.fixed_camera_mode or self.track_drive_enabled:
+            # Fixed/track camera position stays put; wheel changes FOV.
             # letting skybox authors examine details while stationary.
             self.fixed_camera_fov = min(110.0, max(20.0, self.fixed_camera_fov * multiplier))
             self.update()
@@ -1240,6 +1246,7 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mousePressEvent(self, event):
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
         self._drag = (event.position(), event.button())
         event.accept()
 
@@ -1257,7 +1264,7 @@ class GLViewport(QOpenGLWidget):
         if button == Qt.MouseButton.MiddleButton or (
             event.modifiers() & Qt.KeyboardModifier.ShiftModifier
         ):
-            if not self.fixed_camera_mode:
+            if not self.fixed_camera_mode and not self.track_drive_enabled:
                 _, right, up = self._camera_view_matrix()
                 world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
                 self.target += (-dx * right + dy * up) * world_per_pixel
