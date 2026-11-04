@@ -1947,8 +1947,13 @@ class Window(QMainWindow):
             format_load_log(filename, self._load_issues))
         self.load_error_text.moveCursor(
             self.load_error_text.textCursor().MoveOperation.Start)
-        if auto_show and count:
-            self.open_load_error_log()
+        if auto_show:
+            if count:
+                self.open_load_error_log()
+            else:
+                # Don't leave a previous model's automatic issue popup open
+                # after a fresh, clean model load.
+                self.load_error_dialog.hide()
 
     def open_load_error_log(self):
         """View the latest log even after dismissing its automatic popup."""
