@@ -271,8 +271,14 @@ indexed tracks, even if another model happens to be in the Track workspace.
   sprites are reported in Assets without blocking polygon rendering.
   Camera-facing quads are anchored at their transformed source vertices,
   scaled by the 3DO sprite size and image crop, and drawn in the original
-  BSP/RES/LIST painter order between polygon spans. **Textures** must also
-  be checked. Both checkboxes may be switched without reloading the model.
+  BSP/RES/LIST painter order between polygon spans. The visible bitmap's
+  **vertical midpoint** aligns with the 3DO placement vertex's Z: a tree
+  placed at Z=0 spans equally above and below Z=0 (including scenery PMPs
+  whose painted rows occupy only the upper half of the 256-pixel canvas).
+  The horizontal source-canvas origin remains at X=128. This is a renderer
+  placement change; it does not modify source coordinates, billboard size,
+  textures, or sprite selection. **Textures** must also be checked. Both
+  checkboxes may be switched without reloading the model.
   Opening a new model decodes all sprite view variants on a worker; orbiting
   or changing SWITCH DISTANCE changes which sprites are selected, without
   re-decoding PMP bitmaps or rebuilding the polygon VBO.
