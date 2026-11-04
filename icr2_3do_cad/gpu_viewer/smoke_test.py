@@ -116,6 +116,12 @@ def run(path):
     window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
     window.resize(900, 680)
     window.show()
+    def close_smoke():
+        # Smoke edits are intentionally unsaved. Discard the test source only
+        # during teardown so the application's real exit guard stays intact.
+        window.source_pane.reset()
+        window.close()
+
     started = perf_counter()
     result = {"ok": False, "error": "timed out"}
     reload_state = {"started":False, "completed":False, "vbo":None}
@@ -153,7 +159,7 @@ def run(path):
                 if not pane.get_source().endswith("FR"):
                     result["error"] = "F/R viewport shortcuts intercepted N3 editor input"
                     timer.stop()
-                    window.close()
+                    close_smoke()
                     app.quit()
                     return
                 pane.editor.setPlainText(live["source"] + "\nBROKEN: FACE INVALID;\n")
@@ -164,7 +170,7 @@ def run(path):
                 if view._vbo != live["vbo"]:
                     result["error"] = "Invalid source changed the GPU vertex buffer"
                     timer.stop()
-                    window.close()
+                    close_smoke()
                     app.quit()
                     return
                 live["invalid_seen"] = True
@@ -180,9 +186,9 @@ def run(path):
             # Both BSP/RES and OpenGL must use editable raw Papyrus XYZ.
             prior = (view.target.copy(), view.distance, view.half_height,
                      view.azimuth, view.elevation, view.perspective, view._vbo)
-            # Fixed Camera lives in the intentionally collapsed Advanced panel.
-            # Open it as a user would before asserting widget visibility.
-            window.section_buttons["Advanced diagnostics"].setChecked(True)
+            # Fixed Camera controls are in the on-demand Advanced dialog.
+            # Open the dialog before asserting coordinate-control visibility.
+            window.open_settings_dialog("advanced")
             window.fixed_camera_button.setChecked(True)
             if not (window.fixed_camera_button.text() == 'Fixed Camera' and
                     view.fixed_camera_mode and view.perspective and
@@ -225,7 +231,7 @@ def run(path):
             fixed["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
-                window.close()
+                close_smoke()
                 app.quit()
                 return
         if (dynamic_test and live["valid_seen"] and fixed["tested"] and
@@ -296,7 +302,7 @@ def run(path):
             inspection["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
-                window.close()
+                close_smoke()
                 app.quit()
                 return
         if (window._info and view._vao is not None and
@@ -351,7 +357,7 @@ def run(path):
                 if len(colors) < 2:
                     result["error"] = "Frame contains only background; geometry invisible"
                     timer.stop()
-                    window.close()
+                    close_smoke()
                     app.quit()
                     return
                 screenshot = Path(os.environ.get(
@@ -374,7 +380,7 @@ def run(path):
                 )
             timer.stop()
             print("Closing Qt window",flush=True)
-            window.close()
+            close_smoke()
             print("Qt window closed",flush=True)
             app.quit()
         elif elapsed > 45:
@@ -385,7 +391,7 @@ def run(path):
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
             timer.stop()
-            window.close()
+            close_smoke()
             app.quit()
     timer = QTimer()
     timer.timeout.connect(check)

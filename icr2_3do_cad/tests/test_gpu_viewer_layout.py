@@ -1,4 +1,4 @@
-"""Small UI smoke tests for the GPU viewer's simplified inspector layout.
+"""UI smoke tests for the GPU viewer's viewport-first layout.
 
 Requires a Qt-capable desktop (or xvfb-run) and the gpu_viewer requirements.
 No OpenGL model is loaded, so these tests do not exercise rendering.
@@ -18,30 +18,41 @@ class GPUViewerLayoutTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         try:
-            from PySide6.QtWidgets import QApplication
+            from PySide6.QtWidgets import QApplication, QScrollArea
             from gpu_viewer.main import Window
         except (ImportError, SystemExit) as error:
             raise unittest.SkipTest(f"GPU viewer requirements unavailable: {error}")
         cls.app = QApplication.instance() or QApplication([])
+        cls.QScrollArea = QScrollArea
         cls.window = Window()
 
     @classmethod
     def tearDownClass(cls):
         cls.window.close()
 
-    def test_sidebar_is_collapsible_and_viewport_is_primary(self):
-        from PySide6.QtWidgets import QToolButton
-        headers = {h.text(): h for h in
-                   self.window.sidebar_content.findChildren(QToolButton)}
-        self.assertEqual(self.window.main_splitter.count(), 2)
+    def test_document_area_only_contains_viewport_and_source(self):
+        # No toolbar, sidebar or source Help tab occupies the main window.
+        main_layout = self.window.centralWidget().layout()
+        self.assertEqual(main_layout.count(), 1)
         self.assertEqual(self.window.editor_splitter.count(), 2)
-        self.assertTrue(headers["Model"].isChecked())
-        self.assertTrue(headers["Display"].isChecked())
-        self.assertFalse(headers["Assets"].isChecked())
-        self.assertFalse(headers["Advanced diagnostics"].isChecked())
-        headers["Assets"].setChecked(True)
-        self.assertTrue(headers["Assets"].isChecked())
-        headers["Assets"].setChecked(False)
+        self.assertIs(self.window.editor_splitter.widget(0), self.window.viewer)
+        self.assertIs(self.window.editor_splitter.widget(1), self.window.source_pane)
+        self.assertTrue(self.window.source_toggle.isChecked())
+        self.assertFalse(self.window.source_pane.isHidden())
+
+    def test_former_sidebar_sections_are_nonmodal_dialogs(self):
+        for key in ("model", "display", "assets", "advanced"):
+            with self.subTest(key=key):
+                dialog = self.window.settings_dialogs[key]
+                self.assertFalse(dialog.isModal())
+                self.assertTrue(dialog.isHidden())
+                self.assertIsNotNone(dialog.findChild(
+                    self.QScrollArea))
+        self.window.open_settings_dialog("model", workspace=1)
+        self.assertEqual(self.window.workspace_tabs.currentIndex(), 1)
+        self.assertFalse(self.window.settings_dialogs["model"].isHidden())
+        self.window.settings_dialogs["model"].close()
+        self.window.workspace_tabs.setCurrentIndex(2)
 
     def test_mip_uv_repeat_is_default_and_can_be_disabled(self):
         checkbox = self.window.repeat_uv
