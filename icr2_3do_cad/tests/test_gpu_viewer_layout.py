@@ -149,6 +149,72 @@ root: LIST {res};
         self.assertFalse(slider.isEnabled())
         self.assertFalse(spin.isEnabled())
 
+    def test_wireframe_uses_slider_res_selection_without_gl_upload(self):
+        from unittest.mock import patch
+        from n3_compile import compile_n3_text
+        from gpu_viewer.scene import build_scene
+        from gpu_viewer.mesh import make_mesh
+        from gpu_viewer.wireframe import make_wireframe
+
+        source = """3D VERSION 3.0;
+a: [<0,0,0>]; b: [<100,0,0>];
+c: [<0,100,0>];
+d: [<1000,0,0>]; e: [<1100,0,0>];
+f: [<1000,100,0>];
+near_poly: POLY <44> {a,b,c};
+far_poly: POLY <55> {d,e,f};
+res: SWITCH DISTANCE (a) > {(1200 ? far_poly), (0 ? near_poly)};
+root: LIST {res};
+"""
+        # One declaration per line is required by the N3 source parser.
+        source = source.replace("; b:", ";\\nb:").replace("; e:", ";\\ne:")
+        model, _ = compile_n3_text(source, "wire_slider.3d",
+                                   associate_planes=False)
+        scene = build_scene(model)
+        mesh = make_mesh(scene.geometry)
+        viewer = self.window.viewer
+        old = (viewer._model, viewer._scene, viewer._mesh,
+               viewer._wire_mesh, viewer._wire_vao, viewer._wire_index_count,
+               viewer._visible_set, viewer._visibility_info,
+               viewer._visibility_dirty, viewer.lod_distance)
+        self.window._configure_switch_distance(scene)
+        try:
+            viewer._model, viewer._scene, viewer._mesh = model, scene, mesh
+            viewer._wire_mesh = make_wireframe(scene.geometry, mesh)
+            viewer._wire_vao = 123  # No actual GL objects; calls are mocked.
+            near = model.n3_label_offsets["near_poly"]
+            far = model.n3_label_offsets["far_poly"]
+            with (patch("gpu_viewer.main.glBindVertexArray"),
+                  patch("gpu_viewer.main.glBindBuffer"),
+                  patch("gpu_viewer.main.glBufferData") as upload,
+                  patch.object(viewer, "_camera_eye_model",
+                               return_value=(0.0, 0.0, 0.0))):
+                self.window.lod_slider.setValue(300)
+                self.assertEqual(self.window.lod_mode_combo.currentData(), "manual")
+                viewer._refresh_wire_visibility()
+                self.assertEqual(viewer._visible_set, frozenset({near}))
+                self.assertEqual(viewer._wire_index_count, 6)
+                self.assertTrue(upload.called)
+
+                self.window.lod_slider.setValue(1200)
+                viewer._refresh_wire_visibility()
+                self.assertEqual(viewer._visible_set, frozenset({far}))
+                self.assertEqual(viewer._wire_index_count, 6)
+
+                self.window.lod_mode_combo.setCurrentIndex(
+                    self.window.lod_mode_combo.findData("all"))
+                viewer._refresh_wire_visibility()
+                self.assertEqual(viewer._visible_set, frozenset(model.polygons))
+                self.assertEqual(viewer._wire_index_count, 0)
+        finally:
+            (viewer._model, viewer._scene, viewer._mesh,
+             viewer._wire_mesh, viewer._wire_vao, viewer._wire_index_count,
+             viewer._visible_set, viewer._visibility_info,
+             viewer._visibility_dirty, viewer.lod_distance) = old
+            self.window.lod_mode_combo.setCurrentIndex(
+                self.window.lod_mode_combo.findData("auto"))
+            self.window._configure_switch_distance(None)
+
     def test_workspace_tabs_preserved_and_common_assets_not_duplicated(self):
         tabs = self.window.workspace_tabs
         self.assertEqual([tabs.tabText(i) for i in range(tabs.count())],
