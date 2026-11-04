@@ -2233,6 +2233,10 @@ class Window(QMainWindow):
         self.viewer.track_window_counts = tuple(
             spin.value() for spin in self.track_window_spins)
         if self.viewer.track_detail == 'window':
+            hi, med, lo = self.viewer.track_window_counts
+            self.track_detail_status.setText(
+                f"Camera window: current section HI, {hi} HI / {med} MED / "
+                f"{lo} LO sections in each direction; all others omitted")
             self.viewer.invalidate_visibility()
 
     def _track_detail_changed(self, *args):
@@ -2545,7 +2549,9 @@ class Window(QMainWindow):
             self.track_detail_status.setText(
                 f"{section_count} indexed sections | DLONG DATA recovered: "
                 f"{metadata_count}/{section_count} | "
-                + ("Camera window enabled (8 HI / 5 MED / 3 LO each way). "
+                + (f"Camera window enabled ({self.viewer.track_window_counts[0]} HI / "
+                   f"{self.viewer.track_window_counts[1]} MED / "
+                   f"{self.viewer.track_window_counts[2]} LO each way). "
                    "Current section is HI; everything outside is omitted."
                    if can_window else
                    "Camera-local LOD requires matching TRK and valid DATA; "
