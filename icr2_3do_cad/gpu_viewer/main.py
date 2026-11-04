@@ -1429,6 +1429,17 @@ class Window(QMainWindow):
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        self.show_skybox = QCheckBox("Skybox (horiz.3do)")
+        self.show_skybox.setChecked(True)
+        self.show_skybox.setEnabled(False)
+        self.show_skybox.setToolTip(
+            "Display HORIZ.3DO as a camera-following background at "
+            "its local eye (0, 0, 1000). Only available on indexed tracks.")
+        self.show_skybox.toggled.connect(self._skybox_toggled)
+        track_layout.addWidget(self.show_skybox)
+        self.skybox_status = QLabel("No track skybox loaded")
+        self.skybox_status.setWordWrap(True)
+        track_layout.addWidget(self.skybox_status)
         self.workspace_tabs.addTab(track_page, "Track")
 
         object_page = QWidget()
@@ -1905,11 +1916,17 @@ class Window(QMainWindow):
             self.reload_mips()
 
     def reload_mips(self):
-        """Re-read car livery MIPs, keeping the model and camera in memory."""
+        """Re-read main and skybox MIPs while preserving camera and edits."""
         if self._busy() or self.model_path is None:
             return
         scene = self.viewer._scene
         if scene is None or self.viewer._mesh is None:
+            return
+        if scene.skybox is not None:
+            # The sky has an independent atlas; the normal texture worker
+            # only covers the main scene. Rebuild both atlas buffers here.
+            self.statusBar().showMessage("Reloading track and HORIZ sky MIPs…")
+            self.load(self.model_path, reuse_model=True)
             return
         self.statusBar().showMessage("Reloading indexed MIP pixels…")
         self.worker = TextureReloadWorker(
@@ -1956,6 +1973,10 @@ class Window(QMainWindow):
     def _mip_reload_failed(self, message):
         self.statusBar().showMessage("MIP reload failed; previous livery retained")
         QMessageBox.warning(self, "MIP reload failed", message)
+
+    def _skybox_toggled(self, checked):
+        self.viewer.sky_enabled = bool(checked)
+        self.viewer.update()
 
     def _track_detail_changed(self, *args):
         self.viewer.track_detail = self.track_detail_combo.currentData()
@@ -2202,6 +2223,28 @@ class Window(QMainWindow):
             f" | referenced carshape(s): {len(model.external_names)}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
         self.track_status.setText(workspace_scene_summary("track", stats))
+        skybox = scene.skybox
+        # Reopening a different asset defaults the detected skybox to ON;
+        # recompile and texture/asset reloads retain the user's choice.
+        if not was_reloading and not from_source:
+            self.show_skybox.blockSignals(True)
+            self.show_skybox.setChecked(skybox is not None)
+            self.show_skybox.blockSignals(False)
+        self.show_skybox.setEnabled(skybox is not None)
+        self.viewer.sky_enabled = self.show_skybox.isChecked() and skybox is not None
+        if skybox is not None:
+            self.skybox_status.setText(
+                f"{skybox.path.name}: {len(skybox.atlas.loaded_names)} sky MIPs loaded"
+                f" | {len(skybox.atlas.missing_names)} missing"
+                + (" (" + ", ".join(skybox.atlas.missing_names[:4]) + ")"
+                   if skybox.atlas.missing_names else ""))
+        elif scene.skybox_error:
+            self.skybox_status.setText(f"Skybox could not be loaded: {scene.skybox_error}")
+        else:
+            self.skybox_status.setText(
+                "No horiz.3do found beside track or in external objects folder"
+                if scene.track_section_lods else
+                "Skybox only available for recognized indexed tracks")
         section_count = stats.get('track_section_lists', 0)
         self.track_detail_combo.setEnabled(bool(section_count))
         self.track_detail_status.setText(
