@@ -418,7 +418,9 @@ class GLViewport(QOpenGLWidget):
         self._palette = None
         self.textures_enabled = True
         self.sprites_enabled = True
-        self.texture_repeat = False
+        # Papyrus texture coordinates address an infinitely tiled MIP;
+        # clamp-to-edge remains an explicit diagnostic option in Display.
+        self.texture_repeat = True
         self.texture_upload_ms = None
         self._resources_released = False
         self._vbo = None
@@ -1241,7 +1243,12 @@ class Window(QMainWindow):
         self.show_sprites.setChecked(True)
         self.show_sprites.toggled.connect(self._sprites_toggled)
         display_layout.addWidget(self.show_sprites)
-        self.repeat_uv = QCheckBox("Repeat UV")
+        self.repeat_uv = QCheckBox("Repeat UV (tile MIPs)")
+        self.repeat_uv.setChecked(self.viewer.texture_repeat)
+        self.repeat_uv.setToolTip(
+            "Repeat MIP pixels in U and V when coordinates extend beyond the "
+            "individual image's dimensions. Applies to .3D and .3DO alike; "
+            "uncheck only to diagnose clamp-to-edge rendering.")
         self.repeat_uv.toggled.connect(self._repeat_toggled)
         display_layout.addWidget(self.repeat_uv)
         assets_layout.addLayout(assetsbar)

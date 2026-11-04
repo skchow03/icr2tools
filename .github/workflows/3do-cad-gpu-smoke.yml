@@ -7,6 +7,7 @@ on:
       - "icr2_3do_cad/three_do.py"
       - "icr2_3do_cad/pmp_preview.py"
       - "icr2_3do_cad/tests/test_gpu_pmp_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_uv_repeat_gl.py"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
       - "icr2_3do_cad/tests/test_gpu_viewer_mesh.py"
@@ -17,6 +18,7 @@ on:
       - "icr2_3do_cad/three_do.py"
       - "icr2_3do_cad/pmp_preview.py"
       - "icr2_3do_cad/tests/test_gpu_pmp_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_uv_repeat_gl.py"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
       - "icr2_3do_cad/tests/test_gpu_viewer_mesh.py"
@@ -117,6 +119,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python icr2_3do_cad/gpu_viewer/visibility_source_smoke_test.py
+      - name: Verify tiled MIP UV sampling in N3 and binary 3DO
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_uv_repeat_gl.py'
       - name: Render standalone and referenced PMP sprites in real OpenGL
         working-directory: icr2_3do_cad
         env:

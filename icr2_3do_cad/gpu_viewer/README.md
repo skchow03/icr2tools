@@ -214,9 +214,13 @@ The mode is a UI organization choice, not a conversion between file formats.
   an explicitly chosen file; **Clear fallback** reverses this override.
   Changing MIPs rebuilds the read-only mesh/atlas, not the source file.
 - **Textures**: toggle sampled MIP colors and PMP sprites versus flat
-  polygon palette colors. **Repeat UV** optionally wraps raw texel UVs, which
-  clamp by default. The status line reports loaded/missing MIPs, mapped faces
-  and atlas size.
+  polygon palette colors. **Repeat UV (tile MIPs)** is enabled by default for
+  both editable `.3D` and compiled `.3DO` files. If UVs extend beyond the
+  dimensions of their assigned MIP, the shader wraps them independently by
+  that MIP's actual width and height, without sampling neighboring images in
+  the shared atlas. Uncheck it only to compare the former clamp-to-edge
+  behavior. The status line reports loaded/missing MIPs, mapped faces and
+  atlas size.
 - **PMP sprites (PMP/PMP2)** (Display, enabled by default): render
   viewpoint-selected transparent sprites both in the opened 3DO and in
   DYNAMIC/external referenced 3DOs. Uses the same validated PMP decoder as
@@ -399,8 +403,8 @@ benchmark reuses the cached index buffer while the camera is stationary.
 Texture assets are decoded once using the existing validated `texture_preview.load_mip`
 reader; their full-resolution **8-bit palette indices** are packed into a
 single GPU `GL_R8UI` atlas. The fragment shader selects nearest texels
-using original raw UV coordinates, then looks up their colors in a separate
-256x1 PCX palette texture. No per-polygon draw calls or color conversion
+using original raw UV coordinates with per-MIP modulo tiling (default on),
+then looks up their colors in a separate 256x1 PCX palette texture. No per-polygon draw calls or color conversion
 during camera motion. The palette can be updated independently. Missing
 or malformed MIPs leave the associated polygons in their flat palette color,
 with the missing files counted in the UI. The atlas is capped at 4096x4096;
