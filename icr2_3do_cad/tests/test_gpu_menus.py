@@ -147,6 +147,58 @@ class GPUViewerMenuTests(unittest.TestCase):
             self._action(self._menu("Assets"), "Asset Settings…").trigger()
             show.assert_called_once_with("assets")
 
+    def test_load_error_log_popup_and_view_menu_reopen(self):
+        from gpu_viewer.load_diagnostics import LoadIssue
+
+        log = self.window.load_error_dialog
+        self.assertFalse(log.isModal())
+        self.assertTrue(self.window.load_error_text.isReadOnly())
+        issues = (
+            LoadIssue("Referenced objects", "wheel.3do / wheel.3d missing"),
+            LoadIssue("Missing MIP textures", "carbody.mip"),
+        )
+        try:
+            self.window._update_load_error_log(
+                "damaged.3do", issues, auto_show=True)
+            self.assertFalse(log.isHidden())
+            self.assertIn("2 load issues", self.window.load_error_summary.text())
+            report = self.window.load_error_text.toPlainText()
+            self.assertIn("wheel.3do", report)
+            self.assertIn("carbody.mip", report)
+            log.close()
+            self.assertTrue(log.isHidden())
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertFalse(log.isHidden())
+            self.assertEqual(self.window.load_error_text.toPlainText(), report)
+
+            # A successful load must replace the stale errors, not retain
+            # missing assets from the preceding model.
+            log.close()
+            self.window._update_load_error_log(
+                "repaired.3do", (), auto_show=True)
+            self.assertTrue(log.isHidden())
+            self.assertIn("no reported load issues",
+                          self.window.load_error_summary.text())
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertIn("No load errors", self.window.load_error_text.toPlainText())
+        finally:
+            log.close()
+
+    def test_fatal_load_failure_also_enters_reopenable_log(self):
+        log = self.window.load_error_dialog
+        try:
+            self.window.model_path = Path(self.tmp.name) / "bad.3d"
+            self.window._load_failed("FormatError: invalid 3D declaration")
+            self.assertFalse(log.isHidden())
+            self.assertIn("FormatError: invalid 3D declaration",
+                          self.window.load_error_text.toPlainText())
+            log.close()
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertFalse(log.isHidden())
+        finally:
+            log.close()
+            self.window.model_path = None
+
     def test_save_and_save_as_track_clean_source(self):
         source = self.window.source_pane
         with tempfile.TemporaryDirectory() as directory:
