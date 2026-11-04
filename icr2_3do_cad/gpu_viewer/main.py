@@ -65,6 +65,9 @@ from gpu_viewer.visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
+from gpu_viewer.skybox import (
+    find_track_skybox, load_track_skybox, skybox_view_matrix,
+)
 from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.sprite_gl import PMPGLRenderer
 from gpu_viewer.textures import (build_atlas, load_palette,
@@ -266,6 +269,17 @@ class LoadWorker(QThread):
                     auto_palette = True
             else:
                 palette = load_palette(self.palette_path)
+            # HORIZ.3DO is a separate camera-locked background for recognized
+            # tracks; it never enters the main track's BSP, mesh or bounds.
+            if scene.track_section_lods:
+                sky_path = find_track_skybox(self.path, self.objects_folder)
+                if sky_path is not None:
+                    try:
+                        scene.skybox = load_track_skybox(
+                            sky_path, palette.astype(np.float32) / 255.0,
+                            texture_folder=self.texture_folder)
+                    except (OSError, ValueError) as exc:
+                        scene.skybox_error = f"{sky_path.name}: {exc}"
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
@@ -306,6 +320,10 @@ class LoadWorker(QThread):
                 "switches": sum(len(inst.model.switches)
                                 for inst in scene.instances),
                 "track_section_lists": len(scene.track_section_lods or {}),
+                "skybox_path": str(scene.skybox.path) if scene.skybox else "",
+                "skybox_error": scene.skybox_error or "",
+                "skybox_missing_mips": (scene.skybox.atlas.missing_names
+                                        if scene.skybox else ()),
                 "recolor_pairs": scene.recolor_pairs,
                 "appearance_geometry": (appearance.geometry_name if appearance else ""),
                 "appearance_mip": (appearance.texture_name if appearance else ""),
@@ -412,6 +430,12 @@ class GLViewport(QOpenGLWidget):
         self._inspection_uniform = None
         self._atlas_texture = None
         self._palette_texture = None
+        self._sky_vao = None
+        self._sky_vbo = None
+        self._sky_ebo = None
+        self._sky_atlas_texture = None
+        self._sky_index_count = 0
+        self.sky_enabled = True
         self._sprite_renderer = None
         self._sprite_events = ()
         self._atlas = None
@@ -534,6 +558,7 @@ class GLViewport(QOpenGLWidget):
         if self._mesh is not None:
             self._upload_mesh()
             self._upload_texture_assets()
+            self._upload_skybox()
             self._upload_sprite_assets()
 
     def shutdown_gl(self):
@@ -554,6 +579,7 @@ class GLViewport(QOpenGLWidget):
             if self._ebo is not None:
                 glDeleteBuffers(1, [self._ebo])
                 self._ebo = None
+            self._delete_skybox_buffers()
             textures = [tex for tex in (self._atlas_texture, self._palette_texture)
                         if tex is not None]
             if textures:
@@ -591,6 +617,7 @@ class GLViewport(QOpenGLWidget):
             try:
                 self._upload_mesh()
                 self._upload_texture_assets()
+                self._upload_skybox()
                 self._upload_sprite_assets()
             finally:
                 self.doneCurrent()
@@ -678,6 +705,84 @@ class GLViewport(QOpenGLWidget):
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
         self._upload_palette()
         self.texture_upload_ms = (perf_counter() - started) * 1000
+
+    def _delete_skybox_buffers(self):
+        """Called only while the widget's OpenGL context is current."""
+        if self._sky_vao is not None:
+            glDeleteVertexArrays(1, [self._sky_vao])
+            self._sky_vao = None
+        if self._sky_vbo is not None:
+            glDeleteBuffers(1, [self._sky_vbo])
+            self._sky_vbo = None
+        if self._sky_ebo is not None:
+            glDeleteBuffers(1, [self._sky_ebo])
+            self._sky_ebo = None
+        if self._sky_atlas_texture is not None:
+            glDeleteTextures(1, [self._sky_atlas_texture])
+            self._sky_atlas_texture = None
+        self._sky_index_count = 0
+
+    def _upload_skybox(self):
+        """Upload the sky's own VBO, EBO and MIP atlas once per model load."""
+        self._delete_skybox_buffers()
+        sky = self._scene.skybox if self._scene is not None else None
+        if sky is None or not sky.indices.size:
+            return
+        payload = np.ascontiguousarray(sky.mesh.vertices, dtype=np.float32)
+        indices = np.ascontiguousarray(sky.indices, dtype=np.uint32)
+        self._sky_vao = int(glGenVertexArrays(1))
+        self._sky_vbo = int(glGenBuffers(1))
+        self._sky_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._sky_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._sky_vbo)
+        glBufferData(GL_ARRAY_BUFFER, payload.nbytes, payload, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(12))
+        for location, length, offset in ((2, 1, 24), (3, 2, 28),
+                                         (4, 4, 36)):
+            glEnableVertexAttribArray(location)
+            glVertexAttribPointer(
+                location, length, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(offset))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._sky_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
+        glBindVertexArray(0)
+        self._sky_index_count = int(indices.size)
+        self._sky_atlas_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._sky_atlas_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        pixels = np.ascontiguousarray(sky.atlas.pixels, dtype=np.uint8)
+        height, width = pixels.shape
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, width, height, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+
+    def _draw_skybox(self, view, aspect):
+        """Draw at a fixed local eye with camera rotation; no sky parallax."""
+        sky = self._scene.skybox if self._scene is not None else None
+        if (not self.sky_enabled or sky is None or self._sky_vao is None
+                or not self._sky_index_count):
+            return
+        # A perspective background is used even for the orthographic track
+        # editor, so the enclosed sky always fills the distant background.
+        sky_projection = perspective_projection(
+            aspect, 0.001, 100.0,
+            self.fixed_camera_fov if self.fixed_camera_mode else 60.0)
+        sky_view = skybox_view_matrix(view, sky.mesh)
+        mvp = np.ascontiguousarray(
+            (sky_projection @ sky_view).T, dtype=np.float32)
+        glDisable(GL_DEPTH_TEST)
+        glUniformMatrix4fv(self._uniform, 1, GL_FALSE, mvp)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._sky_atlas_texture)
+        glBindVertexArray(self._sky_vao)
+        glDrawElements(GL_TRIANGLES, self._sky_index_count, GL_UNSIGNED_INT, None)
+        # The caller restores the main view transform, atlas, and depth mode.
 
     def _upload_sprite_assets(self):
         """Upload indexed PMP assets on the GUI GL thread, never the worker."""
@@ -846,6 +951,12 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
+        self._draw_skybox(view, aspect)
+        glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        if self.render_mode != 'painter':
+            glEnable(GL_DEPTH_TEST)
         if (self.render_mode != 'all' or self._track_lod_active()) and self._visibility_dirty:
             self._refresh_visibility()
         glBindVertexArray(self._vao)
@@ -1318,6 +1429,17 @@ class Window(QMainWindow):
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        self.show_skybox = QCheckBox("Skybox (horiz.3do)")
+        self.show_skybox.setChecked(True)
+        self.show_skybox.setEnabled(False)
+        self.show_skybox.setToolTip(
+            "Display HORIZ.3DO as a camera-following background at "
+            "its local eye (0, 0, 1000). Only available on indexed tracks.")
+        self.show_skybox.toggled.connect(self._skybox_toggled)
+        track_layout.addWidget(self.show_skybox)
+        self.skybox_status = QLabel("No track skybox loaded")
+        self.skybox_status.setWordWrap(True)
+        track_layout.addWidget(self.skybox_status)
         self.workspace_tabs.addTab(track_page, "Track")
 
         object_page = QWidget()
@@ -1794,11 +1916,17 @@ class Window(QMainWindow):
             self.reload_mips()
 
     def reload_mips(self):
-        """Re-read car livery MIPs, keeping the model and camera in memory."""
+        """Re-read main and skybox MIPs while preserving camera and edits."""
         if self._busy() or self.model_path is None:
             return
         scene = self.viewer._scene
         if scene is None or self.viewer._mesh is None:
+            return
+        if scene.skybox is not None:
+            # The sky has an independent atlas; the normal texture worker
+            # only covers the main scene. Rebuild both atlas buffers here.
+            self.statusBar().showMessage("Reloading track and HORIZ sky MIPs…")
+            self.load(self.model_path, reuse_model=True)
             return
         self.statusBar().showMessage("Reloading indexed MIP pixels…")
         self.worker = TextureReloadWorker(
@@ -1845,6 +1973,10 @@ class Window(QMainWindow):
     def _mip_reload_failed(self, message):
         self.statusBar().showMessage("MIP reload failed; previous livery retained")
         QMessageBox.warning(self, "MIP reload failed", message)
+
+    def _skybox_toggled(self, checked):
+        self.viewer.sky_enabled = bool(checked)
+        self.viewer.update()
 
     def _track_detail_changed(self, *args):
         self.viewer.track_detail = self.track_detail_combo.currentData()
@@ -2091,6 +2223,28 @@ class Window(QMainWindow):
             f" | referenced carshape(s): {len(model.external_names)}"
             f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
         self.track_status.setText(workspace_scene_summary("track", stats))
+        skybox = scene.skybox
+        # Reopening a different asset defaults the detected skybox to ON;
+        # recompile and texture/asset reloads retain the user's choice.
+        if not was_reloading and not from_source:
+            self.show_skybox.blockSignals(True)
+            self.show_skybox.setChecked(skybox is not None)
+            self.show_skybox.blockSignals(False)
+        self.show_skybox.setEnabled(skybox is not None)
+        self.viewer.sky_enabled = self.show_skybox.isChecked() and skybox is not None
+        if skybox is not None:
+            self.skybox_status.setText(
+                f"{skybox.path.name}: {len(skybox.atlas.loaded_names)} sky MIPs loaded"
+                f" | {len(skybox.atlas.missing_names)} missing"
+                + (" (" + ", ".join(skybox.atlas.missing_names[:4]) + ")"
+                   if skybox.atlas.missing_names else ""))
+        elif scene.skybox_error:
+            self.skybox_status.setText(f"Skybox could not be loaded: {scene.skybox_error}")
+        else:
+            self.skybox_status.setText(
+                "No horiz.3do found beside track or in external objects folder"
+                if scene.track_section_lods else
+                "Skybox only available for recognized indexed tracks")
         section_count = stats.get('track_section_lists', 0)
         self.track_detail_combo.setEnabled(bool(section_count))
         self.track_detail_status.setText(

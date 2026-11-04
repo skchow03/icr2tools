@@ -48,7 +48,19 @@ or discard unsaved edits.
   selector for indexed Papyrus track models. The selector defaults to **HI** and
   switches among **HI** (four section slots), **MED** (two), and **LO** (one).
   Only the chosen tier is drawn; empty/NIL slots stay empty. The control is
-  disabled for models without a recognized track section table. Original
+  disabled for models without a recognized track section table. The **Skybox
+  (horiz.3do)** checkbox is enabled and on by default if a readable
+  `horiz.3do` is found beside an indexed track or in its `objects`/
+  configured external 3DO folder; recognition is case-insensitive. The skybox
+  is rendered in an independent background pass: its virtual eye stays at
+  raw `(0,0,1000)`, while camera yaw/pitch/tilt follows the viewer. Panning,
+  zooming or moving a fixed camera does not translate the sky. The sky's
+  named MIPs (`skyindex`, `page03b`, `page03` for the reference model)
+  are resolved beside `horiz.3do`, and missing textures are reported on the
+  Track tab. The toggle never changes track geometry, source, BSP or LOD.
+  **Reload MIPs (R)** reloads both track and sky atlases (rebuilding the
+  scene while preserving the camera and current editable source).
+  Original
   compiled track `.3do` files use seven-pointer section records and a special
   expanded root index (rather than the `.3D` source's eight-pointer lists and
   DATA hash). The viewer recognizes both representations and skips the binary
@@ -73,6 +85,8 @@ appearance wrappers, **Track** for structurally recognized track section tables
 currently selected workspace rather than guessing their semantics.
 Select the correct mode manually for models whose names give no reliable hint.
 The mode is a UI organization choice, not a conversion between file formats.
+Skybox discovery is intentionally restricted to structurally recognized
+indexed tracks, even if another model happens to be in the Track workspace.
 
 ## Controls
 
