@@ -39,6 +39,9 @@ class GPUCursorUITests(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # A deliberate invalid source edit must not open the exit prompt
+        # during headless Qt test cleanup.
+        cls.window.source_pane.reset()
         cls.window.close()
 
     def move_to_line(self, line):
