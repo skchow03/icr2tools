@@ -475,6 +475,12 @@ class SourcePane(QWidget):
         self._apply_filters()
         self._cursor_changed()
 
+    def mark_saved(self):
+        """Set the clean baseline only after the source was written successfully."""
+        if self._ready:
+            self._initial = self.editor.toPlainText()
+            self.editor.document().setModified(False)
+
     def reset(self, status='Open the Source tab to generate editable N3.'):
         self.filtered_list.reset()
         self._debounce.stop()
