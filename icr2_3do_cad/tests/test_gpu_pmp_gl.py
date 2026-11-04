@@ -149,7 +149,7 @@ class GPURealPMPRenderingTests(unittest.TestCase):
                         model_path = folder / f"tree{sprite_kind}_{top}.3do"
                         model_path.write_bytes(
                             struct.pack("<5i", 32, 16, 0, 1, 0) +
-                            b"tree1\\x00\\x00\\x00" +
+                            b"tree1\x00\x00\x00" +
                             struct.pack("<8i", 0, 0, 0, 0,
                                         -(1 << 31) + sprite_kind,
                                         0, 240000, 0))
