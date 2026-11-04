@@ -1480,7 +1480,7 @@ class Window(QMainWindow):
         advanced_layout.addWidget(self.fixed_camera_controls)
         advanced_layout.addWidget(QLabel("Rendering method"))
         self.mode_combo = QComboBox()
-        self.mode_combo.addItem("Papyrus drawing order (default)", "painter")
+        self.mode_combo.addItem("Papyrus drawing order (no depth)", "painter")
         self.mode_combo.addItem("BSP selection + GPU depth", "depth")
         self.mode_combo.addItem("All polygons + GPU depth", "all")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
@@ -2509,6 +2509,12 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        # Indexed tracks default to BSP-selected polygons with GPU depth;
+        # car/object modes keep their original painter default. Preserve an
+        # explicitly chosen method across recompiles and asset reloads.
+        if not was_reloading and not from_source:
+            requested = 'depth' if scene.track_section_lods else 'painter'
+            self.mode_combo.setCurrentIndex(self.mode_combo.findData(requested))
         self.viewer.set_track_navigation(
             scene.track_navigation, preserve=was_reloading or from_source)
         nav = self.viewer.track_navigation
