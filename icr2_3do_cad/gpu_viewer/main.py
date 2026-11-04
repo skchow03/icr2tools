@@ -27,7 +27,7 @@ try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
         GL_DEPTH_TEST, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
-        GL_STATIC_DRAW, GL_TRIANGLES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_LINES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
@@ -63,6 +63,7 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
+from gpu_viewer.wireframe import make_wireframe
 from gpu_viewer.visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
 )
@@ -123,8 +124,16 @@ uniform sampler2D u_palette;
 uniform int u_textures;
 uniform int u_repeat;
 uniform int u_inspect_poly;
+uniform int u_wireframe;
 out vec4 fragColor;
 void main() {
+    // Wireframe is a separate untextured line pass. Do not sample MIP/PCX.
+    if (u_wireframe != 0) {
+        fragColor = (u_wireframe == 2
+            ? vec4(1.0, 0.76, 0.30, 1.0)   // selected polygon outline
+            : vec4(0.84, 0.89, 0.95, 1.0));
+        return;
+    }
     int index = clamp(v_index, 0, 255);
     if (u_textures != 0 && v_rect.z >= 1.0 && v_rect.w >= 1.0) {
         ivec2 size_px = ivec2(v_rect.zw);
@@ -477,13 +486,19 @@ class GLViewport(QOpenGLWidget):
         self._ebo = None
         self._surface_ebo = None
         self._surface_index_count = 0
+        self._wire_vao = None
+        self._wire_vbo = None
+        self._wire_ebo = None
+        self._wire_mesh = None
+        self._wire_index_count = 0
+        self._wire_uniform = None
         self._vao = None
         self._mesh = None
         self._model = None
         self._scene = None
         self.inspection_kind = None
         self.inspection_offset = None
-        self.render_mode = 'painter'  # painter | depth | all
+        self.render_mode = 'painter'  # painter | depth | all | wire
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
         self.track_window_counts = DEFAULT_WINDOW_COUNTS
@@ -581,6 +596,7 @@ class GLViewport(QOpenGLWidget):
             self._texture_uniform = glGetUniformLocation(program, "u_textures")
             self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
             self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
+            self._wire_uniform = glGetUniformLocation(program, "u_wireframe")
             glUseProgram(program)
             glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
             glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
@@ -618,6 +634,8 @@ class GLViewport(QOpenGLWidget):
                 glDeleteBuffers(1, [self._surface_ebo])
                 self._surface_ebo = None
             self._surface_index_count = 0
+            self._release_wire_buffers()
+            self._wire_mesh = None
             self._delete_skybox_buffers()
             textures = [tex for tex in (self._atlas_texture, self._palette_texture)
                         if tex is not None]
@@ -639,6 +657,8 @@ class GLViewport(QOpenGLWidget):
         self._scene = scene
         self._sprite_events = ()
         self._surface_index_count = 0
+        self._wire_mesh = None
+        self._wire_index_count = 0
         self.inspection_kind = None
         self.inspection_offset = None
         self._atlas = atlas
@@ -672,10 +692,141 @@ class GLViewport(QOpenGLWidget):
             self.inspection_offset = offset
             self.update()
 
+    def _release_wire_buffers(self):
+        """Release cached boundary geometry in a current OpenGL context."""
+        if self._wire_vao is not None:
+            glDeleteVertexArrays(1, [self._wire_vao])
+            self._wire_vao = None
+        if self._wire_vbo is not None:
+            glDeleteBuffers(1, [self._wire_vbo])
+            self._wire_vbo = None
+        if self._wire_ebo is not None:
+            glDeleteBuffers(1, [self._wire_ebo])
+            self._wire_ebo = None
+        self._wire_index_count = 0
+
+    def _ensure_wireframe_buffers(self):
+        """Build boundary edges only when first requested for this model."""
+        if self._program is None or self._mesh is None or self._scene is None:
+            return
+        if self._wire_vao is not None:
+            return
+        if self._wire_mesh is None:
+            self._wire_mesh = make_wireframe(self._scene.geometry, self._mesh)
+        payload = self._wire_mesh.vertices
+        self._wire_vao = int(glGenVertexArrays(1))
+        self._wire_vbo = int(glGenBuffers(1))
+        self._wire_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._wire_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._wire_vbo)
+        glBufferData(GL_ARRAY_BUFFER, payload.nbytes,
+                     payload if payload.size else None, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, ctypes.c_void_p(0))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._wire_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    def _refresh_wire_visibility(self):
+        """Select line indices by track section LOD, never by polygon BSP."""
+        if not self._track_lod_active():
+            self._wire_index_count = 0
+            self._visible_set = frozenset(self._model.polygons)
+            self._visibility_info = {}
+            self._visibility_dirty = False
+            self.visibilityChanged.emit(
+                f"Wireframe: {self._wire_mesh.segment_count:,} boundary edges "
+                f"across {self._wire_mesh.polygon_count:,} polygons "
+                "(all BSP/RES branches; no triangle diagonals)")
+            return
+
+        eye = self._camera_eye_model()
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation))
+        detail = self.track_detail
+        window = None
+        if detail == 'window':
+            nav = self.track_navigation
+            if nav is not None and self._scene.track_section_dlongs:
+                window = (nav.dlong, nav.length, self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'
+        indices, visible, info = ordered_scene_indices(
+            self._scene, self._wire_mesh, eye, None,
+            view_direction=direction, bsp_mode='off',
+            track_detail=detail, track_window=window)
+        glBindVertexArray(self._wire_vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._wire_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        self._wire_index_count = int(indices.size)
+        self._visible_set = visible
+        self._visibility_info = info
+        self._visibility_dirty = False
+        self.visibilityChanged.emit(
+            f"Wireframe: {self._wire_index_count // 2:,} boundary edges "
+            f"across {info['mesh_polygons']:,} selected track polygons "
+            "(selected section detail; BSP/RES ignored)")
+
+    def _paint_wireframe(self, projection, view):
+        """Only GL_LINES: no filled faces, sprites, skybox, or diagonal edges."""
+        self._ensure_wireframe_buffers()
+        if self._wire_vao is None:
+            glUseProgram(0)
+            return
+        if self._visibility_dirty:
+            self._refresh_wire_visibility()
+        glUniform1i(self._wire_uniform, 1)
+        glBindVertexArray(self._wire_vao)
+        if self._track_lod_active():
+            if self._wire_index_count:
+                glDrawElements(GL_LINES, self._wire_index_count, GL_UNSIGNED_INT, None)
+        elif self._wire_mesh.vertices.size:
+            glDrawArrays(GL_LINES, 0, len(self._wire_mesh.vertices))
+
+        notice = None
+        if self.inspection_kind == "polygon":
+            flattened = self._scene.polygon_lookup.get((0, self.inspection_offset))
+            span = self._wire_mesh.polygon_ranges.get(flattened)
+            if span is None:
+                notice = "POLY has no renderable outline in this scene"
+            elif (self._track_lod_active() and
+                  self.inspection_offset not in self._visible_set):
+                notice = "POLY not drawn: excluded by selected track detail"
+            else:
+                glUniform1i(self._wire_uniform, 2)
+                glDrawArrays(GL_LINES, *span)
+                glUniform1i(self._wire_uniform, 1)
+        glBindVertexArray(0)
+        glUniform1i(self._wire_uniform, 0)
+        glUseProgram(0)
+        self._set_visibility_warning(notice)
+        # Retain the N3 source cursor's existing vertex marker in wire mode.
+        if self.inspection_kind == "vertex":
+            position = vertex_screen_position(
+                self._model, self._mesh, self.inspection_offset,
+                projection @ view, self.width(), self.height())
+            if position is not None:
+                painter = QPainter(self)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                painter.setPen(QPen(QColor(12, 20, 32), 2))
+                painter.setBrush(QBrush(QColor(255, 237, 65)))
+                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+                painter.end()
+
     def _upload_mesh(self):
         if self._program is None:
             return
         started = perf_counter()
+        self._release_wire_buffers()
+        self._wire_mesh = None
         # Rebuild only on open. Camera movement never uploads geometry.
         if self._vao is not None:
             glDeleteVertexArrays(1, [self._vao])
@@ -889,7 +1040,7 @@ class GLViewport(QOpenGLWidget):
                     self._scene.track_section_lods and self.track_detail)
 
     def set_render_mode(self, mode):
-        if mode not in ('painter', 'depth', 'all'):
+        if mode not in ('painter', 'depth', 'all', 'wire'):
             raise ValueError(f"Unknown render mode: {mode}")
         self.render_mode = mode
         if mode == 'all' and not self._track_lod_active():
@@ -1000,8 +1151,8 @@ class GLViewport(QOpenGLWidget):
         w=max(1,int(self.width()*self.devicePixelRatioF()))
         h=max(1,int(self.height()*self.devicePixelRatioF()))
         glViewport(0,0,w,h)
-        if self.render_mode == 'painter':
-            # Preserve Papyrus traversal / LIST painter order. Depth testing
+        if self.render_mode in ('painter', 'wire'):
+            # Wireframe is see-through; painter respects original LIST order. Depth testing
             # would defeat authored overlaps and coincident BSP2 front/back.
             glDisable(GL_DEPTH_TEST)
         else:
@@ -1030,6 +1181,9 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
+        if self.render_mode == 'wire':
+            self._paint_wireframe(projection, view)
+            return
         self._draw_skybox(view, aspect)
         glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
         glActiveTexture(GL_TEXTURE0)
@@ -1443,6 +1597,7 @@ class Window(QMainWindow):
         self.mode_combo.addItem("Papyrus drawing order (no depth)", "painter")
         self.mode_combo.addItem("BSP selection + GPU depth", "depth")
         self.mode_combo.addItem("All polygons + GPU depth", "all")
+        self.mode_combo.addItem("Wireframe (polygon outlines only)", "wire")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         advanced_layout.addWidget(self.mode_combo)
 
@@ -2355,12 +2510,17 @@ class Window(QMainWindow):
             self.polygon_status.setText("Load a model first")
         elif offset not in model.polygons:
             self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
-        elif self.viewer.render_mode == 'all' and not self.viewer._track_lod_active():
-            self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
+        elif self.viewer.render_mode in ('all', 'wire') and not self.viewer._track_lod_active():
+            self.polygon_status.setText(
+                f"@{offset}: " + ("wireframe" if self.viewer.render_mode == 'wire'
+                                 else "all-polygon") + " mode (BSP ignored)")
         elif self.viewer._visibility_dirty:
             self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
         elif offset not in self.viewer._visible_set:
-            self.polygon_status.setText(f"@{offset}: EXCLUDED by BSP or selected LOD")
+            self.polygon_status.setText(
+                f"@{offset}: EXCLUDED by BSP or selected LOD"
+                if self.viewer.render_mode != 'wire' else
+                f"@{offset}: EXCLUDED by selected track detail")
         elif (self.viewer._scene is None or
               self.viewer._scene.polygon_lookup.get((0, offset))
               not in self.viewer._mesh.polygon_ranges):

@@ -363,6 +363,25 @@ def run(path):
                 screenshot = Path(os.environ.get(
                     "GPU_SMOKE_SCREENSHOT", "gpu_viewer_smoke.png"))
                 image.save(str(screenshot))
+                # Switch to the independent GL_LINES boundary pass, render a
+                # real framebuffer, then restore the original filled mode.
+                previous_mode = window.mode_combo.currentIndex()
+                window.mode_combo.setCurrentIndex(
+                    window.mode_combo.findData("wire"))
+                outline_image = view.grabFramebuffer()
+                wire_ok = (
+                    view._wire_vao is not None and
+                    view._wire_mesh is not None and
+                    view._wire_mesh.segment_count > 0 and
+                    not outline_image.isNull() and
+                    outline_image != image)
+                window.mode_combo.setCurrentIndex(previous_mode)
+                if not wire_ok:
+                    result["error"] = "Wireframe GL_LINES pass was empty or unchanged"
+                    timer.stop()
+                    close_smoke()
+                    app.quit()
+                    return
                 result["ok"] = True
                 result["error"] = ""
                 print(

@@ -113,6 +113,26 @@ class GPUViewerMenuTests(unittest.TestCase):
         self.assertTrue(track.isChecked())
         self.window.workspace_tabs.setCurrentIndex(2)
 
+    def test_rendering_mode_menu_and_advanced_combo_stay_in_sync(self):
+        render_menu = self._action(
+            self._menu("View"), "Rendering Mode").menu()
+        wire = self._action(render_menu, "Wireframe (polygon outlines only)")
+        painter = self._action(render_menu, "Papyrus drawing order (no depth)")
+        self.assertTrue(painter.isChecked())
+        self.assertFalse(wire.isChecked())
+        wire.trigger()
+        self.assertTrue(wire.isChecked())
+        self.assertEqual(self.window.mode_combo.currentData(), "wire")
+        self.assertEqual(self.window.viewer.render_mode, "wire")
+        self.window.mode_combo.setCurrentIndex(
+            self.window.mode_combo.findData("depth"))
+        self.assertFalse(wire.isChecked())
+        self.assertTrue(self._action(
+            render_menu, "BSP selection + GPU depth").isChecked())
+        self.window.mode_combo.setCurrentIndex(
+            self.window.mode_combo.findData("painter"))
+        self.assertTrue(painter.isChecked())
+
     def test_settings_actions_open_correct_dialogs(self):
         with patch.object(self.window, "open_settings_dialog") as show:
             self._action(self._menu("View"), "Display Settings…").trigger()

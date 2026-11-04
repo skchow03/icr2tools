@@ -144,6 +144,21 @@ def install_menus(window):
     _bind_checkbox(view, "&Fixed Camera", window.fixed_camera_button)
     _bind_checkbox(view, "Show &.3D Source", window.source_toggle)
     view.addSeparator()
+    rendering = view.addMenu("&Rendering Mode")
+    render_group = QActionGroup(window)
+    render_group.setExclusive(True)
+    for index in range(window.mode_combo.count()):
+        label = window.mode_combo.itemText(index)
+        action = rendering.addAction(label)
+        action.setCheckable(True)
+        action.setChecked(index == window.mode_combo.currentIndex())
+        render_group.addAction(action)
+        action.triggered.connect(
+            lambda checked=False, mode=index:
+                window.mode_combo.setCurrentIndex(mode))
+    window.mode_combo.currentIndexChanged.connect(
+        lambda index: (render_group.actions()[index].setChecked(True)
+                       if 0 <= index < len(render_group.actions()) else None))
     _add_action(view, "&Display Settings…",
                 lambda: window.open_settings_dialog("display"))
     _add_action(view, "Advanced &Diagnostics…",

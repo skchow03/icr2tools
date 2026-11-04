@@ -142,8 +142,9 @@ menu bar. There is no toolbar or permanent right sidebar.
   Save Source (**Ctrl+S**), Save Source As (**Ctrl+Shift+S**),
   Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
 - **View:** Frame All, 3D/Top/Front/Side presets, Perspective, Fixed Camera,
-  show/hide .3D Source, common display toggles, Display Settings and Advanced
-  Diagnostics dialogs. Menu checkmarks track current camera/display state.
+  show/hide .3D Source, **Rendering Mode** (including Wireframe), common display
+  toggles, Display Settings and Advanced Diagnostics. The Rendering Mode
+  menu and Advanced Diagnostics combo always show the same selection.
 - **Model:** Car/Track/Object workspace selection and the on-demand Model
   Settings dialog, with direct entries to each workspace's controls.
 - **Assets:** Asset Settings dialog, palette selection/reset, MIP and
@@ -228,7 +229,15 @@ the viewport so those letters can be typed normally in the N3 editor.
   triangles with depth testing. **All polygons + GPU depth** ignores BSP/RES
   and is the legacy full-geometry diagnostic mode for non-track models. For
   recognized indexed tracks it still honors the selected HI/MED/LO section tier,
-  so the three alternative surfaces are not overlaid.
+  so the three alternative surfaces are not overlaid. **Wireframe (polygon
+  outlines only)** draws original polygon boundary edges as pale lines against
+  the dark viewport, with no filled triangles, triangulation diagonals,
+  textures, PMP sprites, or skybox. Its see-through view ignores BSP/RES
+  culling, but still respects the selected HI/MED/LO track section detail so
+  tracks do not show all surface variants stacked together. Selected source
+  polygons receive an amber outline and vertex inspection markers still work.
+  The edge buffer is built only on first use and reused when orbiting;
+  loading or recompiling new geometry invalidates it.
 - **Track section detail** is independent of **SWITCH DISTANCE / RES**. It
   selects one tier from the track's trailing `secN_lN: LIST` pointer tables;
   the viewer does not combine all seven slots as if they were scene geometry.
