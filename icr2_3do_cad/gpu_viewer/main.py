@@ -68,6 +68,7 @@ from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_mod
 from gpu_viewer.skybox import (
     find_track_skybox, load_track_skybox, skybox_view_matrix,
 )
+from gpu_viewer.track_lod import DEFAULT_WINDOW_COUNTS
 from gpu_viewer.track_navigation import (
     find_matching_trk, TrackNavigation, DEFAULT_LONG_STEP_FT,
     DEFAULT_LAT_STEP_FT, UNITS_PER_FOOT,
@@ -477,7 +478,8 @@ class GLViewport(QOpenGLWidget):
         self.inspection_offset = None
         self.render_mode = 'painter'  # painter | depth | all
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
-        self.track_detail = 'hi'  # track indexed section tables only; not car RES
+        self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
+        self.track_window_counts = DEFAULT_WINDOW_COUNTS
         self._visibility_dirty = True
         self._index_count = 0
         self._visible_set = frozenset()
@@ -920,12 +922,22 @@ class GLViewport(QOpenGLWidget):
                 -math.cos(self.elevation) * math.cos(self.azimuth),
                 math.sin(self.elevation),
             )
+        window = None
+        detail = self.track_detail if self._track_lod_active() else None
+        if detail == 'window':
+            navigation = self.track_navigation
+            if (navigation is not None and self._scene.track_section_dlongs):
+                window = (navigation.dlong, navigation.length,
+                          self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'  # No TRK/metadata: safe global HI fallback.
         indices, visible, info, sprite_events = ordered_scene_indices(
             self._scene, self._mesh, eye,
             None if self.render_mode == 'all' else self.lod_distance,
             view_direction=direction, with_sprites=True,
             bsp_mode='off' if self.render_mode == 'all' else 'original',
-            track_detail=self.track_detail if self._track_lod_active() else None)
+            track_detail=detail, track_window=window)
         glBindVertexArray(self._vao)
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
@@ -1550,19 +1562,40 @@ class Window(QMainWindow):
         track_layout.addWidget(self.track_status)
         track_layout.addWidget(QLabel("Track section detail"))
         self.track_detail_combo = QComboBox()
+        self.track_detail_combo.addItem("Camera window (HI / MED / LO)", "window")
         self.track_detail_combo.addItem("HI (4 geometry slots)", "hi")
         self.track_detail_combo.addItem("MED (2 geometry slots)", "med")
         self.track_detail_combo.addItem("LO (1 geometry slot)", "lo")
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData('hi'))
+        self.track_detail_combo.model().item(0).setEnabled(False)
         self.track_detail_combo.setEnabled(False)
         self.track_detail_combo.setToolTip(
-            "Show only the chosen tier from each indexed track section LIST. "
-            "This does not affect car/object RES switches or saved geometry.")
+            "Camera window uses section DATA DLONG positions and the TRK "
+            "camera (8 HI, 5 MED, 3 LO ahead and behind). Other sections "
+            "are omitted. Global HI/MED/LO remain available for overview.")
         self.track_detail_combo.currentIndexChanged.connect(self._track_detail_changed)
         track_layout.addWidget(self.track_detail_combo)
         self.track_detail_status = QLabel(
             "No eight-entry Papyrus track section index detected")
         self.track_detail_status.setWordWrap(True)
         track_layout.addWidget(self.track_detail_status)
+        track_layout.addWidget(QLabel(
+            "Camera window sections each way (current section always HI)"))
+        window_counts = QHBoxLayout()
+        self.track_window_spins = []
+        for label, count in zip(('HI', 'MED', 'LO'), DEFAULT_WINDOW_COUNTS):
+            window_counts.addWidget(QLabel(label))
+            spin = QSpinBox()
+            spin.setRange(0, 250)
+            spin.setValue(count)
+            spin.setToolTip(
+                f"Number of {label} sections in each direction from the "
+                "camera. Zero disables this tier; overlaps use closer detail.")
+            spin.valueChanged.connect(self._track_window_changed)
+            window_counts.addWidget(spin)
+            self.track_window_spins.append(spin)
+        track_layout.addLayout(window_counts)
         self.track_drive_checkbox = QCheckBox("TRK camera — follow racing direction")
         self.track_drive_checkbox.setEnabled(False)
         self.track_drive_checkbox.setToolTip(
