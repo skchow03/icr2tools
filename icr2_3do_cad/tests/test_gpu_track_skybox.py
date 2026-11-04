@@ -107,7 +107,7 @@ root: LIST {p};
         sky = load_track_skybox(self._write_model(), self.palette)
         scene.skybox = sky
         after = make_mesh(scene.geometry)
-        self.assertIsNone(scene.track_section_lods)
+        self.assertFalse(scene.track_section_lods)
         np.testing.assert_array_equal(before.vertices, after.vertices)
         self.assertEqual(before.center, after.center)
         self.assertEqual(before.scale, after.scale)
