@@ -140,6 +140,7 @@ def install_menus(window):
                     window.viewer.set_view(mode))
     view.addSeparator()
     perspective = _bind_checkbox(view, "&Perspective", window.perspective_toggle)
+    window.perspective_menu_action = perspective
     _bind_checkbox(view, "&Fixed Camera", window.fixed_camera_button)
     _bind_checkbox(view, "Show &.3D Source", window.source_toggle)
     view.addSeparator()
