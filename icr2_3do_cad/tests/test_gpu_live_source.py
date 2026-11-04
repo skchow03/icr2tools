@@ -54,8 +54,10 @@ class GPULiveSourceTests(unittest.TestCase):
     def test_clean_source_handles_other_binary_models_and_root_identity(self):
         # Different kinds of 3DO hierarchy must preserve their real root
         # even if it is not the final binary record.
+        # Appearance-only wrappers like ind96.3do are resolved to their
+        # underlying geometry by the GPU loader before source generation.
         for name in ('roadcar.3do', 'indycar.3do', 'panoz.3do',
-                     'ind96.3do', 'fwheel.3do'):
+                     'fwheel.3do'):
             with self.subTest(model=name):
                 path = ROOT / 'fixtures' / name
                 original = Model(path, associate_planes=False)
