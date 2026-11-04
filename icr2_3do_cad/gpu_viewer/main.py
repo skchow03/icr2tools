@@ -729,8 +729,17 @@ class GLViewport(QOpenGLWidget):
         glBindBuffer(GL_ARRAY_BUFFER, 0)
 
     def _refresh_wire_visibility(self):
-        """Select line indices by track section LOD, never by polygon BSP."""
-        if not self._track_lod_active():
+        """Select original polygon edges by RES and track detail, not BSP.
+
+        The fully expanded branch view remains available via Show all detail
+        levels. Otherwise the standard camera-relative/manual RES distance
+        applies exactly as in the filled renderer, while all BSP-facing
+        branches remain see-through.
+        """
+        all_branches = self.lod_distance is None and not self._track_lod_active()
+        if all_branches:
+            # Preserve the legacy full-geometry diagnostic in explicit
+            # Show all detail levels for non-track models.
             self._wire_index_count = 0
             self._visible_set = frozenset(self._model.polygons)
             self._visibility_info = {}
@@ -738,7 +747,7 @@ class GLViewport(QOpenGLWidget):
             self.visibilityChanged.emit(
                 f"Wireframe: {self._wire_mesh.segment_count:,} boundary edges "
                 f"across {self._wire_mesh.polygon_count:,} polygons "
-                "(all BSP/RES branches; no triangle diagonals)")
+                "(all RES branches; BSP ignored; no triangle diagonals)")
             return
 
         eye = self._camera_eye_model()
@@ -748,7 +757,7 @@ class GLViewport(QOpenGLWidget):
                 math.cos(self.elevation) * math.sin(self.azimuth),
                 -math.cos(self.elevation) * math.cos(self.azimuth),
                 math.sin(self.elevation))
-        detail = self.track_detail
+        detail = self.track_detail if self._track_lod_active() else None
         window = None
         if detail == 'window':
             nav = self.track_navigation
@@ -758,7 +767,7 @@ class GLViewport(QOpenGLWidget):
             else:
                 detail = 'hi'
         indices, visible, info = ordered_scene_indices(
-            self._scene, self._wire_mesh, eye, None,
+            self._scene, self._wire_mesh, eye, self.lod_distance,
             view_direction=direction, bsp_mode='off',
             track_detail=detail, track_window=window)
         glBindVertexArray(self._wire_vao)
@@ -770,10 +779,12 @@ class GLViewport(QOpenGLWidget):
         self._visible_set = visible
         self._visibility_info = info
         self._visibility_dirty = False
+        selected = ("selected track polygons" if self._track_lod_active()
+                    else "selected polygons")
         self.visibilityChanged.emit(
             f"Wireframe: {self._wire_index_count // 2:,} boundary edges "
-            f"across {info['mesh_polygons']:,} selected track polygons "
-            "(selected section detail; BSP/RES ignored)")
+            f"across {info['mesh_polygons']:,} {selected} "
+            "(RES respected; BSP ignored)")
 
     def _paint_wireframe(self, projection, view):
         """Only GL_LINES: no filled faces, sprites, skybox, or diagonal edges."""
@@ -785,11 +796,11 @@ class GLViewport(QOpenGLWidget):
             self._refresh_wire_visibility()
         glUniform1i(self._wire_uniform, 1)
         glBindVertexArray(self._wire_vao)
-        if self._track_lod_active():
-            if self._wire_index_count:
-                glDrawElements(GL_LINES, self._wire_index_count, GL_UNSIGNED_INT, None)
-        elif self._wire_mesh.vertices.size:
-            glDrawArrays(GL_LINES, 0, len(self._wire_mesh.vertices))
+        if self.lod_distance is None and not self._track_lod_active():
+            if self._wire_mesh.vertices.size:
+                glDrawArrays(GL_LINES, 0, len(self._wire_mesh.vertices))
+        elif self._wire_index_count:
+            glDrawElements(GL_LINES, self._wire_index_count, GL_UNSIGNED_INT, None)
 
         notice = None
         if self.inspection_kind == "polygon":
@@ -797,9 +808,9 @@ class GLViewport(QOpenGLWidget):
             span = self._wire_mesh.polygon_ranges.get(flattened)
             if span is None:
                 notice = "POLY has no renderable outline in this scene"
-            elif (self._track_lod_active() and
-                  self.inspection_offset not in self._visible_set):
-                notice = "POLY not drawn: excluded by selected track detail"
+            elif (self.lod_distance is not None or self._track_lod_active()) and (
+                    self.inspection_offset not in self._visible_set):
+                notice = "POLY not drawn: inactive SWITCH DISTANCE / track detail"
             else:
                 glUniform1i(self._wire_uniform, 2)
                 glDrawArrays(GL_LINES, *span)
@@ -1601,38 +1612,50 @@ class Window(QMainWindow):
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         advanced_layout.addWidget(self.mode_combo)
 
-        display_layout.addWidget(QLabel("SWITCH DISTANCE / RES"))
+        # Compact control bar lives directly above the GPU viewport, not in
+        # the optional Display Settings dialog. Reuse the existing widgets and
+        # LOD signals; there must be only one authoritative distance value.
+        self.distance_bar = QWidget()
+        distance_row = QHBoxLayout(self.distance_bar)
+        distance_row.setContentsMargins(5, 3, 5, 3)
+        distance_row.setSpacing(6)
+        distance_label = QLabel("SWITCH DISTANCE")
+        distance_label.setToolTip(
+            "Controls RES/SWITCH DISTANCE in the currently opened model.")
+        distance_row.addWidget(distance_label)
         self.lod_mode_combo = QComboBox()
-        self.lod_mode_combo.addItem("Automatic (per RES anchor)", "auto")
-        self.lod_mode_combo.addItem("Manual (slider)", "manual")
-        self.lod_mode_combo.addItem("Show all detail levels", "all")
+        self.lod_mode_combo.addItem("Auto", "auto")
+        self.lod_mode_combo.addItem("Manual", "manual")
+        self.lod_mode_combo.addItem("All levels", "all")
         self.lod_mode_combo.setToolTip(
-            "Drag the distance slider to select manual distance. "
-            "Automatic measures from the camera to each RES anchor.")
+            "Auto: camera-relative to each RES anchor. Manual: exact "
+            "distance on the slider. All levels: ignore RES thresholds.")
         self.lod_mode_combo.currentIndexChanged.connect(self._lod_changed)
-        display_layout.addWidget(self.lod_mode_combo)
-        slider_row = QHBoxLayout()
+        distance_row.addWidget(self.lod_mode_combo)
         self.lod_slider = QSlider(Qt.Orientation.Horizontal)
         self.lod_slider.setRange(0, 0)
         self.lod_slider.setEnabled(False)
         self.lod_slider.setToolTip(
-            "Manual SWITCH DISTANCE in raw Papyrus model units; "
-            "dragging switches from Automatic to Manual.")
+            "Manual SWITCH DISTANCE in raw Papyrus model units. "
+            "Drag or use the arrows to enable Manual mode.")
         self.lod_slider.sliderPressed.connect(self._activate_manual_distance)
         self.lod_slider.valueChanged.connect(self._slider_distance_changed)
-        slider_row.addWidget(self.lod_slider, 1)
+        distance_row.addWidget(self.lod_slider, 1)
         self.lod_spin = QSpinBox()
         self.lod_spin.setRange(0, 0)
         self.lod_spin.setKeyboardTracking(False)
         self.lod_spin.setToolTip(
-            "Exact SWITCH DISTANCE. Editing this value selects Manual mode.")
+            "Exact SWITCH DISTANCE; editing selects Manual mode.")
         self.lod_spin.valueChanged.connect(self._spin_distance_changed)
         self.lod_spin.setEnabled(False)
-        slider_row.addWidget(self.lod_spin)
-        display_layout.addLayout(slider_row)
-        self.lod_max_label = QLabel("No SWITCH DISTANCE thresholds found")
-        self.lod_max_label.setWordWrap(True)
-        display_layout.addWidget(self.lod_max_label)
+        distance_row.addWidget(self.lod_spin)
+        self.lod_max_label = QLabel("No RES")
+        self.lod_max_label.setToolTip(
+            "The slider's maximum is the highest SWITCH DISTANCE threshold "
+            "in the loaded scene.")
+        distance_row.addWidget(self.lod_max_label)
+        display_layout.addWidget(QLabel(
+            "SWITCH DISTANCE / RES is adjusted above the viewport."))
 
         advanced_layout.addWidget(QLabel("Polygon body offset"))
         self.polygon_edit = QLineEdit()
@@ -1818,8 +1841,14 @@ class Window(QMainWindow):
         model_layout.addWidget(self.workspace_tabs)
         self.load_label.setWordWrap(True)
         model_layout.addWidget(self.load_label)
+        self.viewport_panel = QWidget()
+        self.viewport_layout = QVBoxLayout(self.viewport_panel)
+        self.viewport_layout.setContentsMargins(0, 0, 0, 0)
+        self.viewport_layout.setSpacing(0)
+        self.viewport_layout.addWidget(self.distance_bar)
+        self.viewport_layout.addWidget(self.viewer, stretch=1)
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.editor_splitter.addWidget(self.viewer)
+        self.editor_splitter.addWidget(self.viewport_panel)
         self.source_pane = SourcePane()
         self.editor_splitter.addWidget(self.source_pane)
         self.editor_splitter.setStretchFactor(0, 2)
@@ -2467,7 +2496,9 @@ class Window(QMainWindow):
         self.lod_slider.setSingleStep(max(1, maximum // 500))
         self.lod_slider.setPageStep(max(1, maximum // 20))
         self.lod_max_label.setText(
-            f"0 – {maximum:,} raw model units (highest RES threshold)"
+            f"Max {maximum:,}" if maximum else "No RES")
+        self.lod_max_label.setToolTip(
+            f"Range: 0 to {maximum:,} raw model units (highest RES threshold)"
             if maximum else "No SWITCH DISTANCE thresholds found")
         self._lod_changed()
 
@@ -2510,17 +2541,21 @@ class Window(QMainWindow):
             self.polygon_status.setText("Load a model first")
         elif offset not in model.polygons:
             self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
-        elif self.viewer.render_mode in ('all', 'wire') and not self.viewer._track_lod_active():
+        elif (self.viewer.render_mode == 'all' and
+              not self.viewer._track_lod_active()):
+            self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
+        elif (self.viewer.render_mode == 'wire' and
+              self.viewer.lod_distance is None and
+              not self.viewer._track_lod_active()):
             self.polygon_status.setText(
-                f"@{offset}: " + ("wireframe" if self.viewer.render_mode == 'wire'
-                                 else "all-polygon") + " mode (BSP ignored)")
+                f"@{offset}: wireframe (all RES branches; BSP ignored)")
         elif self.viewer._visibility_dirty:
             self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
         elif offset not in self.viewer._visible_set:
             self.polygon_status.setText(
                 f"@{offset}: EXCLUDED by BSP or selected LOD"
                 if self.viewer.render_mode != 'wire' else
-                f"@{offset}: EXCLUDED by selected track detail")
+                f"@{offset}: EXCLUDED by SWITCH DISTANCE or track detail")
         elif (self.viewer._scene is None or
               self.viewer._scene.polygon_lookup.get((0, offset))
               not in self.viewer._mesh.polygon_ranges):
