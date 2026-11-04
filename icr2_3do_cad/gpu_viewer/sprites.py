@@ -20,6 +20,12 @@ from pmp_preview import load_pmp, PMPError
 # without baking any particular PCX palette into the GPU sprite textures.
 _INDEX_PALETTE = tuple((i, i, i) for i in range(256))
 
+# PMP/PMP2 placements use the original 256x256 canvas coordinate frame,
+# even though transparency is cropped out when uploading the GPU image.
+# The 3DO anchor is at original source row 127, not the visible sprite's
+# midpoint. This convention is independent of which rows contain pixels.
+PMP_ANCHOR_ROW = 127.0
+
 
 @dataclass(frozen=True)
 class SpritePlacement:
@@ -104,11 +110,12 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
             placements[instance_id, offset] = item
             # Include the sprite billboard's approximate spherical extent in
             # Frame All / mesh normalization, even if the 3DO has no polygons.
-            # CPU preview interprets size as the cropped bitmap's width/height.
+            # Size remains measured against the cropped sprite bounds, but
+            # the origin for those bounds is always source-canvas row 127.
             px = item.normalized_pixel_size
             x0, y0, x1, y1 = bounds
             radius = max(
-                hypot(x - 128, y - 128) * px
+                hypot(x - 128, y - PMP_ANCHOR_ROW) * px
                 for x in (x0, x1) for y in (y0, y1))
             for sign in (-1.0, 1.0):
                 bounds_points.append(
