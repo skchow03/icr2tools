@@ -40,7 +40,13 @@ uniform vec4 u_bounds;
 out vec2 v_uv;
 void main() {
     vec2 point = mix(u_bounds.xy, u_bounds.zw, in_corner);
-    vec2 relative = vec2(point.x - 128.0, 128.0 - point.y) * u_pixel_world;
+    // Papyrus PMP/PMP2 anchors refer to the visible sprite's vertical
+    // midpoint, not row 128 of the 256x256 source canvas. Many scenery
+    // sprites paint only the top half of that canvas (e.g. trees end at
+    // y=128), so row-128 anchoring incorrectly placed their feet at Z=0.
+    // Center the actually painted (cropped) height around the 3DO vertex.
+    float center_y = 0.5 * (u_bounds.y + u_bounds.w);
+    vec2 relative = vec2(point.x - 128.0, center_y - point.y) * u_pixel_world;
     vec3 world = u_anchor + u_right * relative.x + u_up * relative.y;
     gl_Position = u_mvp * vec4(world, 1.0);
     v_uv = in_corner;
