@@ -170,7 +170,7 @@ def run(path):
                 if view._vbo != live["vbo"]:
                     result["error"] = "Invalid source changed the GPU vertex buffer"
                     timer.stop()
-                    window.close()
+                    close_smoke()
                     app.quit()
                     return
                 live["invalid_seen"] = True
@@ -231,7 +231,7 @@ def run(path):
             fixed["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
-                window.close()
+                close_smoke()
                 app.quit()
                 return
         if (dynamic_test and live["valid_seen"] and fixed["tested"] and
@@ -302,7 +302,7 @@ def run(path):
             inspection["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
-                window.close()
+                close_smoke()
                 app.quit()
                 return
         if (window._info and view._vao is not None and
@@ -357,7 +357,7 @@ def run(path):
                 if len(colors) < 2:
                     result["error"] = "Frame contains only background; geometry invisible"
                     timer.stop()
-                    window.close()
+                    close_smoke()
                     app.quit()
                     return
                 screenshot = Path(os.environ.get(
@@ -380,7 +380,7 @@ def run(path):
                 )
             timer.stop()
             print("Closing Qt window",flush=True)
-            window.close()
+            close_smoke()
             print("Qt window closed",flush=True)
             app.quit()
         elif elapsed > 45:
@@ -391,7 +391,7 @@ def run(path):
                 f"buffer={view._vao is not None}, frames={view._frame_count}"
             )
             timer.stop()
-            window.close()
+            close_smoke()
             app.quit()
     timer = QTimer()
     timer.timeout.connect(check)
