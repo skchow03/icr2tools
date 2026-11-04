@@ -1843,6 +1843,9 @@ class Window(QMainWindow):
         self.perspective_toggle.setEnabled(
             not enabled and not self.viewer.fixed_camera_mode)
         self.perspective_toggle.blockSignals(False)
+        # Menu checkmark follows the underlying camera even when widget
+        # signals were blocked for this programmatic mode switch.
+        self.perspective_menu_action.setChecked(self.perspective_toggle.isChecked())
         if enabled:
             self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
         self._update_trk_status()
@@ -2425,6 +2428,7 @@ class Window(QMainWindow):
         self.perspective_toggle.setEnabled(
             not enabled and not self.viewer.track_drive_enabled)
         self.perspective_toggle.blockSignals(False)
+        self.perspective_menu_action.setChecked(self.perspective_toggle.isChecked())
         self.statusBar().showMessage(
             "Fixed Camera | raw XYZ "
             + str(tuple(spin.value() for spin in self.fixed_camera_coords))
