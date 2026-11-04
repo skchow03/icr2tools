@@ -293,9 +293,13 @@ indexed tracks, even if another model happens to be in the Track workspace.
   resolved case-insensitively beside the referenced 3DO, in the selected
   external-objects folder, or in the selected texture folder; missing/invalid
   sprites are reported in Assets without blocking polygon rendering.
-  Camera-facing quads are anchored at their transformed source vertices,
-  scaled by the 3DO sprite size and image crop, and drawn in the original
-  BSP/RES/LIST painter order between polygon spans. **Textures** must also
+  Camera-facing quads use the source vertex as the original **256x256 PMP
+  canvas's row 127** (horizontal center x=128). The cropped visible bitmap
+  retains original pixel coordinates, so a tree with painted rows 7..127
+  stands above its 3DO Z vertex instead of being centered around that vertex.
+  This applies to PMP and PMP2, including referenced and DYNAMIC sprites.
+  Image-crop-based scaling remains unchanged. Billboard draw order remains
+  the original BSP/RES/LIST sequence between polygon spans. **Textures** must also
   be checked. Both checkboxes may be switched without reloading the model.
   Opening a new model decodes all sprite view variants on a worker; orbiting
   or changing SWITCH DISTANCE changes which sprites are selected, without
