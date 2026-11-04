@@ -42,6 +42,8 @@ class GPUScene:
     recolor_pairs: int = 0
     appearance: object | None = None
     track_section_lods: dict | None = None
+    skybox: object | None = None
+    skybox_error: str | None = None
 
     @property
     def loaded_instances(self):
