@@ -76,12 +76,15 @@ class TrackSkyboxTests(unittest.TestCase):
         self.assertEqual(path.read_bytes(), before)
 
     def test_sky_follows_rotation_but_ignores_camera_translation(self):
-        from gpu_viewer.main import camera_view
         sky = load_track_skybox(
             self._write_model(), self.palette)
-        a, _, _ = camera_view(0.4, 0.3, 4.0, np.array((0, 0, 0)))
-        b, _, _ = camera_view(0.4, 0.3, 32.0, np.array((10, -8, 2)))
-        c, _, _ = camera_view(0.8, -0.2, 4.0, np.array((0, 0, 0)))
+        # CPU-only: no import of PySide6 or the OpenGL viewer is required.
+        a = np.identity(4)
+        a[:3, :3] = ((0, -1, 0), (1, 0, 0), (0, 0, 1))
+        b = a.copy()
+        b[:3, 3] = (12, -18, 4)  # main camera position should be ignored
+        c = np.identity(4)
+        c[:3, :3] = ((1, 0, 0), (0, 0, -1), (0, 1, 0))
         sky_a = skybox_view_matrix(a, sky.mesh)
         sky_b = skybox_view_matrix(b, sky.mesh)
         sky_c = skybox_view_matrix(c, sky.mesh)
