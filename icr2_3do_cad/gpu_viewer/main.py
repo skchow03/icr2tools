@@ -69,7 +69,7 @@ from gpu_viewer.visibility import (
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.skybox import (
-    find_track_skybox, load_track_skybox, skybox_view_matrix,
+    load_preferred_track_skybox, skybox_view_matrix,
 )
 from gpu_viewer.track_lod import DEFAULT_WINDOW_COUNTS
 from gpu_viewer.track_navigation import (
@@ -286,17 +286,19 @@ class LoadWorker(QThread):
                     auto_palette = True
             else:
                 palette = load_palette(self.palette_path)
-            # HORIZ.3DO is a separate camera-locked background for recognized
-            # tracks; it never enters the main track's BSP, mesh or bounds.
+            # HORIZ is a separate camera-locked background for indexed tracks.
+            # Try valid HORIZ.3DO files first; malformed/nonrenderable ones do
+            # not prevent a standalone HORIZ.3D from being compiled in memory.
             if scene.track_section_lods:
-                sky_path = find_track_skybox(self.path, self.objects_folder)
-                if sky_path is not None:
-                    try:
-                        scene.skybox = load_track_skybox(
-                            sky_path, palette.astype(np.float32) / 255.0,
-                            texture_folder=self.texture_folder)
-                    except (OSError, ValueError) as exc:
-                        scene.skybox_error = f"{sky_path.name}: {exc}"
+                scene.skybox, sky_notes = load_preferred_track_skybox(
+                    self.path, palette.astype(np.float32) / 255.0,
+                    objects_folder=self.objects_folder,
+                    texture_folder=self.texture_folder)
+                if scene.skybox is None:
+                    scene.skybox_error = sky_notes
+                elif sky_notes:
+                    scene.warnings = tuple(
+                        dict.fromkeys((*scene.warnings, sky_notes)))
             # A companion <trackstem>.TRK supplies physics centerline XYZ,
             # tangent and elevation for the camera, independently of 3DO BSP.
             # Ignore unrelated .TRK files in the directory.
@@ -1814,11 +1816,11 @@ class Window(QMainWindow):
         self.trk_reset_button.setEnabled(False)
         self.trk_reset_button.clicked.connect(self._reset_trk_camera)
         track_layout.addWidget(self.trk_reset_button)
-        self.show_skybox = QCheckBox("Skybox (horiz.3do)")
+        self.show_skybox = QCheckBox("Skybox (horiz.3do / horiz.3d)")
         self.show_skybox.setChecked(True)
         self.show_skybox.setEnabled(False)
         self.show_skybox.setToolTip(
-            "Display HORIZ.3DO as a camera-following background at "
+            "Display HORIZ.3DO or HORIZ.3D as a camera-following background at "
             "its local eye (0, 0, 1000). Only available on indexed tracks.")
         self.show_skybox.toggled.connect(self._skybox_toggled)
         track_layout.addWidget(self.show_skybox)
