@@ -125,58 +125,62 @@ class GPURealPMPRenderingTests(unittest.TestCase):
         self.assertGreater(int(np.any(on[..., :3] != off[..., :3],
                                       axis=2).sum()), 25)
 
-    def test_scenery_pmp_and_pmp2_vertical_midpoint_equals_anchor_z(self):
-        """An asymmetrically painted tree straddles a Z=0 3DO anchor.
+    def test_scenery_pmp_and_pmp2_row_127_equals_anchor_z(self):
+        """Grounded trees of different cropped heights share one 3DO pivot.
 
-        Tree-like sprites occupy canvas rows 7..127. The former fixed
-        source-row-128 origin put the entire tree ABOVE the anchor. Both
-        PMP flavors must instead paint equal heights above and below it.
+        PMP is a 256x256 *logical* canvas. The source spans occupy only
+        rows 7..127 or 92..127, so neither cropped midpoint should be the
+        world origin. Row 127 of BOTH must coincide with the 3DO vertex.
         """
         import struct
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             folder = Path(tmp)
-            spans = b"".join(
-                bytes((y, 66, 188, 47)) for y in range(7, 128))
-            # Width=122, height=121, min_x=66, min_y=7.
-            # This is deliberately NOT tree2's 5b7baffb value.
-            (folder / "TREE1.PMP").write_bytes(
-                bytes.fromhex("7a79bef9") +
-                struct.pack("<II", len(spans), 30) + spans)
-            for sprite_kind in (3, 18):  # PMP and PMP2 share the geometry
-                with self.subTest(sprite_kind=sprite_kind):
-                    model_path = folder / f"tree{sprite_kind}.3do"
-                    model_path.write_bytes(
-                        struct.pack("<5i", 32, 16, 0, 1, 0) +
-                        b"tree1\x00\x00\x00" +
-                        struct.pack("<8i", 0, 0, 0, 0,
-                                    -(1 << 31) + sprite_kind,
-                                    0, 240000, 0))
-                    scene = self.install_model(model_path)
-                    self.assertEqual(len(scene.sprite_resources.placements), 1)
-                    self.assertEqual(len(scene.sprite_resources.images), 1)
-                    self.assertEqual(scene.sprite_resources.warnings, ())
-                    placement = next(iter(scene.sprite_resources.placements.values()))
-                    self.assertEqual(placement.xyz, (0.0, 0.0, 0.0))
-                    self.assertEqual(placement.bounds, (66, 7, 188, 128))
-                    on = self.screenshot()
-                    self.assertEqual(self.view._visibility_info["pmp_sprites"], 1)
-                    self.view.sprites_enabled = False
-                    self.view.update()
-                    off = self.screenshot()
-                    mask = np.any(on[..., :3] != off[..., :3], axis=2)
-                    self.assertGreater(int(mask.sum()), 25)
-                    y, _ = np.nonzero(mask)
-                    # Sprite-only model's symmetric mesh bounds and Front
-                    # projection put the raw Z=0 anchor at screen mid-height.
-                    anchor_y = on.shape[0] / 2.0
-                    self.assertGreater(anchor_y - int(y.min()), 12)
-                    self.assertGreater(int(y.max()) - anchor_y, 12)
-                    self.assertAlmostEqual(
-                        (float(y.min()) + float(y.max())) / 2.0,
-                        anchor_y, delta=3.0)
-                    self.view.sprites_enabled = True
-                    self.view.update()
+            for top in (7, 92):
+                spans = b"".join(
+                    bytes((y, 66, 188, 47)) for y in range(top, 128))
+                # Header describes the nominal crop: width 122, x0=66,
+                # painted height=128-top and start row=top.
+                (folder / "TREE1.PMP").write_bytes(
+                    bytes((122, 128 - top, 190, (-top) & 255)) +
+                    struct.pack("<II", len(spans), 30) + spans)
+                for sprite_kind in (3, 18):  # PMP / PMP2
+                    with self.subTest(top=top, sprite_kind=sprite_kind):
+                        model_path = folder / f"tree{sprite_kind}_{top}.3do"
+                        model_path.write_bytes(
+                            struct.pack("<5i", 32, 16, 0, 1, 0) +
+                            b"tree1\x00\x00\x00" +
+                            struct.pack("<8i", 0, 0, 0, 0,
+                                        -(1 << 31) + sprite_kind,
+                                        0, 240000, 0))
+                        scene = self.install_model(model_path)
+                        self.assertEqual(len(scene.sprite_resources.placements), 1)
+                        self.assertEqual(len(scene.sprite_resources.images), 1)
+                        self.assertEqual(scene.sprite_resources.warnings, ())
+                        placement = next(iter(
+                            scene.sprite_resources.placements.values()))
+                        self.assertEqual(placement.xyz, (0.0, 0.0, 0.0))
+                        self.assertEqual(placement.bounds, (66, top, 188, 128))
+                        self.assertEqual(scene.sprite_resources.images[
+                            placement.image_key].shape[0], 128 - top)
+
+                        on = self.screenshot()
+                        self.assertEqual(
+                            self.view._visibility_info["pmp_sprites"], 1)
+                        self.view.sprites_enabled = False
+                        self.view.update()
+                        off = self.screenshot()
+                        mask = np.any(on[..., :3] != off[..., :3], axis=2)
+                        self.assertGreater(int(mask.sum()), 25)
+                        ys, _ = np.nonzero(mask)
+                        # The renderer's symmetric bounds put the 3DO XYZ
+                        # anchor at the vertical center of the Front view.
+                        # Pixel row 127 ends here even when top varies.
+                        anchor_y = on.shape[0] / 2.0
+                        self.assertGreater(anchor_y - int(ys.min()), 8)
+                        self.assertLess(abs(int(ys.max()) - anchor_y), 6)
+                        self.view.sprites_enabled = True
+                        self.view.update()
 
     def test_referenced_helmet_drawn_inside_car_scene(self):
         scene = self.install_model("indycar.3do")

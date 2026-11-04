@@ -29,7 +29,9 @@ class PMPError(ValueError):
 @dataclass(frozen=True)
 class PMPSprite:
     path: Path
-    # RGBA cropped to nontransparent spans; pixel anchor 128,128 in source canvas.
+    # RGBA cropped to nontransparent spans; original 256x256 canvas bounds
+    # are preserved. The GPU placement pivot is source pixel (128,127), not
+    # the crop's midpoint. The decoder itself does not reposition sprites.
     rgba: object
     bounds: tuple[int, int, int, int]
     auxiliary: int
