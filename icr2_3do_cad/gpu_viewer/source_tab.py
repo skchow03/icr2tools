@@ -1116,8 +1116,8 @@ class SourcePane(QWidget):
             entry for entry in self._filter_entries
             if (entry.category in chosen or
                 (entry.category == "MATERIAL" and "POLY" in chosen and
-                 self._source_index.at_line(entry.first_line) ==
-                 ("polygon", entry.preview.split(":", 1)[0].strip()))) and
+                 (self._source_index.at_line(entry.first_line) or
+                  (None, None))[0] == "polygon")) and
             (not query or query in entry.preview.casefold()) and
             (not active_only or active_names is None or
              (entry.category != "Comments (%)" and
