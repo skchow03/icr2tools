@@ -42,7 +42,7 @@ def fixture_zero_vertex_binary():
     root = record(11, 3, material, 0, plain)
 
     header = struct.pack("<5i", len(body), root, 1, 0, 0)
-    return header + b"bldg1a\x00" + bytes(body)
+    return header + b"bldg1a\x00\x00" + bytes(body)
 
 
 class ZeroVertexExportTests(unittest.TestCase):
