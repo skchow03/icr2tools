@@ -182,7 +182,7 @@ previous preview remains visible. Live source recompilation and MIP
 reloads refresh the report without repeatedly opening new windows.
 
 The main window title displays the **last successfully opened .3D/.3DO
-filename** and current workspace. A trailing **\u002a** after the filename means
+filename** and current workspace. An **asterisk (`*`)** after the filename means
 the editable .3D Source has unsaved changes. Undoing back to the saved
 contents or successfully saving .3D Source removes it. An unsuccessful
 attempt to open a different file does not replace the displayed filename.
