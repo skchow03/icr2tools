@@ -111,10 +111,11 @@ class GPUAppearanceUITests(unittest.TestCase):
             self.assertEqual(inspection.current_target(),
                              ("polygon", "surface"))
             inspection.set_polygon_visibility(True)
-            self.assertTrue(inspection.editor.extraSelections())
+            selections = inspection.editor.extraSelections()
+            self.assertTrue(selections)
+            selected_format = selections[0].format
             self.assertEqual(
-                inspection.editor.extraSelections()[0].format.background(
-                ).color().name(), "#204a3c")
+                selected_format.background().color().name(), "#204a3c")
             inspection._only_filter("POLY")
             index = inspection.filtered_model.index(0)
             self.assertEqual(inspection.filtered_model.data(
