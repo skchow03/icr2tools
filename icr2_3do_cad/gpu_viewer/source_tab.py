@@ -24,7 +24,8 @@ from PySide6.QtWidgets import (
 
 from gpu_viewer.appearance import DARK_COLORS, validated_colors
 from gpu_viewer.source_change_log import format_rename_event
-from gpu_viewer.source_inspection import index_source_targets, target_offset
+from gpu_viewer.source_inspection import (index_source_targets, target_offset,
+                                          bsp_plane_points)
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.active_source import (
     active_source_labels, plane_vertex_dependencies, entry_is_active,
@@ -765,6 +766,13 @@ class SourcePane(QWidget):
         if not self._ready or self.pending or self._last_error_line is not None:
             return None
         return self._source_index.at_line(self.editor.textCursor().blockNumber())
+
+    def current_bsp_points(self, model):
+        """Return the selected BSP tuple's compiled XYZ in authored order."""
+        if not self._ready or self.pending or self._last_error_line is not None:
+            return None
+        return bsp_plane_points(
+            self._source_index, model, self.editor.textCursor().blockNumber())
 
     def set_polygon_visibility(self, visible):
         """Color the selected POLY declaration green/salmon, including continuations."""
