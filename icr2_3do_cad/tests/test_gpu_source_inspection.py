@@ -97,7 +97,7 @@ class SourceInspectionTests(unittest.TestCase):
             "face: POLY <42> {a,b,c};\n"
             'ordinary: MATERIAL MIP="usag", GROUP=3, face;\n'
             "group: MATERIAL GROUP=3, LIST {face};\n"
-            'quoted: MATERIAL MIP="POLY <99>, fake", GROUP=3, face;\n'
+            'quoted: MATERIAL MIP="POLY <2>", GROUP=3, face;\n'
             "root: LIST {ordinary, group, quoted};\n"
         )
         idx = index_source_targets(source)
