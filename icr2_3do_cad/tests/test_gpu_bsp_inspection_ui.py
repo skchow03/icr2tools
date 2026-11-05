@@ -88,6 +88,42 @@ class BSPSourceSelectionTests(unittest.TestCase):
         self.assertIsNone(self.window.viewer.inspection_kind)
         self.assertIsNone(self.window.viewer.inspection_points)
 
+    def test_binary_export_root_bsp_highlights_from_full_and_filtered_source(self):
+        from three_do import Model
+        from text_3d import export_compilable_text
+        from test_gpu_bsp_inspection import ROOT_BSP_SOURCE
+
+        authored, _ = compile_n3_text(
+            ROOT_BSP_SOURCE, "root_plane.3d", associate_planes=False)
+        binary = Model("root_plane.3do", raw_data=authored.raw,
+                       associate_planes=False)
+        generated = export_compilable_text(binary)
+        self.window.viewer._model = binary
+        try:
+            self.pane.set_source(generated, Path("root_plane.3d"))
+            lines = generated.splitlines()
+            root_line = next(i for i, row in enumerate(lines)
+                             if row.startswith("root: BSPF "))
+            self.go_to(root_line)
+            self.assertEqual(self.pane.current_target(), ("bsp", "root"))
+            self.assertEqual(self.window.viewer.inspection_kind, "bsp")
+            expected = ((1686000., 0., 1056000.),
+                        (1686000., 0., 0.),
+                        (0., 0., 0.))
+            self.assertEqual(self.window.viewer.inspection_points, expected)
+            self.pane._only_filter("BSP")
+            row = next(i for i, entry in
+                       enumerate(self.pane.filtered_model.entries)
+                       if entry.first_line == root_line)
+            self.pane.filtered_list.setCurrentIndex(
+                self.pane.filtered_model.index(row))
+            self.assertEqual(self.pane.current_target(), ("bsp", "root"))
+            self.assertEqual(self.window.viewer.inspection_points, expected)
+            self.assertFalse(self.pane.dirty)
+        finally:
+            self.window.viewer._model = self.model
+            self.pane._show_all_filters()
+
     def test_invalid_or_pending_source_hides_plane_arrows(self):
         self.go_to(8)
         self.assertEqual(self.window.viewer.inspection_kind, "bsp")

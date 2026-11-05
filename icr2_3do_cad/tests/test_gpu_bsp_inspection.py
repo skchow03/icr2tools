@@ -27,6 +27,27 @@ INLINE_SOURCE = SOURCE.replace(
     "partition: BSPF (plane_a, plane_b, plane_c)",
     "partition: BSPA ([<0,0,500>], [<1000,0,500>], [<0,1000,500>])")
 
+# Exact geometry and root BSP statement from the reported failure.
+ROOT_BSP_SOURCE = """3D VERSION 3.0;
+_0: [<1686000, 0, 1056000>];
+_16: [<1686000, 0, 0>];
+_32: [<0, 0, 0>];
+_48: [<0, 0, 1056000>];
+_64: [<1686000, -378000, 1056000>];
+_80: [<1686000, -378000, 0>];
+_96: [<0, -378000, 1056000>];
+_112: [<0, -378000, 0>];
+_128: NIL;
+_132: POLY <41> {_0, _16, _32, _48};
+_160: POLY <40> {_64, _80, _16, _0};
+_188: POLY <41> {_96, _112, _80, _64};
+_216: POLY <40> {_48, _32, _112, _96};
+_244: BSPF (_48, _32, _112), _128, _216, _128;
+_280: BSPF (_96, _112, _80), _128, _188, _244;
+_316: BSPF (_64, _80, _16), _128, _160, _280;
+root: BSPF (_0, _16, _32), _128, _132, _316;
+"""
+
 
 class BSPInspectionTests(unittest.TestCase):
     def test_indexes_bsp_and_multiline_continuations(self):
@@ -56,6 +77,52 @@ class BSPInspectionTests(unittest.TestCase):
             ((0, 0, 500), (1000, 0, 500), (0, 1000, 500)))
         self.assertIsNone(
             bsp_plane_points(index_source_targets(SOURCE), model, 9))
+
+    def test_binary_export_root_bsp_resolves_to_header_root_offset(self):
+        # On a freshly loaded .3do there is no n3_label_offsets map.
+        # Its exporter renames the actual root plane to "root" instead
+        # of "_<offset>", which formerly prevented cursor inspection.
+        from three_do import Model
+        from text_3d import export_compilable_text
+
+        compiled, _ = compile_n3_text(
+            ROOT_BSP_SOURCE, "bsp_root_example.3d",
+            associate_planes=False)
+        binary = Model("bsp_root_example.3do", raw_data=compiled.raw,
+                       associate_planes=False)
+        self.assertFalse(hasattr(binary, "n3_label_offsets"))
+        self.assertIn(binary.root_offset, binary.planes)
+        exported = export_compilable_text(binary)
+        index = index_source_targets(exported)
+        root_line = next(i for i, line in enumerate(exported.splitlines())
+                         if line.startswith("root: BSPF "))
+        self.assertEqual(index.at_line(root_line), ("bsp", "root"))
+        self.assertEqual(
+            target_offset(binary, "bsp", "root"), binary.root_offset)
+        self.assertEqual(
+            bsp_plane_points(index, binary, root_line),
+            ((1686000, 0, 1056000),
+             (1686000, 0, 0),
+             (0, 0, 0)))
+        # Other numeric-offset BSP declarations still resolve.
+        other = next(i for i, line in enumerate(exported.splitlines())
+                     if ": BSPF (" in line and not line.startswith("root:"))
+        self.assertIsNotNone(bsp_plane_points(index, binary, other))
+
+    def test_root_alias_requires_a_matching_record_kind(self):
+        from types import SimpleNamespace
+        binary = SimpleNamespace(
+            root_offset=420, n3_label_offsets={},
+            vertices={8: object()}, polygons={15: object()},
+            planes={300: object()})
+        self.assertIsNone(target_offset(binary, "bsp", "root"))
+        binary.planes[420] = object()
+        self.assertEqual(target_offset(binary, "bsp", "root"), 420)
+        self.assertIsNone(target_offset(binary, "vertex", "root"))
+        self.assertIsNone(target_offset(binary, "polygon", "root"))
+        # Compiled authored-label mapping takes precedence over the fallback.
+        binary.n3_label_offsets = {"root": 300}
+        self.assertEqual(target_offset(binary, "bsp", "root"), 300)
 
     def test_inline_coords_and_compiler_scaling(self):
         model, _ = compile_n3_text(
