@@ -199,6 +199,102 @@ class VertexPicker:
         return int(self.offsets[valid][winner])
 
 
+@dataclass(frozen=True)
+class PolygonPicker:
+    """CPU ray picker for rendered triangles belonging to the root .3D file.
+
+    Reuse GPU mesh triangulation, so concave POLYs and FACE2-derived faces use
+    exactly the same triangles as the viewport. Child instances have separate
+    source files and are intentionally not selection targets. No GL readback.
+    """
+
+    mesh: object
+    triangle_starts: np.ndarray
+    source_offsets: np.ndarray
+
+    @classmethod
+    def from_scene(cls, scene, mesh):
+        starts = []
+        offsets = []
+        if scene is not None and mesh is not None:
+            for (instance_id, source_offset), mesh_offset in scene.polygon_lookup.items():
+                if instance_id != 0:
+                    continue
+                span = mesh.polygon_ranges.get(mesh_offset)
+                if span is None:
+                    continue
+                first, count = span
+                starts.extend(range(first, first + count, 3))
+                offsets.extend([source_offset] * (count // 3))
+        return cls(mesh, np.asarray(starts, dtype=np.int64),
+                   np.asarray(offsets, dtype=np.int64))
+
+    def nearest(self, matrix, x, y, width, height, *, eligible_offsets=None):
+        """Return the frontmost intersected root POLY in logical screen pixels.
+
+        A ray through the OpenGL near/far clip planes avoids false hits on
+        projected triangles behind the camera, including perspective views.
+        Both sides of a face may be picked, matching disabled GL backface
+        culling. Candidate triangles respect the active BSP/RES selection.
+        """
+        if (self.mesh is None or not len(self.triangle_starts) or
+                width <= 0 or height <= 0 or
+                not (0 <= x < width and 0 <= y < height)):
+            return None
+        starts = self.triangle_starts
+        offsets = self.source_offsets
+        if eligible_offsets is not None:
+            allowed = np.fromiter(eligible_offsets, dtype=np.int64)
+            if not allowed.size:
+                return None
+            mask = np.isin(offsets, allowed)
+            if not mask.any():
+                return None
+            starts, offsets = starts[mask], offsets[mask]
+
+        try:
+            inverse = np.linalg.inv(np.asarray(matrix, dtype=np.float64))
+        except np.linalg.LinAlgError:
+            return None
+        ndc_x = 2.0 * x / width - 1.0
+        ndc_y = 1.0 - 2.0 * y / height
+        near = inverse @ np.array((ndc_x, ndc_y, -1.0, 1.0))
+        far = inverse @ np.array((ndc_x, ndc_y, 1.0, 1.0))
+        if (not np.isfinite(near).all() or not np.isfinite(far).all()
+                or abs(near[3]) < 1e-12 or abs(far[3]) < 1e-12):
+            return None
+        origin = near[:3] / near[3]
+        ray = far[:3] / far[3] - origin
+        max_distance = float(np.linalg.norm(ray))
+        if not np.isfinite(max_distance) or max_distance <= 0:
+            return None
+        direction = ray / max_distance
+
+        triangles = np.asarray(self.mesh.vertices, dtype=np.float64)[
+            starts[:, None] + np.arange(3), :3]
+        edge_a = triangles[:, 1] - triangles[:, 0]
+        edge_b = triangles[:, 2] - triangles[:, 0]
+        p = np.cross(direction, edge_b)
+        determinant = np.einsum('ij,ij->i', edge_a, p)
+        epsilon = 1e-10
+        inv_determinant = np.zeros_like(determinant)
+        np.divide(1.0, determinant, out=inv_determinant,
+                  where=np.abs(determinant) > epsilon)
+        start_to_ray = origin - triangles[:, 0]
+        u = np.einsum('ij,ij->i', start_to_ray, p) * inv_determinant
+        q = np.cross(start_to_ray, edge_a)
+        v = q @ direction * inv_determinant
+        distance = np.einsum('ij,ij->i', edge_b, q) * inv_determinant
+        hits = (np.abs(determinant) > epsilon) & (
+            u >= -epsilon) & (v >= -epsilon) & (
+            u + v <= 1.0 + epsilon) & (
+            distance >= -epsilon) & (distance <= max_distance + epsilon)
+        indices = np.flatnonzero(hits)
+        if not indices.size:
+            return None
+        return int(offsets[indices[np.argmin(distance[indices])]])
+
+
 def vertex_screen_position(model, mesh, offset, matrix, width, height):
     """Project a source vertex to logical viewport pixels, or None if clipped.
 
