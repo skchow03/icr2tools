@@ -152,7 +152,10 @@ class FilteredStatementsModel(QAbstractListModel):
         if not index.isValid() or index.row() >= len(self.entries):
             return None
         entry = self.entries[index.row()]
-        active = (entry.category == "POLY" and
+        # A MATERIAL containing an inline POLY is still categorized as
+        # MATERIAL for filtering, but is an inspectable polygon row.
+        target = self.owner._source_index.at_line(entry.first_line)
+        active = (target is not None and target[0] == "polygon" and
                   self._row_at_line(self.active_line) == index.row() and
                   self.active_visibility is not None)
         if role == Qt.ItemDataRole.DisplayRole:
@@ -888,8 +891,9 @@ class SourcePane(QWidget):
             if body_offset == offset)
         target = next((
             entry for entry in self._source_index.targets
-            if entry.kind == kind and entry.label in candidate_labels
-            and target_offset(model, kind, entry.label) == offset), None)
+            if entry.kind == kind and
+            (kind == "polygon" or entry.label in candidate_labels) and
+            target_offset(model, kind, entry.label) == offset), None)
         if target is None:
             return False
         block = self.editor.document().findBlockByNumber(target.first_line)
@@ -1110,7 +1114,10 @@ class SourcePane(QWidget):
         edited_line = self._active_edit_line if self.pending else None
         matching = [
             entry for entry in self._filter_entries
-            if entry.category in chosen and
+            if (entry.category in chosen or
+                (entry.category == "MATERIAL" and "POLY" in chosen and
+                 self._source_index.at_line(entry.first_line) ==
+                 ("polygon", entry.preview.split(":", 1)[0].strip()))) and
             (not query or query in entry.preview.casefold()) and
             (not active_only or active_names is None or
              (entry.category != "Comments (%)" and
