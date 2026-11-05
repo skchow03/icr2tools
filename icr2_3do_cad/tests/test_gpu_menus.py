@@ -276,6 +276,14 @@ class GPUViewerMenuTests(unittest.TestCase):
             log.close()
             self.window.model_path = None
 
+    def test_edit_menu_go_to_pointer_declaration_uses_existing_source_pane(self):
+        with patch.object(self.window.source_pane,
+                          "goto_pointer_declaration") as go:
+            self._action(
+                self._menu("Edit"),
+                "Go to Pointer Declaration (F12)").trigger()
+            go.assert_called_once_with()
+
     def test_save_and_save_as_track_clean_source(self):
         source = self.window.source_pane
         with tempfile.TemporaryDirectory() as directory:
