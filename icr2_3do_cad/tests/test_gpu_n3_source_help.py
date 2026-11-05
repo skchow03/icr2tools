@@ -151,7 +151,7 @@ class N3SourceHelpTests(unittest.TestCase):
             "c: [<0,100,0>, T=<0,127>];\n"
         )
         for kind, command, root_expr, expected_flavor in (
-                ("solid", "POLY", "face", 1),
+                ("solid", "POLY", "LIST {face}", 1),
                 ("textured", "POLY [T]",
                  'MATERIAL MIP="wall", GROUP=3, face', 2)):
             source = (base + f"face: {command} <42> {{a,b,c}};\n"
