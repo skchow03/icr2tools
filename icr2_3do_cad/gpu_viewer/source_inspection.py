@@ -141,6 +141,64 @@ def polygon_inspection_notice(model, offset, visible_offsets, distance,
     return "POLY not drawn: not referenced by the current scene"
 
 
+@dataclass(frozen=True)
+class VertexPicker:
+    """Cache the current root N3 model's vertices for projected click picking.
+
+    Child DYNAMIC geometry is deliberately not eligible: the .3D Source pane
+    edits only the root model, so those vertices have no source declaration to
+    navigate to. Rebuild after model recompilation, not on camera movement.
+    """
+    offsets: np.ndarray
+    normalized: np.ndarray
+
+    @classmethod
+    def from_model(cls, model, mesh):
+        if model is None or mesh is None or not model.vertices:
+            return cls(np.empty(0, dtype=np.int64),
+                       np.empty((0, 3), dtype=np.float64))
+        offsets = np.asarray(list(model.vertices), dtype=np.int64)
+        coords = np.asarray(
+            [vertex.xyz for vertex in model.vertices.values()], dtype=np.float64)
+        return cls(offsets, (coords - np.asarray(mesh.center, dtype=np.float64))
+                   / float(mesh.scale))
+
+    def nearest(self, matrix, x, y, width, height, *, radius=24.0,
+                eligible_offsets=None):
+        """Nearest projected vertex within radius in logical viewport pixels.
+
+        Reject points outside the clip volume or behind the near plane.
+        When several vertices overlap in screen space, prefer the frontmost
+        depth. No OpenGL readback or GPU state is required.
+        """
+        if not len(self.offsets) or width <= 0 or height <= 0:
+            return None
+        vertices = np.column_stack((
+            self.normalized, np.ones(len(self.offsets), dtype=np.float64)))
+        projected = vertices @ np.asarray(matrix, dtype=np.float64).T
+        w = projected[:, 3]
+        valid = (np.isfinite(projected).all(axis=1) & (w > 0)
+                 & (np.abs(projected[:, :3]) <= w[:, None]).all(axis=1))
+        if eligible_offsets is not None:
+            valid &= np.isin(self.offsets, np.fromiter(
+                eligible_offsets, dtype=np.int64))
+        if not valid.any():
+            return None
+        selected = projected[valid]
+        ndc = selected[:, :3] / selected[:, 3, None]
+        sx = (ndc[:, 0] + 1.0) * (width * 0.5)
+        sy = (1.0 - ndc[:, 1]) * (height * 0.5)
+        distance2 = (sx - x)**2 + (sy - y)**2
+        nearest_distance = np.min(distance2)
+        if not np.isfinite(nearest_distance) or nearest_distance > radius**2:
+            return None
+        candidates = np.flatnonzero(
+            np.isclose(distance2, nearest_distance, atol=1e-8, rtol=0))
+        # NDC depth increases with distance for both supported projections.
+        winner = candidates[np.argmin(ndc[candidates, 2])]
+        return int(self.offsets[valid][winner])
+
+
 def vertex_screen_position(model, mesh, offset, matrix, width, height):
     """Project a source vertex to logical viewport pixels, or None if clipped.
 
