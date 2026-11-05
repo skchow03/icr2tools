@@ -115,6 +115,7 @@ reload the model, reset the camera, compile source, or discard unsaved edits.
 - **Object** provides standalone object diagnostics (polygons, MIP names,
   DYNAMIC references), external 3DO resolution and fallback texture controls.
 
+**View → Customize Colors…** controls editor syntax/highlights and viewport accents.
 **View → Display Settings…** provides projection, texture and RES distance
 controls. **Assets → Asset Settings…** provides palette, MIP and external-3DO
 configuration. **View → Advanced Diagnostics…** provides BSP rendering mode,
@@ -480,6 +481,28 @@ Every category is checked by default, so the normal editable source is shown.
   The existing optional auto-rename feature still updates references across
   the document when an edited declaration label is renamed. **Find error**
   restores the complete editor before navigating to the failing line.
+
+## Customizing source and viewport colors
+
+Choose **View → Customize Colors…** to open the scrollable color editor.
+Colors apply immediately to the open viewer and persist across launches in
+your operating system's `ICR2Tools/GPUViewer` Qt settings. Each swatch opens
+the native color picker. **Restore Dark Defaults** and **Use Light Preset**
+provide coordinated, high-contrast syntax/selection palettes, including
+the text color over selected POLY and compiler-error lines.
+
+The source editor exposes separate colors for its background and plain text,
+comments, quoted filenames, N3 keywords, pointer labels, selection background
+and foreground, visible/not-drawn POLY highlights, error-line background,
+and highlighted-line text. The same POLY colors apply in the filtered
+statement list, so switching between full and filtered source does not
+change readability. The source editor no longer inherits an arbitrary
+light/dark operating-system background while keeping fixed pale syntax.
+
+The GPU viewport provides separate controls for the clear/background color,
+normal wireframe lines, the selected-POLY wire outline, vertex marker fill,
+and vertex marker border. Changes do not recompile N3 or re-upload the
+mesh. A loaded track skybox can cover the viewport's clear color.
 
 ## Inspecting N3 geometry with the source cursor
 
