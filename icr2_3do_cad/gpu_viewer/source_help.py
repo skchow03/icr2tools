@@ -48,9 +48,12 @@ class N3CommandHelp:
         )
 
 
-# child0 / child1 are deliberately described as ordered scene children:
-# camera-side traversal differs by FACE/BSP flavor; an unverified semantic
-# such as "always front" or "always back" would be misleading.
+# FACE/BSP rules below follow the real Model.visible_polygons() ICR2 viewer
+# traversal and the N3 compiler's text-to-binary child-slot permutation.
+# Front = positive side of the oriented plane (v1 -> v2 -> v3).
+# Distinguish being visited by a BSP branch from actual pixel visibility:
+# occlusion and clipping can still hide a visited polygon. This is the CAD
+# renderer's established behavior, not a bit-perfect claim about the game.
 COMMAND_HELP = {
     "VERSION": N3CommandHelp(
         "3D VERSION 3.0", "3D VERSION 3.0;",
@@ -68,15 +71,22 @@ COMMAND_HELP = {
         "Fractional XYZ can be scaled (default 6000); an ICR2_COORD_SCALE comment overrides the scale."),
     "POLY": N3CommandHelp(
         "POLY", "name: POLY <color> {v1, v2, v3, ...};",
-        "Creates a solid, palette-indexed polygon from ordered vertex references.",
+        "Solid palette-colored polygon; add [T] after POLY to make it textured.",
         "The color is a numeric palette index or a color-bearing vertex reference (p.c). "
-        "Vertex order controls face orientation. The compiler closes an unclosed polygon automatically; "
-        "all references must be local vertices."),
+        "Vertex order controls face orientation; the compiler closes an unclosed polygon automatically. "
+        "To convert to textured: change POLY <42> {a,b,c} to POLY [T] <42> {a,b,c}; "
+        "give every referenced vertex T=<U,V> coordinates and assign a texture via "
+        "MATERIAL MIP=\"name\", GROUP=3, yourPoly (or an ancestor MATERIAL). "
+        "Adding [T] alone does not supply UVs or a texture."),
     "POLY_T": N3CommandHelp(
         "POLY [T]", "name: POLY [T] <color> {v1, v2, v3, ...};",
-        "Creates a polygon whose vertices supply texture UV coordinates.",
-        "Each referenced vertex needs T=<U,V>; a surrounding MATERIAL MIP selects the bitmap. "
-        "Vertex winding still matters. The color is a palette-index operand."),
+        "Textured polygon; remove [T] after POLY to make it solid.",
+        "Each referenced vertex needs T=<U,V>; a MATERIAL MIP=\"name\" wrapper "
+        "(or a parent material) assigns the bitmap. Vertex winding still matters. "
+        "To convert to solid: change POLY [T] <42> {a,b,c} to POLY <42> {a,b,c}; "
+        "the <42> palette color is then used. Existing T=<U,V> on vertices can remain; "
+        "they are ignored by this solid polygon. Remove or adjust the MIP MATERIAL "
+        "wrapper only if it is no longer needed by other textured children."),
     "LINE": N3CommandHelp(
         "LINE", "name: LINE <color> {v1, v2};",
         "Creates line geometry using local vertex references.",
@@ -94,35 +104,55 @@ COMMAND_HELP = {
         "and a trailing comma are accepted by this compiler."),
     "FACE": N3CommandHelp(
         "FACE", "name: FACE (v1, v2, v3), child;",
-        "Attaches one child object to a geometric plane.",
-        "The ordered three non-collinear points define the plane and its normal. "
+        "One-sided face: visit its child only from the front of the plane.",
+        "Use for a surface that should disappear from behind, such as an exterior "
+        "building wall or ground face. The winding v1 -> v2 -> v3 determines the "
+        "front/positive side; from the back the child is culled. "
         "Points may be named vertices or inline [<X,Y,Z>]."),
     "FACE2": N3CommandHelp(
-        "FACE2", "name: FACE2 (v1, v2, v3), child1, child2;",
-        "Defines a plane-associated node with two child object slots.",
-        "The three ordered plane points establish orientation. The two subsequent "
-        "object references are hierarchy children, not additional plane vertices."),
+        "FACE2", "name: FACE2 (v1, v2, v3), frontChild, backChild;",
+        "Two-sided face: draw one child from the front and another from behind.",
+        "From the front/positive side, visit the first child; from the back/negative "
+        "side, visit the second. Use the same child in both slots to show the "
+        "same face on both sides, or different children for different front/back "
+        "appearances (e.g. a sign). NIL hides the corresponding side. "
+        "The three plane points set which direction is front."),
     "BSPF": N3CommandHelp(
         "BSPF", "name: BSPF (v1, v2, v3), child1, child2, child3;",
-        "Defines a plane-based BSP hierarchy node with three child slots.",
-        "The three points in parentheses define the oriented partition plane; "
-        "their winding determines the normal. Child pointers follow the plane tuple. "
-        "Selecting the row displays ordered vertex markers and winding arrows in the viewport."),
+        "BSP plane partition with a one-sided face: the middle child (child2) draws only from the front.",
+        "Use for solid objects where back-facing surfaces should disappear "
+        "(e.g. an exterior wall of a house). From the front, traversal is "
+        "child3 -> child2 (frontFace) -> child1. From behind, child2 is culled "
+        "and traversal is child1 -> child3. Thus the first and third children "
+        "are visited from both sides, but the second is front-only. "
+        "The plane's positive/front side comes from v1 -> v2 -> v3 winding; "
+        "select the statement to see those arrows in the viewport."),
     "BSPA": N3CommandHelp(
         "BSPA", "name: BSPA (v1, v2, v3), child1, child2, child3;",
-        "Defines another three-child BSP plane node.",
-        "Like BSPF, its plane uses three ordered points; the child pointers are "
-        "interpreted according to the BSPA record flavor. The viewer can show 1→2→3 winding."),
+        "Three-child BSP sorter: all three children are visited from either side.",
+        "Unlike BSPF, BSPA does not cull its middle child when seen from "
+        "behind. From the front, traversal is child3 -> child2 -> child1; "
+        "from the back it is child1 -> child2 -> child3. Use when three "
+        "parts need view-dependent painter order, not one-sided hiding. "
+        "Other FACE/BSP nodes inside these children may still cull geometry."),
     "BSP2": N3CommandHelp(
-        "BSP2", "name: BSP2 (v1, v2, v3), child1, child2, child3, child4;",
-        "Defines a BSP plane node with four child slots.",
-        "The first three operands inside parentheses define the oriented partition plane; "
-        "the four object pointers occur after the parentheses."),
+        "BSP2", "name: BSP2 (v1, v2, v3), far, backFace, frontFace, shared;",
+        "Four-child BSP: choose different front/back faces while sorting other parts.",
+        "Useful when a surface has a different appearance on each side, "
+        "with other geometry still present. In N3 source order: child1=far "
+        "subtree, child2=back-facing surface, child3=front-facing surface, "
+        "child4=shared/continuing subtree. From the front, visit child1, "
+        "child4, child3 (skip child2); from behind visit child2, child4, "
+        "child1 (skip child3). NIL may be used for unused slots. "
+        "This is the CAD viewer's current traversal behavior."),
     "BSPN": N3CommandHelp(
         "BSPN", "name: BSPN (v1, v2, v3), child1, child2;",
-        "Defines a BSP plane node with two child slots.",
-        "The normal is computed from the ordered three plane points. "
-        "The two following pointers are scene children and may be NIL."),
+        "Two-child BSP sorter: both children are visited from both sides.",
+        "Use to change draw order as the viewpoint crosses a plane, "
+        "without hiding either child. From the front, visit child2 then "
+        "child1; from behind, visit child1 then child2. This is a common "
+        "solution for nearby objects whose front-to-back order reverses. "
+        "Children may still contain their own one-sided FACE/BSP nodes."),
     "MATERIAL": N3CommandHelp(
         "MATERIAL", 'name: MATERIAL MIP="texture", GROUP=4, child;',
         "Wraps a child scene node with material/texture attributes.",

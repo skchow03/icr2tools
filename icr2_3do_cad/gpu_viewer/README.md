@@ -449,9 +449,20 @@ The reference covers the **N3 constructs supported by the current compiler**:
 vertices (including texture UV and color), POLY / POLY [T], LINE, LIST,
 NIL, FACE / FACE2, BSPF / BSPA / BSP2 / BSPN, MATERIAL, SWITCH DISTANCE,
 DYNAMIC, EXTERN, SUPEROBJ, SRB / PMP2, RECOLOR, DYNO, DATA, and the 3D VERSION
-header and ICR2 metadata comments. It is intentionally a syntax guide rather
-than an attempt to document undocumented simulator behavior; for example,
-unverified meanings of BSP child-slot order and DYNO payloads are not asserted.
+header and ICR2 metadata comments. FACE/FACE2 tips explain one-sided vs
+front/back surfaces; BSPF/BSPA/BSP2/BSPN tips explain the viewer's
+front/back child selection, drawing order and which branches are skipped.
+The source tuple's winding (v1 → v2 → v3) determines its positive/front
+side. These are **CAD viewer BSP traversal rules**, not claims that every
+visited polygon must be pixel-visible or a bit-exact reconstruction of
+the original game. Undocumented payload meanings such as DYNO are not guessed.
+
+POLY and POLY [T] tips also describe how to switch **solid ↔ textured**:
+add/remove [T] directly after POLY. Texturing additionally needs T=<U,V>
+at every referenced vertex and an applicable MATERIAL MIP texture; switching
+to solid lets the POLY palette index determine its color. Existing vertex UVs
+may remain when converting back to solid, and shared MATERIAL wrappers
+should not be removed without checking their other child geometry.
 
 Help works during partial and multiline typing and when source has not yet
 recompiled. It does **not** alter source, perform completion, change any
