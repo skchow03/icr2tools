@@ -426,6 +426,7 @@ class SourcePane(QWidget):
         self.syntax_help = QLabel(
             "N3 help — place the cursor on a command, or hover for syntax.")
         self.syntax_help.setObjectName("n3SyntaxHelp")
+        self.syntax_help.setTextFormat(Qt.TextFormat.PlainText)
         self.syntax_help.setWordWrap(True)
         self.syntax_help.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
