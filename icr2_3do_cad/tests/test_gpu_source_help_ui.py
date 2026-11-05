@@ -113,6 +113,73 @@ class N3ContextHelpQtTests(unittest.TestCase):
         self.assertEqual(pane.revision, revision)
         self.assertFalse(pane.pending)
 
+    def test_tooltip_is_wrapped_and_anchored_below_source_line(self):
+        """Regression: wide native tips must not cover the model viewport."""
+        from PySide6.QtCore import Qt, QEvent
+        from PySide6.QtGui import QHelpEvent, QTextCursor
+        from PySide6.QtWidgets import QApplication, QToolTip
+
+        pane = self.pane
+        self._line(6)
+        viewport = pane.editor.viewport()
+        block = pane.editor.document().findBlockByNumber(6)
+        row = pane.editor.cursorRect(QTextCursor(block))
+        hover_pos = row.center()
+        hover = QHelpEvent(
+            QEvent.Type.ToolTip, hover_pos,
+            viewport.mapToGlobal(hover_pos))
+        QToolTip.hideText()
+        QApplication.processEvents()
+        QApplication.sendEvent(viewport, hover)
+        QApplication.processEvents()
+        self.assertIn('<table width="370"', QToolTip.text())
+        tip_widgets = [w for w in QApplication.topLevelWidgets()
+                       if w.isVisible() and
+                       w.windowFlags() & Qt.WindowType.ToolTip]
+        self.assertTrue(tip_widgets, "Expected visible Qt tooltip popup")
+        popup = tip_widgets[-1]
+        left = viewport.mapToGlobal(row.topLeft()).x()
+        bottom = viewport.mapToGlobal(row.bottomLeft()).y()
+        self.assertGreaterEqual(popup.frameGeometry().x(), left - 30)
+        self.assertLessEqual(popup.width(), 455)
+        self.assertGreaterEqual(popup.frameGeometry().y(), bottom)
+        self.assertEqual(pane.get_source(), SOURCE)
+        self.assertFalse(pane.dirty)
+        QToolTip.hideText()
+
+    def test_filtered_hover_is_wrapped_and_stays_in_source_column(self):
+        from PySide6.QtCore import Qt, QEvent
+        from PySide6.QtGui import QHelpEvent
+        from PySide6.QtWidgets import QApplication, QToolTip
+
+        pane = self.pane
+        pane._only_filter("BSP")
+        index = pane.filtered_model.index(0)
+        pane.filtered_list.setCurrentIndex(index)
+        self.app.processEvents()
+        view = pane.filtered_list
+        row = view.visualRect(index)
+        pos = row.center()
+        hover = QHelpEvent(
+            QEvent.Type.ToolTip, pos,
+            view.viewport().mapToGlobal(pos))
+        QToolTip.hideText()
+        QApplication.processEvents()
+        QApplication.sendEvent(view.viewport(), hover)
+        QApplication.processEvents()
+        self.assertIn('<table width="370"', QToolTip.text())
+        tip_widgets = [w for w in QApplication.topLevelWidgets()
+                       if w.isVisible() and
+                       w.windowFlags() & Qt.WindowType.ToolTip]
+        self.assertTrue(tip_widgets)
+        popup = tip_widgets[-1]
+        self.assertLessEqual(popup.width(), 455)
+        self.assertGreaterEqual(
+            popup.frameGeometry().x(),
+            view.viewport().mapToGlobal(row.topLeft()).x() - 30)
+        self.assertEqual(pane.get_source(), SOURCE)
+        QToolTip.hideText()
+
     def test_filtered_rows_have_tooltip_and_inline_edit_help(self):
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QPlainTextEdit
