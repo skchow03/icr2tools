@@ -7,6 +7,7 @@ The pure helpers are intentionally independent of Qt for regression testing.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from html import escape
 import re
 
 
@@ -22,6 +23,29 @@ class N3CommandHelp:
 
     def tooltip(self) -> str:
         return f"{self.name}\n{self.description}\n\nSyntax: {self.syntax}\n\n{self.detail}"
+
+    def tooltip_html(self, note: str = "") -> str:
+        """Bound Qt's rich-text tooltip to a readable width (not screen-wide).
+
+        A table with an explicit width is supported by Qt's QTextDocument
+        rich-text layout; CSS max-width alone is not consistently honored by
+        QToolTip on Windows. Escaping prevents N3 angle brackets, % comments
+        and quoted filenames from being interpreted as markup.
+        """
+        heading = escape(self.name)
+        description = escape(self.description)
+        syntax = escape(self.syntax)
+        detail = escape(self.detail)
+        preface = f"<small>{escape(note)}</small><br/>" if note else ""
+        return (
+            '<table width="370" cellpadding="1" cellspacing="0" border="0">'
+            '<tr><td width="370">'
+            f'{preface}<b>{heading}</b>'
+            f'<p>{description}</p>'
+            f'<p><b>Syntax:</b> {syntax}</p>'
+            f'<p>{detail}</p>'
+            '</td></tr></table>'
+        )
 
 
 # child0 / child1 are deliberately described as ordered scene children:

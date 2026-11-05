@@ -434,7 +434,11 @@ While editing **.3D Source**, a compact **N3 help** line below the text box
 follows the command at the cursor: its purpose and a signature showing the
 correct syntax. Hover over a statement for a longer explanation, or press
 **Ctrl+Shift+Space** (or click the **?** button) to request the full help
-without inserting or modifying any text.
+without inserting or modifying any text. The expanded tooltip has a narrow,
+wrapped width and is anchored **beneath the source line** near the left
+edge of the Source editor rather than over the 3D model. Qt can move it above
+the line when there is insufficient space below near the screen boundary.
+The same placement is used for filtered statements and inline editing.
 
 Help also appears when hovering over a **filtered statement row**. While
 editing a filtered statement directly (double-click), the live help follows
