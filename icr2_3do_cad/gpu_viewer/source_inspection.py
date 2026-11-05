@@ -399,14 +399,15 @@ class PolygonPicker:
         return int(offsets[indices[np.argmin(distance[indices])]])
 
 
-def vertex_screen_position(model, mesh, offset, matrix, width, height):
-    """Project a source vertex to logical viewport pixels, or None if clipped.
+def raw_point_screen_position(mesh, xyz, matrix, width, height):
+    """Project raw Papyrus XYZ, including authored plane-only/inline points.
 
-    Model XYZ are in raw Papyrus units; GPU XYZ use the mesh centre/scale.
+    Use the same mesh centering and camera projection as visible geometry.
+    Return None for invalid or clipped coordinates.
     """
-    if model is None or mesh is None or offset not in model.vertices:
+    if mesh is None or xyz is None:
         return None
-    raw = np.asarray(model.vertices[offset].xyz, dtype=np.float64)
+    raw = np.asarray(xyz, dtype=np.float64)
     center = np.asarray(mesh.center, dtype=np.float64)
     scale = float(mesh.scale)
     if not np.isfinite(raw).all() or not np.isfinite(scale) or scale <= 0:
@@ -421,3 +422,42 @@ def vertex_screen_position(model, mesh, offset, matrix, width, height):
     ndc = clip[:2] / clip[3]
     return (float(width * (ndc[0] + 1.0) / 2.0),
             float(height * (1.0 - ndc[1]) / 2.0))
+
+
+def vertex_screen_position(model, mesh, offset, matrix, width, height):
+    """Project a compiled vertex, sharing the BSP raw-coordinate transform."""
+    if model is None or offset not in model.vertices:
+        return None
+    return raw_point_screen_position(
+        mesh, model.vertices[offset].xyz, matrix, width, height)
+
+
+def bsp_winding_arrows(screen_points, marker_radius=10.0):
+    """Generate directed 1→2, 2→3, 3→1 segments and arrowhead strokes.
+
+    Returns (shaft_start, shaft_end, wing_left, wing_right) per visible edge.
+    Endpoints are pulled away from vertex markers so arrowheads remain legible.
+    Missing/clipped or coincident screen points never create wild coordinates.
+    """
+    if len(screen_points) != 3:
+        return ()
+    arrows = []
+    for i in range(3):
+        a, b = screen_points[i], screen_points[(i + 1) % 3]
+        if a is None or b is None:
+            continue
+        delta = np.asarray(b, dtype=np.float64) - np.asarray(a, dtype=np.float64)
+        length = float(np.linalg.norm(delta))
+        if not np.isfinite(length) or length <= marker_radius * 2 + 9:
+            continue
+        unit = delta / length
+        end = np.asarray(b, dtype=np.float64) - unit * (marker_radius + 2)
+        start = np.asarray(a, dtype=np.float64) + unit * (marker_radius + 2)
+        # Keep arrowhead fins in a predictable 2D plane.
+        sideways = np.array([-unit[1], unit[0]])
+        wing_distance = min(9.0, (length - marker_radius * 2) / 4)
+        left = end - unit * wing_distance + sideways * wing_distance * 0.6
+        right = end - unit * wing_distance - sideways * wing_distance * 0.6
+        arrows.append(tuple(tuple(float(v) for v in p)
+                            for p in (start, end, left, right)))
+    return tuple(arrows)
