@@ -91,14 +91,17 @@ class SourceEditorRenameUITests(unittest.TestCase):
         for visible, expected in ((True, "#b5e3bb"), (False, "#f1ada1")):
             self.pane.set_polygon_visibility(visible)
             selections = self.pane.editor.extraSelections()
-            self.assertEqual(len(selections), 2)
+            self.assertEqual(len(selections), 3)
             self.assertEqual(
-                [x.cursor.blockNumber() for x in selections], [5, 6])
+                [x.cursor.blockNumber() for x in selections], [5, 6, 5])
             self.assertTrue(all(
                 x.format.background().color().name() == expected
-                for x in selections))
+                for x in selections[:2]))
+            self.assertLess(selections[-1].format.background().color().alpha(), 255)
         self.pane.set_polygon_visibility(None)
-        self.assertEqual(self.pane.editor.extraSelections(), [])
+        self.assertEqual(
+            [x.cursor.blockNumber()
+             for x in self.pane.editor.extraSelections()], [5])
 
 
 if __name__ == "__main__":
