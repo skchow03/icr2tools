@@ -10,7 +10,7 @@ import re
 from bisect import bisect_right
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTime, QTimer, Signal
+from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, QPoint, Qt, QTime, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QKeySequence, QPalette, QShortcut, QSyntaxHighlighter,
     QTextCharFormat, QTextCursor,
@@ -583,8 +583,40 @@ class SourcePane(QWidget):
             tip.tooltip() if tip is not None else
             "Hover over an N3 statement for syntax and purpose.")
 
+    def _show_source_tooltip(self, tip, editor, line):
+        """Anchor wrapped help below the relevant line, inside Source pane.
+
+        Native Qt tooltips anchored to the mouse or end of a long code row can
+        spill to the LEFT of the editor. Anchor near the text area left edge,
+        and below the line rather than in the model viewport. Qt may shift
+        upward if there is not enough space below near the screen bottom.
+        """
+        if tip is None:
+            QToolTip.hideText()
+            return
+        viewport = editor.viewport()
+        block = editor.document().findBlockByNumber(line)
+        if not block.isValid():
+            return
+        row = editor.cursorRect(QTextCursor(block))
+        anchor = viewport.mapToGlobal(QPoint(12, row.bottom() + 6))
+        QToolTip.showText(anchor, tip.tooltip_html(), viewport)
+
+    def _show_filtered_tooltip(self, tip):
+        """Keep filtered-row help on the Source side of the splitter."""
+        if tip is None:
+            QToolTip.hideText()
+            return
+        view = self.filtered_list
+        index = view.currentIndex()
+        if not index.isValid():
+            return
+        row = view.visualRect(index)
+        anchor = view.viewport().mapToGlobal(QPoint(12, row.bottom() + 6))
+        QToolTip.showText(anchor, tip.tooltip_html(), view.viewport())
+
     def show_syntax_help(self):
-        """Ctrl+Shift+Space or ? opens details without editing text."""
+        """Ctrl+Shift+Space or ? opens details below the source statement."""
         from PySide6.QtWidgets import QApplication
         inline = self._inline_help_editor
         if inline is None or QApplication.focusWidget() is not inline:
@@ -593,15 +625,13 @@ class SourcePane(QWidget):
         if tip is None:
             return
         if inline is not None:
-            widget = inline
-            point = inline.cursorRect().bottomRight()
+            self._show_source_tooltip(
+                tip, inline, inline.textCursor().blockNumber())
         elif self.source_stack.currentWidget() is self.filtered_page:
-            widget = self.filtered_list
-            point = widget.visualRect(widget.currentIndex()).bottomRight()
+            self._show_filtered_tooltip(tip)
         else:
-            widget = self.editor
-            point = widget.cursorRect().bottomRight()
-        QToolTip.showText(widget.mapToGlobal(point), tip.tooltip(), widget)
+            self._show_source_tooltip(
+                tip, self.editor, self.editor.textCursor().blockNumber())
 
     def eventFilter(self, watched, event):
         if (event.type() == QEvent.Type.KeyPress and
@@ -630,7 +660,12 @@ class SourcePane(QWidget):
             else:
                 return super().eventFilter(watched, event)
             if tip is not None:
-                QToolTip.showText(event.globalPos(), tip.tooltip(), watched)
+                # The popup must follow the hovered source line, not the
+                # screen's mouse position (which can push it over the model).
+                self._show_source_tooltip(
+                    tip, self.editor if watched in
+                    (self.editor, self.editor.viewport()) else inline,
+                    block)
             else:
                 QToolTip.hideText()
             return True
