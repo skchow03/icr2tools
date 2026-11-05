@@ -299,6 +299,29 @@ def run(path):
                                 result["error"] = "Vertex dot was not visible in framebuffer"
                             elif view._vbo != inspected_vbo:
                                 result["error"] = "Moving the source caret rebuilt GPU geometry"
+                            else:
+                                # Test actual click -> projected root vertex ->
+                                # source navigation on a live OpenGL viewport.
+                                from PySide6.QtCore import QPoint
+                                pick = view.pick_nearest_vertex(*point)
+                                if pick is None:
+                                    result["error"] = "Projected viewport vertex could not be picked"
+                                else:
+                                    pane.editor.setTextCursor(QTextCursor(
+                                        pane.editor.document().findBlockByNumber(0)))
+                                    QTest.mouseClick(
+                                        view, Qt.MouseButton.LeftButton,
+                                        pos=QPoint(int(round(point[0])),
+                                                   int(round(point[1]))))
+                                    target = pane.current_target()
+                                    if (target is None or target[0] != "vertex"
+                                            or target_offset(
+                                                view._model, "vertex", target[1]) != pick
+                                            or view.inspection_offset != pick
+                                            or view._vbo != inspected_vbo):
+                                        result["error"] = (
+                                            "Live viewport click did not navigate "
+                                            "to its nearest N3 vertex")
             inspection["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()

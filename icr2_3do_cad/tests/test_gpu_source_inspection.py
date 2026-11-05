@@ -6,7 +6,7 @@ import numpy as np
 
 from gpu_viewer.source_inspection import (
     index_source_targets, target_offset, polygon_mesh_range,
-    vertex_screen_position, polygon_inspection_notice,
+    vertex_screen_position, polygon_inspection_notice, VertexPicker,
 )
 from gpu_viewer.workspaces import max_switch_distance
 from gpu_viewer.scene import build_scene
@@ -98,6 +98,39 @@ class SourceInspectionTests(unittest.TestCase):
         self.assertIsNone(vertex_screen_position(
             model, mesh, 1, behind, 800, 600))
 
+
+    def test_viewport_vertex_picker_clips_and_limits_search_radius(self):
+        model = SimpleNamespace(vertices={
+            100: SimpleNamespace(xyz=(0, 0, 0)),
+            200: SimpleNamespace(xyz=(50, 0, 0)),
+            300: SimpleNamespace(xyz=(300, 0, 0)),  # beyond view
+        })
+        mesh = SimpleNamespace(center=(0, 0, 0), scale=100.)
+        picker = VertexPicker.from_model(model, mesh)
+        self.assertEqual(picker.nearest(np.eye(4), 402, 301, 800, 600), 100)
+        self.assertEqual(picker.nearest(np.eye(4), 599, 299, 800, 600), 200)
+        self.assertIsNone(picker.nearest(np.eye(4), 520, 300, 800, 600))
+        self.assertIsNone(picker.nearest(
+            np.diag([1., 1., 1., -1.]), 400, 300, 800, 600))
+        self.assertIsNone(picker.nearest(np.eye(4), 400, 300, 0, 600))
+        self.assertEqual(picker.nearest(
+            np.eye(4), 400, 300, 800, 600, eligible_offsets={200}), None)
+
+    def test_vertex_picker_prefers_nearest_depth_at_same_screen_position(self):
+        model = SimpleNamespace(vertices={
+            20: SimpleNamespace(xyz=(0, 0, 40)),
+            10: SimpleNamespace(xyz=(0, 0, -40)),
+            30: SimpleNamespace(xyz=(0, 0, 200)),
+        })
+        picker = VertexPicker.from_model(
+            model, SimpleNamespace(center=(0, 0, 0), scale=100.))
+        self.assertEqual(picker.nearest(np.eye(4), 400, 300, 800, 600), 10)
+        self.assertEqual(picker.nearest(
+            np.eye(4), 400, 300, 800, 600, eligible_offsets={20}), 20)
+        self.assertEqual(VertexPicker.from_model(
+            SimpleNamespace(vertices={}),
+            SimpleNamespace(center=(0, 0, 0), scale=1)).nearest(
+                np.eye(4), 0, 0, 800, 600), None)
 
     def test_max_switch_distance_includes_loaded_child_models(self):
         # No file needed for this deterministic traversal.

@@ -181,7 +181,16 @@ the viewport so those letters can be typed normally in the N3 editor.
 
 ## Controls
 
-- Left mouse drag: orbit
+- **Left-click near a vertex:** select the nearest visible root-model
+  vertex (within 24 logical screen pixels) and jump to its declaration in
+  **.3D Source**. The declaration label is selected, and the existing yellow
+  viewport marker identifies the vertex. If source is hidden, it opens;
+  if generated source for a binary .3do is still being prepared, the jump
+  completes when source is ready. Custom authored labels and generated
+  `_offset` labels work in both full and filtered-source modes. Clicks in
+  empty space do nothing. Referenced DYNAMIC/EXTERN child vertices are
+  excluded because the Source pane edits the root model only.
+- Left mouse drag: orbit (a drag does not trigger vertex selection)
 - Shift + left drag or middle drag: pan
 - Mouse wheel: zoom
 - 3D, Top, Front, Side buttons: standard orthographic views
