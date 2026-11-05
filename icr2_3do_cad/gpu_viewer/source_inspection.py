@@ -17,6 +17,7 @@ import numpy as np
 _DECLARATION = re.compile(r"^[ \t]*([A-Za-z_][A-Za-z_0-9-]*)[ \t]*:[ \t]*(.*)$")
 _POLYGON = re.compile(r"^POLY(?:\s+\[T\])?\s*<", re.I | re.S)
 _VERTEX = re.compile(r"^\[\s*<", re.S)
+_MATERIAL = re.compile(r"^MATERIAL\b", re.I | re.S)
 _BINARY_LABEL = re.compile(r"^_(\d+)$")
 _BSP_PLANE = re.compile(
     r"^(?:BSPF|BSPA|BSP2|BSPN)\s*\(([^)]*)\)", re.I | re.S)
@@ -101,6 +102,41 @@ def _bsp_plane_operands(code: str) -> tuple[str, str, str] | None:
     return tuple(tokens)
 
 
+def _inline_material_polygon(code: str) -> bool:
+    """Does MATERIAL's single child contain an inline POLY / POLY [T]?
+
+    Parse commas only at top level: MIP names are quoted, and polygon
+    vertex lists contain internal commas. A MATERIAL referencing a *named*
+    child or LIST is not itself a single polygon and must not be selected.
+    """
+    head = _MATERIAL.match(code)
+    if head is None:
+        return False
+    remaining = code[head.end():]
+    items = []
+    start = 0
+    nesting = []
+    quoted = False
+    pairs = {"]": "[", "}": "{", ")": "(", ">": "<"}
+    for i, char in enumerate(remaining):
+        if char == '"':
+            quoted = not quoted
+        elif not quoted:
+            if char in "[{(<":
+                nesting.append(char)
+            elif char in "]})>":
+                if not nesting or nesting.pop() != pairs[char]:
+                    return False
+            elif char == "," and not nesting:
+                items.append(remaining[start:i].strip())
+                start = i + 1
+    if quoted or nesting:
+        return False
+    items.append(remaining[start:].strip().rstrip(";").strip())
+    return any(_POLYGON.match(item) or _inline_material_polygon(item)
+               for item in items)
+
+
 def index_source_targets(source: str) -> SourceTargetIndex:
     """Identify complete, possibly multiline POLY, vertex and BSP declarations.
 
@@ -127,7 +163,7 @@ def index_source_targets(source: str) -> SourceTargetIndex:
             command.append(next_code)
         code = "\n".join(command).lstrip()
         if ';' in code:
-            if _POLYGON.match(code):
+            if _POLYGON.match(code) or _inline_material_polygon(code):
                 targets.append(SourceTarget(start, index, "polygon", label))
             elif _VERTEX.match(code):
                 targets.append(SourceTarget(start, index, "vertex", label))
@@ -164,8 +200,22 @@ def target_offset(model, kind: str, label: str) -> int | None:
             match = _BINARY_LABEL.fullmatch(label)
             if match:
                 offset = int(match.group(1))
-    if kind == "polygon" and offset in model.polygons:
-        return offset
+    if kind == "polygon":
+        # An authored label can denote a MATERIAL wrapper whose single
+        # inline child is an anonymous POLY. Only follow MATERIAL records;
+        # do not highlight an arbitrary polygon in a LIST/BSP subtree.
+        seen = set()
+        for _ in range(16):
+            if offset in model.polygons:
+                return offset
+            if offset in seen or getattr(model, "records", {}).get(offset) != 4:
+                break
+            seen.add(offset)
+            children = getattr(model, "children", {}).get(offset, ())
+            if len(children) != 1:
+                break
+            offset = children[0]
+        return None
     if kind == "vertex" and offset in model.vertices:
         return offset
     if kind == "bsp" and offset in model.planes:
