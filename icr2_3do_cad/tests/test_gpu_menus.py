@@ -331,17 +331,17 @@ class GPUViewerMenuTests(unittest.TestCase):
                 self._action(menu, "Clear Recent Files").isEnabled())
 
     def test_exit_does_not_discard_source_without_confirmation(self):
-        from PySide6.QtWidgets import QMessageBox
-
         pane = self.window.source_pane
         pane.set_source("3D VERSION 3.0;\n", Path(self.tmp.name) / "model.3d")
         pane.editor.insertPlainText("% unsaved\n")
         self.assertTrue(pane.dirty)
         event = self.QCloseEvent()
-        with patch.object(QMessageBox, "question",
-                          return_value=QMessageBox.StandardButton.No):
+        with patch("gpu_viewer.main.confirm_destructive_action",
+                   return_value=False) as confirm:
             self.window.closeEvent(event)
         self.assertFalse(event.isAccepted())
+        confirm.assert_called_once()
+        self.assertEqual(confirm.call_args.args[-1], "Discard changes")
 
 
 if __name__ == "__main__":
