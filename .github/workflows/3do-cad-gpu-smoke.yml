@@ -12,6 +12,8 @@ on:
       - "icr2_3do_cad/tests/test_gpu_track_navigation_ui.py"
       - "icr2_3do_cad/tests/test_gpu_track_tsd_depth_gl.py"
       - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_labels.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_labels_ui.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_overlay_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_inspection_ui.py"
       - "icr2_3do_cad/tests/test_gpu_source_help_ui.py"
@@ -35,6 +37,8 @@ on:
       - "icr2_3do_cad/tests/test_gpu_track_navigation_ui.py"
       - "icr2_3do_cad/tests/test_gpu_track_tsd_depth_gl.py"
       - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_labels.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_labels_ui.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_overlay_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_inspection_ui.py"
       - "icr2_3do_cad/tests/test_gpu_source_help_ui.py"
@@ -153,6 +157,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python -m unittest discover -s tests -p 'test_gpu_source_help_ui.py'
+      - name: Show labelled root vertices in a transparent Qt overlay
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_vertex_labels_ui.py'
       - name: Test source cursor inspection under Qt
         working-directory: icr2_3do_cad
         env:
