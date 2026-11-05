@@ -88,7 +88,6 @@ class GPUScaleModelUITests(unittest.TestCase):
         self.assertIn("b: [<25,0,0>, T=<127,0>]", pane.get_source())
         self.assertIn("p: POLY [T] <44> {a,b,c};", pane.get_source())
         self.assertEqual(len(pane.filtered_model.entries), 1)
-        self.assertIn("÷", "÷")
         self.assertTrue(pane.pending)
         self.assertEqual(result.points, 3)
         pane.editor.undo()
@@ -133,12 +132,8 @@ class GPUScaleModelUITests(unittest.TestCase):
 
     def test_edit_menu_action_uses_dialog_and_updates_canonical_source(self):
         from PySide6.QtWidgets import QDialog
-        edit = next(menu for menu in self.window.menuBar().findChildren(type(
-            self.window.menuBar().addMenu("__temporary__"))) if menu.title() == "&Edit")
-        # Remove the temporary lookup menu, if Qt registered it.
-        for menu in list(self.window.menuBar().actions()):
-            if menu.text() == "__temporary__":
-                self.window.menuBar().removeAction(menu)
+        edit = next(action.menu() for action in self.window.menuBar().actions()
+                    if action.text().replace("&", "") == "Edit")
         menu_action = next(
             action for action in edit.actions()
             if action.text().replace("&", "") == "Scale Model…")
