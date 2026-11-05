@@ -14,6 +14,8 @@ on:
       - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_overlay_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_inspection_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_source_help_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_n3_source_help.py"
       - "icr2_3do_cad/tests/test_gpu_confirmations_ui.py"
       - "icr2_core/trk/**"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
@@ -33,6 +35,8 @@ on:
       - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_overlay_gl.py"
       - "icr2_3do_cad/tests/test_gpu_bsp_inspection_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_source_help_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_n3_source_help.py"
       - "icr2_3do_cad/tests/test_gpu_confirmations_ui.py"
       - "icr2_core/trk/**"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
@@ -127,6 +131,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python -m unittest discover -s tests -p 'test_gpu_bsp_overlay_gl.py'
+      - name: Test VS Code-style N3 contextual help and filtered editing
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_source_help_ui.py'
       - name: Test source cursor inspection under Qt
         working-directory: icr2_3do_cad
         env:
