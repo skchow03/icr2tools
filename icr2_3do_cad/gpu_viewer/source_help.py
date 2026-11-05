@@ -24,7 +24,7 @@ class N3CommandHelp:
     def tooltip(self) -> str:
         return f"{self.name}\n{self.description}\n\nSyntax: {self.syntax}\n\n{self.detail}"
 
-    def tooltip_html(self) -> str:
+    def tooltip_html(self, note: str = "") -> str:
         """Bound Qt's rich-text tooltip to a readable width (not screen-wide).
 
         A table with an explicit width is supported by Qt's QTextDocument
@@ -36,10 +36,11 @@ class N3CommandHelp:
         description = escape(self.description)
         syntax = escape(self.syntax)
         detail = escape(self.detail)
+        preface = f"<small>{escape(note)}</small><br/>" if note else ""
         return (
             '<table width="370" cellpadding="1" cellspacing="0" border="0">'
             '<tr><td width="370">'
-            f'<b>{heading}</b>'
+            f'{preface}<b>{heading}</b>'
             f'<p>{description}</p>'
             f'<p><b>Syntax:</b> {syntax}</p>'
             f'<p>{detail}</p>'
