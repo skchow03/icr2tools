@@ -118,12 +118,12 @@ COMMAND_HELP = {
         "appearances (e.g. a sign). NIL hides the corresponding side. "
         "The three plane points set which direction is front."),
     "BSPF": N3CommandHelp(
-        "BSPF", "name: BSPF (v1, v2, v3), child1, frontFace, child3;",
-        "BSP sorting with a one-sided face: the middle child draws only from the front.",
+        "BSPF", "name: BSPF (v1, v2, v3), child1, child2, child3;",
+        "BSP plane partition with a one-sided face: the middle child (child2) draws only from the front.",
         "Use for solid objects where back-facing surfaces should disappear "
         "(e.g. an exterior wall of a house). From the front, traversal is "
-        "child3 -> frontFace -> child1. From behind, frontFace is culled and "
-        "traversal is child1 -> child3. Thus the first and third children "
+        "child3 -> child2 (frontFace) -> child1. From behind, child2 is culled "
+        "and traversal is child1 -> child3. Thus the first and third children "
         "are visited from both sides, but the second is front-only. "
         "The plane's positive/front side comes from v1 -> v2 -> v3 winding; "
         "select the statement to see those arrows in the viewport."),
