@@ -94,8 +94,9 @@ def _reload_model(window):
 def _show_controls(window):
     QMessageBox.information(
         window, "GPU Viewer Controls",
-        "Open: Ctrl+O    Save Source: Ctrl+S    Save Source As: Ctrl+Shift+S\n"
-        "Export 3DO: Ctrl+E    Exit: Ctrl+Q\n\n"
+        "Open: Ctrl+O    Save .3D Source: Ctrl+S    Save .3D Source As: Ctrl+Shift+S\n"
+        "Export 3DO: Ctrl+E    Exit: Ctrl+Q\n"
+        "Undo/Redo: Ctrl+Z / Ctrl+Y    Find in .3D Source: Ctrl+F\n\n"
         "Orbit: left drag    Pan: Shift+left drag or middle drag\n"
         "Zoom: mouse wheel    Frame All: F (when viewport focused)\n"
         "Reload MIPs: R (when viewport focused)\n\n"
@@ -117,11 +118,11 @@ def install_menus(window):
         file_menu, "&Reload Model from Disk", lambda: _reload_model(window))
     file_menu.addSeparator()
     window.menu_actions["save"] = _add_action(
-        file_menu, "&Save Source", lambda:
+        file_menu, "&Save .3D Source", lambda:
         window._source_toolbar_action(window._save_source),
         QKeySequence.StandardKey.Save)
     window.menu_actions["save_as"] = _add_action(
-        file_menu, "Save Source &As…", lambda:
+        file_menu, "Save .3D Source &As…", lambda:
         window._source_toolbar_action(
             lambda: window._save_source(save_as=True)),
         QKeySequence.StandardKey.SaveAs)
@@ -132,6 +133,35 @@ def install_menus(window):
     file_menu.addSeparator()
     _add_action(file_menu, "E&xit", window.close,
                 QKeySequence.StandardKey.Quit)
+
+    edit = bar.addMenu("&Edit")
+    window.menu_actions["undo"] = _add_action(
+        edit, "&Undo", lambda: window._edit_source_command("undo"),
+        QKeySequence.StandardKey.Undo)
+    window.menu_actions["redo"] = _add_action(
+        edit, "&Redo", lambda: window._edit_source_command("redo"),
+        QKeySequence.StandardKey.Redo)
+    edit.addSeparator()
+    _add_action(edit, "Cu&t", lambda: window._edit_source_command("cut"),
+                QKeySequence.StandardKey.Cut)
+    _add_action(edit, "&Copy", lambda: window._edit_source_command("copy"),
+                QKeySequence.StandardKey.Copy)
+    _add_action(edit, "&Paste", lambda: window._edit_source_command("paste"),
+                QKeySequence.StandardKey.Paste)
+    _add_action(edit, "Select &All",
+                lambda: window._edit_source_command("selectAll"),
+                QKeySequence.StandardKey.SelectAll)
+    edit.addSeparator()
+    _add_action(edit, "&Find in .3D Source…", window._find_source,
+                QKeySequence.StandardKey.Find)
+    _add_action(edit, "Find &Next", lambda: window._find_source(next_match=True),
+                QKeySequence.StandardKey.FindNext)
+    edit.addSeparator()
+    _add_action(edit, "Rename Selected &Pointer…",
+                lambda: window.source_pane.rename_selected_pointer())
+    _add_action(edit, "Apply .3D Source Now",
+                lambda: window._source_toolbar_action(
+                    window.source_pane.apply_now))
 
     view = bar.addMenu("&View")
     _add_action(view, "Frame &All (F)", window.viewer.frame_all)

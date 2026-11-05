@@ -87,7 +87,11 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         self.window._apply_palette(ROOT / "gamepal.pcx")
         first = self.make3d(self.folder / "source", "test.3D")
         first_sunny = self.mkpalette(first.parent, "SUNNY.PCX", 13)
+        self.window.perspective_toggle.setChecked(False)
         info = self.wait_loaded(first)
+        self.assertTrue(self.window.viewer.perspective)
+        self.assertEqual(self.window.projection_combo.currentData(), True)
+        self.assertIn(first.name, self.window.windowTitle())
         self.assertEqual(self.window.palette_path, first_sunny)
         self.assertTrue(info["palette_auto"])
         self.assertEqual(info["palette_path"], first_sunny)
@@ -102,7 +106,11 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         second = second_dir / "roadcar.3do"
         shutil.copyfile(ROOT / "fixtures" / "roadcar.3do", second)
         second_sunny = self.mkpalette(second_dir, "SuNnY.PcX", 71)
+        self.window.perspective_toggle.setChecked(False)
         info = self.wait_loaded(second)
+        self.assertTrue(self.window.viewer.perspective)
+        self.assertEqual(self.window.projection_combo.currentData(), True)
+        self.assertIn(second.name, self.window.windowTitle())
         self.assertTrue(info["palette_auto"])
         self.assertEqual(self.window.palette_path, second_sunny)
         self.assertTrue(np.array_equal(
@@ -114,7 +122,11 @@ class ModelAutoPaletteQtTests(unittest.TestCase):
         manual = self.mkpalette(self.folder / "palettes", "manual.pcx", 29)
         self.window._apply_palette(manual)
         self.assertEqual(self.window.palette_path, manual)
+        self.window.perspective_toggle.setChecked(False)
         info = self.wait_loaded(second, reuse=True)
+        # A same-model asset refresh does not override the user's choice.
+        self.assertFalse(self.window.viewer.perspective)
+        self.assertEqual(self.window.projection_combo.currentData(), False)
         self.assertFalse(info["palette_auto"])
         self.assertEqual(self.window.palette_path, manual)
         self.assertTrue(np.array_equal(

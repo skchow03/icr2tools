@@ -138,12 +138,17 @@ indexed tracks, even if another model happens to be in the Track workspace.
 
 ## Desktop menus
 
-The GPU viewer uses a conventional **File / View / Model / Assets / Help**
-menu bar. There is no toolbar or permanent right sidebar.
+The GPU viewer uses a conventional **File / Edit / View / Model / Assets / Help**
+menu bar. There is no permanent right sidebar.
 
 - **File:** Open Model (**Ctrl+O**), Open Recent, Reload Model from Disk,
-  Save Source (**Ctrl+S**), Save Source As (**Ctrl+Shift+S**),
-  Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
+  **Save .3D Source** (**Ctrl+S**), **Save .3D Source As…**
+  (**Ctrl+Shift+S**), Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
+- **Edit:** Undo/Redo, Cut/Copy/Paste, Select All, Find in .3D Source
+  (**Ctrl+F**) / Find Next (**F3**), Rename Selected Pointer, and
+  Apply .3D Source Now. Standard text commands act on the focused editor
+  (or the N3 source editor when no other editable text control has focus);
+  Find searches full source text, including comments and filtered-out lines.
 - **View:** Frame All, 3D/Top/Front/Side presets, Perspective, Fixed Camera,
   show/hide .3D Source, **Rendering Mode** (including Wireframe), common display
   toggles, Display Settings, Advanced Diagnostics and **Load Error Log…**.
@@ -154,9 +159,9 @@ menu bar. There is no toolbar or permanent right sidebar.
   external-3DO folders, fallback MIP selection/reset, and Reload MIPs.
 - **Help:** keyboard/mouse controls and an About dialog.
 
-The first **Save Source** prompts for a .3D output path (by default an
+The first **Save .3D Source** prompts for a .3D output path (by default an
 `_edited.3d` name). Later Saves reuse that explicitly chosen path;
-**Save Source As** always asks for another location. Saving source marks
+**Save .3D Source As…** always asks for another location. Saving source marks
 the current text as saved, even if it cannot yet compile. Export Compiled
 3DO continues to require validated source and protects the original
 binary from replacement. Open, Reload Model, and Exit ask before
@@ -176,6 +181,20 @@ A fatal file-load error is also preserved in this report, even when the
 previous preview remains visible. Live source recompilation and MIP
 reloads refresh the report without repeatedly opening new windows.
 
+The main window title displays the **last successfully opened .3D/.3DO
+filename** and current workspace. An **asterisk (`*`)** after the filename means
+the editable .3D Source has unsaved changes. Undoing back to the saved
+contents or successfully saving .3D Source removes it. An unsuccessful
+attempt to open a different file does not replace the displayed filename.
+
+The **Projection** dropdown sits immediately above the viewport alongside
+SWITCH DISTANCE. Every newly opened model defaults to **Perspective**,
+even when the previous model used Orthographic. Same-model asset reloads
+and live source recompiles retain the user's projection choice. The
+dropdown stays synchronized with View → Perspective and the existing
+Display Settings checkbox. While Fixed Camera or TRK driving is active,
+Perspective is required and all three projection controls are disabled.
+
 Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
 the viewport so those letters can be typed normally in the N3 editor.
 
@@ -194,8 +213,9 @@ the viewport so those letters can be typed normally in the N3 editor.
 - Shift + left drag or middle drag: pan
 - Mouse wheel: zoom
 - 3D, Top, Front, Side buttons: standard orthographic views
-- Perspective: toggle orthographic/perspective projection. Perspective BSP
-  uses the real finite camera; orthographic BSP uses the *parallel viewing
+- **Projection dropdown (above viewport):** choose Perspective or
+  Orthographic. Newly loaded models always use Perspective.
+  Perspective BSP uses the real finite camera; orthographic BSP uses the *parallel viewing
   direction*, so zooming does not spuriously flip front/back visibility.
   For near-edge-on planes the finite-eye sign is used as an approximation.
 - **Fixed Camera**: toggles a stationary **perspective** camera at

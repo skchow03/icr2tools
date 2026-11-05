@@ -72,22 +72,99 @@ class GPUViewerMenuTests(unittest.TestCase):
         self.assertEqual(
             [a.text().replace("&", "") for a in
              self.window.menuBar().actions()],
-            ["File", "View", "Model", "Assets", "Help"])
+            ["File", "Edit", "View", "Model", "Assets", "Help"])
         file_menu = self._menu("File")
-        for title in ("Open Model…", "Save Source", "Save Source As…",
-                      "Export Compiled 3DO…", "Exit"):
+        for title in ("Open Model…", "Save .3D Source",
+                      "Save .3D Source As…", "Export Compiled 3DO…", "Exit"):
             self._action(file_menu, title)
         self.assertEqual(
             self._action(file_menu, "Open Model…").shortcut().toString(),
             "Ctrl+O")
         self.assertEqual(
-            self._action(file_menu, "Save Source").shortcut().toString(),
+            self._action(file_menu, "Save .3D Source").shortcut().toString(),
             "Ctrl+S")
         self.assertEqual(
-            self._action(file_menu, "Save Source As…").shortcut().toString(),
+            self._action(file_menu, "Save .3D Source As…").shortcut().toString(),
             "Ctrl+Shift+S")
         for key in ("save", "save_as", "export", "reload"):
             self.assertFalse(self.window.menu_actions[key].isEnabled())
+
+    def test_edit_menu_supports_undo_redo_cut_copy_paste_find_and_rename(self):
+        from PySide6.QtWidgets import QInputDialog
+        from PySide6.QtGui import QTextCursor
+
+        editor = self.window.source_pane.editor
+        source = ("3D VERSION 3.0;\n"
+                  "a: [<0,0,0>];\n"
+                  "b: [<100,0,0>];\n"
+                  "p: POLY <44> {a,b,a};\n"
+                  "root: LIST {p};\n")
+        self.window.source_pane.set_source(source, Path(self.tmp.name) / "test.3d")
+        edit = self._menu("Edit")
+        for title in ("Undo", "Redo", "Cut", "Copy", "Paste", "Select All",
+                      "Find in .3D Source…", "Find Next",
+                      "Rename Selected Pointer…", "Apply .3D Source Now"):
+            self._action(edit, title)
+        self.assertEqual(self._action(edit, "Undo").shortcut().toString(), "Ctrl+Z")
+        self.assertIn(
+            self._action(edit, "Redo").shortcut().toString(),
+            ("Ctrl+Y", "Ctrl+Shift+Z"))
+
+        cursor = editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+        editor.insertPlainText("% added\n")
+        self.assertIn("% added", editor.toPlainText())
+        self._action(edit, "Undo").trigger()
+        self.assertEqual(editor.toPlainText(), source)
+        self._action(edit, "Redo").trigger()
+        self.assertIn("% added", editor.toPlainText())
+        self._action(edit, "Undo").trigger()
+
+        with patch.object(QInputDialog, "getText", return_value=("LIST", True)):
+            self._action(edit, "Find in .3D Source…").trigger()
+        self.assertEqual(editor.textCursor().selectedText(), "LIST")
+        self._action(edit, "Find Next").trigger()
+        self.assertEqual(editor.textCursor().selectedText(), "LIST")
+        self._action(edit, "Select All").trigger()
+        self.assertEqual(editor.textCursor().selectedText().replace("\u2029", "\n").rstrip(),
+                         source.rstrip())
+        self.window.source_pane.reset()
+
+    def test_title_names_loaded_file_and_tracks_unsaved_edits_and_undo(self):
+        editor = self.window.source_pane.editor
+        original = self.window._loaded_file_path
+        model = Path(self.tmp.name) / "open_model.3do"
+        source_text = "3D VERSION 3.0;\na: [<0,0,0>];\n"
+        try:
+            self.window._loaded_file_path = model
+            self.window._update_window_title()
+            self.assertIn("open_model.3do", self.window.windowTitle())
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            self.window.source_pane.set_source(
+                source_text, model.with_suffix(".3d"))
+            cursor = editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            editor.setTextCursor(cursor)
+            editor.insertPlainText("% unsaved\n")
+            self.assertTrue(self.window.source_pane.dirty)
+            self.assertIn("open_model.3do *", self.window.windowTitle())
+            self._action(self._menu("Edit"), "Undo").trigger()
+            self.assertFalse(self.window.source_pane.dirty)
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            editor.insertPlainText("% again\n")
+            output = Path(self.tmp.name) / "saved_source.3d"
+            with patch.object(self.QFileDialog, "getSaveFileName",
+                              return_value=(str(output), "")):
+                self.assertTrue(self.window._save_source())
+            self.assertFalse(self.window.source_pane.dirty)
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            self.assertEqual(output.read_text(), editor.toPlainText())
+            self.assertIn("open_model.3do", self.window.windowTitle())
+        finally:
+            self.window.source_pane.reset()
+            self.window._loaded_file_path = original
+            self.window._update_window_title()
 
     def test_view_menu_tracks_existing_widgets(self):
         view = self._menu("View")
