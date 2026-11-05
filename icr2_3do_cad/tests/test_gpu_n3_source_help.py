@@ -160,7 +160,7 @@ class N3SourceHelpTests(unittest.TestCase):
                 model, _ = compile_n3_text(
                     source, f"{kind}_help.3d", associate_planes=False)
                 polygon = model.polygons[model.n3_label_offsets["face"]]
-                self.assertEqual(polygon.flavor, expected_flavor)
+                self.assertEqual(polygon.kind, expected_flavor)
 
     def test_multiline_continuations_and_incomplete_commands(self):
         src = [
