@@ -200,7 +200,15 @@ the viewport so those letters can be typed normally in the N3 editor.
 
 ## Controls
 
-- **Left-click near a vertex:** select the nearest visible root-model
+- **Pick selector (above viewport):** **Vertices** is the default; choose
+  **Polys** explicitly to click a face instead of a vertex. In Poly mode,
+  clicking a visible root-model polygon highlights it and navigates to its
+  original declaration in **.3D Source**. The source editor scrolls to the
+  named declaration; if filtered statements are open, the matching POLY row
+  is selected and scrolled into view (hidden POLY rows are revealed).
+  Concave polygons are picked using their existing rendered triangles; the
+  nearest intersected eligible face wins. No source or model data changes.
+- **Left-click near a vertex (Vertices mode):** select the nearest visible root-model
   vertex (within 24 logical screen pixels) and jump to its declaration in
   **.3D Source**. The declaration label is selected, and the existing yellow
   viewport marker identifies the vertex. If source is hidden, it opens;
@@ -209,7 +217,7 @@ the viewport so those letters can be typed normally in the N3 editor.
   `_offset` labels work in both full and filtered-source modes. Clicks in
   empty space do nothing. Referenced DYNAMIC/EXTERN child vertices are
   excluded because the Source pane edits the root model only.
-- Left mouse drag: orbit (a drag does not trigger vertex selection)
+- Left mouse drag: orbit (a drag does not trigger picking in either mode)
 - Shift + left drag or middle drag: pan
 - Mouse wheel: zoom
 - 3D, Top, Front, Side buttons: standard orthographic views
@@ -504,7 +512,8 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
   continues to draw atop those surfaces for inspection.
 - Inline anonymous vertices within commands are not independent named
   vertex declarations. A marker also disappears if its 3D position is
-  outside the camera frustum. This feature does not add mouse picking.
+  outside the camera frustum. Viewport clicking is available separately
+  through the **Pick** selector.
 
 ### F2: rename just a pointer name
 
@@ -600,8 +609,9 @@ resolution, visibility and benchmark procedure are used on the same machine.
 
 ## Intentional limitations
 
-The GPU viewer has editable N3 source and explicit .3D/.3DO export,
-but does **not yet** provide mouse polygon picking. PMP/PMP2 sprites
+The GPU viewer has editable N3 source, .3D/.3DO export, and click
+picking for root-model polygons and vertices. Referenced child models and
+PMP/PMP2 sprites cannot be selected in the root source pane. PMP/PMP2 sprites
 use a separate OpenGL 3.3 billboard shader with palette-index/alpha textures;
 their dimensions and screen-facing behavior are approximate like the CPU view.
 Per-driver RECOLOR tables and livery MIP overrides remain read-only overlays;
