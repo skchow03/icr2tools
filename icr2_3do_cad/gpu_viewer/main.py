@@ -84,6 +84,8 @@ from gpu_viewer.appearance import DARK_COLORS, load_colors, save_colors, validat
 from gpu_viewer.appearance_dialog import AppearanceDialog
 from gpu_viewer.confirmations import confirm_destructive_action
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.vertex_labels import labelled_model_vertices
+from gpu_viewer.vertex_labels_widget import VertexLabelsOverlay
 from gpu_viewer.scale_dialog import ScaleModelDialog
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
@@ -528,6 +530,7 @@ class GLViewport(QOpenGLWidget):
         self.inspection_kind = None
         self.inspection_offset = None
         self.inspection_points = None
+        self.labelled_vertices = ()
         self.render_mode = 'painter'  # painter | depth | all | wire
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
@@ -579,10 +582,16 @@ class GLViewport(QOpenGLWidget):
             " padding: 10px 14px;"
             " font-size: 13px; font-weight: bold; }")
         self.visibility_banner.hide()
+        # Paint Qt text in an independent composited child, NOT inside
+        # paintGL. Some Windows drivers corrupted QPainter glyphs after raw GL.
+        self.vertex_labels_overlay = VertexLabelsOverlay(self)
+        self.frameSwapped.connect(self.vertex_labels_overlay.update)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._size_visibility_banner()
+        self.vertex_labels_overlay.setGeometry(self.rect())
+        self.vertex_labels_overlay.update()
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
@@ -693,6 +702,8 @@ class GLViewport(QOpenGLWidget):
                  *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self.labelled_vertices = labelled_model_vertices(model)
+        self.vertex_labels_overlay.update()
         self._vertex_picker = VertexPicker.from_model(model, mesh)
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
@@ -728,7 +739,17 @@ class GLViewport(QOpenGLWidget):
     def set_appearance_colors(self, colors):
         """Change viewport drawing colors without rebuilding buffers or meshes."""
         self.colors = validated_colors(colors)
+        self.vertex_labels_overlay.update()
         self.update()
+
+    def set_show_vertex_labels(self, enabled):
+        """Enable/disable every decoded root vertex's name and dot."""
+        self.vertex_labels_overlay.set_display_enabled(enabled)
+
+    def set_source_vertex_labels(self, labels):
+        """Include valid source-only plane vertices and authored pointer names."""
+        self.labelled_vertices = labelled_model_vertices(self._model, labels)
+        self.vertex_labels_overlay.update()
 
     def _vertex_marker_colors(self):
         return (QColor(self.colors["viewport_vertex_outline"]),
@@ -1852,6 +1873,20 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.vertex_labels_toggle = QCheckBox("Vertex labels")
+        self.vertex_labels_toggle.setObjectName("viewportVertexLabelsToggle")
+        self.vertex_labels_toggle.setToolTip(
+            "Show a purple dot and pointer name at every root-model vertex. "
+            "Selected vertices remain yellow; BSP plane vertices remain cyan. "
+            "Hide labels to declutter complex models. External 3DO vertices "
+            "are not named in this root source.")
+        previous = QSettings("ICR2Tools", "GPUViewer").value(
+            "viewport/show_vertex_labels", False)
+        enabled = str(previous).strip().lower() in ("true", "1", "yes")
+        self.vertex_labels_toggle.setChecked(enabled)
+        self.vertex_labels_toggle.toggled.connect(self._vertex_labels_toggled)
+        self.viewer.set_show_vertex_labels(enabled)
+        distance_row.addWidget(self.vertex_labels_toggle)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
@@ -2136,6 +2171,12 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _vertex_labels_toggled(self, checked):
+        self.viewer.set_show_vertex_labels(checked)
+        settings = QSettings("ICR2Tools", "GPUViewer")
+        settings.setValue("viewport/show_vertex_labels", bool(checked))
+        settings.sync()
 
     def _set_appearance_colors(self, colors):
         """Apply a consistent source/viewport palette and persist it per user."""
@@ -2535,6 +2576,8 @@ class Window(QMainWindow):
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
+        self.viewer.set_source_vertex_labels(
+            self.source_pane._source_index.vertex_labels)
         self._source_invalid = False
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
@@ -2589,6 +2632,8 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            self.viewer.set_source_vertex_labels(
+                self.source_pane._source_index.vertex_labels)
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
