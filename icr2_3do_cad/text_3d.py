@@ -76,6 +76,22 @@ def _join_refs(refs, model):
     return ", ".join(_ref(r, model) for r in refs)
 
 
+def _vertex_ref(off: int, model: Model) -> str:
+    """POLY, sprite and LOD anchor operands are vertex offsets, not NIL.
+
+    Binary body offset zero is a valid first vertex, even though zero in a
+    LIST/BSP child slot means NIL. Keep these contexts distinct when
+    reconstructing editable N3 source.
+    """
+    if off not in model.vertices:
+        raise FormatError(f"Invalid vertex pointer @{off} in 3DO source export")
+    return f"_{off}"
+
+
+def _join_vertex_refs(refs, model):
+    return ", ".join(_vertex_ref(r, model) for r in refs)
+
+
 def _angle(raw):
     return round(raw * 1800 / 2147483648)
 
@@ -119,7 +135,7 @@ def _command(model: Model, off: int) -> str:
     if kind in (1, 2):
         p = model.polygons[off]
         surface="LINE" if len(p.unique_refs)<=2 else ("POLY [T]" if kind==2 else "POLY")
-        return f"{surface} <{p.color}> " + "{"+_join_refs(p.refs, model)+"}"
+        return f"{surface} <{p.color}> " + "{"+_join_vertex_refs(p.refs, model)+"}"
     if 5 <= kind <= 10:
         return {5: "FACE", 6: "FACE2", 7: "BSPF", 8: "BSPA",
                 9: "BSP2", 10: "BSPN"}[kind] + " " + _plane(model, off, kind)
@@ -128,7 +144,7 @@ def _command(model: Model, off: int) -> str:
         return "LIST {" + _join_refs((i32(b,off+8+j*4) for j in range(count)),model) + "}"
     if kind == 13:
         sw = model.switches[off]
-        return ("SWITCH DISTANCE ("+_ref(sw.anchor,model)+") > {" +
+        return ("SWITCH DISTANCE ("+_vertex_ref(sw.anchor,model)+") > {" +
                 ", ".join(f"({threshold} ? {_ref(ptr,model)})" for threshold,ptr in sw.branches)+"}")
     if kind == 15:
         d = model.dynamics[off]
@@ -156,7 +172,7 @@ def _command(model: Model, off: int) -> str:
         if not 0<=number<len(model.pmp_names):
             raise FormatError(f"Sprite @{off}: unknown PMP index")
         op = "SRB" if kind==3 else "PMP2"
-        return f'{op} {_ref(i32(b,off+4),model)}, {i32(b,off+8)}, "{model.pmp_names[number]}"'
+        return f'{op} {_vertex_ref(i32(b,off+4),model)}, {i32(b,off+8)}, "{model.pmp_names[number]}"'
     if kind == 12:
         return "DYNO {"+", ".join(str(i32(b,off+j)) for j in (4,8,12,16))+"}"
     if kind == 14:
@@ -366,9 +382,16 @@ def _apply_edits(model, doc):
                 raise FormatError(f"Polygon {s.label}: polygon type/format cannot change")
             refs=[x.strip() for x in _split_csv(m.group(2 if line_form else 3))]
             original=model.polygons[off]
-            if refs != [] and any(r not in labels and r!='NIL' for r in refs):
-                raise FormatError(f"Polygon {s.label}: undefined vertex pointer")
-            resolved=[labels[r] if r in labels else 0 for r in refs]
+            # A binary polygon can legitimately reference vertex body
+            # offset 0. It must be written as that vertex's label, never
+            # as NIL (which is reserved for absent hierarchy children).
+            if any(r.upper() == "NIL" or
+                   r not in labels or labels[r] not in model.vertices
+                   for r in refs):
+                raise FormatError(
+                    f"Polygon {s.label}: expected vertex label, not NIL "
+                    "or another node type")
+            resolved=[labels[r] for r in refs]
             if resolved!=list(original.refs):
                 raise FormatError(f"Polygon {s.label}: vertex topology changes are not supported by text import")
             color=int(m.group(1 if line_form else 2))
