@@ -62,6 +62,12 @@ class SourceEditorRenameUITests(unittest.TestCase):
         self.assertIn("% front is a comment", text)
         self.assertIn('% MIP "front"', text)
         self.assertTrue(self.pane.pending)
+        history = self.pane.change_log.toPlainText()
+        self.assertIn("Auto-rename references: front → nose", history)
+        self.assertIn("2 references updated", history)
+        self.assertIn("line 7: front → nose", history)
+        self.assertIn("line 8: front → nose", history)
+        self.assertNotIn("line 2: front → nose", history)
 
     def test_renaming_poly_changes_both_references(self):
         self.rename_label(5, "wing")
@@ -75,6 +81,7 @@ class SourceEditorRenameUITests(unittest.TestCase):
         self.assertIn("nose: [<0,0,0>];", self.pane.get_source())
         self.assertIn("{front, right, top};", self.pane.get_source())
         self.assertEqual(self.pane._rename_pending, None)
+        self.assertEqual(self.pane.change_log.toPlainText(), "")
 
     def test_collision_does_not_rewrite_other_declarations(self):
         self.rename_label(2, "right")
@@ -82,6 +89,47 @@ class SourceEditorRenameUITests(unittest.TestCase):
         self.assertIn("right: [<0,0,0>]", text)
         self.assertIn("right: [<100,0,0>]", text)
         self.assertIn("{front, right, top}", text)
+        self.assertEqual(self.pane.change_log.toPlainText(), "")
+
+    def test_change_log_is_four_rows_tall_and_clearable_without_edits(self):
+        from PySide6.QtWidgets import QPushButton
+        pane = self.pane
+        height = pane.change_log.height()
+        row = pane.change_log.fontMetrics().lineSpacing()
+        self.assertGreaterEqual(height, row * 4)
+        self.assertLess(height, row * 6)
+        self.assertTrue(pane.change_log.isReadOnly())
+        self.assertEqual(pane.change_log.objectName(), "automaticSourceChangeLog")
+        self.rename_label(2, "nose")
+        old_source = pane.get_source()
+        old_revision = pane.revision
+        clear = next(button for button in pane.findChildren(QPushButton)
+                     if button.text() == "Clear log")
+        clear.click()
+        self.assertEqual(pane.change_log.toPlainText(), "")
+        self.assertEqual(pane.get_source(), old_source)
+        self.assertEqual(pane.revision, old_revision)
+
+    def test_log_survives_compile_and_save_but_resets_for_a_new_file(self):
+        pane = self.pane
+        self.rename_label(5, "wing")
+        history = pane.change_log.toPlainText()
+        self.assertIn("panel → wing", history)
+        from types import SimpleNamespace
+        pane.mark_valid(pane.revision, SimpleNamespace(
+            vertices={1: object()}, polygons={1: object()}))
+        pane.mark_saved()
+        self.assertEqual(pane.change_log.toPlainText(), history)
+        pane.set_source(SOURCE, Path("other.3d"))
+        self.assertEqual(pane.change_log.toPlainText(), "")
+        self.assertFalse(pane.dirty)
+        self.assertFalse(pane.pending)
+
+    def test_ordinary_typing_does_not_log_programmatic_rewrites(self):
+        pane = self.pane
+        pane.editor.moveCursor(pane.editor.textCursor().MoveOperation.End)
+        pane.editor.insertPlainText("% ordinary user comment")
+        self.assertEqual(pane.change_log.toPlainText(), "")
 
     def test_visibility_colors_multiline_poly_and_clears(self):
         from PySide6.QtGui import QTextCursor
