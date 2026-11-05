@@ -1646,7 +1646,6 @@ class Window(QMainWindow):
         advanced_layout.addWidget(self.fixed_camera_button)
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
-        self.perspective_toggle.setChecked(True)
         display_layout.addWidget(self.perspective_toggle)
         # Menu state is backed by this control, but there is no toolbar.
         self.source_toggle = QPushButton(".3D Source", self)
@@ -1706,6 +1705,7 @@ class Window(QMainWindow):
             "require Perspective.")
         self.projection_combo.currentIndexChanged.connect(
             self._projection_changed)
+        self.perspective_toggle.setChecked(True)
         distance_row.addWidget(self.projection_combo)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
