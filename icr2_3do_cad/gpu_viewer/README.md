@@ -500,14 +500,19 @@ change readability. The source editor no longer inherits an arbitrary
 light/dark operating-system background while keeping fixed pale syntax.
 
 The GPU viewport provides separate controls for the clear/background color,
-normal wireframe lines, the selected-POLY wire outline, vertex marker fill,
-and vertex marker border. Changes do not recompile N3 or re-upload the
-mesh. A loaded track skybox can cover the viewport's clear color.
+normal wireframe lines, the selected-POLY wire outline, **two selected-face
+tints** (one for dark polygon/texture pixels, another for bright or white
+pixels), vertex marker fill, and vertex marker border. Instead of simply
+brightening the selected face to white, the shader automatically blends
+between warm and contrasting blue tints according to underlying brightness.
+The colors are editable and saved with the other appearance preferences.
+Changes do not recompile N3 or re-upload the mesh. A loaded track skybox can
+cover the viewport's clear color.
 
 ## Inspecting N3 geometry with the source cursor
 
 Open **.3D Source** beside the GPU preview. Place the text cursor anywhere
-within a named `POLY` or `POLY [T]` declaration to brighten that face.
+within a named `POLY` or `POLY [T]` declaration to tint that face.
 Place it within a named vertex declaration (`name: [<X,Y,Z>];`) to show
 a bright dot at that vertex in the 3D viewport. Both overlays track orbit,
 zoom and the fixed-camera view; they do not move geometry or edit the N3.
@@ -519,7 +524,7 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
 - While source text is unvalidated or contains a compilation error, overlays
   disappear rather than pointing to the *last valid* model incorrectly.
   They return after a successful live compile. Closing Source hides them.
-- A selected polygon is brightened **only when its POLY is selected by
+- A selected polygon is contrast-tinted **only when its POLY is selected by
   the current BSP and SWITCH DISTANCE/LOD traversal**. If the active distance
   excludes its LOD branch, a high-contrast **Qt text banner** appears over
   the viewport; it is rendered independently of the OpenGL pipeline to avoid
@@ -566,6 +571,23 @@ are not propagated; compilation reports the invalid declaration normally.
 Uncheck **Auto-rename references** to edit declaration labels without
 touching their references. Nothing is written to disk until an explicit save
 or export. Automatic changes participate in the editor's undo history.
+
+### Automatic source change log
+
+A small, **four-line-high scrollable "Automatic source changes"** box sits
+immediately below the full/filtered .3D editing area. It records automated
+reference rewrites triggered by editing a pointer label and F2 pointer renames.
+Each event includes the time, old and new names, original declaration line,
+number of references updated and source line numbers for up to 30 rewritten
+references (with a remainder count for larger edits).
+
+The log is **read-only** and independent of the .3D document; reading,
+selecting, copying, or clearing it does not affect file contents, the dirty
+flag, live recompilation or undo. Ordinary typing does not produce entries.
+The latest 2,000 log lines are retained for the open model and the list
+clears when a different source file is loaded or the editor is reset.
+**Clear log** clears only the history display, not edits. An Undo operation
+reverses source changes but does not erase its historical log entry.
 
 The selection uses original model coordinates and compiled N3 record offsets;
 it does not recompile the model or re-upload the mesh on each cursor move.

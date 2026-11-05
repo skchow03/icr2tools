@@ -10,7 +10,7 @@ import re
 from bisect import bisect_right
 from pathlib import Path
 
-from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTime, QTimer, Signal
 from PySide6.QtGui import (
     QColor, QFont, QKeySequence, QPalette, QShortcut, QSyntaxHighlighter,
     QTextCharFormat, QTextCursor,
@@ -23,13 +23,14 @@ from PySide6.QtWidgets import (
 )
 
 from gpu_viewer.appearance import DARK_COLORS, validated_colors
+from gpu_viewer.source_change_log import format_rename_event
 from gpu_viewer.source_inspection import index_source_targets, target_offset
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.active_source import (
     active_source_labels, plane_vertex_dependencies, entry_is_active,
 )
 from gpu_viewer.source_rename import (
-    edited_declaration_label, declaration_label, reference_spans,
+    DECLARATION, edited_declaration_label, declaration_label, reference_spans,
     plan_pointer_rename, qt_utf16_offset,
 )
 
@@ -411,6 +412,33 @@ class SourcePane(QWidget):
         self.source_stack.addWidget(self.editor)
         self.source_stack.addWidget(self.filtered_page)
         layout.addWidget(self.source_stack, 1)
+
+        # Read-only audit trail for programmatic edits. Four visible text
+        # rows, scrollable independently of the editable N3 document.
+        history_header = QHBoxLayout()
+        history_header.addWidget(QLabel("Automatic source changes"))
+        history_header.addStretch()
+        clear_history = QPushButton("Clear log")
+        clear_history.setToolTip("Clear the displayed change history only; "
+                                 "do not modify or undo the .3D source.")
+        history_header.addWidget(clear_history)
+        layout.addLayout(history_header)
+        self.change_log = QPlainTextEdit()
+        self.change_log.setObjectName("automaticSourceChangeLog")
+        self.change_log.setReadOnly(True)
+        self.change_log.setUndoRedoEnabled(False)
+        self.change_log.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.change_log.setFont(font)
+        self.change_log.document().setMaximumBlockCount(2000)
+        self.change_log.setPlaceholderText(
+            "Automatic pointer and reference updates appear here.")
+        self.change_log.setToolTip(
+            "Per-model history of automatic edits with original line numbers. "
+            "Select and copy entries as needed; Undo does not erase history.")
+        self.change_log.setFixedHeight(
+            self.change_log.fontMetrics().lineSpacing() * 4 + 14)
+        layout.addWidget(self.change_log)
+        clear_history.clicked.connect(self.change_log.clear)
         self.position = QLabel('Line 1, column 1')
         layout.addWidget(self.position)
 
@@ -446,7 +474,7 @@ class SourcePane(QWidget):
             text = QColor(self.colors["source_text"])
             selection = QColor(self.colors["source_selection_background"])
             selection_text = QColor(self.colors["source_selection_text"])
-            for widget in (self.editor, self.filtered_list):
+            for widget in (self.editor, self.filtered_list, self.change_log):
                 palette = widget.palette()
                 palette.setColor(QPalette.ColorRole.Base, base)
                 palette.setColor(QPalette.ColorRole.Text, text)
@@ -494,10 +522,22 @@ class SourcePane(QWidget):
         value = self.editor.toPlainText()
         return value.replace('\n', '\r\n') if self.line_ending == '\r\n' else value
 
+    def _log_automatic_rename(self, source, old, new, spans, *,
+                              action, declaration_line):
+        """Describe edits already committed to the canonical .3D document."""
+        entries = format_rename_event(
+            source, old, new, spans, action=action,
+            declaration_line=declaration_line)
+        timestamp = QTime.currentTime().toString("HH:mm:ss")
+        self.change_log.appendPlainText(
+            f"[{timestamp}] {entries[0]}" +
+            ("\n" + "\n".join(entries[1:]) if len(entries) > 1 else ""))
+
     def set_source(self, text, path, *, status=None):
         # A newly loaded file must not inherit an open filtered-row editor
         # or selection from the previous model.
         self.filtered_list.reset()
+        self.change_log.clear()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
@@ -536,6 +576,7 @@ class SourcePane(QWidget):
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
         self.filtered_list.reset()
+        self.change_log.clear()
         self._debounce.stop()
         self._rename_timer.stop()
         self._rename_pending = None
@@ -1030,6 +1071,14 @@ class SourcePane(QWidget):
         self._rename_pending = None
         self._filter_return_line = line
         self._active_edit_line = line
+        # The rename planner's spans use original Python code-point offsets;
+        # exclude only the declaration token from reference-level history.
+        rows = source.splitlines(keepends=True)
+        name_match = DECLARATION.match(rows[line])
+        declaration_start = (sum(len(row) for row in rows[:line]) +
+                             name_match.start("name"))
+        reference_edits = [(start, end) for start, end, _ in edits
+                           if start != declaration_start]
         cursor = QTextCursor(self.editor.document())
         self._applying_rename = True
         try:
@@ -1050,7 +1099,10 @@ class SourcePane(QWidget):
             self._applying_rename = False
         self._rename_snapshot = self.editor.toPlainText()
         self._edited()
-        updated_references = len(edits) - 1
+        updated_references = len(reference_edits)
+        self._log_automatic_rename(
+            source, old, new_name, reference_edits,
+            action="F2 pointer rename", declaration_line=line)
         self.status.setText(
             f'Renamed pointer {old} → {new_name} '
             f'({updated_references} reference(s) updated).'
@@ -1138,6 +1190,9 @@ class SourcePane(QWidget):
             self._applying_rename = False
         self._rename_snapshot = self.editor.toPlainText()
         self._edited()
+        self._log_automatic_rename(
+            source, original, updated, replacements,
+            action="Auto-rename references", declaration_line=line)
         self.status.setText(
             f'Renamed {original} → {updated} in {len(replacements)} reference(s); '
             'validating source…')

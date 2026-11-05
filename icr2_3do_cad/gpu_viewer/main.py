@@ -127,6 +127,8 @@ uniform sampler2D u_palette;
 uniform int u_textures;
 uniform int u_repeat;
 uniform int u_inspect_poly;
+uniform vec3 u_inspect_dark_tint;
+uniform vec3 u_inspect_light_tint;
 uniform int u_wireframe;
 uniform vec3 u_wire_color;
 uniform vec3 u_selected_wire_color;
@@ -152,8 +154,14 @@ void main() {
     }
     vec3 color = texelFetch(u_palette, ivec2(index, 0), 0).rgb;
     if (u_inspect_poly != 0) {
-        // Highlight the requested face even when BSP/LOD excludes it.
-        color = min(vec3(1.0), color * 1.5 + vec3(0.45, 0.33, 0.12));
+        // Brightening clips pale/white POLYs to white, making selection
+        // invisible. Use a warm tint for dark pixels, a strong contrasting
+        // blue tint for bright pixels, and a smooth transition for MIPs.
+        float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float light_mix = smoothstep(0.48, 0.75, brightness);
+        vec3 on_dark = mix(color, u_inspect_dark_tint, 0.74);
+        vec3 on_light = mix(color, u_inspect_light_tint, 0.82);
+        color = mix(on_dark, on_light, light_mix);
     }
     fragColor = vec4(color, 1.0);
 }
@@ -473,6 +481,8 @@ class GLViewport(QOpenGLWidget):
         self._texture_uniform = None
         self._repeat_uniform = None
         self._inspection_uniform = None
+        self._inspection_dark_uniform = None
+        self._inspection_light_uniform = None
         self._atlas_texture = None
         self._palette_texture = None
         self._sky_vao = None
@@ -614,6 +624,10 @@ class GLViewport(QOpenGLWidget):
             self._texture_uniform = glGetUniformLocation(program, "u_textures")
             self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
             self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
+            self._inspection_dark_uniform = glGetUniformLocation(
+                program, "u_inspect_dark_tint")
+            self._inspection_light_uniform = glGetUniformLocation(
+                program, "u_inspect_light_tint")
             self._wire_uniform = glGetUniformLocation(program, "u_wireframe")
             self._wire_color_uniform = glGetUniformLocation(program, "u_wire_color")
             self._selected_wire_color_uniform = glGetUniformLocation(
@@ -1291,6 +1305,10 @@ class GLViewport(QOpenGLWidget):
                     *self._wire_color_rgb("viewport_wire"))
         glUniform3f(self._selected_wire_color_uniform,
                     *self._wire_color_rgb("viewport_selected_wire"))
+        glUniform3f(self._inspection_dark_uniform,
+                    *self._wire_color_rgb("viewport_poly_tint_dark"))
+        glUniform3f(self._inspection_light_uniform,
+                    *self._wire_color_rgb("viewport_poly_tint_light"))
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
         glUniform1i(self._texture_uniform, int(self.textures_enabled))
         glUniform1i(self._repeat_uniform, int(self.texture_repeat))
@@ -1355,8 +1373,8 @@ class GLViewport(QOpenGLWidget):
                 glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
                 glDisable(GL_POLYGON_OFFSET_FILL)
 
-        # Source highlighting must never force a BSP/LOD-excluded polygon
-        # into the scene. Only brighten polygons selected for this view.
+        # Source highlighting never draws a BSP/LOD-excluded polygon.
+        # Apply contrast-aware color tinting to selected rendered faces.
         notice = None
         if self.inspection_kind == "polygon":
             span = polygon_mesh_range(
@@ -1370,8 +1388,8 @@ class GLViewport(QOpenGLWidget):
                     self.lod_distance, self._camera_eye_model(),
                     self.render_mode)
             else:
-                # The selected face is part of the active traversal; retain
-                # its bright overlay for easy identification.
+                # The selected face is part of the active traversal; tint
+                # bright (even white) and dark polygons differently.
                 glDisable(GL_DEPTH_TEST)
                 glUniform1i(self._inspection_uniform, 1)
                 glDrawArrays(GL_TRIANGLES, *span)
