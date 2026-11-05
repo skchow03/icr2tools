@@ -39,7 +39,7 @@ class PointerNavigationTests(unittest.TestCase):
                 (11, "res", 8), (11, "external", 9),
                 (11, "texture", 10)):
             with self.subTest(line=line, token=token):
-                self.assertEqual(self.hit(line, token).target_line, expected)
+                self.assertEqual(self.hit(line, token, index=1 if line == 10 else 0).target_line, expected)
         # The reference on a separate continuation row is still resolvable.
         self.assertEqual(pointer_at_column(
             "   {nose, right, tip};", 6, self.definitions).target_line, 2)
