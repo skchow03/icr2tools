@@ -504,7 +504,33 @@ zoom and the fixed-camera view; they do not move geometry or edit the N3.
   continues to draw atop those surfaces for inspection.
 - Inline anonymous vertices within commands are not independent named
   vertex declarations. A marker also disappears if its 3D position is
-  outside the camera frustum. This feature does not add mouse picking.
+  outside the camera frustum.
+
+The active source line is always shaded with a subtle full-width highlight,
+including comments, continuation lines, and ordinary N3 statements. Moving
+between lines within the same POLY also moves the highlight. Existing
+green/salmon polygon-inspection shading and error-line highlighting remain
+visible beneath the translucent current-line highlight. In filtered source
+mode, the selected statement row is shaded as well.
+
+### F12 / Ctrl+click: go to an N3 pointer declaration
+
+Place the caret **on or immediately after a pointer reference** and press
+**F12**, or **Ctrl+left-click directly on the reference** in the full .3D
+Source editor. The editor jumps to the actual declaration, selects its
+label and scrolls it into view. This works in POLY, LIST, FACE, BSP, SWITCH,
+MATERIAL and other statements, including references on continuation lines
+and generated `_offset` labels from binary .3DO models. The same command
+is available under **Edit → Go to Pointer Declaration**.
+
+Only exact, case-sensitive references to an unambiguous declaration are
+followed. Comments, quoted MIP/PMP/EXTERN filenames, N3 keywords,
+declaration header labels and named-parameter keys are not treated as
+links. Unresolved names do not jump arbitrarily. F12 can still navigate
+between declarations while source edits await compilation; it does not
+modify source text, geometry, or undo history. From a filtered statement
+row, F12 first opens the full editor; position the cursor on the specific
+reference to follow it.
 
 ### F2: rename just a pointer name
 
