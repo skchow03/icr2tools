@@ -615,9 +615,9 @@ class GLViewport(QOpenGLWidget):
             self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
             self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
             self._wire_uniform = glGetUniformLocation(program, "u_wireframe")
-        self._wire_color_uniform = glGetUniformLocation(program, "u_wire_color")
-        self._selected_wire_color_uniform = glGetUniformLocation(
-            program, "u_selected_wire_color")
+            self._wire_color_uniform = glGetUniformLocation(program, "u_wire_color")
+            self._selected_wire_color_uniform = glGetUniformLocation(
+                program, "u_selected_wire_color")
             glUseProgram(program)
             glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
             glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
