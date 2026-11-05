@@ -166,8 +166,12 @@ The first **Save .3D Source** prompts for a .3D output path (by default an
 the current text as saved, even if it cannot yet compile. Export Compiled
 3DO continues to require validated source and protects the original
 binary from replacement. Open, Reload Model, and Exit ask before
-discarding unsaved source edits. Recent models are kept in the user's
-Qt settings, and failed opens are not added to the list.
+discarding unsaved source edits, with explicitly labeled **Discard changes**
+and **Cancel** buttons. Saving over the original source uses **Overwrite
+original** and **Cancel**. All destructive confirmations default to
+**Cancel**: pressing Enter, Escape or closing the dialog never discards or
+overwrites source without choosing the named action. Recent models are
+kept in the user's Qt settings, and failed opens are not added to the list.
 
 **Load Error Log:** On opening a .3D or .3DO, any recoverable loading
 problems automatically open one scrollable, nonmodal report. It groups the

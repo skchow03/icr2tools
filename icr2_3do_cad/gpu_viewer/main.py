@@ -82,6 +82,7 @@ from gpu_viewer.textures import (build_atlas, load_palette,
                                  find_model_sunny_palette)
 from gpu_viewer.appearance import DARK_COLORS, load_colors, save_colors, validated_colors
 from gpu_viewer.appearance_dialog import AppearanceDialog
+from gpu_viewer.confirmations import confirm_destructive_action
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
@@ -2550,12 +2551,11 @@ class Window(QMainWindow):
                                 'Save N3 source with a .3D extension.')
             return False
         if target.resolve() == self.source_pane.source_path.resolve():
-            reply = QMessageBox.question(
-                self, 'Overwrite original N3 source?',
-                'This will overwrite the original editable .3D file. Continue?',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if reply != QMessageBox.StandardButton.Yes:
+            if not confirm_destructive_action(
+                    self, 'Overwrite original .3D source?',
+                    f'Saving here will overwrite the original source file '
+                    f'"{target.name}". Existing file contents will be lost.',
+                    'Overwrite original'):
                 return False
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -3033,13 +3033,12 @@ class Window(QMainWindow):
             return
         next_path = Path(path)
         if not reuse_model and self.source_pane.dirty:
-            answer = QMessageBox.question(
-                self, 'Discard unsaved N3 edits?',
-                'Opening another model will discard unsaved .3D source text. '
-                'Save the source first if you want to keep it.',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not confirm_destructive_action(
+                    self, 'Unsaved .3D source changes',
+                    f'Opening "{next_path.name}" will discard unsaved .3D '
+                    'source edits. Save the source first if you want '
+                    'to keep these changes.',
+                    'Discard changes'):
                 return
         if not reuse_model:
             self._source_invalid = False
@@ -3286,12 +3285,11 @@ class Window(QMainWindow):
 
     def closeEvent(self, event):
         if self.source_pane.dirty:
-            answer = QMessageBox.question(
-                self, "Unsaved .3D source",
-                "Close the viewer and discard unsaved .3D source edits?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No)
-            if answer != QMessageBox.StandardButton.Yes:
+            if not confirm_destructive_action(
+                    self, 'Unsaved .3D source changes',
+                    'Closing the viewer will discard unsaved .3D source edits. '
+                    'Save the source first if you want to keep these changes.',
+                    'Discard changes'):
                 event.ignore()
                 return
         self._timer.stop()
