@@ -77,7 +77,16 @@ class N3Highlighter(QSyntaxHighlighter):
             fmt = QTextCharFormat()
             fmt.setForeground(QColor(color))
             self.formats[name] = fmt
-        self.rehighlight()
+        # Like highlightBlock itself, limit recoloring to the first 1,500
+        # blocks. A .3D file can contain millions of declarations; calling
+        # rehighlight() on the entire QTextDocument on each color change
+        # would make the picker stall for large tracks.
+        block = self.document().firstBlock()
+        count = 0
+        while block.isValid() and count < 1500:
+            self.rehighlightBlock(block)
+            block = block.next()
+            count += 1
 
     def highlightBlock(self, text):
         # Highlighting millions of generated N3 declarations can otherwise
