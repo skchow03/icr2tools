@@ -67,6 +67,101 @@ class N3SourceHelpTests(unittest.TestCase):
         self.assertIn('1', polygon.tooltip())
         self.assertNotIn('Original line', polygon.tooltip_html())
 
+    def test_face_and_bsp_sidedness_explanations(self):
+        # These descriptions intentionally document the CAD viewport's
+        # side-dependent traversal rather than promising pixel visibility.
+        behavior = {
+            "FACE": ("one-sided", "from the back"),
+            "FACE2": ("two-sided", "same child in both slots"),
+            "BSPF": ("middle child", "front-only"),
+            "BSPA": ("all three", "from either side"),
+            "BSP2": ("front/back faces", "child4"),
+            "BSPN": ("both children", "from both sides"),
+        }
+        for cmd, phrases in behavior.items():
+            with self.subTest(command=cmd):
+                tooltip = COMMAND_HELP[cmd].tooltip().lower()
+                for phrase in phrases:
+                    self.assertIn(phrase.lower(), tooltip)
+                self.assertIn("v1, v2, v3", COMMAND_HELP[cmd].syntax)
+                self.assertIn("Syntax:", COMMAND_HELP[cmd].tooltip())
+
+    def test_solid_and_textured_polygon_tips_include_both_directions(self):
+        solid = help_for_statement("wall: POLY <42> {a,b,c};")
+        textured = help_for_statement("wall: POLY [T] <42> {a,b,c};")
+        self.assertIn("add [T]", solid.tooltip())
+        self.assertIn("POLY [T] <42> {a,b,c}", solid.tooltip())
+        self.assertIn("T=<U,V>", solid.tooltip())
+        self.assertIn('MATERIAL MIP="name"', solid.tooltip())
+        self.assertIn("remove [T]", textured.tooltip())
+        self.assertIn("POLY <42> {a,b,c}", textured.tooltip())
+        self.assertIn("can remain", textured.tooltip())
+        self.assertIn("MIP MATERIAL", textured.tooltip())
+        self.assertIn("add [T]", solid.compact())
+        self.assertIn("remove [T]", textured.compact())
+        self.assertIn("MATERIAL", solid.tooltip_html())
+        self.assertIn("MATERIAL", textured.tooltip_html())
+
+    def test_documented_face_bsp_traversal_matches_compiler_and_model(self):
+        """Guard exact N3 child ordering used in user-facing explanations."""
+        from n3_compile import compile_n3_text
+
+        declarations = (
+            "3D VERSION 3.0;\n"
+            "p0: [<0,0,0>];\n"
+            "p1: [<100,0,0>];\n"
+            "p2: [<0,100,0>];\n"
+            "A: POLY <40> {p0,p1,p2};\n"
+            "B: POLY <41> {p0,p1,p2};\n"
+            "C: POLY <42> {p0,p1,p2};\n"
+            "D: POLY <43> {p0,p1,p2};\n"
+        )
+        cases = {
+            "FACE": ("A", ["A"], []),
+            "FACE2": ("A, B", ["A"], ["B"]),
+            "BSPF": ("A, B, C", ["C", "B", "A"], ["A", "C"]),
+            "BSPA": ("A, B, C", ["C", "B", "A"], ["A", "B", "C"]),
+            "BSP2": ("A, B, C, D", ["A", "D", "C"], ["B", "D", "A"]),
+            "BSPN": ("A, B", ["B", "A"], ["A", "B"]),
+        }
+        for kind, (children, expected_front, expected_back) in cases.items():
+            with self.subTest(kind=kind):
+                source = (
+                    declarations + f"root: {kind} (p0,p1,p2), {children};\n")
+                model, _ = compile_n3_text(
+                    source, f"{kind.lower()}_help.3d",
+                    associate_planes=False)
+                reverse = {off: name for name, off
+                           in model.n3_label_offsets.items()
+                           if name in ("A", "B", "C", "D")}
+                for z, expected in ((100, expected_front),
+                                    (-100, expected_back)):
+                    drawn, _stats, _lod = model.switched_polygons(
+                        None, (10, 10, z), bsp_mode="original")
+                    self.assertEqual(
+                        [reverse[off] for off in drawn], expected)
+
+    def test_solid_textured_conversion_examples_compile(self):
+        from n3_compile import compile_n3_text
+
+        base = (
+            "3D VERSION 3.0;\n"
+            "a: [<0,0,0>, T=<0,0>];\n"
+            "b: [<100,0,0>, T=<127,0>];\n"
+            "c: [<0,100,0>, T=<0,127>];\n"
+        )
+        for kind, command, root_expr, expected_flavor in (
+                ("solid", "POLY", "face", 1),
+                ("textured", "POLY [T]",
+                 'MATERIAL MIP="wall", GROUP=3, face', 2)):
+            source = (base + f"face: {command} <42> {{a,b,c}};\n"
+                      + f"root: {root_expr};\n")
+            with self.subTest(kind=kind):
+                model, _ = compile_n3_text(
+                    source, f"{kind}_help.3d", associate_planes=False)
+                polygon = model.polygons[model.n3_label_offsets["face"]]
+                self.assertEqual(polygon.flavor, expected_flavor)
+
     def test_multiline_continuations_and_incomplete_commands(self):
         src = [
             "3D VERSION 3.0;",
