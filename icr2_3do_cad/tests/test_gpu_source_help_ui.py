@@ -113,6 +113,38 @@ class N3ContextHelpQtTests(unittest.TestCase):
         self.assertEqual(pane.revision, revision)
         self.assertFalse(pane.pending)
 
+    def test_bsp_and_polygon_conversion_help_in_real_tooltip(self):
+        from PySide6.QtWidgets import QToolTip
+        pane = self.pane
+        original_revision = pane.revision
+
+        self._line(6)  # BSPF
+        pane.show_syntax_help()
+        popup = QToolTip.text()
+        self.assertIn("front-only", popup)
+        self.assertIn("frontFace", popup)
+        self.assertIn("child3", popup)
+        QToolTip.hideText()
+
+        self._line(4)  # POLY [T]
+        pane.show_syntax_help()
+        self.assertIn("remove [T]", QToolTip.text())
+        self.assertIn("can remain", QToolTip.text())
+        QToolTip.hideText()
+
+        solid = SOURCE.replace("POLY [T] <44>", "POLY <44>")
+        pane.set_source(solid, Path("solid_help.3d"))
+        self._line(4)  # plain POLY
+        pane.show_syntax_help()
+        self.assertIn("add [T]", QToolTip.text())
+        self.assertIn("MATERIAL", QToolTip.text())
+        self.assertIn("T=&lt;U,V&gt;", QToolTip.text())
+        self.assertEqual(pane.get_source(), solid)
+        self.assertFalse(pane.dirty)
+        self.assertFalse(pane.pending)
+        self.assertEqual(pane.revision, original_revision + 1)
+        QToolTip.hideText()
+
     def test_tooltip_is_wrapped_and_anchored_below_source_line(self):
         """Regression: wide native tips must not cover the model viewport."""
         from PySide6.QtCore import Qt, QEvent
