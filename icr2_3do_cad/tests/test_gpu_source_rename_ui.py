@@ -34,6 +34,7 @@ class SourceEditorRenameUITests(unittest.TestCase):
 
     def setUp(self):
         self.pane.set_source(SOURCE, Path("labels.3d"))
+        self.pane._show_all_filters()
         self.pane.auto_rename.setChecked(True)
 
     @classmethod
