@@ -101,7 +101,13 @@ class GPUAppearanceUITests(unittest.TestCase):
             inspection.set_source(SOURCE, Path("colors.3d"))
             inspection.set_appearance_colors(customized)
             block = inspection.editor.document().findBlockByNumber(4)
+            self.assertTrue(block.isValid())
+            self.assertTrue(inspection.ready)
+            self.assertFalse(inspection.pending)
+            self.assertEqual(inspection._source_index.at_line(4),
+                             ("polygon", "surface"))
             inspection.editor.setTextCursor(QTextCursor(block))
+            self.assertEqual(inspection.editor.textCursor().blockNumber(), 4)
             self.assertEqual(inspection.current_target(),
                              ("polygon", "surface"))
             inspection.set_polygon_visibility(True)
