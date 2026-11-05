@@ -561,6 +561,16 @@ cover the viewport's clear color.
 
 Open **.3D Source** beside the GPU preview. Place the text cursor anywhere
 within a named `POLY` or `POLY [T]` declaration to tint that face.
+This also applies to **inline POLYs nested directly in MATERIAL** declarations,
+for example `rs1: MATERIAL MIP="usag", GROUP=3, POLY [T] <208> {a,b,c,d};`.
+Selecting the MATERIAL row highlights its compiled POLY child rather than the
+non-renderable MATERIAL wrapper. The same row is navigable under both
+**MATERIAL** and **POLY-only** filters (its displayed category remains MATERIAL);
+the green/salmon source highlight and the viewport POLY tint follow the actual
+child's active BSP/LOD visibility. Picking that polygon in the viewport returns
+to the authored MATERIAL row. A MATERIAL holding a LIST or a separately named
+POLY reference remains a normal MATERIAL row, not an implicitly selected POLY.
+
 Place it within a named vertex declaration (`name: [<X,Y,Z>];`) to show
 a bright dot at that vertex in the 3D viewport. Selecting a named **BSPF,
 BSPA, BSP2 or BSPN** declaration additionally highlights the three vertices

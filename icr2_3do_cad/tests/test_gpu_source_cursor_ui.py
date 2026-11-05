@@ -255,6 +255,84 @@ class GPUCursorUITests(unittest.TestCase):
         self.assertEqual(self.pane.filtered_model.entries[row].first_line, 4)
         self.assertEqual(self.pane.get_source(), SOURCE)
 
+    def test_inline_material_polygon_row_inspects_actual_child_geometry(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtWidgets import QTextEdit
+        source = (
+            "3D VERSION 3.0;\n"
+            "c1: [<0,0,0>, T=<0,0>];\n"
+            "c0: [<100,0,0>, T=<127,0>];\n"
+            "d0: [<100,100,0>, T=<127,127>];\n"
+            "d1: [<0,100,0>, T=<0,127>];\n"
+            'rs1: MATERIAL MIP="usag", GROUP=3, '
+            'POLY [T] <208> {c1, c0, d0, d1};\n'
+            'bk1: MATERIAL MIP="usag", GROUP=3, '
+            'POLY [T] <26> {d1, d0, c0, c1};\n'
+            "root: LIST {rs1,bk1};\n"
+        )
+        model, _ = compile_n3_text(
+            source, "nested_poly.3d", associate_planes=False)
+        self.window.viewer._model = model
+        try:
+            pane = self.pane
+            self.window.source_toggle.setChecked(True)
+            pane.set_source(source, Path("nested_poly.3d"))
+            for line, name, color in ((5, "rs1", 208), (6, "bk1", 26)):
+                block = pane.editor.document().findBlockByNumber(line)
+                pane.editor.setTextCursor(QTextCursor(block))
+                self.assertEqual(pane.current_target(), ("polygon", name))
+                wrapper = model.n3_label_offsets[name]
+                self.assertNotIn(wrapper, model.polygons)
+                self.assertEqual(self.window.viewer.inspection_kind, "polygon")
+                poly_offset = model.children[wrapper][0]
+                self.assertEqual(self.window.viewer.inspection_offset, poly_offset)
+                self.assertEqual(model.polygons[poly_offset].color, color)
+
+            # Selecting a filtered MATERIAL row is also selecting its POLY.
+            pane._only_filter("MATERIAL")
+            self.assertEqual(len(pane.filtered_model.entries), 2)
+            for row, name in enumerate(("rs1", "bk1")):
+                pane.filtered_list.setCurrentIndex(pane.filtered_model.index(row))
+                self.assertEqual(pane.current_target(), ("polygon", name))
+                self.assertEqual(self.window.viewer.inspection_offset,
+                                 model.children[model.n3_label_offsets[name]][0])
+                pane.set_polygon_visibility(True)
+                idx = pane.filtered_model.index(row)
+                self.assertIn("[VISIBLE]", pane.filtered_model.data(
+                    idx, Qt.ItemDataRole.DisplayRole))
+                self.assertEqual(pane.filtered_model.data(
+                    idx, Qt.ItemDataRole.BackgroundRole).name(),
+                    pane.colors["source_visible_background"].lower())
+
+            # POLY-only filtering should include nested polygons despite the
+            # row retaining its MATERIAL type and editable text.
+            pane._only_filter("POLY")
+            self.assertEqual(len(pane.filtered_model.entries), 2)
+            self.assertEqual(
+                {e.category for e in pane.filtered_model.entries},
+                {"MATERIAL"})
+            self.assertFalse(pane.dirty)
+            self.assertFalse(pane.pending)
+            self.assertEqual(pane.get_source(), source)
+
+            # Picking the real compiled polygon returns to its MATERIAL row.
+            pane._only_filter("Vertices")
+            target = model.children[model.n3_label_offsets["bk1"]][0]
+            self.window._viewport_polygon_picked(target)
+            self.assertEqual(pane.current_target(), ("polygon", "bk1"))
+            self.assertEqual(pane.editor.textCursor().blockNumber(), 6)
+            self.assertEqual(self.window.viewer.inspection_offset, target)
+            self.assertIs(pane.source_stack.currentWidget(),
+                          pane.filtered_page)
+            self.assertFalse(pane.dirty)
+            self.assertEqual(pane.get_source(), source)
+        finally:
+            self.window.viewer._model = self.model
+            self.pane._show_all_filters()
+            self.pane.set_source(SOURCE, Path("example.3d"))
+            self.window.source_toggle.setChecked(True)
+
     def test_binary_generated_polygon_label_is_navigable(self):
         import tempfile
         from three_do import Model
