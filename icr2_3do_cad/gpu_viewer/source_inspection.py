@@ -154,9 +154,16 @@ def target_offset(model, kind: str, label: str) -> int | None:
     mapping = getattr(model, "n3_label_offsets", {})
     offset = mapping.get(label)
     if offset is None:
-        match = _BINARY_LABEL.fullmatch(label)
-        if match:
-            offset = int(match.group(1))
+        # Binary 3DO -> editable N3 export gives the root record the
+        # special name "root", unlike every other "_<body offset>" label.
+        # Raw binary models have no n3_label_offsets mapping, so resolve
+        # this alias against the header's authoritative root pointer.
+        if label == "root":
+            offset = getattr(model, "root_offset", None)
+        else:
+            match = _BINARY_LABEL.fullmatch(label)
+            if match:
+                offset = int(match.group(1))
     if kind == "polygon" and offset in model.polygons:
         return offset
     if kind == "vertex" and offset in model.vertices:
