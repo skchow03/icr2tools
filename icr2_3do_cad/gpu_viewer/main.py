@@ -50,7 +50,7 @@ try:
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-        QFileDialog, QHBoxLayout, QLabel, QLineEdit, QMainWindow,
+        QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
@@ -1596,6 +1596,8 @@ class Window(QMainWindow):
         self.body_mip = None
         self.fallback_mip = None
         self.model_path = None
+        self._loaded_file_path = None  # committed open, not an in-flight/failed file
+        self._find_text = ""
         self._preserve_view = False
         self._source_invalid = False
         self._source_busy_revision = None
@@ -1644,6 +1646,7 @@ class Window(QMainWindow):
         advanced_layout.addWidget(self.fixed_camera_button)
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
+        self.perspective_toggle.setChecked(True)
         display_layout.addWidget(self.perspective_toggle)
         # Menu state is backed by this control, but there is no toolbar.
         self.source_toggle = QPushButton(".3D Source", self)
@@ -1693,6 +1696,17 @@ class Window(QMainWindow):
         distance_row = QHBoxLayout(self.distance_bar)
         distance_row.setContentsMargins(5, 3, 5, 3)
         distance_row.setSpacing(6)
+        distance_row.addWidget(QLabel("Projection"))
+        self.projection_combo = QComboBox()
+        self.projection_combo.setObjectName("projectionCombo")
+        self.projection_combo.addItem("Perspective", True)
+        self.projection_combo.addItem("Orthographic", False)
+        self.projection_combo.setToolTip(
+            "Switch camera projection. Fixed Camera and TRK driving "
+            "require Perspective.")
+        self.projection_combo.currentIndexChanged.connect(
+            self._projection_changed)
+        distance_row.addWidget(self.projection_combo)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
@@ -1946,6 +1960,8 @@ class Window(QMainWindow):
         self.source_toggle.setChecked(True)
         install_menus(self)
         self._workspace_changed(self.workspace_tabs.currentIndex())
+        self._sync_projection_controls()
+        self.source_pane.editor.textChanged.connect(self._update_window_title)
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
         # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
@@ -2062,9 +2078,65 @@ class Window(QMainWindow):
 
     def _workspace_changed(self, index):
         if 0 <= index < self.workspace_tabs.count():
-            label = self.workspace_tabs.tabText(index)
-            self.setWindowTitle(f"ICR2 GPU Viewer — {label} workspace")
-            self.fallback_controls.setVisible(label != "Car")
+            self.fallback_controls.setVisible(
+                self.workspace_tabs.tabText(index) != "Car")
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """Show the last successfully loaded file and unsaved source edits."""
+        workspace = self.workspace_tabs.tabText(
+            self.workspace_tabs.currentIndex())
+        title = f"ICR2 GPU Viewer — {workspace} workspace"
+        if self._loaded_file_path is not None:
+            changed = " *" if self.source_pane.dirty else ""
+            title = f"{self._loaded_file_path.name}{changed} — {title}"
+        self.setWindowTitle(title)
+
+    def _edit_source_command(self, command):
+        """Standard text operations target the focused editor or N3 source."""
+        widget = QApplication.focusWidget()
+        while widget is not None and not isinstance(
+                widget, (QPlainTextEdit, QLineEdit)):
+            widget = widget.parentWidget()
+        if widget is None:
+            if not self.source_pane.ready:
+                self._source_toolbar_action(lambda: None)
+                return
+            if self.source_pane.source_stack.currentWidget() != self.source_pane.editor:
+                self.source_pane._show_all_filters()
+            widget = self.source_pane.editor
+        if command not in ("copy", "selectAll") and widget.isReadOnly():
+            return
+        getattr(widget, command)()
+
+    def _find_source(self, *, next_match=False):
+        """Find across the complete N3 text, including hidden filter rows."""
+        if not self.source_pane.ready:
+            self._source_toolbar_action(lambda: None)
+            return
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.source_stack.currentWidget() != self.source_pane.editor:
+            self.source_pane._show_all_filters()
+        if not next_match:
+            query, accepted = QInputDialog.getText(
+                self, "Find in .3D Source", "Find text:",
+                QLineEdit.EchoMode.Normal, self._find_text)
+            if not accepted or not query:
+                return
+            self._find_text = query
+        if not self._find_text:
+            return
+        editor = self.source_pane.editor
+        if not editor.find(self._find_text):
+            cursor = editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            editor.setTextCursor(cursor)
+            if not editor.find(self._find_text):
+                self.statusBar().showMessage(
+                    f"Not found in .3D Source: {self._find_text}")
+                return
+        editor.setFocus(Qt.FocusReason.OtherFocusReason)
 
     def _source_toolbar_action(self, callback):
         """Expose Save/Export without bypassing lazy source preparation."""
@@ -2115,14 +2187,7 @@ class Window(QMainWindow):
         self.track_drive_checkbox.blockSignals(True)
         self.track_drive_checkbox.setChecked(enabled)
         self.track_drive_checkbox.blockSignals(False)
-        self.perspective_toggle.blockSignals(True)
-        self.perspective_toggle.setChecked(self.viewer.perspective)
-        self.perspective_toggle.setEnabled(
-            not enabled and not self.viewer.fixed_camera_mode)
-        self.perspective_toggle.blockSignals(False)
-        # Menu checkmark follows the underlying camera even when widget
-        # signals were blocked for this programmatic mode switch.
-        self.perspective_menu_action.setChecked(self.perspective_toggle.isChecked())
+        self._sync_projection_controls()
         if enabled:
             self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
         self._update_trk_status()
@@ -2363,6 +2428,7 @@ class Window(QMainWindow):
             return False
         self._source_save_target = target
         self.source_pane.mark_saved()
+        self._update_window_title()
         self.source_pane.status.setText(
             f'Saved {target.name}.' +
             (' Source is not currently valid; GPU preview still shows last valid model.'
@@ -2749,12 +2815,7 @@ class Window(QMainWindow):
         self.fixed_camera_button.setChecked(enabled)
         self.fixed_camera_button.blockSignals(False)
         self.fixed_camera_controls.setVisible(enabled)
-        self.perspective_toggle.blockSignals(True)
-        self.perspective_toggle.setChecked(self.viewer.perspective)
-        self.perspective_toggle.setEnabled(
-            not enabled and not self.viewer.track_drive_enabled)
-        self.perspective_toggle.blockSignals(False)
-        self.perspective_menu_action.setChecked(self.perspective_toggle.isChecked())
+        self._sync_projection_controls()
         self.statusBar().showMessage(
             "Fixed Camera | raw XYZ "
             + str(tuple(spin.value() for spin in self.fixed_camera_coords))
@@ -2763,8 +2824,33 @@ class Window(QMainWindow):
             if enabled else
             "Exterior camera restored | Left-drag orbit | Shift-left/middle pan")
 
+    def _projection_changed(self, *_):
+        if self.projection_combo.isEnabled():
+            self.perspective_toggle.setChecked(
+                bool(self.projection_combo.currentData()))
+
+    def _sync_projection_controls(self):
+        """Keep menu, legacy checkbox and viewport selector in lockstep."""
+        enabled = not (self.viewer.fixed_camera_mode or
+                       self.viewer.track_drive_enabled)
+        self.perspective_toggle.blockSignals(True)
+        self.perspective_toggle.setChecked(self.viewer.perspective)
+        self.perspective_toggle.setEnabled(enabled)
+        self.perspective_toggle.blockSignals(False)
+        self.projection_combo.blockSignals(True)
+        self.projection_combo.setCurrentIndex(
+            self.projection_combo.findData(bool(self.viewer.perspective)))
+        self.projection_combo.setEnabled(enabled)
+        self.projection_combo.blockSignals(False)
+        if hasattr(self, "perspective_menu_action"):
+            self.perspective_menu_action.setChecked(self.viewer.perspective)
+
     def _set_perspective(self, checked):
-        self.viewer.perspective = checked
+        if (self.viewer.fixed_camera_mode or self.viewer.track_drive_enabled):
+            self._sync_projection_controls()
+            return
+        self.viewer.perspective = bool(checked)
+        self._sync_projection_controls()
         # Orthographic BSP must use parallel-ray direction rather than the
         # finite perspective camera position. Reevaluate on every toggle.
         self.viewer.invalidate_visibility()
@@ -2864,6 +2950,16 @@ class Window(QMainWindow):
             self.mode_combo.setCurrentIndex(self.mode_combo.findData(requested))
         self.viewer.set_track_navigation(
             scene.track_navigation, preserve=was_reloading or from_source)
+        if not was_reloading and not from_source:
+            # Every newly opened asset uses perspective, independent of the
+            # previous file's selected projection.
+            if not self.viewer.perspective:
+                self.viewer.perspective = True
+                self.viewer.invalidate_visibility()
+        self._sync_projection_controls()
+        if not from_source and self.model_path is not None:
+            self._loaded_file_path = self.model_path
+        self._update_window_title()
         nav = self.viewer.track_navigation
         self.track_drive_checkbox.setEnabled(nav is not None)
         self.trk_reset_button.setEnabled(nav is not None)
