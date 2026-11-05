@@ -50,6 +50,85 @@ class SourceInspectionTests(unittest.TestCase):
         self.assertIsNone(
             index_source_targets("p: POLY <2> {a,b,c}").at_line(0))
 
+    def test_inline_material_poly_is_indexed_and_compiled_polygon_resolved(self):
+        # Real user case: the declaration label names the MATERIAL record;
+        # the polygon is an anonymous child with its own body offset.
+        source = (
+            "3D VERSION 3.0;\n"
+            "c1: [<0,0,0>, T=<0,0>];\n"
+            "c0: [<100,0,0>, T=<127,0>];\n"
+            "d0: [<100,100,0>, T=<127,127>];\n"
+            "d1: [<0,100,0>, T=<0,127>];\n"
+            'rs1: MATERIAL MIP="usag", GROUP=3, '
+            'POLY [T] <208> {c1, c0, d0, d1};\n'
+            'bk1: MATERIAL MIP="usag", GROUP=3, '
+            'POLY [T] <26> {d1, d0, c0, c1};\n'
+            "root: LIST {rs1, bk1};\n"
+        )
+        idx = index_source_targets(source)
+        self.assertEqual(idx.at_line(5), ("polygon", "rs1"))
+        self.assertEqual(idx.at_line(6), ("polygon", "bk1"))
+        self.assertIsNone(idx.at_line(7))
+        model, _ = compile_n3_text(source, "nested_material.3d",
+                                   associate_planes=False)
+        self.assertEqual(len(model.polygons), 2)
+        resolved = []
+        for label in ("rs1", "bk1"):
+            wrapper = model.n3_label_offsets[label]
+            self.assertEqual(model.records[wrapper], 4)
+            offset = target_offset(model, "polygon", label)
+            self.assertNotEqual(offset, wrapper)
+            self.assertIn(offset, model.polygons)
+            self.assertEqual(model.children[wrapper], [offset])
+            resolved.append(offset)
+        self.assertNotEqual(resolved[0], resolved[1])
+        self.assertEqual([model.polygons[o].color for o in resolved],
+                         [208, 26])
+        scene = build_scene(model)
+        self.assertTrue(all((0, offset) in scene.polygon_lookup
+                            for offset in resolved))
+
+    def test_material_wrapper_without_inline_poly_is_not_a_target(self):
+        source = (
+            "3D VERSION 3.0;\n"
+            "a: [<0,0,0>];\n"
+            "b: [<100,0,0>];\n"
+            "c: [<0,100,0>];\n"
+            "face: POLY <42> {a,b,c};\n"
+            'ordinary: MATERIAL MIP="usag", GROUP=3, face;\n'
+            "group: MATERIAL GROUP=3, LIST {face};\n"
+            'quoted: MATERIAL MIP="POLY <99>, fake", GROUP=3, face;\n'
+            "root: LIST {ordinary, group, quoted};\n"
+        )
+        idx = index_source_targets(source)
+        self.assertEqual(idx.at_line(4), ("polygon", "face"))
+        for line in (5, 6, 7):
+            self.assertIsNone(idx.at_line(line))
+        model, _ = compile_n3_text(source, "ordinary_material.3d",
+                                   associate_planes=False)
+        self.assertEqual(target_offset(model, "polygon", "face"),
+                         model.n3_label_offsets["face"])
+        # Resolver can follow wrappers; only the source index decides
+        # whether they actually contain an inline polygon statement.
+        self.assertEqual(target_offset(model, "polygon", "ordinary"),
+                         model.n3_label_offsets["face"])
+        self.assertIsNone(target_offset(model, "polygon", "group"))
+
+    def test_inline_poly_in_multiline_material_and_group_only(self):
+        source = (
+            "grouped: MATERIAL GROUP=3,\n"
+            "    POLY <42> {a,b,c};\n"
+            "tex: MATERIAL GROUP=4, MIP=\"usag\",\n"
+            "    POLY [T] <208> {a,b,c};\n"
+            "nested: MATERIAL GROUP=3, MATERIAL GROUP=4,\n"
+            "    POLY <42> {a,b,c};\n"
+        )
+        idx = index_source_targets(source)
+        for line, label in ((0, "grouped"), (1, "grouped"),
+                            (2, "tex"), (3, "tex"),
+                            (4, "nested"), (5, "nested")):
+            self.assertEqual(idx.at_line(line), ("polygon", label))
+
     def test_compiled_labels_track_current_geometry_not_old_offsets(self):
         model, doc = compile_n3_text(SOURCE, "example.3d",
                                      associate_planes=False)
