@@ -200,6 +200,8 @@ def install_menus(window):
     _bind_checkbox(options, "Textures", window.show_textures)
     _bind_checkbox(options, "PMP sprites", window.show_sprites)
     _bind_checkbox(options, "Repeat UV (tile MIPs)", window.repeat_uv)
+    _bind_checkbox(options, "Vertex dots and pointer labels",
+                   window.vertex_labels_toggle)
 
     model = bar.addMenu("&Model")
     workspace = model.addMenu("&Workspace")
