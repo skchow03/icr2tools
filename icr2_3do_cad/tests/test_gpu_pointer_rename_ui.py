@@ -79,6 +79,12 @@ class F2PointerRenameQtTests(unittest.TestCase):
         self.assertTrue(pane.pending)
         self.assertTrue(pane.dirty)
         self.assertEqual(pane._rename_pending, None)
+        history = pane.change_log.toPlainText()
+        self.assertIn("F2 pointer rename: panel → wing", history)
+        self.assertIn("2 references updated", history)
+        self.assertIn("line 8: panel → wing", history)
+        self.assertIn("line 9: panel → wing", history)
+        self.assertNotIn("line 6: panel → wing", history)
 
     def test_f2_in_filtered_list_renames_without_exiting_filter(self):
         pane = self.pane
@@ -106,6 +112,7 @@ class F2PointerRenameQtTests(unittest.TestCase):
                 "panel: POLY", "panel_two: POLY"))
         self.assertEqual(pane._rename_pending, None)
         self.assertIs(pane.source_stack.currentWidget(), pane.filtered_page)
+        self.assertIn("0 references updated", pane.change_log.toPlainText())
 
     def test_f2_name_only_undo_is_one_step(self):
         pane = self.pane
@@ -130,6 +137,7 @@ class F2PointerRenameQtTests(unittest.TestCase):
                 self.assertEqual(pane.revision, old_revision)
         self.assertFalse(pane.dirty)
         self.assertFalse(pane.pending)
+        self.assertEqual(pane.change_log.toPlainText(), "")
 
     def test_f2_on_comment_does_not_prompt_or_change_source(self):
         pane = self.pane
