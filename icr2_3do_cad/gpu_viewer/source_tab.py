@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from gpu_viewer.appearance import DARK_COLORS, validated_colors
 from gpu_viewer.source_help import help_for_lines, help_for_statement
 from gpu_viewer.source_change_log import format_rename_event
+from gpu_viewer.source_scale import scale_n3_source
 from gpu_viewer.source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
@@ -701,6 +702,57 @@ class SourcePane(QWidget):
     def get_source(self):
         value = self.editor.toPlainText()
         return value.replace('\n', '\r\n') if self.line_ending == '\r\n' else value
+
+    def scale_model(self, factor, *, divide=False):
+        """Uniformly scale the canonical source as one undoable operation.
+
+        This is an explicit model transformation, not a pointer rename. Plan
+        and range-check everything first; reject pending/invalid source and
+        active filtered-row edits rather than destroying unfinished work.
+        """
+        if not self._ready:
+            raise ValueError("Open a model and prepare its editable .3D Source first.")
+        if self.pending or self._last_error_line is not None:
+            raise ValueError(
+                "Apply or correct pending .3D source edits before scaling the model.")
+        if self.filtered_list.state() == QAbstractItemView.State.EditingState:
+            raise ValueError("Finish or cancel the filtered-row edit before scaling.")
+        source = self.editor.toPlainText()
+        result = scale_n3_source(source, factor, divide=divide)
+        if result.source == source:
+            raise ValueError("This scale produces no coordinate changes.")
+
+        original_line = self.editor.textCursor().blockNumber()
+        self._rename_timer.stop()
+        self._rename_pending = None
+        self._filtered_edit_active = False
+        self._applying_rename = True
+        cursor = QTextCursor(self.editor.document())
+        try:
+            cursor.beginEditBlock()
+            try:
+                cursor.select(QTextCursor.SelectionType.Document)
+                cursor.insertText(result.source)
+            finally:
+                cursor.endEditBlock()
+        finally:
+            self._applying_rename = False
+
+        # Avoid the auto-reference-rename engine interpreting bulk text
+        # replacement as an edit to a declaration label.
+        self._rename_snapshot = result.source
+        old_position = self.editor.document().findBlockByNumber(original_line)
+        if old_position.isValid():
+            self.editor.setTextCursor(QTextCursor(old_position))
+        self._edited()
+        self.change_log.appendPlainText(
+            f"[{QTime.currentTime().toString('HH:mm:ss')}] "
+            f"{result.summary()}" +
+            ("; pinned coordinate-scale hint" if result.inserted_scale_hint else "")
+        )
+        self.status.setText(
+            f"{result.summary()}. Validating preview; source not yet saved.")
+        return result
 
     def _log_automatic_rename(self, source, old, new, spans, *,
                               action, declaration_line):
