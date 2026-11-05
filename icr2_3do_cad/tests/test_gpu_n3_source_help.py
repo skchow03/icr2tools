@@ -89,7 +89,7 @@ class N3SourceHelpTests(unittest.TestCase):
         self.assertIs(help_for_lines(lines,2), COMMAND_HELP["COMMENT"])
         self.assertIsNone(help_for_lines(lines,3))
         self.assertIs(help_for_lines(lines,4), COMMAND_HELP["BSPN"])
-        self.assertIs(help_for_lines(lines,5), COMMAND_HELP["BSPN"])
+        self.assertIsNone(help_for_lines(lines,5))
         self.assertIsNone(help_for_lines(lines,-1))
         self.assertIsNone(help_for_lines(lines,100))
 
