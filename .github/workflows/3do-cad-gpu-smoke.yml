@@ -11,6 +11,7 @@ on:
       - "icr2_3do_cad/tests/test_gpu_track_skybox_gl.py"
       - "icr2_3do_cad/tests/test_gpu_track_navigation_ui.py"
       - "icr2_3do_cad/tests/test_gpu_track_tsd_depth_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
       - "icr2_core/trk/**"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
@@ -26,6 +27,7 @@ on:
       - "icr2_3do_cad/tests/test_gpu_track_skybox_gl.py"
       - "icr2_3do_cad/tests/test_gpu_track_navigation_ui.py"
       - "icr2_3do_cad/tests/test_gpu_track_tsd_depth_gl.py"
+      - "icr2_3do_cad/tests/test_gpu_poly_highlight_gl.py"
       - "icr2_core/trk/**"
       - "icr2_3do_cad/tests/test_pmp_variants.py"
       - "icr2_3do_cad/n3_compile.py"
@@ -83,6 +85,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python -m unittest discover -s tests -p 'test_gpu_palette_autoselect_ui.py'
+      - name: Check highlighted white polygons and custom tint in OpenGL
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_poly_highlight_gl.py'
       - name: Test source cursor inspection under Qt
         working-directory: icr2_3do_cad
         env:
