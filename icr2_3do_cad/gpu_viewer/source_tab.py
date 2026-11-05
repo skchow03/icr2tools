@@ -437,30 +437,36 @@ class SourcePane(QWidget):
         self.set_appearance_colors(self.colors)
 
     def set_appearance_colors(self, colors):
-        """Use a known editor background so syntax is legible in any OS theme."""
-        self.colors = validated_colors(colors)
-        base = QColor(self.colors["source_background"])
-        text = QColor(self.colors["source_text"])
-        selection = QColor(self.colors["source_selection_background"])
-        selection_text = QColor(self.colors["source_selection_text"])
-        for widget in (self.editor, self.filtered_list):
-            palette = widget.palette()
-            palette.setColor(QPalette.ColorRole.Base, base)
-            palette.setColor(QPalette.ColorRole.Text, text)
-            palette.setColor(QPalette.ColorRole.Highlight, selection)
-            palette.setColor(QPalette.ColorRole.HighlightedText, selection_text)
-            # Filtered rows alternate subtly while retaining text contrast.
-            palette.setColor(QPalette.ColorRole.AlternateBase,
-                             base.lighter(110) if base.lightness() < 128
-                             else base.darker(105))
-            widget.setPalette(palette)
-        self.highlighter.set_colors(self.colors)
-        self._refresh_extra_selections()
-        if self.filtered_model.rowCount():
-            self.filtered_model.dataChanged.emit(
-                self.filtered_model.index(0),
-                self.filtered_model.index(self.filtered_model.rowCount() - 1))
-        self.filtered_list.viewport().update()
+        """Apply colors without treating document formatting as a source edit."""
+        was_setting = self._setting
+        self._setting = True
+        try:
+            self.colors = validated_colors(colors)
+            base = QColor(self.colors["source_background"])
+            text = QColor(self.colors["source_text"])
+            selection = QColor(self.colors["source_selection_background"])
+            selection_text = QColor(self.colors["source_selection_text"])
+            for widget in (self.editor, self.filtered_list):
+                palette = widget.palette()
+                palette.setColor(QPalette.ColorRole.Base, base)
+                palette.setColor(QPalette.ColorRole.Text, text)
+                palette.setColor(QPalette.ColorRole.Highlight, selection)
+                palette.setColor(QPalette.ColorRole.HighlightedText, selection_text)
+                palette.setColor(QPalette.ColorRole.AlternateBase,
+                                 base.lighter(110) if base.lightness() < 128
+                                 else base.darker(105))
+                widget.setPalette(palette)
+            # Rehighlighting can emit QTextDocument change notifications;
+            # they must not trigger recompilation or invalidate source offsets.
+            self.highlighter.set_colors(self.colors)
+            self._refresh_extra_selections()
+            if self.filtered_model.rowCount():
+                self.filtered_model.dataChanged.emit(
+                    self.filtered_model.index(0),
+                    self.filtered_model.index(self.filtered_model.rowCount() - 1))
+            self.filtered_list.viewport().update()
+        finally:
+            self._setting = was_setting
 
     def eventFilter(self, watched, event):
         if (event.type() == QEvent.Type.KeyPress and
