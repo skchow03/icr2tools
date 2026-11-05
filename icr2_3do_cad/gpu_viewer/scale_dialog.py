@@ -49,9 +49,9 @@ class ScaleModelDialog(QDialog):
         outer.addWidget(details)
 
         buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Apply |
+            QDialogButtonBox.StandardButton.Ok |
             QDialogButtonBox.StandardButton.Cancel)
-        self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Apply)
+        self.apply_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
         self.apply_button.setText("Scale model")
         self.apply_button.setObjectName("applyScale")
         self.cancel_button = buttons.button(QDialogButtonBox.StandardButton.Cancel)
