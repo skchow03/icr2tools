@@ -116,8 +116,8 @@ class SourceFilterQtTests(unittest.TestCase):
         pane.filtered_list.setCurrentIndex(index)
         self.assertEqual(pane.current_target(), ("polygon", "panel"))
         for visible, color, status in (
-                (True, "#b5e3bb", "[VISIBLE]"),
-                (False, "#f1ada1", "[NOT DRAWN]")):
+                (True, pane.colors["source_visible_background"].lower(), "[VISIBLE]"),
+                (False, pane.colors["source_hidden_background"].lower(), "[NOT DRAWN]")):
             pane.set_polygon_visibility(visible)
             self.assertEqual(
                 pane.filtered_model.data(

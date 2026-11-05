@@ -42,9 +42,9 @@ try:
         glPolygonOffset,
         glViewport, glGenTextures, glDeleteTextures, glBindTexture,
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
-        glUniform1i,
+        glUniform1i, glUniform3f,
     )
-    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings
     from PySide6.QtGui import (
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
     )
@@ -80,6 +80,8 @@ from gpu_viewer.sprites import prepare_scene_sprites, draw_runs
 from gpu_viewer.sprite_gl import PMPGLRenderer
 from gpu_viewer.textures import (build_atlas, load_palette,
                                  find_model_sunny_palette)
+from gpu_viewer.appearance import DARK_COLORS, load_colors, save_colors, validated_colors
+from gpu_viewer.appearance_dialog import AppearanceDialog
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
@@ -126,13 +128,14 @@ uniform int u_textures;
 uniform int u_repeat;
 uniform int u_inspect_poly;
 uniform int u_wireframe;
+uniform vec3 u_wire_color;
+uniform vec3 u_selected_wire_color;
 out vec4 fragColor;
 void main() {
     // Wireframe is a separate untextured line pass. Do not sample MIP/PCX.
     if (u_wireframe != 0) {
-        fragColor = (u_wireframe == 2
-            ? vec4(1.0, 0.76, 0.30, 1.0)   // selected polygon outline
-            : vec4(0.84, 0.89, 0.95, 1.0));
+        fragColor = vec4(
+            u_wireframe == 2 ? u_selected_wire_color : u_wire_color, 1.0);
         return;
     }
     int index = clamp(v_index, 0, 255);
@@ -499,6 +502,9 @@ class GLViewport(QOpenGLWidget):
         self._wire_mesh = None
         self._wire_index_count = 0
         self._wire_uniform = None
+        self._wire_color_uniform = None
+        self._selected_wire_color_uniform = None
+        self.colors = dict(DARK_COLORS)
         self._vao = None
         self._mesh = None
         self._vertex_picker = None
@@ -609,6 +615,9 @@ class GLViewport(QOpenGLWidget):
             self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
             self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
             self._wire_uniform = glGetUniformLocation(program, "u_wireframe")
+            self._wire_color_uniform = glGetUniformLocation(program, "u_wire_color")
+            self._selected_wire_color_uniform = glGetUniformLocation(
+                program, "u_selected_wire_color")
             glUseProgram(program)
             glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
             glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
@@ -696,6 +705,19 @@ class GLViewport(QOpenGLWidget):
             finally:
                 self.doneCurrent()
         self.update()
+
+    def set_appearance_colors(self, colors):
+        """Change viewport drawing colors without rebuilding buffers or meshes."""
+        self.colors = validated_colors(colors)
+        self.update()
+
+    def _vertex_marker_colors(self):
+        return (QColor(self.colors["viewport_vertex_outline"]),
+                QColor(self.colors["viewport_vertex_dot"]))
+
+    def _wire_color_rgb(self, name):
+        color = QColor(self.colors[name])
+        return color.redF(), color.greenF(), color.blueF()
 
     def set_source_inspection(self, kind=None, offset=None):
         """Set a source-only overlay. Existing VBO/EBO and scene stay unchanged."""
@@ -841,8 +863,9 @@ class GLViewport(QOpenGLWidget):
             if position is not None:
                 painter = QPainter(self)
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setPen(QPen(QColor(12, 20, 32), 2))
-                painter.setBrush(QBrush(QColor(255, 237, 65)))
+                outline, fill = self._vertex_marker_colors()
+                painter.setPen(QPen(outline, 2))
+                painter.setBrush(QBrush(fill))
                 painter.drawEllipse(QPointF(*position), 6.0, 6.0)
                 painter.end()
 
@@ -1256,7 +1279,7 @@ class GLViewport(QOpenGLWidget):
             glDisable(GL_DEPTH_TEST)
         else:
             glEnable(GL_DEPTH_TEST)
-        glClearColor(0.065,0.09,0.135,1.0)
+        glClearColor(*QColor(self.colors['viewport_background']).getRgbF())
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         if self._vao is None:
             return
@@ -1264,6 +1287,10 @@ class GLViewport(QOpenGLWidget):
         projection, view = self._projection_and_view()
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
+        glUniform3f(self._wire_color_uniform,
+                    *self._wire_color_rgb("viewport_wire"))
+        glUniform3f(self._selected_wire_color_uniform,
+                    *self._wire_color_rgb("viewport_selected_wire"))
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
         glUniform1i(self._texture_uniform, int(self.textures_enabled))
         glUniform1i(self._repeat_uniform, int(self.texture_repeat))
@@ -1361,8 +1388,9 @@ class GLViewport(QOpenGLWidget):
                 # The existing screen-space dot retains its own QPainter path.
                 painter = QPainter(self)
                 painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                painter.setPen(QPen(QColor(12, 20, 32), 2))
-                painter.setBrush(QBrush(QColor(255, 237, 65)))
+                outline, fill = self._vertex_marker_colors()
+                painter.setPen(QPen(outline, 2))
+                painter.setBrush(QBrush(fill))
                 painter.drawEllipse(QPointF(*position), 6.0, 6.0)
                 painter.end()
 
@@ -1645,7 +1673,9 @@ class Window(QMainWindow):
         self._source_save_target = None
         self._pending_vertex_pick = None
         self._pending_polygon_pick = None
+        self.appearance_colors = load_colors(QSettings("ICR2Tools", "GPUViewer"))
         self.viewer = GLViewport()
+        self.viewer.set_appearance_colors(self.appearance_colors)
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -1986,6 +2016,7 @@ class Window(QMainWindow):
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.editor_splitter.addWidget(self.viewport_panel)
         self.source_pane = SourcePane()
+        self.source_pane.set_appearance_colors(self.appearance_colors)
         self.editor_splitter.addWidget(self.source_pane)
         self.editor_splitter.setStretchFactor(0, 2)
         self.editor_splitter.setStretchFactor(1, 1)
@@ -2038,6 +2069,17 @@ class Window(QMainWindow):
         if path:
             # Opening after the window is visible avoids blocking Qt setup.
             QTimer.singleShot(0, lambda: self.load(path))
+
+    def _set_appearance_colors(self, colors):
+        """Apply a consistent source/viewport palette and persist it per user."""
+        self.appearance_colors = validated_colors(colors)
+        self.source_pane.set_appearance_colors(self.appearance_colors)
+        self.viewer.set_appearance_colors(self.appearance_colors)
+        save_colors(QSettings("ICR2Tools", "GPUViewer"), self.appearance_colors)
+
+    def customize_colors(self):
+        AppearanceDialog(
+            self.appearance_colors, self._set_appearance_colors, self).exec()
 
     def _init_load_error_dialog(self):
         """One nonmodal window for the latest model-load diagnostics."""

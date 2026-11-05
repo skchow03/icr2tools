@@ -88,7 +88,9 @@ class SourceEditorRenameUITests(unittest.TestCase):
         block = self.pane.editor.document().findBlockByNumber(5)
         self.pane.editor.setTextCursor(QTextCursor(block))
         self.assertEqual(self.pane.current_target(), ("polygon", "panel"))
-        for visible, expected in ((True, "#b5e3bb"), (False, "#f1ada1")):
+        for visible, expected in (
+                (True, self.pane.colors["source_visible_background"].lower()),
+                (False, self.pane.colors["source_hidden_background"].lower())):
             self.pane.set_polygon_visibility(visible)
             selections = self.pane.editor.extraSelections()
             self.assertEqual(len(selections), 2)

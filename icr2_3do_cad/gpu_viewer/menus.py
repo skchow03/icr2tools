@@ -191,6 +191,7 @@ def install_menus(window):
                        if 0 <= index < len(render_group.actions()) else None))
     _add_action(view, "&Display Settings…",
                 lambda: window.open_settings_dialog("display"))
+    _add_action(view, "Customize &Colors…", window.customize_colors)
     _add_action(view, "Advanced &Diagnostics…",
                 lambda: window.open_settings_dialog("advanced"))
     _add_action(view, "Load &Error Log…", window.open_load_error_log)

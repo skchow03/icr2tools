@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QAbstractListModel, QEvent, QModelIndex, Qt, QTimer, Signal
 from PySide6.QtGui import (
-    QColor, QFont, QKeySequence, QShortcut, QSyntaxHighlighter,
+    QColor, QFont, QKeySequence, QPalette, QShortcut, QSyntaxHighlighter,
     QTextCharFormat, QTextCursor,
 )
 from PySide6.QtWidgets import (
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QWidgetAction,
 )
 
+from gpu_viewer.appearance import DARK_COLORS, validated_colors
 from gpu_viewer.source_inspection import index_source_targets, target_offset
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.active_source import (
@@ -61,13 +62,31 @@ def find_error_line(source, error):
 class N3Highlighter(QSyntaxHighlighter):
     def __init__(self, doc):
         super().__init__(doc)
-        colors = dict(comment='#6da285', string='#dfb17f',
-                      keyword='#91b8f4', label='#e7d38e')
         self.formats = {}
-        for name, color in colors.items():
+        self.set_colors(DARK_COLORS)
+
+    def set_colors(self, colors):
+        tokens = {
+            "comment": colors["source_comment"],
+            "string": colors["source_string"],
+            "keyword": colors["source_keyword"],
+            "label": colors["source_label"],
+        }
+        self.formats = {}
+        for name, color in tokens.items():
             fmt = QTextCharFormat()
             fmt.setForeground(QColor(color))
             self.formats[name] = fmt
+        # Like highlightBlock itself, limit recoloring to the first 1,500
+        # blocks. A .3D file can contain millions of declarations; calling
+        # rehighlight() on the entire QTextDocument on each color change
+        # would make the picker stall for large tracks.
+        block = self.document().firstBlock()
+        count = 0
+        while block.isValid() and count < 1500:
+            self.rehighlightBlock(block)
+            block = block.next()
+            count += 1
 
     def highlightBlock(self, text):
         # Highlighting millions of generated N3 declarations can otherwise
@@ -139,9 +158,9 @@ class FilteredStatementsModel(QAbstractListModel):
             return (f"{entry.first_line + 1:>6}  "
                     f"[{entry.category}]  {entry.preview}{status}")
         if active and role == Qt.ItemDataRole.BackgroundRole:
-            return QColor("#b5e3bb" if self.active_visibility else "#f1ada1")
+            return QColor(self.owner.colors["source_visible_background" if self.active_visibility else "source_hidden_background"])
         if active and role == Qt.ItemDataRole.ForegroundRole:
-            return QColor("#17221d")
+            return QColor(self.owner.colors["source_highlight_text"])
         if role == Qt.ItemDataRole.ToolTipRole:
             return (f"Original line {entry.first_line + 1}"
                     + (f"–{entry.last_line + 1}" if
@@ -221,6 +240,7 @@ class SourcePane(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.colors = dict(DARK_COLORS)
         self.revision = 0
         self.applied_revision = 0
         self.source_path = Path('new_model.3d')
@@ -414,6 +434,39 @@ class SourcePane(QWidget):
         for widget in (self.editor, self.editor.viewport(),
                        self.filtered_list, self.filtered_list.viewport()):
             widget.installEventFilter(self)
+        self.set_appearance_colors(self.colors)
+
+    def set_appearance_colors(self, colors):
+        """Apply colors without treating document formatting as a source edit."""
+        was_setting = self._setting
+        self._setting = True
+        try:
+            self.colors = validated_colors(colors)
+            base = QColor(self.colors["source_background"])
+            text = QColor(self.colors["source_text"])
+            selection = QColor(self.colors["source_selection_background"])
+            selection_text = QColor(self.colors["source_selection_text"])
+            for widget in (self.editor, self.filtered_list):
+                palette = widget.palette()
+                palette.setColor(QPalette.ColorRole.Base, base)
+                palette.setColor(QPalette.ColorRole.Text, text)
+                palette.setColor(QPalette.ColorRole.Highlight, selection)
+                palette.setColor(QPalette.ColorRole.HighlightedText, selection_text)
+                palette.setColor(QPalette.ColorRole.AlternateBase,
+                                 base.lighter(110) if base.lightness() < 128
+                                 else base.darker(105))
+                widget.setPalette(palette)
+            # Rehighlighting can emit QTextDocument change notifications;
+            # they must not trigger recompilation or invalidate source offsets.
+            self.highlighter.set_colors(self.colors)
+            self._refresh_extra_selections()
+            if self.filtered_model.rowCount():
+                self.filtered_model.dataChanged.emit(
+                    self.filtered_model.index(0),
+                    self.filtered_model.index(self.filtered_model.rowCount() - 1))
+            self.filtered_list.viewport().update()
+        finally:
+            self._setting = was_setting
 
     def eventFilter(self, watched, event):
         if (event.type() == QEvent.Type.KeyPress and
@@ -566,7 +619,8 @@ class SourcePane(QWidget):
         block = self.editor.document().findBlockByNumber(line-1)
         if block.isValid():
             selected = QTextEdit.ExtraSelection()
-            selected.format.setBackground(QColor('#5b2632'))
+            selected.format.setBackground(QColor(self.colors['source_error_background']))
+            selected.format.setForeground(QColor(self.colors['source_highlight_text']))
             selected.format.setProperty(
                 QTextCharFormat.Property.FullWidthSelection, True)
             selected.cursor = QTextCursor(block)
@@ -685,7 +739,8 @@ class SourcePane(QWidget):
             block = self.editor.document().findBlockByNumber(self._last_error_line - 1)
             if block.isValid():
                 item = QTextEdit.ExtraSelection()
-                item.format.setBackground(QColor('#5b2632'))
+                item.format.setBackground(QColor(self.colors['source_error_background']))
+                item.format.setForeground(QColor(self.colors['source_highlight_text']))
                 item.format.setProperty(
                     QTextCharFormat.Property.FullWidthSelection, True)
                 item.cursor = QTextCursor(block)
@@ -694,14 +749,14 @@ class SourcePane(QWidget):
             target = self._source_index.target_at_line(
                 self.editor.textCursor().blockNumber())
             if target is not None and target.kind == "polygon":
-                color = '#b5e3bb' if self._polygon_visible else '#f1ada1'
+                color = self.colors['source_visible_background' if self._polygon_visible else 'source_hidden_background']
                 for line in range(target.first_line, target.last_line + 1):
                     block = self.editor.document().findBlockByNumber(line)
                     if not block.isValid():
                         continue
                     item = QTextEdit.ExtraSelection()
                     item.format.setBackground(QColor(color))
-                    item.format.setForeground(QColor('#17221d'))
+                    item.format.setForeground(QColor(self.colors['source_highlight_text']))
                     item.format.setProperty(
                         QTextCharFormat.Property.FullWidthSelection, True)
                     item.cursor = QTextCursor(block)
