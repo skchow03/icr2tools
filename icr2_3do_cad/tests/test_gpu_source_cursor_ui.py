@@ -169,6 +169,137 @@ class GPUCursorUITests(unittest.TestCase):
                    Qt.KeyboardModifier.ShiftModifier))
             pick.assert_not_called()
 
+    def test_poly_mode_requires_activation_and_click_selects_polygon(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import Qt, QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+
+        self.pane.set_source(SOURCE, Path("example.3d"))
+        viewport = self.window.viewer
+        self.window.pick_mode_combo.setCurrentIndex(0)
+        self.assertEqual(viewport.pick_mode, "vertex")
+        left = Qt.MouseButton.LeftButton
+
+        def click(pos=(30, 30), shift=False):
+            modifiers = (Qt.KeyboardModifier.ShiftModifier if shift
+                         else Qt.KeyboardModifier.NoModifier)
+            viewport.mousePressEvent(QMouseEvent(
+                QEvent.Type.MouseButtonPress, QPointF(*pos), left, left,
+                modifiers))
+            viewport.mouseReleaseEvent(QMouseEvent(
+                QEvent.Type.MouseButtonRelease, QPointF(*pos), left,
+                Qt.MouseButton.NoButton, modifiers))
+
+        poly = self.model.n3_label_offsets["surface"]
+        vertex = self.model.n3_label_offsets["b"]
+        with (patch.object(viewport, "pick_nearest_vertex", return_value=vertex)
+              as pick_vertex,
+              patch.object(viewport, "pick_nearest_polygon", return_value=poly)
+              as pick_poly):
+            click()
+            pick_vertex.assert_called_once()
+            pick_poly.assert_not_called()
+            self.assertEqual(self.pane.current_target(), ("vertex", "b"))
+
+            self.window.pick_mode_combo.setCurrentIndex(1)
+            self.assertEqual(viewport.pick_mode, "polygon")
+            self.window.source_toggle.setChecked(False)
+            click()
+            pick_poly.assert_called_once()
+            self.assertTrue(self.window.source_toggle.isChecked())
+            self.assertEqual(self.pane.current_target(), ("polygon", "surface"))
+            self.assertEqual(self.pane.editor.textCursor().blockNumber(), 4)
+            self.assertEqual(self.pane.editor.textCursor().selectedText(),
+                             "surface")
+            self.assertEqual(viewport.inspection_kind, "polygon")
+            self.assertEqual(viewport.inspection_offset, poly)
+            self.assertFalse(self.pane.dirty)
+            pick_poly.reset_mock()
+
+            click(shift=True)
+            pick_poly.assert_not_called()
+            viewport.mousePressEvent(QMouseEvent(
+                QEvent.Type.MouseButtonPress, QPointF(10, 10),
+                left, left, Qt.KeyboardModifier.NoModifier))
+            viewport.mouseMoveEvent(QMouseEvent(
+                QEvent.Type.MouseMove, QPointF(50, 10),
+                Qt.MouseButton.NoButton, left,
+                Qt.KeyboardModifier.NoModifier))
+            viewport.mouseReleaseEvent(QMouseEvent(
+                QEvent.Type.MouseButtonRelease, QPointF(50, 10),
+                left, Qt.MouseButton.NoButton,
+                Qt.KeyboardModifier.NoModifier))
+            pick_poly.assert_not_called()
+        self.window.pick_mode_combo.setCurrentIndex(0)
+
+    def test_picked_poly_scrolls_to_filtered_row(self):
+        self.pane.set_source(SOURCE, Path("example.3d"))
+        target = self.model.n3_label_offsets["surface"]
+        self.pane._only_filter("POLY")
+        self.assertIs(self.pane.source_stack.currentWidget(),
+                      self.pane.filtered_page)
+        self.window._viewport_polygon_picked(target)
+        self.assertIs(self.pane.source_stack.currentWidget(),
+                      self.pane.filtered_page)
+        row = self.pane.filtered_list.currentIndex().row()
+        self.assertEqual(self.pane.filtered_model.entries[row].first_line, 4)
+        self.assertEqual(self.pane.current_target(), ("polygon", "surface"))
+
+        # A different active type filter cannot silently hide the picked row.
+        self.pane._only_filter("Vertices")
+        self.window._viewport_polygon_picked(target)
+        self.assertIs(self.pane.source_stack.currentWidget(),
+                      self.pane.filtered_page)
+        row = self.pane.filtered_list.currentIndex().row()
+        self.assertEqual(self.pane.filtered_model.entries[row].category, "POLY")
+        self.assertEqual(self.pane.filtered_model.entries[row].first_line, 4)
+        self.assertEqual(self.pane.get_source(), SOURCE)
+
+    def test_binary_generated_polygon_label_is_navigable(self):
+        import tempfile
+        from three_do import Model
+        from text_3d import export_compilable_text
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "compiled.3do"
+            path.write_bytes(self.model.raw)
+            binary = Model(path, associate_planes=False)
+            source = export_compilable_text(binary)
+            self.pane.set_source(source, path.with_suffix(".3d"))
+            self.window.viewer._model = binary
+            try:
+                off = next(iter(binary.polygons))
+                self.window._viewport_polygon_picked(off)
+                self.assertEqual(
+                    self.pane.current_target(), ("polygon", f"_{off}"))
+                self.assertEqual(self.window.viewer.inspection_offset, off)
+            finally:
+                self.window.viewer._model = self.model
+                self.pane.set_source(SOURCE, Path("example.3d"))
+
+    def test_polygon_pick_waits_for_async_source_and_rejects_stale_model(self):
+        from unittest.mock import patch
+        from types import SimpleNamespace
+        self.pane.reset()
+        self.window.source_toggle.setChecked(True)
+        poly = self.model.n3_label_offsets["surface"]
+        with patch.object(self.window, "_ensure_source_loaded") as ensure:
+            self.window._viewport_polygon_picked(poly)
+            ensure.assert_called()
+        self.assertEqual(self.window._pending_polygon_pick, (self.model, poly))
+        self.window._source_exported(self.model, SOURCE, Path("example.3d"))
+        self.assertEqual(self.pane.current_target(), ("polygon", "surface"))
+        self.assertIsNone(self.window._pending_polygon_pick)
+        self.pane.reset()
+        with patch.object(self.window, "_ensure_source_loaded"):
+            self.window._viewport_polygon_picked(poly)
+        self.assertIsNotNone(self.window._pending_polygon_pick)
+        self.window.viewer._model = SimpleNamespace(polygons={})
+        self.window._source_exported(self.model, SOURCE, Path("example.3d"))
+        self.assertFalse(self.pane.ready)
+        self.window.viewer._model = self.model
+        self.window._pending_polygon_pick = None
+        self.pane.set_source(SOURCE, Path("example.3d"))
+
     def test_binary_generated_vertex_pointer_is_navigable(self):
         import tempfile
         from three_do import Model

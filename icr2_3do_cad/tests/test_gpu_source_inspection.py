@@ -6,7 +6,7 @@ import numpy as np
 
 from gpu_viewer.source_inspection import (
     index_source_targets, target_offset, polygon_mesh_range,
-    vertex_screen_position, polygon_inspection_notice, VertexPicker,
+    vertex_screen_position, polygon_inspection_notice, VertexPicker, PolygonPicker,
 )
 from gpu_viewer.workspaces import max_switch_distance
 from gpu_viewer.scene import build_scene
@@ -191,6 +191,47 @@ root: LIST {lod};
         self.assertNotIn(unused, model.polygons)
         self.assertIsNone(polygon_inspection_notice(
             model, unused, set(), 1200, eye, "painter"))
+
+
+    def test_polygon_ray_picker_uses_rendered_triangles_and_front_depth(self):
+        # Two root POLYs overlap in screen space, plus an external child.
+        # Their coordinates match the normalized XYZ held in the GPU VBO.
+        mesh_vertices = np.zeros((9, 13), dtype=np.float32)
+        face_xy = np.asarray([(-0.6, -0.6), (0.6, -0.6), (0., 0.6)])
+        for first, z in ((0, -0.3), (3, 0.3), (6, -0.7)):
+            mesh_vertices[first:first+3, :2] = face_xy
+            mesh_vertices[first:first+3, 2] = z
+        mesh = SimpleNamespace(
+            vertices=mesh_vertices, polygon_ranges={
+                11: (0, 3), 12: (3, 3), 13: (6, 3)})
+        scene = SimpleNamespace(polygon_lookup={
+            (0, 100): 11, (0, 200): 12, (1, 300): 13})
+        picker = PolygonPicker.from_scene(scene, mesh)
+        self.assertEqual(picker.nearest(np.eye(4), 400, 300, 800, 600), 100)
+        self.assertEqual(picker.nearest(
+            np.eye(4), 400, 300, 800, 600, eligible_offsets={200}), 200)
+        self.assertIsNone(picker.nearest(
+            np.eye(4), 400, 300, 800, 600, eligible_offsets={300}))
+        self.assertIsNone(picker.nearest(np.eye(4), 10, 10, 800, 600))
+        self.assertIsNone(picker.nearest(np.eye(4), 400, 300, 0, 600))
+        self.assertIsNone(picker.nearest(
+            np.eye(4), 400, 300, 800, 600, eligible_offsets=set()))
+        self.assertEqual(len(picker.triangle_starts), 2)
+
+    def test_polygon_ray_picker_rejects_clipped_and_degenerate_faces(self):
+        vertices = np.zeros((6, 13), dtype=np.float32)
+        vertices[:3, :3] = [
+            (-.4, -.4, 2), (.4, -.4, 2), (0, .4, 2)]
+        vertices[3:, :3] = [(0, 0, 0)] * 3
+        mesh = SimpleNamespace(vertices=vertices, polygon_ranges={
+            1: (0, 3), 2: (3, 3)})
+        scene = SimpleNamespace(polygon_lookup={(0, 100): 1, (0, 200): 2})
+        picker = PolygonPicker.from_scene(scene, mesh)
+        self.assertIsNone(picker.nearest(np.eye(4), 400, 300, 800, 600))
+        self.assertIsNone(picker.nearest(
+            np.zeros((4, 4)), 400, 300, 800, 600))
+        self.assertIsNone(PolygonPicker.from_scene(
+            None, mesh).nearest(np.eye(4), 400, 300, 800, 600))
 
 
 if __name__ == "__main__":

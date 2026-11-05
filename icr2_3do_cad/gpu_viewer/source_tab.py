@@ -590,17 +590,22 @@ class SourcePane(QWidget):
             self.editor.setFocus()
 
     def goto_model_vertex(self, model, offset):
-        """Jump to a compiled root vertex's authored or generated N3 label.
+        """Jump to a compiled root vertex's authored or generated N3 label."""
+        return self._goto_model_declaration(model, offset, "vertex")
 
-        The source pane may currently show filtered statements; switch to
-        the complete document so the selected vertex can always be found.
-        This moves only the cursor, never changes source text or undo history.
-        """
+    def goto_model_polygon(self, model, offset):
+        """Reveal a picked POLY, scrolling its filtered row when available."""
+        return self._goto_model_declaration(model, offset, "polygon")
+
+    def _goto_model_declaration(self, model, offset, kind):
+        """Navigate without modifying N3, including authored pointer names."""
+        records = getattr(model, "vertices" if kind == "vertex" else "polygons",
+                          {}) if model is not None else {}
         if (not self._ready or self.pending or self._last_error_line is not None
-                or model is None or offset not in model.vertices):
+                or offset not in records):
             return False
         # Compiled authored N3 uses arbitrary labels. Generated binary N3
-        # uses "_<body offset>" without storing the original name mapping.
+        # uses "_<body offset>" without a name mapping.
         candidate_labels = {f"_{offset}"}
         candidate_labels.update(
             name for name, body_offset in
@@ -608,16 +613,43 @@ class SourcePane(QWidget):
             if body_offset == offset)
         target = next((
             entry for entry in self._source_index.targets
-            if entry.kind == "vertex" and entry.label in candidate_labels
-            and target_offset(model, "vertex", entry.label) == offset), None)
+            if entry.kind == kind and entry.label in candidate_labels
+            and target_offset(model, kind, entry.label) == offset), None)
         if target is None:
             return False
         block = self.editor.document().findBlockByNumber(target.first_line)
         if not block.isValid():
             return False
-        self.source_stack.setCurrentWidget(self.editor)
+
+        filtered_row = None
+        if kind == "polygon" and self.source_stack.currentWidget() is self.filtered_page:
+            # Keep the filtered .3D Viewer when its row is available. If a
+            # search/type/LOD filter hides the picked POLY, reveal POLYs rather
+            # than silently navigating to an invisible row.
+            def row_for_target():
+                return next((
+                    row for row, entry in enumerate(self.filtered_model.entries)
+                    if entry.first_line <= target.first_line <= entry.last_line),
+                    None)
+            filtered_row = row_for_target()
+            if filtered_row is None:
+                self.filter_search.clear()
+                self._set_selected_filters({"POLY"}, clear_distance=True)
+                filtered_row = row_for_target()
+        else:
+            # Vertex clicks retain the existing behavior of showing the full
+            # source document, even when a statement filter was active.
+            self.source_stack.setCurrentWidget(self.editor)
+
+        if filtered_row is not None:
+            index = self.filtered_model.index(filtered_row)
+            self.filtered_list.setCurrentIndex(index)
+            self.filtered_list.scrollTo(
+                index, QAbstractItemView.ScrollHint.PositionAtCenter)
+        elif self.source_stack.currentWidget() is self.filtered_page:
+            self.source_stack.setCurrentWidget(self.editor)
+
         cursor = QTextCursor(block)
-        # Select only the declaration label, for a clear visual cue.
         label_start = block.text().find(target.label)
         if label_start >= 0:
             cursor.setPosition(block.position() + label_start)
@@ -626,7 +658,10 @@ class SourcePane(QWidget):
                 QTextCursor.MoveMode.KeepAnchor)
         self.editor.setTextCursor(cursor)
         self.editor.centerCursor()
-        self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+        if filtered_row is not None:
+            self.filtered_list.setFocus(Qt.FocusReason.OtherFocusReason)
+        else:
+            self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
         self._emit_cursor_target()
         return True
 

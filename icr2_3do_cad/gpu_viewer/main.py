@@ -83,7 +83,7 @@ from gpu_viewer.textures import (build_atlas, load_palette,
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
-    vertex_screen_position, VertexPicker,
+    vertex_screen_position, VertexPicker, PolygonPicker,
 )
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
@@ -457,6 +457,7 @@ class GLViewport(QOpenGLWidget):
     trackDriveModeChanged = Signal(bool)
     trackDrivePositionChanged = Signal(object)
     vertexPicked = Signal(int)  # root-model vertex body offset from a click
+    polygonPicked = Signal(int)  # root-model POLY body offset from a click
 
     def __init__(self):
         super().__init__()
@@ -501,6 +502,8 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._vertex_picker = None
+        self._polygon_picker = None
+        self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
         self._scene = None
         self.inspection_kind = None
@@ -664,6 +667,7 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
+        self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
         self._sprite_events = ()
         self._surface_index_count = 0
@@ -1182,6 +1186,32 @@ class GLViewport(QOpenGLWidget):
                 self.half_height, aspect, near, far)
         return projection, view
 
+    def set_pick_mode(self, mode):
+        if mode not in ('vertex', 'polygon'):
+            raise ValueError(f"Unknown viewport pick mode: {mode}")
+        self.pick_mode = mode
+
+    def pick_nearest_polygon(self, x, y):
+        """Pick a rendered root POLY, honoring the current BSP/RES selection.
+
+        Geometry from DYNAMIC/external child files is not selectable in the
+        root .3D Source pane. Picking reads the existing GPU mesh on the CPU
+        without touching GL or changing the drawn scene.
+        """
+        if self._polygon_picker is None or self._mesh is None:
+            return None
+        all_visible = (self.render_mode == 'all' and
+                       not self._track_lod_active())
+        if self._visibility_dirty and not all_visible:
+            return None
+        selected = None if all_visible else self._visible_set
+        if selected is not None and not selected:
+            return None
+        projection, view = self._projection_and_view()
+        return self._polygon_picker.nearest(
+            projection @ view, x, y, self.width(), self.height(),
+            eligible_offsets=selected)
+
     def pick_nearest_vertex(self, x, y):
         """Pick the closest on-screen *root* vertex near a left-click.
 
@@ -1543,10 +1573,16 @@ class GLViewport(QOpenGLWidget):
                 and not self._pick_dragged
                 and not (pressed[2] | event.modifiers())
                 & Qt.KeyboardModifier.ShiftModifier):
-            offset = self.pick_nearest_vertex(
-                event.position().x(), event.position().y())
-            if offset is not None:
-                self.vertexPicked.emit(offset)
+            if self.pick_mode == 'polygon':
+                offset = self.pick_nearest_polygon(
+                    event.position().x(), event.position().y())
+                if offset is not None:
+                    self.polygonPicked.emit(offset)
+            else:
+                offset = self.pick_nearest_vertex(
+                    event.position().x(), event.position().y())
+                if offset is not None:
+                    self.vertexPicked.emit(offset)
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -1608,6 +1644,7 @@ class Window(QMainWindow):
         self._last_valid_source_text = None
         self._source_save_target = None
         self._pending_vertex_pick = None
+        self._pending_polygon_pick = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -1707,6 +1744,17 @@ class Window(QMainWindow):
             self._projection_changed)
         self.perspective_toggle.setChecked(True)
         distance_row.addWidget(self.projection_combo)
+        distance_row.addWidget(QLabel("Pick"))
+        self.pick_mode_combo = QComboBox()
+        self.pick_mode_combo.setObjectName("viewportPickMode")
+        self.pick_mode_combo.addItem("Vertices", "vertex")
+        self.pick_mode_combo.addItem("Polys", "polygon")
+        self.pick_mode_combo.setToolTip(
+            "Viewport left-click selects vertices by default. Select Polys "
+            "to click polygon faces and jump to their .3D source row.")
+        self.pick_mode_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
+        distance_row.addWidget(self.pick_mode_combo)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
@@ -1980,6 +2028,7 @@ class Window(QMainWindow):
         self.source_pane.exportRequested.connect(self._export_compiled_source)
         self.source_pane.cursorTargetChanged.connect(self._source_target_changed)
         self.viewer.vertexPicked.connect(self._viewport_vertex_picked)
+        self.viewer.polygonPicked.connect(self._viewport_polygon_picked)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -2231,6 +2280,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage(
                 "Apply or fix the edited .3D Source before selecting vertices.")
             return
+        self._pending_polygon_pick = None
         self._pending_vertex_pick = (model, offset)
         if not self.source_toggle.isChecked():
             self.source_toggle.setChecked(True)
@@ -2253,6 +2303,40 @@ class Window(QMainWindow):
         else:
             self.statusBar().showMessage(
                 f"Vertex @{offset} has no matching declaration in .3D Source")
+
+    def _viewport_polygon_picked(self, offset):
+        """Reveal the clicked POLY in the source editor or filtered row list."""
+        model = self.viewer._model
+        if model is None or offset not in model.polygons:
+            return
+        if self.source_pane.ready and (
+                self.source_pane.pending or self._source_invalid):
+            self.statusBar().showMessage(
+                "Apply or fix the edited .3D Source before selecting polygons.")
+            return
+        self._pending_vertex_pick = None
+        self._pending_polygon_pick = (model, offset)
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.ready:
+            self._finish_pending_polygon_pick()
+        else:
+            self._ensure_source_loaded()
+
+    def _finish_pending_polygon_pick(self):
+        pending = self._pending_polygon_pick
+        if pending is None or not self.source_pane.ready:
+            return
+        self._pending_polygon_pick = None
+        model, offset = pending
+        if model is not self.viewer._model:
+            return
+        if self.source_pane.goto_model_polygon(model, offset):
+            self.statusBar().showMessage(
+                f"Selected POLY @{offset} in .3D Source")
+        else:
+            self.statusBar().showMessage(
+                f"POLY @{offset} has no matching declaration in .3D Source")
 
     def _source_target_changed(self, target):
         if (not self.source_toggle.isChecked() or
@@ -2318,6 +2402,7 @@ class Window(QMainWindow):
                     'Valid changes update the GPU preview without saving.'))
         self._source_invalid = False
         self._finish_pending_vertex_pick()
+        self._finish_pending_polygon_pick()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -2903,6 +2988,7 @@ class Window(QMainWindow):
             self._source_save_target = None
             self._source_queued = None
             self._pending_vertex_pick = None
+            self._pending_polygon_pick = None
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
                 self.model_path.resolve() != next_path.resolve()):
