@@ -83,6 +83,101 @@ class SourceEditorRenameUITests(unittest.TestCase):
         self.assertIn("right: [<100,0,0>]", text)
         self.assertIn("{front, right, top}", text)
 
+    def test_f12_on_any_pointer_jumps_to_original_definition(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+
+        editor = self.pane.editor
+        original = editor.toPlainText()
+        for source_line, token, target_line in (
+                (6, "right", 3),   # POLY continuation
+                (7, "panel", 5),   # FACE
+                (8, "face", 7),    # LIST
+                (8, "panel", 5)):
+            with self.subTest(source_line=source_line, token=token):
+                block = editor.document().findBlockByNumber(source_line)
+                position = block.position() + block.text().index(token) + 2
+                cursor = QTextCursor(block)
+                cursor.setPosition(position)
+                editor.setTextCursor(cursor)
+                QTest.keyClick(editor, Qt.Key.Key_F12)
+                self.assertEqual(editor.textCursor().blockNumber(), target_line)
+                self.assertEqual(editor.textCursor().selectedText(), token)
+        self.assertEqual(editor.toPlainText(), original)
+        self.assertFalse(self.pane.dirty)
+
+    def test_ctrl_click_reference_and_comment_does_not_jump(self):
+        from PySide6.QtCore import Qt
+        from PySide6.QtGui import QTextCursor
+        from PySide6.QtTest import QTest
+
+        pane = self.pane
+        pane.show()
+        self.app.processEvents()
+        editor = pane.editor
+        block = editor.document().findBlockByNumber(6)
+        target_column = block.text().index("right") + 2
+        cursor = QTextCursor(block)
+        cursor.setPosition(block.position() + target_column)
+        editor.setTextCursor(cursor)
+        editor.ensureCursorVisible()
+        self.app.processEvents()
+        click = editor.cursorRect(cursor).center()
+        QTest.mouseClick(editor.viewport(), Qt.MouseButton.LeftButton,
+                         Qt.KeyboardModifier.ControlModifier, click)
+        self.assertEqual(editor.textCursor().blockNumber(), 3)
+        self.assertEqual(editor.textCursor().selectedText(), "right")
+        self.assertFalse(pane.dirty)
+        pane.hide()
+
+    def test_current_line_highlight_follows_cursor_without_target_changes(self):
+        from PySide6.QtGui import QTextCursor, QTextCharFormat
+        from PySide6.QtCore import Qt
+
+        editor = self.pane.editor
+        for number in (2, 3, 5, 6, 7, 8, 1, 9):
+            block = editor.document().findBlockByNumber(number)
+            editor.setTextCursor(QTextCursor(block))
+            selections = editor.extraSelections()
+            self.assertTrue(selections, number)
+            current = selections[-1]
+            self.assertEqual(current.cursor.blockNumber(), number)
+            self.assertTrue(current.format.property(
+                QTextCharFormat.Property.FullWidthSelection))
+            self.assertLess(current.format.background().color().alpha(), 255)
+        self.pane._only_filter("Vertices")
+        index = self.pane.filtered_model.index(1)
+        self.pane.filtered_list.setCurrentIndex(index)
+        self.assertEqual(
+            self.pane.filtered_model.data(
+                index, Qt.ItemDataRole.BackgroundRole).name(),
+            "#34516b")
+        self.assertEqual(editor.toPlainText(), SOURCE)
+
+    def test_navigation_works_with_uncompiled_edits_and_filtered_source(self):
+        from PySide6.QtGui import QTextCursor
+
+        editor = self.pane.editor
+        editor.moveCursor(QTextCursor.MoveOperation.End)
+        editor.insertPlainText("% unsaved\n")
+        self.assertTrue(self.pane.pending)
+        block = editor.document().findBlockByNumber(8)
+        cursor = QTextCursor(block)
+        cursor.setPosition(block.position() + block.text().index("face") + 2)
+        editor.setTextCursor(cursor)
+        self.assertTrue(self.pane.goto_pointer_declaration())
+        self.assertEqual(editor.textCursor().selectedText(), "face")
+        self.assertEqual(editor.textCursor().blockNumber(), 7)
+        self.pane._debounce.stop()
+        self.pane._only_filter("POLY")
+        self.assertIs(
+            self.pane.source_stack.currentWidget(), self.pane.filtered_page)
+        # F12 from a filtered row switches to full source before trying to
+        # navigate; it never modifies an inline editing row.
+        self.pane.goto_pointer_declaration()
+        self.assertIs(self.pane.source_stack.currentWidget(), editor)
+
     def test_visibility_colors_multiline_poly_and_clears(self):
         from PySide6.QtGui import QTextCursor
         block = self.pane.editor.document().findBlockByNumber(5)
