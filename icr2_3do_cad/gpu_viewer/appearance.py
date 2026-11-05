@@ -26,6 +26,8 @@ COLOR_GROUPS = (
         ("viewport_background", "Background (clear color)"),
         ("viewport_wire", "Wireframe lines"),
         ("viewport_selected_wire", "Selected POLY outline"),
+        ("viewport_poly_tint_dark", "Selected POLY: dark surfaces"),
+        ("viewport_poly_tint_light", "Selected POLY: bright surfaces"),
         ("viewport_vertex_dot", "Selected vertex dot"),
         ("viewport_vertex_outline", "Vertex dot border"),
     )),
@@ -47,6 +49,8 @@ DARK_COLORS = {
     "viewport_background": "#111724",
     "viewport_wire": "#D6E3F2",
     "viewport_selected_wire": "#FFC24D",
+    "viewport_poly_tint_dark": "#FFC24D",
+    "viewport_poly_tint_light": "#274BAF",
     "viewport_vertex_dot": "#FFED41",
     "viewport_vertex_outline": "#0C1420",
 }
@@ -67,6 +71,8 @@ LIGHT_COLORS = {
     "viewport_background": "#EEF3F9",
     "viewport_wire": "#263D57",
     "viewport_selected_wire": "#A15E00",
+    "viewport_poly_tint_dark": "#FFC24D",
+    "viewport_poly_tint_light": "#274BAF",
     "viewport_vertex_dot": "#FFDC37",
     "viewport_vertex_outline": "#1A2C3C",
 }
