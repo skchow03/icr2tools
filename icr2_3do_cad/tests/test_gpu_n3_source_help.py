@@ -51,6 +51,22 @@ class N3SourceHelpTests(unittest.TestCase):
                 self.assertIn("Syntax:", help_item.tooltip())
                 self.assertIn(help_item.description, help_item.compact())
 
+    def test_html_tooltips_are_constrained_and_escape_n3_syntax(self):
+        material = help_for_statement(
+            'm: MATERIAL MIP="building", GROUP=4, child;')
+        formatted = material.tooltip_html(note="Original line 27 | MATERIAL")
+        self.assertIn('<table width="370"', formatted)
+        self.assertIn('<td width="370">', formatted)
+        self.assertIn('Original line 27', formatted)
+        self.assertIn('&quot;texture&quot;', formatted)
+        self.assertIn('wrap', formatted.lower())
+        polygon = help_for_statement("p: POLY <46> {a,b,c};")
+        escaped = polygon.tooltip_html()
+        self.assertIn('&lt;color&gt;', escaped)
+        self.assertNotIn('<color>', escaped)
+        self.assertIn('1', polygon.tooltip())
+        self.assertNotIn('Original line', polygon.tooltip_html())
+
     def test_multiline_continuations_and_incomplete_commands(self):
         src = [
             "3D VERSION 3.0;",
