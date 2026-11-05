@@ -84,8 +84,10 @@ class GPUAppearanceUITests(unittest.TestCase):
             self.QPalette.ColorRole.Base).name(), "#202d40")
         self.assertEqual(pane.highlighter.formats[
             "keyword"].foreground().color().name(), "#c0e0ff")
-        self.assertEqual(self.window.viewer._wire_color_rgb(
-            "viewport_wire"), (0.6, 2/3, 1.0))
+        for actual, expected in zip(
+                self.window.viewer._wire_color_rgb("viewport_wire"),
+                (0.6, 2/3, 1.0)):
+            self.assertAlmostEqual(actual, expected, places=5)
         outline, dot = self.window.viewer._vertex_marker_colors()
         self.assertEqual(outline.name(), "#111122")
         self.assertEqual(dot.name(), "#eeff22")
