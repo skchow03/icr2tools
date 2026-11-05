@@ -30,6 +30,9 @@ COLOR_GROUPS = (
         ("viewport_poly_tint_light", "Selected POLY: bright surfaces"),
         ("viewport_vertex_dot", "Selected vertex dot"),
         ("viewport_vertex_outline", "Vertex dot border"),
+        ("viewport_bsp_vertex", "BSP plane vertex markers"),
+        ("viewport_bsp_arrow", "BSP plane winding arrows"),
+        ("viewport_bsp_outline", "BSP plane marker border"),
     )),
 )
 
@@ -53,6 +56,9 @@ DARK_COLORS = {
     "viewport_poly_tint_light": "#274BAF",
     "viewport_vertex_dot": "#FFED41",
     "viewport_vertex_outline": "#0C1420",
+    "viewport_bsp_vertex": "#00D5EA",
+    "viewport_bsp_arrow": "#17DAF4",
+    "viewport_bsp_outline": "#041A28",
 }
 
 LIGHT_COLORS = {
@@ -75,6 +81,9 @@ LIGHT_COLORS = {
     "viewport_poly_tint_light": "#274BAF",
     "viewport_vertex_dot": "#FFDC37",
     "viewport_vertex_outline": "#1A2C3C",
+    "viewport_bsp_vertex": "#007EAC",
+    "viewport_bsp_arrow": "#006D9B",
+    "viewport_bsp_outline": "#FFFFFF",
 }
 
 _HEX = re.compile(r"#[0-9a-fA-F]{6}\Z")
