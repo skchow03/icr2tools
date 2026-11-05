@@ -145,7 +145,7 @@ menu bar. There is no permanent right sidebar.
 - **File:** Open Model (**Ctrl+O**), Open Recent, Reload Model from Disk,
   **Save .3D Source** (**Ctrl+S**), **Save .3D Source As…**
   (**Ctrl+Shift+S**), Export Compiled 3DO (**Ctrl+E**), and Exit (**Ctrl+Q**).
-- **Edit:** Undo/Redo, Cut/Copy/Paste, Select All, Find in .3D Source
+- **Edit:** Undo/Redo, Cut/Copy/Paste, Select All, **Scale Model…** (uniform multiply/divide), Find in .3D Source
   (**Ctrl+F**) / Find Next (**F3**), Rename Selected Pointer, and
   Apply .3D Source Now. Standard text commands act on the focused editor
   (or the N3 source editor when no other editable text control has focus);
@@ -615,6 +615,38 @@ three point operands and have no winding overlay.
   vertex declarations. A marker also disappears if its 3D position is
   outside the camera frustum. Viewport clicking is available separately
   through the **Pick** selector.
+
+### Scale all model vertices
+
+Select **Edit → Scale Model…** when a valid editable .3D source is loaded.
+Choose **Multiply coordinates by** or **Divide coordinates by**, enter a
+positive number (for example, multiply by 2 for double size or divide by
+4 for one-quarter size), then click **Scale model**. **Cancel** leaves the
+source untouched. The scale pivot is the model origin **(0,0,0)**, with one
+uniform factor applied to X, Y and Z (not separate axis stretch).
+
+This transforms all N3 vertex XYZ coordinates, including named vertices and
+inline `[<X,Y,Z>]` points in FACE/BSP planes. To keep the complete scene
+consistent, it also scales DYNAMIC placement XYZ, SRB/PMP2 sprite sizes,
+SWITCH DISTANCE thresholds and the signed 64-bit offsets of raw
+five-coefficient FACE/BSP planes. **UV texture coordinates, palette colors,
+MATERIAL assignments, rotation angles, object labels, comments and
+referenced external 3DO geometry remain unchanged**. External objects are
+*repositioned*, not resized; scale their source assets separately if needed.
+
+Arithmetic uses decimal factors (so **Divide by 6000** is not approximated
+through a float input). In integer-unit N3 files, final coordinates round
+to the nearest integer Papyrus unit; source with fractional units retains
+its original coordinate-scale interpretation even if the scaled numbers
+become integers. Out-of-range coordinates, plane offsets and unsafe zero
+LOD/sprite sizes are rejected **before the editor changes**.
+
+The entire transform is **one Ctrl+Z Undo step** and is logged in the
+Automatic source changes panel. It triggers the usual asynchronous
+validation/GPU preview but does **not** save either the .3D or .3DO file.
+Finish pending source edits or fix compilation errors before scaling. The
+original source remains available through Undo until subsequent editing
+or loading clears the editor history.
 
 ### F2: rename just a pointer name
 
