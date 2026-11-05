@@ -135,7 +135,8 @@ class N3ContextHelpQtTests(unittest.TestCase):
         self.assertIn('<table width="370"', QToolTip.text())
         tip_widgets = [w for w in QApplication.topLevelWidgets()
                        if w.isVisible() and
-                       w.windowFlags() & Qt.WindowType.ToolTip]
+                       (w.windowFlags() & Qt.WindowType.WindowType_Mask) ==
+                       Qt.WindowType.ToolTip]
         self.assertTrue(tip_widgets, "Expected visible Qt tooltip popup")
         popup = tip_widgets[-1]
         left = viewport.mapToGlobal(row.topLeft()).x()
@@ -170,7 +171,8 @@ class N3ContextHelpQtTests(unittest.TestCase):
         self.assertIn('<table width="370"', QToolTip.text())
         tip_widgets = [w for w in QApplication.topLevelWidgets()
                        if w.isVisible() and
-                       w.windowFlags() & Qt.WindowType.ToolTip]
+                       (w.windowFlags() & Qt.WindowType.WindowType_Mask) ==
+                       Qt.WindowType.ToolTip]
         self.assertTrue(tip_widgets)
         popup = tip_widgets[-1]
         self.assertLessEqual(popup.width(), 455)
