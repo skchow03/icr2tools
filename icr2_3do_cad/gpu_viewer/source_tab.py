@@ -18,11 +18,12 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListView, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-    QStackedWidget, QStyledItemDelegate, QToolButton, QTextEdit,
+    QStackedWidget, QStyledItemDelegate, QToolButton, QToolTip, QTextEdit,
     QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from gpu_viewer.appearance import DARK_COLORS, validated_colors
+from gpu_viewer.source_help import help_for_lines, help_for_statement
 from gpu_viewer.source_change_log import format_rename_event
 from gpu_viewer.source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
@@ -164,12 +165,15 @@ class FilteredStatementsModel(QAbstractListModel):
         if active and role == Qt.ItemDataRole.ForegroundRole:
             return QColor(self.owner.colors["source_highlight_text"])
         if role == Qt.ItemDataRole.ToolTipRole:
-            return (f"Original line {entry.first_line + 1}"
-                    + (f"–{entry.last_line + 1}" if
-                       entry.last_line != entry.first_line else "")
-                    + f" | {entry.category}\n"
-                    "Double-click or type to edit this statement here. "
-                    "Ctrl+Enter applies; Esc cancels.")
+            details = (f"Original line {entry.first_line + 1}"
+                       + (f"–{entry.last_line + 1}" if
+                          entry.last_line != entry.first_line else "")
+                       + f" | {entry.category}")
+            syntax = help_for_statement(self.owner._filtered_statement_text(entry))
+            if syntax is not None:
+                details += "\n\n" + syntax.tooltip()
+            return details + ("\n\nDouble-click to edit this statement; "
+                              "Ctrl+Enter applies, Esc cancels.")
         if role == Qt.ItemDataRole.UserRole:
             return entry.first_line
         if role == Qt.ItemDataRole.EditRole:
@@ -200,7 +204,8 @@ class InlineStatementDelegate(QStyledItemDelegate):
         editor.setTabChangesFocus(True)
         editor.setToolTip(
             "Edit the statement directly. Ctrl+Enter applies; Esc cancels. "
-            "Hidden statements remain untouched.")
+            "Hover or press Ctrl+Shift+Space for N3 syntax help.")
+        index.model().owner._register_inline_help_editor(editor)
         return editor
 
     def setEditorData(self, editor, index):
@@ -270,6 +275,7 @@ class SourcePane(QWidget):
         self._distance_labels_key = None
         self._distance_labels = set()
         self._active_edit_line = None
+        self._inline_help_editor = None
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -374,8 +380,8 @@ class SourcePane(QWidget):
         self.editor.setTabStopDistance(72)
         self.editor.setUndoRedoEnabled(True)
         self.editor.setToolTip(
-            "F2: rename the pointer on this line; only its name and "
-            "(optionally) references change.")
+            "Hover over N3 commands for syntax and purpose. "
+            "Ctrl+Shift+Space: show details; F2: rename pointer.")
         self.highlighter = N3Highlighter(self.editor.document())
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
@@ -413,6 +419,28 @@ class SourcePane(QWidget):
         self.source_stack.addWidget(self.editor)
         self.source_stack.addWidget(self.filtered_page)
         layout.addWidget(self.source_stack, 1)
+
+        # Short live signature hint; expanded guidance is available on hover
+        # or from Ctrl+Shift+Space. The label cannot change N3 source.
+        syntax_row = QHBoxLayout()
+        self.syntax_help = QLabel(
+            "N3 help — place the cursor on a command, or hover for syntax.")
+        self.syntax_help.setObjectName("n3SyntaxHelp")
+        self.syntax_help.setTextFormat(Qt.TextFormat.PlainText)
+        self.syntax_help.setWordWrap(True)
+        self.syntax_help.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.syntax_help.setMaximumHeight(
+            self.syntax_help.fontMetrics().lineSpacing() * 4 + 8)
+        syntax_row.addWidget(self.syntax_help, 1)
+        syntax_button = QToolButton()
+        syntax_button.setObjectName("n3SyntaxHelpButton")
+        syntax_button.setText("?")
+        syntax_button.setToolTip(
+            "Show full N3 statement help at the cursor (Ctrl+Shift+Space)")
+        syntax_button.clicked.connect(self.show_syntax_help)
+        syntax_row.addWidget(syntax_button)
+        layout.addLayout(syntax_row)
 
         # Read-only audit trail for programmatic edits. Four visible text
         # rows, scrollable independently of the editable N3 document.
@@ -457,6 +485,11 @@ class SourcePane(QWidget):
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.rename_pointer_shortcut.activated.connect(
             self.rename_selected_pointer)
+        self.syntax_help_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+Space"), self)
+        self.syntax_help_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.syntax_help_shortcut.activated.connect(self.show_syntax_help)
         # QAbstractItemView normally interprets F2 as "edit the entire row".
         # Intercept its keypress before the default view handler so this
         # shortcut always edits just the pointer label in either view.
@@ -497,6 +530,79 @@ class SourcePane(QWidget):
         finally:
             self._setting = was_setting
 
+    def _register_inline_help_editor(self, editor):
+        """Help for active filtered-row edits, before Ctrl+Enter commits them."""
+        self._inline_help_editor = editor
+        editor.destroyed.connect(
+            lambda *_: setattr(self, "_inline_help_editor", None))
+        editor.textChanged.connect(lambda e=editor: self._update_syntax_help(e))
+        editor.cursorPositionChanged.connect(
+            lambda e=editor: self._update_syntax_help(e))
+        editor.viewport().installEventFilter(self)
+        editor.installEventFilter(self)
+        self._update_syntax_help(editor)
+
+    def _help_at_document_line(self, line):
+        """Inspect at most 48 nearby QTextBlocks, even for huge .3D tracks."""
+        block = self.editor.document().findBlockByNumber(line)
+        rows = []
+        for _ in range(48):
+            if not block.isValid():
+                break
+            rows.append(block.text())
+            block = block.previous()
+        if not rows:
+            return None
+        rows.reverse()
+        return help_for_lines(rows, len(rows) - 1)
+
+    def _active_syntax_help(self, inline_editor=None):
+        if not self._ready:
+            return None
+        if inline_editor is not None:
+            return help_for_lines(
+                inline_editor.toPlainText().splitlines(),
+                inline_editor.textCursor().blockNumber())
+        if self.source_stack.currentWidget() is self.filtered_page:
+            index = self.filtered_list.currentIndex()
+            if not index.isValid() or index.row() >= len(self.filtered_model.entries):
+                return None
+            return help_for_statement(self._filtered_statement_text(
+                self.filtered_model.entries[index.row()]))
+        return self._help_at_document_line(
+            self.editor.textCursor().blockNumber())
+
+    def _update_syntax_help(self, inline_editor=None):
+        if self._setting:
+            return
+        tip = self._active_syntax_help(inline_editor)
+        self.syntax_help.setText(
+            tip.compact() if tip is not None else
+            "N3 help — place the cursor on a command, or hover for syntax.")
+        self.syntax_help.setToolTip(
+            tip.tooltip() if tip is not None else
+            "Hover over an N3 statement for syntax and purpose.")
+
+    def show_syntax_help(self):
+        """Ctrl+Shift+Space or ? opens details without editing text."""
+        from PySide6.QtWidgets import QApplication
+        inline = self._inline_help_editor
+        if inline is None or QApplication.focusWidget() is not inline:
+            inline = None
+        tip = self._active_syntax_help(inline)
+        if tip is None:
+            return
+        if inline is not None:
+            widget = inline
+            point = inline.cursorRect().bottomRight()
+        elif self.source_stack.currentWidget() is self.filtered_page:
+            widget = self.filtered_list
+            point = widget.visualRect(widget.currentIndex()).bottomRight()
+        else:
+            widget = self.editor
+            point = widget.cursorRect().bottomRight()
+        QToolTip.showText(widget.mapToGlobal(point), tip.tooltip(), widget)
+
     def eventFilter(self, watched, event):
         if (event.type() == QEvent.Type.KeyPress and
                 event.key() == Qt.Key.Key_F2 and
@@ -504,6 +610,29 @@ class SourcePane(QWidget):
                             self.filtered_list, self.filtered_list.viewport())):
             self.rename_selected_pointer()
             event.accept()
+            return True
+        if event.type() == QEvent.Type.ToolTip:
+            inline = self._inline_help_editor
+            if watched in (self.editor, self.editor.viewport()):
+                point = (event.pos() if watched is self.editor.viewport()
+                         else self.editor.viewport().mapFrom(
+                             self.editor, event.pos()))
+                block = self.editor.cursorForPosition(point).blockNumber()
+                tip = (self._help_at_document_line(block)
+                       if self._ready else None)
+            elif inline is not None and watched in (
+                    inline, inline.viewport()):
+                point = (event.pos() if watched is inline.viewport()
+                         else inline.viewport().mapFrom(inline, event.pos()))
+                block = inline.cursorForPosition(point).blockNumber()
+                tip = help_for_lines(
+                    inline.toPlainText().splitlines(), block)
+            else:
+                return super().eventFilter(watched, event)
+            if tip is not None:
+                QToolTip.showText(event.globalPos(), tip.tooltip(), watched)
+            else:
+                QToolTip.hideText()
             return True
         return super().eventFilter(watched, event)
 
@@ -568,6 +697,7 @@ class SourcePane(QWidget):
         self._distance_labels_key = None
         self._apply_filters()
         self._cursor_changed()
+        self._update_syntax_help()
 
     def mark_saved(self):
         """Set the clean baseline only after the source was written successfully."""
@@ -604,6 +734,7 @@ class SourcePane(QWidget):
         self._distance_labels_key = None
         self._apply_filters()
         self._cursor_changed()
+        self._update_syntax_help()
 
     def _edited(self):
         if self._setting or not self._ready:
@@ -623,6 +754,7 @@ class SourcePane(QWidget):
         self.status.setText('Editing… last valid GPU preview retained until compilation succeeds.')
         self._debounce.start()
         self._emit_cursor_target()
+        self._update_syntax_help()
 
     def apply_now(self):
         if not self._ready:
@@ -922,6 +1054,7 @@ class SourcePane(QWidget):
         if count == len(CATEGORIES) and not query and not active_only:
             self.source_stack.setCurrentWidget(self.editor)
             self.filter_status.setText("All source lines shown")
+            self._update_syntax_help()
             return
         self._ensure_filter_entries()
         active_names = self._active_labels_at_distance() if active_only else None
@@ -962,6 +1095,7 @@ class SourcePane(QWidget):
                 self.filtered_list.setCurrentIndex(self.filtered_model.index(row))
         else:
             self.filtered_list.clearSelection()
+        self._update_syntax_help()
 
     def _filtered_statement_text(self, entry):
         document = self.editor.document()
@@ -1032,6 +1166,7 @@ class SourcePane(QWidget):
         if block.isValid():
             self.editor.setTextCursor(QTextCursor(block))
             self._cursor_changed()
+            self._update_syntax_help()
 
     def _edit_filtered_entry(self, index=None):
         if index is None or not hasattr(index, "isValid"):
@@ -1212,3 +1347,4 @@ class SourcePane(QWidget):
         self._emit_cursor_target()
         self.filtered_model.set_inspection(
             cursor.blockNumber(), self._polygon_visible)
+        self._update_syntax_help()

@@ -428,6 +428,33 @@ the viewport so those letters can be typed normally in the N3 editor.
 Loading and mesh creation run on a worker thread; the OpenGL context and
 buffer upload stay on Qt's GUI thread.
 
+## N3 context-sensitive syntax help
+
+While editing **.3D Source**, a compact **N3 help** line below the text box
+follows the command at the cursor: its purpose and a signature showing the
+correct syntax. Hover over a statement for a longer explanation, or press
+**Ctrl+Shift+Space** (or click the **?** button) to request the full help
+without inserting or modifying any text.
+
+Help also appears when hovering over a **filtered statement row**. While
+editing a filtered statement directly (double-click), the live help follows
+the in-place editor's cursor and unfinished syntax; **Esc** still cancels and
+**Ctrl+Enter** still commits that one statement.
+
+The reference covers the **N3 constructs supported by the current compiler**:
+vertices (including texture UV and color), POLY / POLY [T], LINE, LIST,
+NIL, FACE / FACE2, BSPF / BSPA / BSP2 / BSPN, MATERIAL, SWITCH DISTANCE,
+DYNAMIC, EXTERN, SUPEROBJ, SRB / PMP2, RECOLOR, DYNO, DATA, and the 3D VERSION
+header and ICR2 metadata comments. It is intentionally a syntax guide rather
+than an attempt to document undocumented simulator behavior; for example,
+unverified meanings of BSP child-slot order and DYNO payloads are not asserted.
+
+Help works during partial and multiline typing and when source has not yet
+recompiled. It does **not** alter source, perform completion, change any
+model vertex, trigger recompilation, or interfere with F2 pointer renaming.
+For large generated .3D sources, the active-context lookup visits at most
+48 nearby text blocks rather than scanning the entire source on cursor moves.
+
 ## Filtering and navigating .3D Source
 
 The **Filter statements** dropdown in .3D Source contains checkboxes for
