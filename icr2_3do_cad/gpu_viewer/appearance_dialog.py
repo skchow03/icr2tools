@@ -72,7 +72,7 @@ class AppearanceDialog(QDialog):
             button.setStyleSheet(
                 f"QPushButton {{background-color: {color}; color: {fg}; "
                 "border: 1px solid #777; border-radius: 3px; "
-                "padding: 5px; font-weight: bold;}}")
+                "padding: 5px; font-weight: bold;}")
 
     def _set_colors(self, colors):
         self._colors = validated_colors(colors)
