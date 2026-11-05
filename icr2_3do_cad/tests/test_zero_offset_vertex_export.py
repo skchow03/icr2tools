@@ -6,7 +6,6 @@ body offset 0 is a textured vertex; separate LIST child slot 0 means NIL.
 """
 from __future__ import annotations
 
-import re
 import struct
 import unittest
 
@@ -83,7 +82,9 @@ class ZeroVertexExportTests(unittest.TestCase):
                    for p in self.model.polygons.values()),
             sorted(tuple(compiled.vertices[r].xyz for r in p.refs)
                    for p in compiled.polygons.values()))
-        self.assertIn(0, compiled.children[compiled.root_offset])
+        # Parsed scene children omit NIL; inspect the original raw LIST slot.
+        self.assertEqual(struct.unpack_from(
+            "<i", compiled.body, compiled.root_offset + 12)[0], 0)
         self.assertEqual(self.model.raw, self.binary)
 
     def test_annotated_export_and_safe_in_place_import(self):
