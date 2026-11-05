@@ -510,7 +510,9 @@ pixels), vertex marker fill, and vertex marker border. Instead of simply
 brightening the selected face to white, the shader automatically blends
 between warm and contrasting blue tints according to underlying brightness.
 The colors are editable and saved with the other appearance preferences.
-Changes do not recompile N3 or re-upload the mesh. A loaded track skybox can
+Three additional settings control BSP plane vertex-marker fill, winding-arrow
+color and marker outline separately from the editable vertex dot. Changes
+do not recompile N3 or re-upload the mesh. A loaded track skybox can
 cover the viewport's clear color.
 
 ## Inspecting N3 geometry with the source cursor
@@ -518,8 +520,23 @@ cover the viewport's clear color.
 Open **.3D Source** beside the GPU preview. Place the text cursor anywhere
 within a named `POLY` or `POLY [T]` declaration to tint that face.
 Place it within a named vertex declaration (`name: [<X,Y,Z>];`) to show
-a bright dot at that vertex in the 3D viewport. Both overlays track orbit,
-zoom and the fixed-camera view; they do not move geometry or edit the N3.
+a bright dot at that vertex in the 3D viewport. Selecting a named **BSPF,
+BSPA, BSP2 or BSPN** declaration additionally highlights the three vertices
+in its plane operand, with distinct **cyan plane markers** and directed
+**1 → 2 → 3 → 1** arrowheads indicating the source's exact winding order.
+This works from full source or from the filtered **BSP** statement list.
+The familiar single-vertex editing dot remains yellow, so plane inspection
+cannot be confused with selecting an editable vertex. All overlays follow
+orbit, zoom and fixed-camera views; they do not move geometry or edit N3.
+
+Plane points can be named vertex declarations (including plane-only vertices
+that are not otherwise rendered) or inline `[<X,Y,Z>]` coordinates. The
+binary BSP plane normal alone does not retain the original tuple winding:
+the source is the authority. Source-only overlays disappear while text is
+pending validation, after compilation errors or when .3D Source is hidden.
+Clipped/offscreen points and arrows are omitted rather than drawn at
+misleading coordinates. Five-coefficient legacy plane tuples do not provide
+three point operands and have no winding overlay.
 
 - Cursor inspection works with named standalone .3D declarations as well as
   generated `_offset` declarations when a binary .3do is opened.
