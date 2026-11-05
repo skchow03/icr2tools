@@ -171,7 +171,7 @@ class FilteredStatementsModel(QAbstractListModel):
                        + f" | {entry.category}")
             syntax = help_for_statement(self.owner._filtered_statement_text(entry))
             if syntax is not None:
-                details += "\n\n" + syntax.tooltip()
+                return syntax.tooltip_html(note=details)
             return details + ("\n\nDouble-click to edit this statement; "
                               "Ctrl+Enter applies, Esc cancels.")
         if role == Qt.ItemDataRole.UserRole:
@@ -602,13 +602,13 @@ class SourcePane(QWidget):
         anchor = viewport.mapToGlobal(QPoint(12, row.bottom() + 6))
         QToolTip.showText(anchor, tip.tooltip_html(), viewport)
 
-    def _show_filtered_tooltip(self, tip):
-        """Keep filtered-row help on the Source side of the splitter."""
+    def _show_filtered_tooltip(self, tip, index=None):
+        """Keep filtered-row help below its row, on the Source side."""
         if tip is None:
             QToolTip.hideText()
             return
         view = self.filtered_list
-        index = view.currentIndex()
+        index = view.currentIndex() if index is None else index
         if not index.isValid():
             return
         row = view.visualRect(index)
@@ -657,6 +657,18 @@ class SourcePane(QWidget):
                 block = inline.cursorForPosition(point).blockNumber()
                 tip = help_for_lines(
                     inline.toPlainText().splitlines(), block)
+            elif watched in (self.filtered_list, self.filtered_list.viewport()):
+                point = (event.pos() if watched is self.filtered_list.viewport()
+                         else self.filtered_list.viewport().mapFrom(
+                             self.filtered_list, event.pos()))
+                index = self.filtered_list.indexAt(point)
+                if index.isValid() and index.row() < len(self.filtered_model.entries):
+                    entry = self.filtered_model.entries[index.row()]
+                    tip = help_for_statement(self._filtered_statement_text(entry))
+                    if tip is not None:
+                        self._show_filtered_tooltip(tip, index)
+                        return True
+                return super().eventFilter(watched, event)
             else:
                 return super().eventFilter(watched, event)
             if tip is not None:
