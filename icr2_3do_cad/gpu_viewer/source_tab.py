@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget, QWidgetAction,
 )
 
-from gpu_viewer.source_inspection import index_source_targets
+from gpu_viewer.source_inspection import index_source_targets, target_offset
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.active_source import (
     active_source_labels, plane_vertex_dependencies, entry_is_active,
@@ -588,6 +588,47 @@ class SourcePane(QWidget):
             self.editor.setTextCursor(cursor)
             self.editor.centerCursor()
             self.editor.setFocus()
+
+    def goto_model_vertex(self, model, offset):
+        """Jump to a compiled root vertex's authored or generated N3 label.
+
+        The source pane may currently show filtered statements; switch to
+        the complete document so the selected vertex can always be found.
+        This moves only the cursor, never changes source text or undo history.
+        """
+        if (not self._ready or self.pending or self._last_error_line is not None
+                or model is None or offset not in model.vertices):
+            return False
+        # Compiled authored N3 uses arbitrary labels. Generated binary N3
+        # uses "_<body offset>" without storing the original name mapping.
+        candidate_labels = {f"_{offset}"}
+        candidate_labels.update(
+            name for name, body_offset in
+            getattr(model, "n3_label_offsets", {}).items()
+            if body_offset == offset)
+        target = next((
+            entry for entry in self._source_index.targets
+            if entry.kind == "vertex" and entry.label in candidate_labels
+            and target_offset(model, "vertex", entry.label) == offset), None)
+        if target is None:
+            return False
+        block = self.editor.document().findBlockByNumber(target.first_line)
+        if not block.isValid():
+            return False
+        self.source_stack.setCurrentWidget(self.editor)
+        cursor = QTextCursor(block)
+        # Select only the declaration label, for a clear visual cue.
+        label_start = block.text().find(target.label)
+        if label_start >= 0:
+            cursor.setPosition(block.position() + label_start)
+            cursor.setPosition(
+                block.position() + label_start + len(target.label),
+                QTextCursor.MoveMode.KeepAnchor)
+        self.editor.setTextCursor(cursor)
+        self.editor.centerCursor()
+        self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._emit_cursor_target()
+        return True
 
     def current_target(self):
         """Return a declaration only when its source matches the compiled model."""
