@@ -157,6 +157,8 @@ def install_menus(window):
     _add_action(edit, "Find &Next", lambda: window._find_source(next_match=True),
                 QKeySequence.StandardKey.FindNext)
     edit.addSeparator()
+    _add_action(edit, "&Go to Pointer Declaration (F12)",
+                window.source_pane.goto_pointer_declaration)
     _add_action(edit, "Rename Selected &Pointer…",
                 lambda: window.source_pane.rename_selected_pointer())
     _add_action(edit, "Apply .3D Source Now",
