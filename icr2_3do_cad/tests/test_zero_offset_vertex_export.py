@@ -62,7 +62,7 @@ class ZeroVertexExportTests(unittest.TestCase):
             source, r"POLY \[T\] <42> \{_0, _20, _40, _0\}")
         self.assertRegex(
             source, r"POLY <46> \{_20, _0, _40, _20\}")
-        self.assertRegex(source, r"root: LIST \{_\\d+, NIL, _\\d+\}")
+        self.assertRegex(source, r"root: LIST \{_\d+, NIL, _\d+\}")
         self.assertNotIn("POLY [T] <42> {NIL", source)
         self.assertEqual(self.model.raw, self.binary)
 
