@@ -7,7 +7,9 @@ from __future__ import annotations
 
 from bisect import bisect_right
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 import re
+import struct
 
 import numpy as np
 
@@ -16,14 +18,23 @@ _DECLARATION = re.compile(r"^[ \t]*([A-Za-z_][A-Za-z_0-9-]*)[ \t]*:[ \t]*(.*)$")
 _POLYGON = re.compile(r"^POLY(?:\s+\[T\])?\s*<", re.I | re.S)
 _VERTEX = re.compile(r"^\[\s*<", re.S)
 _BINARY_LABEL = re.compile(r"^_(\d+)$")
+_BSP_PLANE = re.compile(
+    r"^(?:BSPF|BSPA|BSP2|BSPN)\s*\(([^)]*)\)", re.I | re.S)
+_PLANE_LABEL = re.compile(r"^[A-Za-z_][A-Za-z_0-9-]*$")
+_INLINE_COORDS = re.compile(
+    r"^\[\s*<\s*([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*"
+    r"([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*,\s*"
+    r"([-+]?(?:\d+(?:\.\d*)?|\.\d+))\s*>"
+    r"(?:\s*,\s*[Tt]\s*=\s*<[^>]+>)?\s*\]$", re.S)
 
 
 @dataclass(frozen=True)
 class SourceTarget:
     first_line: int  # zero-based QTextBlock number
     last_line: int
-    kind: str         # "polygon" or "vertex"
+    kind: str         # "polygon", "vertex" or "bsp"
     label: str
+    plane_operands: tuple[str, str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -32,6 +43,7 @@ class SourceTargetIndex:
 
     targets: tuple[SourceTarget, ...]
     starts: tuple[int, ...]
+    vertex_labels: frozenset[str] = frozenset()
 
     def target_at_line(self, line: int) -> SourceTarget | None:
         pos = bisect_right(self.starts, line) - 1
@@ -55,14 +67,49 @@ def _without_comment(line: str) -> str:
     return line
 
 
+def _bsp_plane_operands(code: str) -> tuple[str, str, str] | None:
+    """Extract an authored plane's three vertices, not its BSP child nodes.
+
+    Bracketed inline [<X,Y,Z>] operands contain commas. Tokenize commas only
+    at the plane's top level; a five-integer coefficient tuple is *not*
+    a three-vertex winding and has no overlay.
+    """
+    match = _BSP_PLANE.match(code)
+    if match is None:
+        return None
+    tokens = []
+    depth = 0
+    start = 0
+    inside = match.group(1)
+    for i, char in enumerate(inside):
+        if char in "[<":
+            depth += 1
+        elif char in "]>":
+            depth -= 1
+            if depth < 0:
+                return None
+        elif char == "," and depth == 0:
+            tokens.append(inside[start:i].strip())
+            start = i + 1
+    if depth != 0:
+        return None
+    tokens.append(inside[start:].strip())
+    if len(tokens) != 3 or not all(
+            _PLANE_LABEL.fullmatch(token) or _INLINE_COORDS.fullmatch(token)
+            for token in tokens):
+        return None
+    return tuple(tokens)
+
+
 def index_source_targets(source: str) -> SourceTargetIndex:
-    """Identify complete, possibly multiline POLY and vertex declarations.
+    """Identify complete, possibly multiline POLY, vertex and BSP declarations.
 
     Comments and unrelated N3 constructs are not inspection targets.
     Partially typed declarations are omitted until source validates.
     """
     lines = source.splitlines()
     targets = []
+    vertex_labels = set()
     index = 0
     while index < len(lines):
         start = index
@@ -84,9 +131,16 @@ def index_source_targets(source: str) -> SourceTargetIndex:
                 targets.append(SourceTarget(start, index, "polygon", label))
             elif _VERTEX.match(code):
                 targets.append(SourceTarget(start, index, "vertex", label))
+                vertex_labels.add(label)
+            else:
+                operands = _bsp_plane_operands(code)
+                if operands is not None:
+                    targets.append(SourceTarget(
+                        start, index, "bsp", label, operands))
         index += 1
     return SourceTargetIndex(tuple(targets),
-                             tuple(target.first_line for target in targets))
+                             tuple(target.first_line for target in targets),
+                             frozenset(vertex_labels))
 
 
 def target_offset(model, kind: str, label: str) -> int | None:
@@ -107,7 +161,57 @@ def target_offset(model, kind: str, label: str) -> int | None:
         return offset
     if kind == "vertex" and offset in model.vertices:
         return offset
+    if kind == "bsp" and offset in model.planes:
+        return offset
     return None
+
+
+def bsp_plane_points(index: SourceTargetIndex, model, line: int):
+    """Resolve three ordered BSP tuple points to compiled raw Papyrus XYZ.
+
+    The binary contains a plane equation, *not* the authored three source
+    operands. For named vertices, read the compiled coordinates at each
+    declaration's mapped offset, including plane-only vertices absent from
+    Model.vertices. For inline coordinates, use the compiler's exact scale.
+    Never infer winding from polygon triangulation or a plane normal.
+    """
+    target = index.target_at_line(line)
+    if (model is None or target is None or target.kind != "bsp" or
+            target.plane_operands is None or
+            target_offset(model, "bsp", target.label) is None):
+        return None
+    points = []
+    scale = Decimal(str(getattr(model, "n3_coordinate_scale", 1)))
+    for operand in target.plane_operands:
+        if _PLANE_LABEL.fullmatch(operand):
+            if operand not in index.vertex_labels:
+                return None
+            offset = target_offset(model, "vertex", operand)
+            if offset is None:
+                # Plane-only vertex declarations are valid N3 but the
+                # 3DO parser indexes only renderable polygon/RES vertices.
+                # Authored labels still map to compiled vertex bytes.
+                mapping = getattr(model, "n3_label_offsets", {})
+                offset = mapping.get(operand)
+                if offset is None:
+                    binary = _BINARY_LABEL.fullmatch(operand)
+                    if binary:
+                        offset = int(binary.group(1))
+            if (offset is None or offset < 0 or
+                    offset + 16 > len(getattr(model, "body", b""))):
+                return None
+            xyz = struct.unpack_from("<3i", model.body, offset + 4)
+        else:
+            coords = _INLINE_COORDS.fullmatch(operand)
+            if coords is None:
+                return None
+            try:
+                xyz = tuple(int((Decimal(value) * scale).to_integral_value(
+                    rounding=ROUND_HALF_EVEN)) for value in coords.groups())
+            except (InvalidOperation, OverflowError, ValueError):
+                return None
+        points.append(tuple(xyz))
+    return tuple(points)
 
 
 def polygon_mesh_range(scene, mesh, offset: int | None):
@@ -295,14 +399,15 @@ class PolygonPicker:
         return int(offsets[indices[np.argmin(distance[indices])]])
 
 
-def vertex_screen_position(model, mesh, offset, matrix, width, height):
-    """Project a source vertex to logical viewport pixels, or None if clipped.
+def raw_point_screen_position(mesh, xyz, matrix, width, height):
+    """Project raw Papyrus XYZ, including authored plane-only/inline points.
 
-    Model XYZ are in raw Papyrus units; GPU XYZ use the mesh centre/scale.
+    Use the same mesh centering and camera projection as visible geometry.
+    Return None for invalid or clipped coordinates.
     """
-    if model is None or mesh is None or offset not in model.vertices:
+    if mesh is None or xyz is None:
         return None
-    raw = np.asarray(model.vertices[offset].xyz, dtype=np.float64)
+    raw = np.asarray(xyz, dtype=np.float64)
     center = np.asarray(mesh.center, dtype=np.float64)
     scale = float(mesh.scale)
     if not np.isfinite(raw).all() or not np.isfinite(scale) or scale <= 0:
@@ -317,3 +422,42 @@ def vertex_screen_position(model, mesh, offset, matrix, width, height):
     ndc = clip[:2] / clip[3]
     return (float(width * (ndc[0] + 1.0) / 2.0),
             float(height * (1.0 - ndc[1]) / 2.0))
+
+
+def vertex_screen_position(model, mesh, offset, matrix, width, height):
+    """Project a compiled vertex, sharing the BSP raw-coordinate transform."""
+    if model is None or offset not in model.vertices:
+        return None
+    return raw_point_screen_position(
+        mesh, model.vertices[offset].xyz, matrix, width, height)
+
+
+def bsp_winding_arrows(screen_points, marker_radius=10.0):
+    """Generate directed 1→2, 2→3, 3→1 segments and arrowhead strokes.
+
+    Returns (shaft_start, shaft_end, wing_left, wing_right) per visible edge.
+    Endpoints are pulled away from vertex markers so arrowheads remain legible.
+    Missing/clipped or coincident screen points never create wild coordinates.
+    """
+    if len(screen_points) != 3:
+        return ()
+    arrows = []
+    for i in range(3):
+        a, b = screen_points[i], screen_points[(i + 1) % 3]
+        if a is None or b is None:
+            continue
+        delta = np.asarray(b, dtype=np.float64) - np.asarray(a, dtype=np.float64)
+        length = float(np.linalg.norm(delta))
+        if not np.isfinite(length) or length <= marker_radius * 2 + 9:
+            continue
+        unit = delta / length
+        end = np.asarray(b, dtype=np.float64) - unit * (marker_radius + 2)
+        start = np.asarray(a, dtype=np.float64) + unit * (marker_radius + 2)
+        # Keep arrowhead fins in a predictable 2D plane.
+        sideways = np.array([-unit[1], unit[0]])
+        wing_distance = min(9.0, (length - marker_radius * 2) / 4)
+        left = end - unit * wing_distance + sideways * wing_distance * 0.6
+        right = end - unit * wing_distance - sideways * wing_distance * 0.6
+        arrows.append(tuple(tuple(float(v) for v in p)
+                            for p in (start, end, left, right)))
+    return tuple(arrows)
