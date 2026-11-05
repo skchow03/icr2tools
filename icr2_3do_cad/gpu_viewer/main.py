@@ -86,7 +86,8 @@ from gpu_viewer.confirmations import confirm_destructive_action
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
-    vertex_screen_position, VertexPicker, PolygonPicker,
+    vertex_screen_position, raw_point_screen_position, bsp_winding_arrows,
+    VertexPicker, PolygonPicker,
 )
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
@@ -525,6 +526,7 @@ class GLViewport(QOpenGLWidget):
         self._scene = None
         self.inspection_kind = None
         self.inspection_offset = None
+        self.inspection_points = None
         self.render_mode = 'painter'  # painter | depth | all | wire
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
@@ -699,6 +701,7 @@ class GLViewport(QOpenGLWidget):
         self._wire_index_count = 0
         self.inspection_kind = None
         self.inspection_offset = None
+        self.inspection_points = None
         self._atlas = atlas
         self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
         self._visibility_dirty = True
@@ -734,14 +737,82 @@ class GLViewport(QOpenGLWidget):
         color = QColor(self.colors[name])
         return color.redF(), color.greenF(), color.blueF()
 
-    def set_source_inspection(self, kind=None, offset=None):
-        """Set a source-only overlay. Existing VBO/EBO and scene stay unchanged."""
-        if kind not in ("polygon", "vertex") or offset is None:
+    def set_source_inspection(self, kind=None, offset=None, *, plane_points=None):
+        """Select one source overlay; do not alter model, BSP, or GPU buffers.
+
+        BSP uses three ordered raw XYZ points from the source plane operand,
+        not a binary plane's normal (which does not preserve winding).
+        """
+        points = None
+        if kind == "bsp" and plane_points is not None:
+            try:
+                points = tuple(tuple(float(x) for x in xyz)
+                               for xyz in plane_points)
+                if len(points) != 3 or any(len(xyz) != 3 for xyz in points):
+                    points = None
+                elif not all(np.isfinite(x) for xyz in points for x in xyz):
+                    points = None
+            except (TypeError, ValueError):
+                points = None
+            kind, offset = ("bsp", None) if points is not None else (None, None)
+        elif kind not in ("polygon", "vertex") or offset is None:
             kind, offset = None, None
-        if (self.inspection_kind, self.inspection_offset) != (kind, offset):
+        if ((self.inspection_kind, self.inspection_offset,
+             self.inspection_points) != (kind, offset, points)):
             self.inspection_kind = kind
             self.inspection_offset = offset
+            self.inspection_points = points
             self.update()
+
+    def _paint_source_inspection_markers(self, projection, view):
+        """Draw source cursor markers over either GL render mode.
+
+        All paths are QPainter geometry (no text glyphs rendered inside GL):
+        cyan BSP 1→2→3→1 winding arrows vs yellow single-vertex edit dot.
+        """
+        kind = self.inspection_kind
+        if kind not in ("vertex", "bsp"):
+            return
+        matrix = projection @ view
+        if kind == "vertex":
+            position = vertex_screen_position(
+                self._model, self._mesh, self.inspection_offset,
+                matrix, self.width(), self.height())
+            if position is None:
+                return
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            outline, fill = self._vertex_marker_colors()
+            painter.setPen(QPen(outline, 2))
+            painter.setBrush(QBrush(fill))
+            painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+            painter.end()
+            return
+
+        if self.inspection_points is None:
+            return
+        positions = tuple(raw_point_screen_position(
+            self._mesh, xyz, matrix, self.width(), self.height())
+            for xyz in self.inspection_points)
+        if all(point is None for point in positions):
+            return
+        arrow_color = QColor(self.colors["viewport_bsp_arrow"])
+        dot_color = QColor(self.colors["viewport_bsp_vertex"])
+        outline = QColor(self.colors["viewport_bsp_outline"])
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(arrow_color, 2.8))
+        for start, end, left, right in bsp_winding_arrows(positions):
+            # Shaft and two chevrons at its destination show winding order.
+            painter.drawLine(QPointF(*start), QPointF(*end))
+            painter.drawLine(QPointF(*end), QPointF(*left))
+            painter.drawLine(QPointF(*end), QPointF(*right))
+        painter.setPen(QPen(outline, 2.2))
+        painter.setBrush(QBrush(dot_color))
+        for point in positions:
+            if point is not None:
+                painter.drawEllipse(QPointF(*point), 9.5, 9.5)
+        painter.end()
 
     def _release_wire_buffers(self):
         """Release cached boundary geometry in a current OpenGL context."""
@@ -870,19 +941,7 @@ class GLViewport(QOpenGLWidget):
         glUniform1i(self._wire_uniform, 0)
         glUseProgram(0)
         self._set_visibility_warning(notice)
-        # Retain the N3 source cursor's existing vertex marker in wire mode.
-        if self.inspection_kind == "vertex":
-            position = vertex_screen_position(
-                self._model, self._mesh, self.inspection_offset,
-                projection @ view, self.width(), self.height())
-            if position is not None:
-                painter = QPainter(self)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                outline, fill = self._vertex_marker_colors()
-                painter.setPen(QPen(outline, 2))
-                painter.setBrush(QBrush(fill))
-                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
-                painter.end()
+        self._paint_source_inspection_markers(projection, view)
 
     def _upload_mesh(self):
         if self._program is None:
@@ -1399,19 +1458,7 @@ class GLViewport(QOpenGLWidget):
         glBindVertexArray(0)
         glUseProgram(0)
         self._set_visibility_warning(notice)
-        if self.inspection_kind == "vertex":
-            position = vertex_screen_position(
-                self._model, self._mesh, self.inspection_offset,
-                projection @ view, self.width(), self.height())
-            if position is not None:
-                # The existing screen-space dot retains its own QPainter path.
-                painter = QPainter(self)
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-                outline, fill = self._vertex_marker_colors()
-                painter.setPen(QPen(outline, 2))
-                painter.setBrush(QBrush(fill))
-                painter.drawEllipse(QPointF(*position), 6.0, 6.0)
-                painter.end()
+        self._paint_source_inspection_markers(projection, view)
 
     def _draw_pmp(self, placement, projection, view):
         """Draw one palette-indexed transparent billboard at its BSP site."""
@@ -2407,6 +2454,11 @@ class Window(QMainWindow):
             self.source_pane.set_polygon_visibility(None)
             return
         kind, label = target
+        if kind == "bsp":
+            points = self.source_pane.current_bsp_points(self.viewer._model)
+            self.viewer.set_source_inspection("bsp", plane_points=points)
+            self.source_pane.set_polygon_visibility(None)
+            return
         offset = target_offset(self.viewer._model, kind, label)
         self.viewer.set_source_inspection(kind, offset)
         self._refresh_source_polygon_visibility()
