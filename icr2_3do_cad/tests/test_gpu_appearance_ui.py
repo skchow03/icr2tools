@@ -93,15 +93,28 @@ class GPUAppearanceUITests(unittest.TestCase):
         self.assertEqual(dot.name(), "#eeff22")
         self.assertEqual(self.window.viewer.colors[
             "viewport_background"], "#445566")
-        block = pane.editor.document().findBlockByNumber(4)
-        pane.editor.setTextCursor(QTextCursor(block))
-        pane.set_polygon_visibility(True)
-        self.assertEqual(pane.editor.extraSelections()[0].format.background(
-            ).color().name(), "#204a3c")
-        pane._only_filter("POLY")
-        index = pane.filtered_model.index(0)
-        self.assertEqual(pane.filtered_model.data(
-            index, Qt.ItemDataRole.BackgroundRole).name(), "#204a3c")
+        # Inspect a standalone SourcePane: the Window intentionally clears
+        # POLY visibility when no renderable model has been opened.
+        from gpu_viewer.source_tab import SourcePane
+        inspection = SourcePane()
+        try:
+            inspection.set_source(SOURCE, Path("colors.3d"))
+            inspection.set_appearance_colors(customized)
+            block = inspection.editor.document().findBlockByNumber(4)
+            inspection.editor.setTextCursor(QTextCursor(block))
+            self.assertEqual(inspection.current_target(),
+                             ("polygon", "surface"))
+            inspection.set_polygon_visibility(True)
+            self.assertTrue(inspection.editor.extraSelections())
+            self.assertEqual(
+                inspection.editor.extraSelections()[0].format.background(
+                ).color().name(), "#204a3c")
+            inspection._only_filter("POLY")
+            index = inspection.filtered_model.index(0)
+            self.assertEqual(inspection.filtered_model.data(
+                index, Qt.ItemDataRole.BackgroundRole).name(), "#204a3c")
+        finally:
+            inspection.close()
         settings = self.real_settings(
             self.settings_file, self.real_settings.Format.IniFormat)
         self.assertEqual(settings.value("appearance/viewport_wire"), "#99AAFF")
