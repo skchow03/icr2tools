@@ -41,6 +41,8 @@ class GPUViewerLayoutTests(unittest.TestCase):
                       self.window.distance_bar)
         self.assertIs(self.window.viewport_layout.itemAt(1).widget(),
                       self.window.viewer)
+        self.assertIs(self.window.projection_combo.parentWidget(),
+                      self.window.distance_bar)
         self.assertIs(self.window.lod_slider.parentWidget(),
                       self.window.distance_bar)
         self.assertIs(self.window.lod_mode_combo.parentWidget(),
@@ -72,6 +74,35 @@ class GPUViewerLayoutTests(unittest.TestCase):
         self.assertFalse(self.window.viewer.texture_repeat)
         checkbox.setChecked(True)
         self.assertTrue(self.window.viewer.texture_repeat)
+
+    def test_projection_dropdown_syncs_with_view_menu_and_fixed_camera(self):
+        selector = self.window.projection_combo
+        checkbox = self.window.perspective_toggle
+        menu = self.window.perspective_menu_action
+        self.assertEqual(selector.itemText(0), "Perspective")
+        self.assertEqual(selector.itemText(1), "Orthographic")
+        self.assertEqual(selector.currentData(), True)
+        self.assertTrue(self.window.viewer.perspective)
+        self.assertTrue(checkbox.isChecked())
+        self.assertTrue(menu.isChecked())
+        selector.setCurrentIndex(1)
+        self.assertFalse(self.window.viewer.perspective)
+        self.assertFalse(checkbox.isChecked())
+        self.assertFalse(menu.isChecked())
+        checkbox.setChecked(True)
+        self.assertEqual(selector.currentData(), True)
+        self.assertTrue(menu.isChecked())
+
+        self.window.fixed_camera_button.setChecked(True)
+        self.assertTrue(self.window.viewer.perspective)
+        self.assertFalse(selector.isEnabled())
+        self.assertFalse(checkbox.isEnabled())
+        self.assertFalse(menu.isEnabled())
+        self.window.fixed_camera_button.setChecked(False)
+        self.assertTrue(selector.isEnabled())
+        self.assertTrue(checkbox.isEnabled())
+        self.assertTrue(menu.isEnabled())
+        self.assertTrue(self.window.viewer.perspective)
 
     def test_track_window_counts_and_adaptive_mode_are_available(self):
         # No TRK is loaded in this layout smoke test. The adaptive choice
