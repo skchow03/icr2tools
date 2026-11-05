@@ -18,11 +18,12 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListView, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
-    QStackedWidget, QStyledItemDelegate, QToolButton, QTextEdit,
+    QStackedWidget, QStyledItemDelegate, QToolButton, QToolTip, QTextEdit,
     QVBoxLayout, QWidget, QWidgetAction,
 )
 
 from gpu_viewer.appearance import DARK_COLORS, validated_colors
+from gpu_viewer.source_help import help_for_lines, help_for_statement
 from gpu_viewer.source_change_log import format_rename_event
 from gpu_viewer.source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
@@ -164,12 +165,15 @@ class FilteredStatementsModel(QAbstractListModel):
         if active and role == Qt.ItemDataRole.ForegroundRole:
             return QColor(self.owner.colors["source_highlight_text"])
         if role == Qt.ItemDataRole.ToolTipRole:
-            return (f"Original line {entry.first_line + 1}"
-                    + (f"–{entry.last_line + 1}" if
-                       entry.last_line != entry.first_line else "")
-                    + f" | {entry.category}\n"
-                    "Double-click or type to edit this statement here. "
-                    "Ctrl+Enter applies; Esc cancels.")
+            details = (f"Original line {entry.first_line + 1}"
+                       + (f"–{entry.last_line + 1}" if
+                          entry.last_line != entry.first_line else "")
+                       + f" | {entry.category}")
+            syntax = help_for_statement(self.owner._filtered_statement_text(entry))
+            if syntax is not None:
+                details += "\n\n" + syntax.tooltip()
+            return details + ("\n\nDouble-click to edit this statement; "
+                              "Ctrl+Enter applies, Esc cancels.")
         if role == Qt.ItemDataRole.UserRole:
             return entry.first_line
         if role == Qt.ItemDataRole.EditRole:
@@ -200,7 +204,8 @@ class InlineStatementDelegate(QStyledItemDelegate):
         editor.setTabChangesFocus(True)
         editor.setToolTip(
             "Edit the statement directly. Ctrl+Enter applies; Esc cancels. "
-            "Hidden statements remain untouched.")
+            "Hover or press Ctrl+Shift+Space for N3 syntax help.")
+        index.model().owner._register_inline_help_editor(editor)
         return editor
 
     def setEditorData(self, editor, index):
@@ -270,6 +275,7 @@ class SourcePane(QWidget):
         self._distance_labels_key = None
         self._distance_labels = set()
         self._active_edit_line = None
+        self._inline_help_editor = None
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -374,8 +380,8 @@ class SourcePane(QWidget):
         self.editor.setTabStopDistance(72)
         self.editor.setUndoRedoEnabled(True)
         self.editor.setToolTip(
-            "F2: rename the pointer on this line; only its name and "
-            "(optionally) references change.")
+            "Hover over N3 commands for syntax and purpose. "
+            "Ctrl+Shift+Space: show details; F2: rename pointer.")
         self.highlighter = N3Highlighter(self.editor.document())
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
@@ -413,6 +419,27 @@ class SourcePane(QWidget):
         self.source_stack.addWidget(self.editor)
         self.source_stack.addWidget(self.filtered_page)
         layout.addWidget(self.source_stack, 1)
+
+        # Short live signature hint; expanded guidance is available on hover
+        # or from Ctrl+Shift+Space. The label cannot change N3 source.
+        syntax_row = QHBoxLayout()
+        self.syntax_help = QLabel(
+            "N3 help — place the cursor on a command, or hover for syntax.")
+        self.syntax_help.setObjectName("n3SyntaxHelp")
+        self.syntax_help.setWordWrap(True)
+        self.syntax_help.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.syntax_help.setMaximumHeight(
+            self.syntax_help.fontMetrics().lineSpacing() * 4 + 8)
+        syntax_row.addWidget(self.syntax_help, 1)
+        syntax_button = QToolButton()
+        syntax_button.setObjectName("n3SyntaxHelpButton")
+        syntax_button.setText("?")
+        syntax_button.setToolTip(
+            "Show full N3 statement help at the cursor (Ctrl+Shift+Space)")
+        syntax_button.clicked.connect(self.show_syntax_help)
+        syntax_row.addWidget(syntax_button)
+        layout.addLayout(syntax_row)
 
         # Read-only audit trail for programmatic edits. Four visible text
         # rows, scrollable independently of the editable N3 document.
@@ -457,6 +484,11 @@ class SourcePane(QWidget):
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.rename_pointer_shortcut.activated.connect(
             self.rename_selected_pointer)
+        self.syntax_help_shortcut = QShortcut(
+            QKeySequence("Ctrl+Shift+Space"), self)
+        self.syntax_help_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.syntax_help_shortcut.activated.connect(self.show_syntax_help)
         # QAbstractItemView normally interprets F2 as "edit the entire row".
         # Intercept its keypress before the default view handler so this
         # shortcut always edits just the pointer label in either view.
