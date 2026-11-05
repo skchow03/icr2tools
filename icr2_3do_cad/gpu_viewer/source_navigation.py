@@ -42,7 +42,8 @@ def declaration_lines(source: str) -> dict[str, int]:
 
 
 def pointer_at_column(row: str, column: int,
-                      declarations: dict[str, int]) -> PointerReference | None:
+                      declarations: dict[str, int], *,
+                      include_end: bool = True) -> PointerReference | None:
     """Find an N3 reference under/at the end of a caret or mouse position.
 
     The lexer excludes comments and quoted resource names even when they
@@ -57,7 +58,8 @@ def pointer_at_column(row: str, column: int,
         if token.lastgroup != "identifier":
             continue
         start, end = token.span()
-        if not (start <= column <= end):
+        if not (start <= column < end or
+                include_end and column == end):
             continue
         name = token.group()
         if (name not in declarations or name.upper() in KEYWORDS or
