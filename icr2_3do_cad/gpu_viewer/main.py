@@ -83,7 +83,7 @@ from gpu_viewer.textures import (build_atlas, load_palette,
 from gpu_viewer.source_tab import SourcePane
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
-    vertex_screen_position,
+    vertex_screen_position, VertexPicker,
 )
 from gpu_viewer.workspaces import (
     WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
@@ -456,6 +456,7 @@ class GLViewport(QOpenGLWidget):
     fixedCameraModeChanged = Signal(bool)
     trackDriveModeChanged = Signal(bool)
     trackDrivePositionChanged = Signal(object)
+    vertexPicked = Signal(int)  # root-model vertex body offset from a click
 
     def __init__(self):
         super().__init__()
@@ -499,6 +500,7 @@ class GLViewport(QOpenGLWidget):
         self._wire_uniform = None
         self._vao = None
         self._mesh = None
+        self._vertex_picker = None
         self._model = None
         self._scene = None
         self.inspection_kind = None
@@ -529,6 +531,8 @@ class GLViewport(QOpenGLWidget):
         self.fixed_camera_fov = 60.0
         self._saved_external_view = None
         self._drag = None
+        self._pick_press = None
+        self._pick_dragged = False
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
         self.fps = 0.0
@@ -659,6 +663,7 @@ class GLViewport(QOpenGLWidget):
                  *, preserve_view=False):
         self._mesh = mesh
         self._model = model
+        self._vertex_picker = VertexPicker.from_model(model, mesh)
         self._scene = scene
         self._sprite_events = ()
         self._surface_index_count = 0
@@ -1159,6 +1164,54 @@ class GLViewport(QOpenGLWidget):
             f"{info['pmp_sprites']:,} PMP sprites"
         )
 
+    def _projection_and_view(self):
+        """Use identical camera/frustum math for rendering and vertex clicks."""
+        width = max(1, self.width())
+        height = max(1, self.height())
+        aspect = width / height
+        near = 0.001
+        far = max(100.0, 40.0 * self.distance)
+        view, _, _ = self._camera_view_matrix()
+        if self.perspective:
+            projection = perspective_projection(
+                aspect, near, far,
+                self.fixed_camera_fov
+                if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
+        else:
+            projection = ortho_projection(
+                self.half_height, aspect, near, far)
+        return projection, view
+
+    def pick_nearest_vertex(self, x, y):
+        """Pick the closest on-screen *root* vertex near a left-click.
+
+        DYNAMIC/external children have separate source files and cannot be
+        selected in the currently edited root N3 pane. Honor the latest
+        BSP/RES/track selection when it is available; never force unselected
+        geometry into the view. No GL calls or source modifications.
+        """
+        if self._vertex_picker is None or self._mesh is None:
+            return None
+        if self._visibility_dirty and not (
+                self.render_mode == 'all' and not self._track_lod_active()):
+            return None
+        selected = None
+        if not (self.render_mode == 'all' and
+                not self._track_lod_active()):
+            if not self._visible_set:
+                return None
+            selected = set()
+            for polygon_offset in self._visible_set:
+                polygon = self._model.polygons.get(polygon_offset)
+                if polygon is not None:
+                    selected.update(polygon.unique_refs)
+            if not selected:
+                return None
+        projection, view = self._projection_and_view()
+        return self._vertex_picker.nearest(
+            projection @ view, x, y, self.width(), self.height(),
+            eligible_offsets=selected)
+
     def paintGL(self):
         if self._program is None:
             return
@@ -1178,15 +1231,7 @@ class GLViewport(QOpenGLWidget):
         if self._vao is None:
             return
         aspect=w/h
-        near=0.001
-        far=max(100.0,40.0*self.distance)
-        view,_,_=self._camera_view_matrix()
-        if self.perspective:
-            projection=perspective_projection(
-                aspect, near, far,
-                self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
-        else:
-            projection=ortho_projection(self.half_height,aspect,near,far)
+        projection, view = self._projection_and_view()
         matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
         glUseProgram(self._program)
         glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
@@ -1483,10 +1528,25 @@ class GLViewport(QOpenGLWidget):
     def mousePressEvent(self, event):
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         self._drag = (event.position(), event.button())
+        self._pick_press = (
+            event.position(), event.button(), event.modifiers())
+        self._pick_dragged = False
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        pressed = self._pick_press
         self._drag = None
+        self._pick_press = None
+        if (pressed is not None
+                and pressed[1] == Qt.MouseButton.LeftButton
+                and event.button() == Qt.MouseButton.LeftButton
+                and not self._pick_dragged
+                and not (pressed[2] | event.modifiers())
+                & Qt.KeyboardModifier.ShiftModifier):
+            offset = self.pick_nearest_vertex(
+                event.position().x(), event.position().y())
+            if offset is not None:
+                self.vertexPicked.emit(offset)
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -1495,6 +1555,11 @@ class GLViewport(QOpenGLWidget):
         old, button = self._drag
         dx = event.position().x() - old.x()
         dy = event.position().y() - old.y()
+        if self._pick_press is not None:
+            origin = self._pick_press[0]
+            if ((event.position().x() - origin.x())**2 +
+                    (event.position().y() - origin.y())**2 > 16):
+                self._pick_dragged = True
         self._drag = (event.position(), button)
         if button == Qt.MouseButton.MiddleButton or (
             event.modifiers() & Qt.KeyboardModifier.ShiftModifier
@@ -1540,6 +1605,7 @@ class Window(QMainWindow):
         self._source_applied = False
         self._last_valid_source_text = None
         self._source_save_target = None
+        self._pending_vertex_pick = None
         self.viewer = GLViewport()
         self.load_label = QLabel("Open a .3D or .3DO model")
         self.load_label.setTextInteractionFlags(
@@ -1897,6 +1963,7 @@ class Window(QMainWindow):
         self.source_pane.saveRequested.connect(self._save_source)
         self.source_pane.exportRequested.connect(self._export_compiled_source)
         self.source_pane.cursorTargetChanged.connect(self._source_target_changed)
+        self.viewer.vertexPicked.connect(self._viewport_vertex_picked)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
         self._timer.timeout.connect(self._benchmark_tick)
@@ -2089,6 +2156,39 @@ class Window(QMainWindow):
             self.viewer.set_source_inspection()
             self.source_pane.set_polygon_visibility(None)
 
+    def _viewport_vertex_picked(self, offset):
+        """Reveal and jump to the picked root-model vertex declaration."""
+        model = self.viewer._model
+        if model is None or offset not in model.vertices:
+            return
+        if self.source_pane.ready and (
+                self.source_pane.pending or self._source_invalid):
+            self.statusBar().showMessage(
+                "Apply or fix the edited .3D Source before selecting vertices.")
+            return
+        self._pending_vertex_pick = (model, offset)
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.ready:
+            self._finish_pending_vertex_pick()
+        else:
+            self._ensure_source_loaded()
+
+    def _finish_pending_vertex_pick(self):
+        pending = self._pending_vertex_pick
+        if pending is None or not self.source_pane.ready:
+            return
+        self._pending_vertex_pick = None
+        model, offset = pending
+        if model is not self.viewer._model:
+            return
+        if self.source_pane.goto_model_vertex(model, offset):
+            self.statusBar().showMessage(
+                f"Selected vertex @{offset} in .3D Source")
+        else:
+            self.statusBar().showMessage(
+                f"Vertex @{offset} has no matching declaration in .3D Source")
+
     def _source_target_changed(self, target):
         if (not self.source_toggle.isChecked() or
                 self.source_pane.pending or self._source_invalid or
@@ -2152,6 +2252,7 @@ class Window(QMainWindow):
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
         self._source_invalid = False
+        self._finish_pending_vertex_pick()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -2715,6 +2816,7 @@ class Window(QMainWindow):
             self._last_valid_source_text = None
             self._source_save_target = None
             self._source_queued = None
+            self._pending_vertex_pick = None
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
                 self.model_path.resolve() != next_path.resolve()):
