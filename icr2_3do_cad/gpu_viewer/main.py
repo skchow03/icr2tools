@@ -84,6 +84,7 @@ from gpu_viewer.appearance import DARK_COLORS, load_colors, save_colors, validat
 from gpu_viewer.appearance_dialog import AppearanceDialog
 from gpu_viewer.confirmations import confirm_destructive_action
 from gpu_viewer.source_tab import SourcePane
+from gpu_viewer.scale_dialog import ScaleModelDialog
 from gpu_viewer.source_inspection import (
     target_offset, polygon_mesh_range, polygon_inspection_notice,
     vertex_screen_position, raw_point_screen_position, bsp_winding_arrows,
@@ -2265,6 +2266,27 @@ class Window(QMainWindow):
         if command not in ("copy", "selectAll") and widget.isReadOnly():
             return
         getattr(widget, command)()
+
+    def _scale_model(self):
+        """Ask for a uniform multiply/divide factor and edit canonical N3.
+
+        If source is lazy-loaded, request it without silently scaling an old
+        model. The edit stays in the source document until Save/Export.
+        """
+        if not self.source_pane.ready:
+            self._source_toolbar_action(lambda: None)
+            return
+        dialog = ScaleModelDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            result = self.source_pane.scale_model(
+                dialog.factor_text, divide=dialog.divide)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot scale .3D model", str(exc))
+            return
+        self.statusBar().showMessage(
+            result.summary() + ". Recompiling; changes are not saved.")
 
     def _find_source(self, *, next_match=False):
         """Find across the complete N3 text, including hidden filter rows."""
