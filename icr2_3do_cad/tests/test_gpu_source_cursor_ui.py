@@ -80,6 +80,117 @@ class GPUCursorUITests(unittest.TestCase):
         self.pane.mark_error(self.pane.revision, "line 5: bad source")
         self.assertIsNone(self.window.viewer.inspection_kind)
 
+    def test_viewport_click_reveals_source_and_selects_named_vertex(self):
+        self.pane.set_source(SOURCE, Path("example.3d"))
+        self.window.source_toggle.setChecked(False)
+        target = self.model.n3_label_offsets["b"]
+        self.window._viewport_vertex_picked(target)
+        self.assertTrue(self.window.source_toggle.isChecked())
+        self.assertEqual(self.pane.current_target(), ("vertex", "b"))
+        self.assertEqual(self.pane.editor.textCursor().blockNumber(), 2)
+        self.assertEqual(self.pane.editor.textCursor().selectedText(), "b")
+        self.assertEqual(self.window.viewer.inspection_kind, "vertex")
+        self.assertEqual(self.window.viewer.inspection_offset, target)
+        self.assertFalse(self.pane.dirty)
+
+    def test_filtered_source_jumps_to_original_declaration(self):
+        self.pane.set_source(SOURCE, Path("example.3d"))
+        self.pane._only_filter("POLY")
+        self.assertIs(self.pane.source_stack.currentWidget(),
+                      self.pane.filtered_page)
+        self.window._viewport_vertex_picked(self.model.n3_label_offsets["c"])
+        self.assertIs(self.pane.source_stack.currentWidget(),
+                      self.pane.editor)
+        self.assertEqual(self.pane.current_target(), ("vertex", "c"))
+        self.assertEqual(self.pane.editor.textCursor().blockNumber(), 3)
+        self.assertEqual(self.pane.get_source(), SOURCE)
+
+    def test_vertex_pick_waits_for_async_source_and_rejects_old_model(self):
+        from unittest.mock import patch
+        self.pane.reset()
+        self.window.source_toggle.setChecked(True)
+        offset = self.model.n3_label_offsets["a"]
+        with patch.object(self.window, "_ensure_source_loaded") as ensure:
+            self.window._viewport_vertex_picked(offset)
+            ensure.assert_called()
+        self.assertEqual(self.window._pending_vertex_pick, (self.model, offset))
+        self.window._source_exported(self.model, SOURCE, Path("example.3d"))
+        self.assertEqual(self.pane.current_target(), ("vertex", "a"))
+        self.assertIsNone(self.window._pending_vertex_pick)
+        self.pane.reset()
+        with patch.object(self.window, "_ensure_source_loaded"):
+            self.window._viewport_vertex_picked(offset)
+        stale = self.window._pending_vertex_pick
+        self.assertIsNotNone(stale)
+        from types import SimpleNamespace
+        self.window.viewer._model = SimpleNamespace(vertices={})
+        self.window._source_exported(self.model, SOURCE, Path("example.3d"))
+        self.assertFalse(self.pane.ready)
+        self.window.viewer._model = self.model
+        self.window._pending_vertex_pick = None
+        self.pane.set_source(SOURCE, Path("example.3d"))
+
+    def test_mouse_click_picks_but_drag_and_shift_pan_do_not(self):
+        from unittest.mock import patch
+        from PySide6.QtCore import Qt, QEvent, QPointF
+        from PySide6.QtGui import QMouseEvent
+        self.pane.set_source(SOURCE, Path("example.3d"))
+        viewport = self.window.viewer
+        target = self.model.n3_label_offsets["b"]
+        def ev(kind, pos, button, buttons, mods=Qt.KeyboardModifier.NoModifier):
+            return QMouseEvent(
+                kind, QPointF(*pos), button, buttons, mods)
+        left = Qt.MouseButton.LeftButton
+        with patch.object(viewport, "pick_nearest_vertex",
+                          return_value=target) as pick:
+            viewport.mousePressEvent(
+                ev(QEvent.Type.MouseButtonPress, (20, 20), left, left))
+            viewport.mouseReleaseEvent(
+                ev(QEvent.Type.MouseButtonRelease, (20, 20),
+                   left, Qt.MouseButton.NoButton))
+            pick.assert_called_once()
+            self.assertEqual(self.pane.current_target(), ("vertex", "b"))
+            pick.reset_mock()
+            viewport.mousePressEvent(
+                ev(QEvent.Type.MouseButtonPress, (20, 20), left, left))
+            viewport.mouseMoveEvent(
+                ev(QEvent.Type.MouseMove, (60, 20),
+                   Qt.MouseButton.NoButton, left))
+            viewport.mouseReleaseEvent(
+                ev(QEvent.Type.MouseButtonRelease, (60, 20),
+                   left, Qt.MouseButton.NoButton))
+            pick.assert_not_called()
+            viewport.mousePressEvent(
+                ev(QEvent.Type.MouseButtonPress, (20, 20), left, left,
+                   Qt.KeyboardModifier.ShiftModifier))
+            viewport.mouseReleaseEvent(
+                ev(QEvent.Type.MouseButtonRelease, (20, 20),
+                   left, Qt.MouseButton.NoButton,
+                   Qt.KeyboardModifier.ShiftModifier))
+            pick.assert_not_called()
+
+    def test_binary_generated_vertex_pointer_is_navigable(self):
+        import tempfile
+        from three_do import Model
+        from text_3d import export_compilable_text
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "compiled.3do"
+            path.write_bytes(self.model.raw)
+            binary = Model(path, associate_planes=False)
+            source = export_compilable_text(binary)
+            self.pane.set_source(source, path.with_suffix(".3d"))
+            self.window.viewer._model = binary
+            try:
+                off = next(iter(binary.vertices))
+                self.window._viewport_vertex_picked(off)
+                self.assertEqual(
+                    self.pane.current_target(), ("vertex", f"_{off}"))
+                self.assertEqual(
+                    self.window.viewer.inspection_offset, off)
+            finally:
+                self.window.viewer._model = self.model
+                self.pane.set_source(SOURCE, Path("example.3d"))
+
     def test_closed_source_hides_inspection(self):
         # Revert to validated editor state for this test.
         self.pane.set_source(SOURCE, Path("example.3d"))
