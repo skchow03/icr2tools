@@ -23,13 +23,14 @@ from PySide6.QtWidgets import (
 )
 
 from gpu_viewer.source_inspection import index_source_targets, target_offset
+from gpu_viewer.source_navigation import declaration_lines, pointer_at_column
 from gpu_viewer.source_filters import CATEGORIES, index_source_entries
 from gpu_viewer.active_source import (
     active_source_labels, plane_vertex_dependencies, entry_is_active,
 )
 from gpu_viewer.source_rename import (
     edited_declaration_label, declaration_label, reference_spans,
-    plan_pointer_rename, qt_utf16_offset,
+    plan_pointer_rename, qt_utf16_offset, DECLARATION,
 )
 
 # Same N3 token categories and error location heuristics as the CPU editor.
@@ -138,8 +139,11 @@ class FilteredStatementsModel(QAbstractListModel):
                       "  [NOT DRAWN]") if active else ""
             return (f"{entry.first_line + 1:>6}  "
                     f"[{entry.category}]  {entry.preview}{status}")
-        if active and role == Qt.ItemDataRole.BackgroundRole:
-            return QColor("#b5e3bb" if self.active_visibility else "#f1ada1")
+        if role == Qt.ItemDataRole.BackgroundRole:
+            if active:
+                return QColor("#b5e3bb" if self.active_visibility else "#f1ada1")
+            if self._row_at_line(self.active_line) == index.row():
+                return QColor("#34516b")
         if active and role == Qt.ItemDataRole.ForegroundRole:
             return QColor("#17221d")
         if role == Qt.ItemDataRole.ToolTipRole:
@@ -230,6 +234,8 @@ class SourcePane(QWidget):
         self._initial = ''
         self._ready = False
         self._source_index = index_source_targets("")
+        self._navigation_revision = -1
+        self._navigation_definitions = {}
         self._last_cursor_target = None
         self._polygon_visible = None
         self._rename_snapshot = ""
@@ -352,8 +358,8 @@ class SourcePane(QWidget):
         self.editor.setTabStopDistance(72)
         self.editor.setUndoRedoEnabled(True)
         self.editor.setToolTip(
-            "F2: rename the pointer on this line; only its name and "
-            "(optionally) references change.")
+            "F12 or Ctrl+click a pointer reference to jump to its "
+            "declaration. F2 renames the declaration on this line.")
         self.highlighter = N3Highlighter(self.editor.document())
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
@@ -408,6 +414,12 @@ class SourcePane(QWidget):
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.rename_pointer_shortcut.activated.connect(
             self.rename_selected_pointer)
+        self.goto_pointer_shortcut = QShortcut(
+            QKeySequence(Qt.Key.Key_F12), self)
+        self.goto_pointer_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.goto_pointer_shortcut.activated.connect(
+            self.goto_pointer_declaration)
         # QAbstractItemView normally interprets F2 as "edit the entire row".
         # Intercept its keypress before the default view handler so this
         # shortcut always edits just the pointer label in either view.
@@ -416,13 +428,29 @@ class SourcePane(QWidget):
             widget.installEventFilter(self)
 
     def eventFilter(self, watched, event):
+        editor_widgets = (self.editor, self.editor.viewport(),
+                          self.filtered_list, self.filtered_list.viewport())
         if (event.type() == QEvent.Type.KeyPress and
-                event.key() == Qt.Key.Key_F2 and
-                watched in (self.editor, self.editor.viewport(),
-                            self.filtered_list, self.filtered_list.viewport())):
-            self.rename_selected_pointer()
-            event.accept()
-            return True
+                watched in editor_widgets):
+            if event.key() == Qt.Key.Key_F2:
+                self.rename_selected_pointer()
+                event.accept()
+                return True
+            if event.key() == Qt.Key.Key_F12:
+                self.goto_pointer_declaration()
+                event.accept()
+                return True
+        if (watched is self.editor.viewport() and
+                event.type() == QEvent.Type.MouseButtonPress and
+                event.button() == Qt.MouseButton.LeftButton and
+                event.modifiers() & Qt.KeyboardModifier.ControlModifier and
+                not event.modifiers() & (Qt.KeyboardModifier.ShiftModifier |
+                                         Qt.KeyboardModifier.AltModifier)):
+            if self.goto_pointer_declaration(
+                    self.editor.cursorForPosition(event.position().toPoint()),
+                    from_mouse=True):
+                event.accept()
+                return True
         return super().eventFilter(watched, event)
 
     @property
@@ -469,6 +497,7 @@ class SourcePane(QWidget):
             self._setting = False
         self._rename_snapshot = normalized
         self._source_index = index_source_targets(normalized)
+        self._navigation_revision = -1
         self._filter_cache_revision = -1
         self._distance_dependencies_key = None
         self._distance_labels_key = None
@@ -503,6 +532,7 @@ class SourcePane(QWidget):
             self._setting = False
         self._rename_snapshot = ""
         self._source_index = index_source_targets("")
+        self._navigation_revision = -1
         self._filter_cache_revision = -1
         self._distance_model = None
         self._distance_dependencies_key = None
@@ -517,6 +547,7 @@ class SourcePane(QWidget):
             return
         self._track_symbol_edit()
         self.revision += 1
+        self._navigation_revision = -1
         self._filter_cache_revision = -1
         self._distance_dependencies_key = None
         self._distance_labels_key = None
@@ -574,6 +605,7 @@ class SourcePane(QWidget):
         self._polygon_visible = None
         if self.current_distance_only.isChecked():
             self._apply_filters()
+        self._refresh_extra_selections()
         self.status.setText(f'Line {line}: {error}. Last valid GPU preview retained.')
         self._emit_cursor_target()
 
@@ -588,6 +620,68 @@ class SourcePane(QWidget):
             self.editor.setTextCursor(cursor)
             self.editor.centerCursor()
             self.editor.setFocus()
+
+    def _pointer_declarations(self):
+        """Index complete source labels once per text revision."""
+        if self._navigation_revision != self.revision:
+            self._navigation_definitions = declaration_lines(
+                self.editor.toPlainText())
+            self._navigation_revision = self.revision
+        return self._navigation_definitions
+
+    def goto_pointer_declaration(self, cursor=None, *, from_mouse=False):
+        """F12 / Ctrl+click: select the declaration for a reference token.
+
+        Does not require compilation, so source navigation also works while
+        edits are pending. Unknown/ambiguous symbols and resource filenames
+        are never treated as references.
+        """
+        if not self._ready:
+            return False
+        if self.source_stack.currentWidget() is self.filtered_page:
+            if from_mouse:
+                return False
+            self._edit_filtered_entry()
+        if cursor is None:
+            cursor = self.editor.textCursor()
+        row = cursor.block().text()
+        qt_column = cursor.positionInBlock()
+        # Qt offsets are UTF-16 code units; N3 token offsets are Python
+        # code points. This also handles comments with non-BMP characters.
+        column = len(row.encode("utf-16-le")[:qt_column * 2].decode(
+            "utf-16-le", errors="ignore"))
+        target = pointer_at_column(
+            row, column, self._pointer_declarations(),
+            include_end=not from_mouse)
+        if target is None:
+            if not from_mouse:
+                self.status.setText(
+                    "Place the cursor on an N3 pointer reference and press F12, "
+                    "or Ctrl+click the reference.")
+            return False
+        block = self.editor.document().findBlockByNumber(target.target_line)
+        if not block.isValid():
+            return False
+        # Keep the target's actual declaration rather than searching for a
+        # matching word in a comment, string, or unrelated statement.
+        match = DECLARATION.match(block.text())
+        if match is None or match.group("name") != target.name:
+            return False
+        start = block.position() + qt_utf16_offset(
+            block.text(), match.start("name"))
+        end = block.position() + qt_utf16_offset(
+            block.text(), match.end("name"))
+        destination = QTextCursor(block)
+        destination.setPosition(start)
+        destination.setPosition(end, QTextCursor.MoveMode.KeepAnchor)
+        self.source_stack.setCurrentWidget(self.editor)
+        self.editor.setTextCursor(destination)
+        self.editor.centerCursor()
+        self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.status.setText(
+            f"Pointer {target.name} — declaration at line "
+            f"{target.target_line + 1}")
+        return True
 
     def goto_model_vertex(self, model, offset):
         """Jump to a compiled root vertex's authored or generated N3 label.
@@ -671,6 +765,17 @@ class SourcePane(QWidget):
                         QTextCharFormat.Property.FullWidthSelection, True)
                     item.cursor = QTextCursor(block)
                     lines.append(item)
+        # Full-width caret-row highlight is independent of POLY/RES
+        # inspection. Keep it last and translucent so the existing green,
+        # salmon and error backgrounds remain readable underneath.
+        if self._ready:
+            current = QTextEdit.ExtraSelection()
+            current.format.setBackground(QColor(88, 143, 201, 72))
+            current.format.setProperty(
+                QTextCharFormat.Property.FullWidthSelection, True)
+            current.cursor = QTextCursor(self.editor.textCursor())
+            current.cursor.clearSelection()
+            lines.append(current)
         self.editor.setExtraSelections(lines)
         self.filtered_model.set_inspection(
             self.editor.textCursor().blockNumber(), self._polygon_visible)
@@ -1057,5 +1162,6 @@ class SourcePane(QWidget):
         self.position.setText(
             f'Line {cursor.blockNumber()+1}, column {cursor.positionInBlock()+1}')
         self._emit_cursor_target()
-        self.filtered_model.set_inspection(
-            cursor.blockNumber(), self._polygon_visible)
+        # Even when moving between two rows of the same multiline POLY or
+        # across ordinary statements, the current-line highlight must move.
+        self._refresh_extra_selections()
