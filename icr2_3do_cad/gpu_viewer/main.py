@@ -3904,6 +3904,13 @@ class Window(QMainWindow):
         self._append_load_activity(self.worker, line)
 
     def _begin_load_activity(self, worker):
+        # A previous model's lazy N3 export may still be running. Keep its
+        # queued events from contaminating this newly reset "last load" file.
+        if (self._source_export_worker is not None and
+                self._source_export_worker.isRunning()):
+            self._source_export_worker.activity_trace = None
+        if self._load_trace is not None:
+            self._load_trace.stop_watchdog()
         self._load_activity_worker = worker
         self.load_activity_text.clear()
         try:
