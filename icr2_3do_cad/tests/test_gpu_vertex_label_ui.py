@@ -46,6 +46,7 @@ class GPUVertexLabelUITests(unittest.TestCase):
 
     def setUp(self):
         self.window.vertex_labels_toggle.setChecked(False)
+        self.window.vertex_label_mode_combo.setCurrentIndex(0)
 
     def test_toggle_above_viewport_is_off_by_default_and_mouse_transparent(self):
         window = self.window
@@ -55,6 +56,7 @@ class GPUVertexLabelUITests(unittest.TestCase):
         self.assertIs(overlay.parentWidget(), window.viewer)
         self.assertEqual(overlay.objectName(), "allVertexLabelsOverlay")
         self.assertFalse(window.vertex_labels_toggle.isChecked())
+        self.assertEqual(window.vertex_label_mode_combo.currentData(), "all")
         self.assertTrue(overlay.isHidden())
         self.assertTrue(overlay.testAttribute(
             self.Qt.WidgetAttribute.WA_TransparentForMouseEvents))
@@ -63,6 +65,41 @@ class GPUVertexLabelUITests(unittest.TestCase):
         self.assertTrue(window.viewer.pick_mode in ("vertex", "polygon"))
         window.vertex_labels_toggle.setChecked(False)
         self.assertTrue(overlay.isHidden())
+
+    def test_modes_are_independently_selectable_without_rewriting_geometry(self):
+        window = self.window
+        combo = window.vertex_label_mode_combo
+        self.assertIs(combo.parentWidget(), window.distance_bar)
+        self.assertEqual(combo.count(), 3)
+        self.assertEqual([combo.itemData(i) for i in range(combo.count())],
+                         ["all", "visible", "selected"])
+        window.vertex_labels_toggle.setChecked(True)
+        for mode in ("selected", "visible", "all"):
+            combo.setCurrentIndex(combo.findData(mode))
+            self.assertEqual(window.viewer.vertex_label_mode, mode)
+            self.assertFalse(window.viewer.vertex_label_overlay.isHidden())
+        window.vertex_labels_toggle.setChecked(False)
+        self.assertTrue(window.viewer.vertex_label_overlay.isHidden())
+        self.assertEqual(window.viewer.vertex_label_mode, "all")
+        self.assertFalse(window.source_pane.dirty)
+
+    def test_selected_polygon_mode_follows_source_polygon_selection(self):
+        view = self.window.viewer
+        combo = self.window.vertex_label_mode_combo
+        view._model = self.model
+        poly = self.model.n3_label_offsets["face"]
+        combo.setCurrentIndex(combo.findData("selected"))
+        view.set_source_inspection("polygon", poly)
+        self.assertEqual(view.inspection_kind, "polygon")
+        self.assertEqual(view.inspection_offset, poly)
+        # The source target shares exactly the selected polygon's pointers.
+        from gpu_viewer.vertex_label_data import polygon_vertex_refs
+        self.assertEqual(polygon_vertex_refs(self.model, (poly,)), {
+            self.model.n3_label_offsets[label]
+            for label in ("front_left", "rear_right", "top")
+        })
+        view.set_source_inspection()
+        self.assertIsNone(view.inspection_offset)
 
     def test_selection_uses_yellow_not_other_vertex_blue(self):
         view = self.window.viewer
