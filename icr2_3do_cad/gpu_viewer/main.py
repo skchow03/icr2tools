@@ -3212,12 +3212,15 @@ class Window(QMainWindow):
             return
         if self.source_pane.ready:
             return
+        self._record_load_activity(
+            f"GUI editable-source insertion BEGIN: {len(text):,} characters")
         self.source_pane.set_source(
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
         self.viewer.set_vertex_label_source(self.source_pane._source_index)
         self._source_invalid = False
+        self._record_load_activity("GUI editable-source insertion DONE")
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
         self._split_controls_changed()
