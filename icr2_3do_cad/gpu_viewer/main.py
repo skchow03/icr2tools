@@ -11,6 +11,7 @@ import json
 import math
 import os
 import tempfile
+import traceback
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -50,6 +51,7 @@ try:
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+        QDockWidget,
         QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QProgressBar, QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
@@ -63,6 +65,7 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
+from gpu_viewer.load_activity import LoadActivityTrace, DEFAULT_LOAD_LOG
 from gpu_viewer.wireframe import make_wireframe
 from gpu_viewer.visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
@@ -242,12 +245,14 @@ class LoadWorker(QThread):
     ready = Signal(object, object, object, object, object, object)
     failed = Signal(str)
     progress = Signal(int, str)  # completed stage marker, not elapsed-time estimate
+    activity = Signal(str)  # timestamped line from worker thread
 
     def __init__(self, path, palette_path, texture_folder=None,
                  fallback_mip=None, *, objects_folder=None,
                  mip_overrides=None, object_overrides=None, body_mip=None,
                  existing_model=None, source_text=None, source_path=None,
-                 appearance_override=None, auto_local_palette=False):
+                 appearance_override=None, auto_local_palette=False,
+                 activity_trace=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
@@ -262,6 +267,23 @@ class LoadWorker(QThread):
         self.source_path = Path(source_path) if source_path is not None else None
         self.appearance_override = appearance_override
         self.auto_local_palette = auto_local_palette
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        # Persist before notifying Qt: GUI signals cannot be painted during
+        # a slow OpenGL driver operation, but the file survives a hang.
+        if self.activity_trace is not None:
+            try:
+                line = self.activity_trace.write(message)
+            except OSError as exc:
+                line = f"[Log write failure: {exc}] {message}"
+        else:
+            line = str(message)
+        self.activity.emit(line)
+
+    def _stage(self, percent, name):
+        self._activity(f"STAGE {percent}%: {name}")
+        self.progress.emit(percent, name)
 
     def run(self):
         try:
@@ -269,41 +291,52 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            self.progress.emit(5, "Parsing model and referenced 3DOs")
+            self._activity(f"START model load: {self.path}")
+            self._stage(5, "Parsing model and referenced 3DOs")
             if self.source_text is not None:
                 # Compile candidate text off the UI thread. Do not overwrite
                 # the last valid model until this AND the mesh/atlas succeed.
+                self._activity(f"Compiling N3 source: {self.source_path}")
                 model, _ = compile_n3_text(
                     self.source_text, self.source_path, associate_planes=False)
                 appearance = self.appearance_override
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides,
-                                    appearance=appearance)
+                                    appearance=appearance,
+                                    on_activity=self._activity)
             elif self.path.suffix.lower() == ".3do":
                 model, scene, appearance = load_car_or_model(
                     self.path, existing_model=self.existing_model,
                     objects_folder=self.objects_folder,
                     object_overrides=self.object_overrides,
-                    fixtures_folder=CAD_ROOT / 'fixtures')
+                    fixtures_folder=CAD_ROOT / 'fixtures',
+                    on_activity=self._activity)
             elif self.path.suffix.lower() == ".3d":
                 if self.existing_model is not None:
                     model = self.existing_model
                 else:
+                    self._activity(f"Reading source: {self.path}")
                     text = self.path.read_text(encoding="utf-8-sig")
+                    self._activity(f"Compiling source: {self.path.name}")
                     model, _ = compile_n3_text(
                         text, self.path, associate_planes=False)
                 scene = build_scene(model, objects_folder=self.objects_folder,
-                                    object_overrides=self.object_overrides)
+                                    object_overrides=self.object_overrides,
+                                    on_activity=self._activity)
                 appearance = None
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            self.progress.emit(30, "Reading color palette")
+            self._activity(f"Model and references parsed in {parse_ms:.0f} ms; "
+                           f"scene has {len(scene.geometry.polygons):,} polygons, "
+                           f"{len(scene.instances)} instances")
+            self._stage(30, "Reading color palette")
             selected_palette = self.palette_path
             palette_warning = None
             auto_palette = False
             local_sunny = (find_model_sunny_palette(self.path)
                            if self.auto_local_palette else None)
+            self._activity(f"Palette: {local_sunny or self.palette_path}")
             if local_sunny is not None:
                 try:
                     palette = load_palette(local_sunny)
@@ -319,7 +352,7 @@ class LoadWorker(QThread):
                     auto_palette = True
             else:
                 palette = load_palette(self.palette_path)
-            self.progress.emit(42, "Preparing track skybox")
+            self._stage(42, "Preparing track skybox")
             # HORIZ is a separate camera-locked background for indexed tracks.
             # Try valid HORIZ.3DO files first; malformed/nonrenderable ones do
             # not prevent a standalone HORIZ.3D from being compiled in memory.
@@ -327,13 +360,14 @@ class LoadWorker(QThread):
                 scene.skybox, sky_notes = load_preferred_track_skybox(
                     self.path, palette.astype(np.float32) / 255.0,
                     objects_folder=self.objects_folder,
-                    texture_folder=self.texture_folder)
+                    texture_folder=self.texture_folder,
+                    on_activity=self._activity)
                 if scene.skybox is None:
                     scene.skybox_error = sky_notes
                 elif sky_notes:
                     scene.warnings = tuple(
                         dict.fromkeys((*scene.warnings, sky_notes)))
-            self.progress.emit(55, "Reading track navigation")
+            self._stage(55, "Reading track navigation")
             # A companion <trackstem>.TRK supplies physics centerline XYZ,
             # tangent and elevation for the camera, independently of 3DO BSP.
             # Ignore unrelated .TRK files in the directory.
@@ -341,28 +375,36 @@ class LoadWorker(QThread):
                 trk_path = find_matching_trk(self.path)
                 if trk_path is not None:
                     try:
+                        self._activity(f"Parsing TRK: {trk_path}")
                         scene.track_navigation = TrackNavigation.from_file(trk_path)
+                        self._activity(f"TRK ready: {scene.track_navigation.trk.num_sects} sections")
                     except (OSError, ValueError, IndexError, TypeError,
                             OverflowError, ZeroDivisionError) as exc:
                         scene.track_navigation_error = f"{trk_path.name}: {exc}"
-            self.progress.emit(63, "Decoding PMP sprites")
+            self._stage(63, "Decoding PMP sprites")
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
             scene.sprite_resources = prepare_scene_sprites(
                 scene, objects_folder=self.objects_folder,
-                texture_folder=self.texture_folder)
+                texture_folder=self.texture_folder,
+                on_activity=self._activity)
             scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
-            self.progress.emit(74, "Loading MIP textures and building atlas")
+            self._stage(74, "Loading MIP textures and building atlas")
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip,
                                 mip_overrides=self.mip_overrides,
-                                body_mip=self.body_mip)
-            self.progress.emit(85, "Triangulating track geometry")
+                                body_mip=self.body_mip,
+                                on_activity=self._activity)
+            self._stage(85, "Triangulating track geometry")
             mesh = make_mesh(scene.geometry,
-                             palette.astype(np.float32) / 255.0, atlas)
-            self.progress.emit(89, "Finalizing loaded scene")
+                             palette.astype(np.float32) / 255.0, atlas,
+                             on_activity=self._activity)
+            self._activity(f"Mesh ready: {mesh.polygon_count:,} polygons, "
+                           f"{mesh.triangle_count:,} triangles, "
+                           f"{mesh.size_bytes / 1048576:.1f} MiB")
+            self._stage(89, "Finalizing loaded scene")
             stats = {
                 "file": self.path.name,
                 "palette_path": selected_palette,
@@ -409,8 +451,12 @@ class LoadWorker(QThread):
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
+            self._activity("CPU load completed; handing scene to Qt GUI thread")
             self.ready.emit(mesh, stats, model, atlas, palette, scene)
         except Exception as exc:
+            self._activity(f"WORKER FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
