@@ -94,6 +94,9 @@ class GPUDepthVertexLabelGLTests(unittest.TestCase):
                 self.view.set_all_vertex_labels(True)
                 after = image(self.view)
                 shown = {row[0] for row in self.view._depth_visible_vertex_labels}
+                self.assertIsNone(
+                    self.view._vertex_depth_error,
+                    f"Depth readback failed: {self.view._vertex_depth_error}")
                 self.assertFalse(back & shown, f"Occluded rear vertices shown: {shown}")
                 self.assertTrue(front & shown, f"No front vertices shown: {shown}")
                 self.assertTrue(np.array_equal(baseline, after),
