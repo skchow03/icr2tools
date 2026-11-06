@@ -95,6 +95,38 @@ class TrackNavigationUITests(unittest.TestCase):
         self.window.sky_eye_reset_button.click()
         self.assertEqual(view.sky_eye, tuple(SKY_EYE))
         self.window.sky_eye_reset_button.setEnabled(False)
+    def test_onboard_bank_roll_rotates_view_and_horiz_but_not_eye(self):
+        import numpy as np
+        from types import SimpleNamespace
+        from gpu_viewer.main import camera_view
+        from gpu_viewer.skybox import skybox_view_matrix
+        view = self.window.viewer
+        self.nav.trk.xsect_data = [
+            [0, 0, 0, 24000, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0],
+        ] * 2
+        view._update_track_drive_pose()
+        pose = view._track_drive_pose
+        self.assertLess(pose.roll, 0)
+        eye = view._camera_eye_model()
+        rolled, _, _ = view._camera_view_matrix()
+        unrolled, _, _ = camera_view(
+            view.azimuth, view.elevation, view.distance, view.target)
+        np.testing.assert_allclose(rolled[2], unrolled[2])
+        self.assertFalse(np.allclose(rolled[:2, :3], unrolled[:2, :3]))
+        self.assertEqual(view._camera_eye_model(), eye)
+        fake_sky_mesh = SimpleNamespace(center=(0., 0., 0.), scale=1.)
+        sky_rolled = skybox_view_matrix(rolled, fake_sky_mesh)
+        sky_unrolled = skybox_view_matrix(unrolled, fake_sky_mesh)
+        self.assertFalse(np.allclose(sky_rolled[:3, :3],
+                                      sky_unrolled[:3, :3]))
+        self.assertIn('bank', self.window.trk_drive_status.text())
+        view.set_track_drive_enabled(False)
+        restored, _, _ = view._camera_view_matrix()
+        expected, _, _ = camera_view(
+            view.azimuth, view.elevation, view.distance, view.target)
+        np.testing.assert_allclose(restored, expected)
+
     def test_steps_reset_and_disable_restore_free_camera(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest
