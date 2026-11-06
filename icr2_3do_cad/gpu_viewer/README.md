@@ -203,23 +203,38 @@ Perspective is required and all three projection controls are disabled.
 Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
 the viewport so those letters can be typed normally in the N3 editor.
 
-## Show all vertex pointer names
+## Display vertex pointer names
 
-Toggle **Vertex labels** in the compact row immediately **above the GPU viewport**
-(next to the Pick selector). It is **off by default** so large track models
-remain uncluttered until the feature is needed. When enabled, every root-model
-vertex inside the current camera frustum is marked with a **small blue dot**
-and labeled with the name of its `.3D` pointer, such as `front_left`.
-The currently selected vertex retains its **larger yellow marker**, and its
-pointer name is yellow; the other vertices remain blue. Models opened directly
-from binary `.3do` do not contain authored pointer names; their generated
-source uses labels such as `_120`, which are displayed instead. The overlay
-moves with orbit/pan/zoom, perspective/orthographic view and live N3 source
-recompilation, and does not interfere with click picking or alter any model
-data. Labels can overlap on dense geometry; turn off the toggle when not in
-use. The two blue colors are separately adjustable under **View → Customize
-Colors…**. Referenced external DYNAMIC models have their own N3 source, so
-the overlay labels vertices from the root model only.
+Enable **Vertex labels** in the row immediately **above the GPU viewport**
+(next to the Pick selector). The display-mode dropdown beside it provides
+three choices:
+
+- **All:** label every root-model vertex inside the camera frustum, including
+  hidden/back-side vertices and vertices declared only for FACE/BSP planes.
+  This is the original behavior.
+- **Visible only:** label vertices on the **frontmost polygon surfaces**.
+  A separate depth-only pass tests each projected vertex against the actual
+  model geometry, so vertices hidden on the back of a car are excluded even
+  when the viewport is in Papyrus drawing-order or wireframe mode. Vertex
+  labels also respect the current polygon/RES selection. In wireframe mode,
+  the depth test uses filled geometry as if surfaces were opaque; the visible
+  wireframe itself remains see-through. Coincident/coplanar edges and
+  subpixel silhouettes can still produce a few overlapping labels.
+- **Selected poly:** show only vertices referenced by the polygon currently
+  highlighted in **.3D Source** or clicked with **Pick → Polys**. No polygon
+  selected means no blue dots or names. This mode is useful alongside the
+  polygon-splitting controls, and does not need GPU depth readback.
+
+The checkbox is **off by default**; the initial mode is **All** to preserve
+existing behavior. All modes show small blue dots and pointer names, while
+an individually selected vertex retains its larger yellow marker and name.
+Models opened directly from binary `.3do` do not preserve authored pointer
+names, so the generated N3 `_offset` names appear instead. The overlay
+moves with orbit/pan/zoom, perspective/orthographic changes, and live N3
+recompilation without changing the model or intercepting mouse clicks.
+The dot/name colors are adjustable under **View → Customize Colors…**.
+External DYNAMIC models have their own source files; only vertices belonging
+to the root model are labeled.
 
 ## Split a polygon
 
