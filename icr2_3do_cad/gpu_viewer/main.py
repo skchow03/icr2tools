@@ -3959,7 +3959,11 @@ class Window(QMainWindow):
             auto_local_palette=not reuse_model)
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
+        self._begin_load_activity(self.worker)
         self._begin_load_progress(self.worker)
+        self.worker.activity.connect(
+            lambda line, current=self.worker:
+                self._append_load_activity(current, line))
         self.worker.progress.connect(
             lambda percent, stage, current=self.worker:
                 self._load_progress_stage(current, percent, stage))
@@ -3967,6 +3971,9 @@ class Window(QMainWindow):
 
     def _loaded(self, mesh, stats, model, atlas, palette, scene,
                 *, from_source=False):
+        if not from_source:
+            self._record_load_activity(
+                f"Worker finished. Starting GUI/GL setup for {stats['file']}")
         self._load_progress_stage(
             self.worker, 92, "Uploading geometry, textures and skybox to GPU",
             repaint=True)
@@ -3977,8 +3984,15 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         try:
             self.viewer.set_mesh(mesh, model, atlas, palette, scene,
-                                 preserve_view=was_reloading)
+                                 preserve_view=was_reloading,
+                                 on_activity=(self._record_load_activity
+                                              if not from_source else None))
         except Exception as exc:
+            if not from_source:
+                self._record_load_activity(
+                    f"GUI/GL ERROR: {type(exc).__name__}: {exc}")
+                for line in traceback.format_exc().splitlines():
+                    self._record_load_activity(f"TRACEBACK: {line}")
             self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
                               previous_preserved=False)
             return
@@ -4180,9 +4194,14 @@ class Window(QMainWindow):
         if self.viewer.track_drive_enabled and not was_reloading and not from_source:
             self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
         if not from_source:
+            self._record_load_activity(
+                f"LOAD COMPLETE: {stats['file']}, "
+                f"{mesh.polygon_count:,} polygons, "
+                f"{len(collect_load_issues(stats))} reported issues")
             self._end_load_progress(self.worker, success=True)
 
     def _load_failed(self, message, *, previous_preserved=True):
+        self._record_load_activity(f"LOAD FAILED: {message}")
         self._end_load_progress(self.worker, success=False)
         self.load_label.setText(
             "Load failed; previous model preserved" if previous_preserved
