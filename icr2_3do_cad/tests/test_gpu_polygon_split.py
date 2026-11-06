@@ -71,6 +71,29 @@ class GPUPolygonSplitTests(unittest.TestCase):
         self.assertEqual(len(rebuilt.polygons), 2)
         self.assertEqual(len(original.polygons), 1)
 
+    def test_output_reuses_existing_authored_vertex_pointer_names(self):
+        # UI names must correspond to the actual N3 pointers written by
+        # either splitting mode, not numeric compiled body offsets.
+        renamed = (SQUARE.replace("a: [", "front_left: [")
+                   .replace("b: [", "front_right: [")
+                   .replace("c: [", "rear_right: [")
+                   .replace("d: [", "rear_left: [")
+                   .replace("{a, b, c, d}",
+                            "{front_left, front_right, rear_right, rear_left}"))
+        model = self.compile(renamed)
+        for mode in ("vertices", "edges"):
+            with self.subTest(mode=mode):
+                result = split_n3_polygon(
+                    model, renamed, model.n3_label_offsets["face"],
+                    mode=mode, index_a=0, index_b=2)
+                self.assertIn("front_left", result.source)
+                self.assertIn("front_right", result.source)
+                self.assertIn("rear_right", result.source)
+                self.assertIn("rear_left", result.source)
+                self.assertNotIn("POLY <42> {@", result.source)
+                checked = self.compile(result.source)
+                self.assertEqual(len(checked.polygons), 2)
+
     def test_edge_split_repairs_shared_neighbor_and_preserves_labels(self):
         original = self.compile(NEIGHBORS)
         result = split_n3_polygon(
