@@ -592,12 +592,12 @@ class GLViewport(QOpenGLWidget):
         """Keep optional labels aligned whenever camera/selection redraws."""
         super().update(*args)
         overlay = getattr(self, "vertex_label_overlay", None)
-        if overlay is not None and overlay.isVisible():
+        if overlay is not None and not overlay.isHidden():
             overlay.update()
 
     def set_all_vertex_labels(self, enabled):
         overlay = self.vertex_label_overlay
-        if overlay.isVisible() == bool(enabled):
+        if (not overlay.isHidden()) == bool(enabled):
             return
         overlay.setVisible(bool(enabled))
         if enabled:
@@ -610,7 +610,9 @@ class GLViewport(QOpenGLWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._size_visibility_banner()
-        self.vertex_label_overlay.setGeometry(self.rect())
+        overlay = getattr(self, 'vertex_label_overlay', None)
+        if overlay is not None:
+            overlay.setGeometry(self.rect())
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
