@@ -12,9 +12,12 @@ Observed from stock helmets and tree1..tree4 scenery:
     Byte 12 onward: (y, x_start, x_end, palette_index) 4-byte records
     painting [x_start,x_end) on scanline y of a transparent 256x256 canvas.
 
-    Stock helmet PMP files have an extra single 0xaf footer; tree scenery
-    files end immediately after the final four-byte record. Framing is
-    determined by record alignment, not by the variable extent bytes.
+    Stock helmet PMP files have an extra single 0xaf footer; Cleveland's
+    original offic1..3 sprites have one trailing byte equal to header[3]
+    (0xb7, 0xb6, 0xb4). In the observed stock helmet, 0xaf also equals
+    header[3]. Some tree scenery files end after the last four-byte record.
+    Accept the header-matching footer and legacy 0xaf, but reject unrelated
+    single-byte tails. Framing follows record alignment, not fixed extents.
     Missing pixel spans remain transparent; palette index 0 is not alpha.
 """
 from pathlib import Path
@@ -47,10 +50,13 @@ def load_pmp(path, palette):
 
     # The old decoder incorrectly treated the four extent bytes as a
     # constant signature. Derive their meaning from the actual span bounds
-    # instead. The footer is optional but, when present, must be 0xaf.
+    # instead. Stock Papyrus sprites may have an optional one-byte trailer
+    # matching the fourth (negative-top) extent byte. Earlier helmets used
+    # 0xaf; keep accepting that historic variant for backward compatibility.
     if (len(data) - 12) % 4 == 0:
         spans_end = len(data)
-    elif (len(data) - 13) % 4 == 0 and data[-1] == 0xaf:
+    elif ((len(data) - 13) % 4 == 0 and
+          data[-1] in (data[3], 0xaf)):
         spans_end = len(data) - 1
     else:
         raise PMPError(f'{path.name}: malformed PMP color-span records')
