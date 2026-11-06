@@ -93,7 +93,8 @@ def choose_reference(name, folders, cache, *, override=None, on_activity=None):
         if resolved in checked:
             continue
         checked.add(resolved)
-        if resolved not in cache:
+        cached = resolved in cache
+        if not cached:
             if on_activity:
                 on_activity(f"Parsing referenced model: {path.name} [{path}]")
             try:
@@ -107,7 +108,7 @@ def choose_reference(name, folders, cache, *, override=None, on_activity=None):
             warnings.append(f"{path.name}: invalid model ({result})")
             continue
         if on_activity:
-            on_activity(f"Resolved {name} -> {path.name} (cached={resolved in cache})")
+            on_activity(f"Resolved {name} -> {path.name} (cached={cached})")
         return path, result, warnings
     if not paths:
         if on_activity:
