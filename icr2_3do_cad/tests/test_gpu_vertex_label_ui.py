@@ -69,6 +69,7 @@ class GPUVertexLabelUITests(unittest.TestCase):
         view._vertex_picker = SimpleNamespace(
             offsets=np.array([11, 12], dtype=np.int64),
             normalized=np.array([[0, 0, 0], [0.2, 0, 0]], dtype=np.float64))
+        view._label_vertex_picker = view._vertex_picker
         view.vertex_pointer_names = {11: "front_left", 12: "rear_right"}
         view.set_source_inspection("vertex", 11)
         self.window.vertex_labels_toggle.setChecked(True)
