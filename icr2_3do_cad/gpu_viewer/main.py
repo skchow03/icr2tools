@@ -1997,6 +1997,8 @@ class Window(QMainWindow):
         self.resize(1280, 850)
         self.worker = None
         self._load_progress_worker = None
+        self._load_activity_worker = None
+        self._load_trace = None
         self._info = {}
         self.mip_browser = None  # Separate, non-modal texture reference window
         self.report_path = report_path
@@ -2525,6 +2527,7 @@ class Window(QMainWindow):
         assets_layout.addWidget(self.texture_status)
         assets_layout.addWidget(self.sprite_status)
         self.setCentralWidget(root)
+        self._init_load_activity_dock()
         # Source is the only secondary pane, shown alongside the viewport.
         self.source_toggle.setChecked(True)
         install_menus(self)
