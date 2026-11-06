@@ -802,7 +802,9 @@ class GLViewport(QOpenGLWidget):
             self.doneCurrent()
 
     def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
-                 *, preserve_view=False):
+                 *, preserve_view=False, on_activity=None):
+        if on_activity:
+            on_activity("GPU setup: preparing vertex and polygon pickers")
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
@@ -811,6 +813,8 @@ class GLViewport(QOpenGLWidget):
         self._depth_visible_vertex_labels = []
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
+        if on_activity:
+            on_activity("GPU setup: pickers and scene assigned")
         self._sprite_events = ()
         self._surface_index_count = 0
         self._wire_mesh = None
@@ -830,14 +834,33 @@ class GLViewport(QOpenGLWidget):
         # If origin view is enabled while opening another model, keep the
         # eye pinned to that model's (0,0,0), not its bounding-box center.
         if self._program is not None:
+            if on_activity:
+                on_activity("GPU context: BEGIN makeCurrent()")
             self.makeCurrent()
             try:
+                if on_activity:
+                    on_activity("GPU upload BEGIN: geometry VBO/EBO")
                 self._upload_mesh()
+                if on_activity:
+                    on_activity("GPU upload DONE: geometry VBO/EBO")
+                    on_activity("GPU upload BEGIN: texture and palette atlas")
                 self._upload_texture_assets()
+                if on_activity:
+                    on_activity("GPU upload DONE: texture and palette atlas")
+                    on_activity("GPU upload BEGIN: HORIZ skybox buffers")
                 self._upload_skybox()
+                if on_activity:
+                    on_activity("GPU upload DONE: HORIZ skybox buffers")
+                    on_activity("GPU upload BEGIN: PMP sprite textures")
                 self._upload_sprite_assets()
+                if on_activity:
+                    on_activity("GPU upload DONE: PMP sprite textures")
             finally:
+                if on_activity:
+                    on_activity("GPU context: releasing current context")
                 self.doneCurrent()
+        elif on_activity:
+            on_activity("GPU context not initialized; upload deferred")
         self.update()
 
     def set_vertex_label_source(self, source_index):
