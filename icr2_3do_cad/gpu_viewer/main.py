@@ -3776,6 +3776,8 @@ class Window(QMainWindow):
         self.load_activity_path_label = QLabel(str(DEFAULT_LOAD_LOG))
         self.load_activity_path_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.load_activity_path_label.setWordWrap(True)
+        self.load_activity_path_label.setMinimumWidth(0)
         self.load_activity_path_label.setToolTip(
             "The full log is written to disk immediately. "
             "Use it if the GPU viewer stops responding.")
@@ -3872,6 +3874,8 @@ class Window(QMainWindow):
         self.load_activity_dock.show()
         self.load_activity_dock.raise_()
         self._record_load_activity(f"LOAD REQUEST: {self.model_path}")
+        if trace is not None:
+            trace.start_watchdog()
 
     def _begin_load_progress(self, worker):
         self._load_progress_worker = worker
@@ -3893,6 +3897,8 @@ class Window(QMainWindow):
     def _end_load_progress(self, worker, *, success):
         if worker is not self._load_progress_worker:
             return
+        if worker is self._load_activity_worker and self._load_trace is not None:
+            self._load_trace.stop_watchdog()
         if not success:
             self.load_progress.hide()
             self._load_progress_worker = None
