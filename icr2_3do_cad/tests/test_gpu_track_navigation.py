@@ -71,6 +71,53 @@ class TrackCameraGeometryTests(unittest.TestCase):
         nav = TrackNavigation('course.trk', flat_trk(), eye_height_ft=6.0)
         pose = nav.pose()
         self.assertEqual(pose.eye[2] - pose.ground[2], 36000.0)
+    def test_flat_track_has_zero_camera_roll(self):
+        nav = TrackNavigation('flat.trk', flat_trk())
+        self.assertAlmostEqual(nav.pose().roll, 0.0, places=9)
+        nav.move(forward_feet=10.0, left_feet=2.0)
+        self.assertAlmostEqual(nav.pose().roll, 0.0, places=9)
+
+    def test_banked_track_camera_roll_follows_cross_track_elevation(self):
+        trk = flat_trk()
+        # At both ends of each section, right cross section (+24k)
+        # is higher than left (0); lateral width is 120k Papyrus units.
+        # A 1-foot sample on either side produces the same slope.
+        trk.xsect_data = [
+            [0, 0, 0, 24000, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0],
+        ] * 2
+        nav = TrackNavigation('banked.trk', trk)
+        pose = nav.pose()
+        self.assertAlmostEqual(pose.roll, -math.atan2(24000, 120000),
+                               places=7)
+        self.assertEqual(pose.eye[2] - pose.ground[2], 10000.0)
+        self.assertAlmostEqual(pose.azimuth, -math.pi/2, places=7)
+        nav.move(forward_feet=10.0, left_feet=2.0)
+        self.assertAlmostEqual(nav.pose().roll, pose.roll, places=7)
+        # The return section reverses travel; positive DLAT points
+        # toward the left of the reversing car, not global +Y.
+        nav.set_coordinates(650000, 0)
+        self.assertAlmostEqual(nav.pose().roll, pose.roll, places=7)
+
+    def test_banking_direction_and_longitudinal_grade(self):
+        trk = flat_trk()
+        trk.xsect_data = [
+            [0, 0, 30000, 0, 0, 0, 0, 0],
+            [0, 0, 30000, 12000, 0, 0, 0, 0],
+        ] * 2
+        nav = TrackNavigation('reverse_bank.trk', trk)
+        pose = nav.pose()
+        self.assertGreater(pose.roll, 0)
+        self.assertAlmostEqual(math.degrees(pose.roll),
+                               math.degrees(math.atan2(12000, 120000)),
+                               delta=0.2)
+        # Longitudinal uphill pitch is preserved when banking is added.
+        nav.set_coordinates(300000, 0)
+        uphill = nav.pose()
+        self.assertLess(uphill.elevation, 0)
+        self.assertGreater(uphill.roll, 0)
+        self.assertTrue(math.isfinite(uphill.roll))
+
     def test_wasd_forward_backward_and_signed_lateral_motion(self):
         nav = TrackNavigation("course.trk", flat_trk())
         pose = nav.move(forward_feet=10)
