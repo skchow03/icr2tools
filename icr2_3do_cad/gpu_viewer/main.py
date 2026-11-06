@@ -1432,6 +1432,95 @@ class GLViewport(QOpenGLWidget):
             projection @ view, x, y, self.width(), self.height(),
             eligible_offsets=selected)
 
+    def _capture_depth_visible_labels(self, projection, view, width, height):
+        """Read a geometry-only depth pass for frontmost vertex labels.
+
+        Painter's LIST order and wireframe intentionally disable depth tests.
+        Draw a temporary, color-masked filled pass into the Qt-owned depth
+        buffer *after* the visible image is complete. This does not alter
+        color pixels, model geometry, source, or the editor's render mode.
+        One contiguous readback is considerably cheaper than one GPU read
+        per vertex, especially for large track models.
+        """
+        if (self.vertex_label_mode != "visible"
+                or self.vertex_label_overlay.isHidden()
+                or self._label_vertex_picker is None
+                or self._model is None or self._vao is None):
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Restrict labels to vertices belonging to the active root polygons,
+        # not unused source points, unselected RES branches, or plane-only
+        # declarations that do not belong to a surface.
+        if self.render_mode == "all" and not self._track_lod_active():
+            active = self._model.polygons
+        else:
+            active = self._visible_set
+        eligible = polygon_vertex_refs(self._model, active)
+        if not eligible:
+            self._depth_visible_vertex_labels = []
+            return
+        projected = project_vertex_labels(
+            self._label_vertex_picker, self.vertex_pointer_names,
+            projection @ view, self.width(), self.height(),
+            include_depth=True)
+        if not projected:
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Use the same depth shader and triangles as the viewport, without
+        # textures or color writes. GL_DEPTH_TEST is intentionally enabled
+        # even in Painter/Wireframe so back-side car vertices are excluded.
+        try:
+            glViewport(0, 0, width, height)
+            glColorMask(False, False, False, False)
+            glDepthMask(True)
+            glEnable(GL_DEPTH_TEST)
+            glClear(GL_DEPTH_BUFFER_BIT)
+            glUseProgram(self._program)
+            matrix = np.ascontiguousarray(
+                (projection @ view).T, dtype=np.float32)
+            glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
+            glUniform1i(self._wire_uniform, 0)
+            glUniform1i(self._inspection_uniform, 0)
+            glUniform1i(self._texture_uniform, 0)
+            glBindVertexArray(self._vao)
+            if self.render_mode == "wire" or (
+                    self.render_mode == "all" and not self._track_lod_active()):
+                # Wireframe has no triangle EBO. Its filled occlusion test
+                # includes all faces; label membership still respects wire
+                # detail/RES selection.
+                glDrawArrays(GL_TRIANGLES, 0, len(self._mesh.vertices))
+            elif self._index_count:
+                glDrawElements(
+                    GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+            glBindVertexArray(0)
+            raw_depth = glReadPixels(
+                0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT)
+            if isinstance(raw_depth, (bytes, bytearray, memoryview)):
+                depth = np.frombuffer(raw_depth, dtype=np.float32)
+            else:
+                depth = np.asarray(raw_depth, dtype=np.float32)
+            depth = depth.reshape((height, width))
+            self._depth_visible_vertex_labels = filter_vertex_labels(
+                projected, "visible", vertex_offsets=eligible,
+                depth=depth, device_pixel_ratio=self.devicePixelRatioF())
+        except Exception:
+            # An unsupported depth readback (e.g. platform-specific
+            # multisampled FBO) must not break rendering or expose hidden
+            # vertices under the "Visible only" setting.
+            self._depth_visible_vertex_labels = []
+        finally:
+            glBindVertexArray(0)
+            glColorMask(True, True, True, True)
+            glUniform1i(self._texture_uniform, int(self.textures_enabled))
+            glUseProgram(0)
+            if self.render_mode in ("painter", "wire"):
+                glDisable(GL_DEPTH_TEST)
+            else:
+                glEnable(GL_DEPTH_TEST)
+        self.vertex_label_overlay.update()
+
     def paintGL(self):
         if self._program is None:
             return
@@ -1472,6 +1561,7 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
             self._paint_wireframe(projection, view)
+            self._capture_depth_visible_labels(projection, view, w, h)
             self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
@@ -1551,6 +1641,7 @@ class GLViewport(QOpenGLWidget):
 
         glBindVertexArray(0)
         glUseProgram(0)
+        self._capture_depth_visible_labels(projection, view, w, h)
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
         self._paint_split_preview(projection, view)
