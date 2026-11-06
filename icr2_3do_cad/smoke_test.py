@@ -309,6 +309,8 @@ def run(path):
                                 else:
                                     pane.editor.setTextCursor(QTextCursor(
                                         pane.editor.document().findBlockByNumber(0)))
+                                    window.pick_mode_combo.setCurrentIndex(
+                                        window.pick_mode_combo.findData("vertex"))
                                     QTest.mouseClick(
                                         view, Qt.MouseButton.LeftButton,
                                         pos=QPoint(int(round(point[0])),

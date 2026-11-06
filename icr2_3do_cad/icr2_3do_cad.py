@@ -1205,7 +1205,7 @@ class GLViewport(QOpenGLWidget):
             if on_activity:
                 on_activity("GPU glFinish DONE: geometry buffers synchronized")
         self.upload_ms = (perf_counter()-started)*1000
-        self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
+        self.statsChanged.emit(f"OpenGL upload: {self.upload_ms:.1f} ms")
 
     def _upload_texture_assets(self, *, on_activity=None):
         """OpenGL texture setup is GUI-thread-only; never called on orbit."""
@@ -2147,8 +2147,8 @@ class Window(QMainWindow):
         advanced_layout.addWidget(QLabel("Rendering method"))
         self.mode_combo = QComboBox()
         self.mode_combo.addItem("Papyrus drawing order (no depth)", "painter")
-        self.mode_combo.addItem("BSP selection + GPU depth", "depth")
-        self.mode_combo.addItem("All polygons + GPU depth", "all")
+        self.mode_combo.addItem("BSP selection + depth testing", "depth")
+        self.mode_combo.addItem("All polygons + depth testing", "all")
         self.mode_combo.addItem("Wireframe (polygon outlines only)", "wire")
         self.mode_combo.currentIndexChanged.connect(self._mode_changed)
         advanced_layout.addWidget(self.mode_combo)
@@ -3067,7 +3067,7 @@ class Window(QMainWindow):
         self.split_apply_button.setEnabled(False)
         self.source_pane.apply_now()
         self.statusBar().showMessage(
-            f"Splitting POLY @{offset}; validating N3 and rebuilding GPU preview…")
+            f"Splitting POLY @{offset}; validating N3 and rebuilding preview…")
 
     def _toggle_source(self, checked):
         self.source_pane.setVisible(checked)
@@ -3198,7 +3198,7 @@ class Window(QMainWindow):
         self._source_export_model = model
         self.source_pane.status.setText('Preparing editable .3D source on worker…')
         worker = SourceExportWorker(
-            model, self.model_path, activity_trace=self._load_trace)
+            model, (self.model_path or model.path), activity_trace=self._load_trace)
         self._source_export_worker = worker
         worker.ready.connect(
             lambda text, path, candidate=model:
@@ -3222,7 +3222,7 @@ class Window(QMainWindow):
         self.source_pane.set_source(
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
-                    'Valid changes update the GPU preview without saving.'))
+                    'Valid changes update the viewport without saving.'))
         self.viewer.set_vertex_label_source(self.source_pane._source_index)
         self._source_invalid = False
         self._record_load_activity("GUI editable-source insertion DONE")
@@ -3360,7 +3360,7 @@ class Window(QMainWindow):
         self._update_window_title()
         self.source_pane.status.setText(
             f'Saved {target.name}.' +
-            (' Source is not currently valid; GPU preview still shows last valid model.'
+            (' Source is not currently valid; the viewport still shows the last valid model.'
              if self._source_invalid or self.source_pane.pending else ''))
         return True
 
@@ -4286,7 +4286,7 @@ class Window(QMainWindow):
         self._end_load_progress(self.worker, success=False)
         self.load_label.setText(
             "Load failed; previous model preserved" if previous_preserved
-            else "GPU setup failed; viewport may need reloading")
+            else "Renderer setup failed; viewport may need reloading")
         self.stats_label.setText(message)
         self._update_load_error_log(
             self.model_path or "(no model)",
@@ -4315,7 +4315,7 @@ class Window(QMainWindow):
             mesh = self.viewer._mesh
             payload = {
                 "schema": 1,
-                "renderer": "GPU prototype; Qt/PyOpenGL flat-colour depth test",
+                "renderer": "Qt/OpenGL 3.3 rendering with depth testing",
                 "source_basename": self._info["file"],
                 "parse_ms": round(self._info["parse_ms"], 3),
                 "mesh_build_ms": round(mesh.build_ms, 3),
@@ -4353,9 +4353,9 @@ class Window(QMainWindow):
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(json.dumps(payload, indent=2) + "\n",
                                   encoding="utf-8")
-                print(f"GPU benchmark report: {target}")
+                print(f"3DO CAD benchmark report: {target}")
             except OSError as exc:
-                print(f"Could not write GPU benchmark report: {exc}",file=sys.stderr)
+                print(f"Could not write 3DO CAD benchmark report: {exc}",file=sys.stderr)
         super().closeEvent(event)
 
 
