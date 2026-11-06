@@ -129,7 +129,7 @@ root: DYNAMIC 0,0,0,0,0,0,1, EXTERN "missing";
         self.assertEqual(sky.mesh.scale, 50000.0)
         np.testing.assert_allclose(
             np.asarray(SKY_EYE) - np.asarray(sky.mesh.center),
-            (0, 0, -4000))
+            (0, 0, -4900))
         self.assertEqual(path.read_bytes(), before)
 
     def test_sky_follows_rotation_but_ignores_camera_translation(self):
@@ -147,7 +147,7 @@ root: DYNAMIC 0,0,0,0,0,0,1, EXTERN "missing";
         sky_c = skybox_view_matrix(c, sky.mesh)
         np.testing.assert_allclose(sky_a, sky_b)
         self.assertFalse(np.allclose(sky_a, sky_c))
-        # View origin corresponds exactly to (0,0,1000) in raw sky geometry.
+        # View origin corresponds exactly to (0,0,100) in raw sky geometry.
         eye = (np.asarray(SKY_EYE) - np.asarray(sky.mesh.center)) / sky.mesh.scale
         np.testing.assert_allclose(sky_a @ np.r_[eye, 1.0], [0, 0, 0, 1])
 
