@@ -33,15 +33,18 @@ class Transform:
 
 
 def placement_transform(placement):
-    """Apply Papyrus DYNAMIC Z/Y/X angles as local X, then Y, then Z.
+    """Preview Papyrus DYNAMIC Z/Y/X fields as Rz * Ry(-angle) * Rx.
 
     The binary stores +0x10 Z (heading/steering), +0x14 Y (wheel spin),
-    +0x18 X. A column-vector transform therefore uses Rz * Ry * Rx:
-    local pitch/roll is rotated before the world-space heading. The
-    previous Rx * Ry * Rz applied heading first and tipped stock track
-    bridges/grandstands out of their intended orientations.
+    +0x18 X. Keep the stored fields and user-editable values unchanged.
+    Papyrus's second-angle convention is opposite the right-handed Y
+    rotation matrix used in this viewer. In stock Vancouver, pitsuite.3do
+    has its height along local +X; its parent DYNAMIC uses (Z=87.3,
+    Y=+90, X=0). A positive matrix Y rotation points +X downward,
+    while -Y correctly raises it. The third (X) sign is not changed.
     """
-    z,y,x=[v*ANGLE_SCALE for v in placement.angles]
+    z,raw_y,x=[v*ANGLE_SCALE for v in placement.angles]
+    y=-raw_y
     cz,sz=math.cos(z),math.sin(z)
     cy,sy=math.cos(y),math.sin(y)
     cx,sx=math.cos(x),math.sin(x)
