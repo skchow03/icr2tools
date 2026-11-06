@@ -3764,6 +3764,115 @@ class Window(QMainWindow):
         if path:
             self.load(Path(path))
 
+    def _init_load_activity_dock(self):
+        """Nonmodal diagnostic log; the full trace also survives on disk."""
+        dock = QDockWidget("Live Load Activity", self)
+        dock.setObjectName("liveLoadActivityDock")
+        dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
+        content = QWidget(dock)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(5, 4, 5, 4)
+        controls = QHBoxLayout()
+        self.load_activity_path_label = QLabel(str(DEFAULT_LOAD_LOG))
+        self.load_activity_path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.load_activity_path_label.setToolTip(
+            "The full log is written to disk immediately. "
+            "Use it if the GPU viewer stops responding.")
+        controls.addWidget(self.load_activity_path_label, stretch=1)
+        copy_button = QPushButton("Copy full log")
+        copy_button.clicked.connect(self._copy_load_activity)
+        controls.addWidget(copy_button)
+        save_button = QPushButton("Save as…")
+        save_button.clicked.connect(self._save_load_activity)
+        controls.addWidget(save_button)
+        layout.addLayout(controls)
+        self.load_activity_text = QPlainTextEdit(content)
+        self.load_activity_text.setObjectName("liveLoadActivityText")
+        self.load_activity_text.setReadOnly(True)
+        self.load_activity_text.setLineWrapMode(
+            QPlainTextEdit.LineWrapMode.NoWrap)
+        self.load_activity_text.document().setMaximumBlockCount(4000)
+        self.load_activity_text.setMinimumHeight(100)
+        layout.addWidget(self.load_activity_text)
+        if DEFAULT_LOAD_LOG.is_file():
+            try:
+                last = DEFAULT_LOAD_LOG.read_bytes()[-256000:].decode(
+                    "utf-8", errors="replace")
+                self.load_activity_text.setPlainText(last)
+            except OSError:
+                pass
+        dock.setWidget(content)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        dock.hide()
+        self.load_activity_dock = dock
+
+    def _full_load_activity_text(self):
+        path = (self._load_trace.path if self._load_trace is not None
+                else DEFAULT_LOAD_LOG)
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return self.load_activity_text.toPlainText()
+
+    def _copy_load_activity(self):
+        QApplication.clipboard().setText(self._full_load_activity_text())
+
+    def _save_load_activity(self):
+        default = ((self.model_path.stem if self.model_path else "gpu_viewer")
+                   + "_load.log")
+        destination, _ = QFileDialog.getSaveFileName(
+            self, "Save full load activity", str(Path.home() / default),
+            "Log files (*.log *.txt);;All files (*)")
+        if destination:
+            try:
+                Path(destination).write_text(self._full_load_activity_text(),
+                                             encoding="utf-8")
+            except OSError as exc:
+                QMessageBox.warning(self, "Unable to save load log", str(exc))
+
+    def _append_load_activity(self, worker, line):
+        if worker is not self._load_activity_worker:
+            return
+        scrollbar = self.load_activity_text.verticalScrollBar()
+        at_end = scrollbar.value() >= scrollbar.maximum() - 2
+        self.load_activity_text.appendPlainText(line)
+        if at_end:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _record_load_activity(self, message):
+        """GUI-thread trace, used before potentially blocking OpenGL calls."""
+        if self.worker is not self._load_activity_worker:
+            return
+        if self._load_trace is not None:
+            try:
+                line = self._load_trace.write(message)
+            except OSError as exc:
+                line = f"[Disk log error: {exc}] {message}"
+        else:
+            line = str(message)
+        self._append_load_activity(self.worker, line)
+
+    def _begin_load_activity(self, worker):
+        self._load_activity_worker = worker
+        self.load_activity_text.clear()
+        try:
+            trace = LoadActivityTrace()
+        except OSError:
+            # Preserve diagnostics on systems with a read-only home folder.
+            try:
+                trace = LoadActivityTrace(
+                    Path(tempfile.gettempdir()) / "icr2_gpu_viewer_last_load.log")
+            except OSError:
+                trace = None
+        self._load_trace = trace
+        worker.activity_trace = trace
+        location = str(trace.path) if trace is not None else "(memory only)"
+        self.load_activity_path_label.setText(f"Full log: {location}")
+        self.load_activity_dock.show()
+        self.load_activity_dock.raise_()
+        self._record_load_activity(f"LOAD REQUEST: {self.model_path}")
+
     def _begin_load_progress(self, worker):
         self._load_progress_worker = worker
         self.load_progress.setValue(0)
