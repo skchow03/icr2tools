@@ -98,6 +98,10 @@ def _angle(raw):
 
 def _angle_back(tenths):
     val = round(tenths * 2147483648 / 1800)
+    # +180.0 and -180.0 degrees share 0x80000000. The signed 3DO
+    # representation is -2147483648; preserve all other range checks.
+    if val == (1 << 31):
+        val = INT32_LO
     if not INT32_LO <= val <= INT32_HI:
         raise FormatError("DYNAMIC rotation overflows signed Papyrus angle")
     return val
