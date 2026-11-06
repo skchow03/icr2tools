@@ -138,7 +138,7 @@ def read_palette(path: str | Path | None):
         return None
 
 
-def make_mesh(model, palette=None, atlas=None) -> MeshData:
+def make_mesh(model, palette=None, atlas=None, *, on_activity=None) -> MeshData:
     """Triangulate local polygons once, retaining original UVs and MIP references.
 
     Normalize XYZ around the model bounding centre to avoid precision loss
@@ -148,6 +148,9 @@ def make_mesh(model, palette=None, atlas=None) -> MeshData:
     anchors and extents contribute to normalization without being tessellated.
     """
     started = perf_counter()
+    if on_activity:
+        on_activity(f"Mesh normalization: {len(model.vertices):,} vertices "
+                    f"and {len(model.polygons):,} polygons")
     points = [v.xyz for v in model.vertices.values()]
     points.extend(getattr(model, "sprite_bounds", ()))
     if points:
@@ -165,7 +168,10 @@ def make_mesh(model, palette=None, atlas=None) -> MeshData:
     skipped = 0
     fallbacks = 0
     polygon_ranges = {}
-    for polygon_offset, polygon in model.polygons.items():
+    for n, (polygon_offset, polygon) in enumerate(model.polygons.items(), 1):
+        if on_activity and (n == 1 or n % 1000 == 0):
+            on_activity(f"Triangulating polygon {n:,}/{len(model.polygons):,} "
+                        f"(skipped={skipped:,}, fans={fallbacks:,})")
         refs = polygon.unique_refs
         if len(refs) < 3:
             skipped += 1
@@ -204,6 +210,9 @@ def make_mesh(model, palette=None, atlas=None) -> MeshData:
                                   float(pal_index), float(uv[0]), float(uv[1]),
                                   *map(float, rect)))
         polygon_ranges[polygon_offset] = (start_vertex, len(triangles) - start_vertex)
+    if on_activity:
+        on_activity(f"Packing mesh: {len(triangles):,} triangle vertices "
+                    f"from {good_polygons:,} polygons")
     data = np.ascontiguousarray(np.asarray(triangles, dtype=np.float32).reshape(-1, 13))
     return MeshData(
         data, good_polygons, len(triangles)//3, skipped,
