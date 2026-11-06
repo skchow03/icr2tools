@@ -82,6 +82,42 @@ class StandaloneN3Tests(unittest.TestCase):
         self.assertEqual(len(model.dynamics),1)
         self.assertEqual(len(model.polygons),1)
 
+    def test_positive_half_turn_stock_washdc_dynamic(self):
+        """Stock WASHDC.3D line 29 uses +1800 for a valid half turn."""
+        from text_3d import export_compilable_text, _angle_back
+        source = (
+            '3D VERSION 3.0;\n'
+            '__TSO27: DYNAMIC 991241, 11698769, 78000, 1800, 0, 0, '
+            '1, EXTERN "old2";\n'
+            'root: LIST {__TSO27};\n'
+        )
+        for token in ('1800', '-1800'):
+            with self.subTest(rotation=token):
+                text = source.replace('78000, 1800,', f'78000, {token},')
+                model, _ = compile_n3_text(text, "washdc_sample.3d")
+                self.assertEqual(len(model.dynamics), 1)
+                dynamic = next(iter(model.dynamics.values()))
+                self.assertEqual(dynamic.xyz, (991241, 11698769, 78000))
+                self.assertEqual(dynamic.angles, (-(1 << 31), 0, 0))
+                # The signed value must survive compilation, parsing and
+                # a source round trip, without changing its rotation.
+                exported = export_compilable_text(model)
+                self.assertIn('78000, -1800, 0, 0', exported)
+                reparsed, _ = compile_n3_text(exported, "reimport.3d")
+                self.assertEqual(next(iter(reparsed.dynamics.values())).angles,
+                                 dynamic.angles)
+        self.assertEqual(_angle_back(1800), -(1 << 31))
+        self.assertEqual(_angle_back(-1800), -(1 << 31))
+
+    def test_angles_beyond_half_turn_still_fail(self):
+        for angle in ('1801', '-1801'):
+            with self.subTest(rotation=angle):
+                text = DYNAMIC.replace('0, 0, 0, 0, 0, 0, 1,',
+                                       f'0, 0, 0, {angle}, 0, 0, 1,')
+                with self.assertRaisesRegex(FormatError,
+                                            'DYNAMIC rotation is outside'):
+                    compile_n3_text(text, "invalid_angle.3d")
+
     def test_nested_faces_and_vertices(self):
         model,_=compile_n3_text(INLINE,"inline.3d")
         self.assertEqual(len(model.polygons),1)
