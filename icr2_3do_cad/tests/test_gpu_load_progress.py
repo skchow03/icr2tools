@@ -17,7 +17,7 @@ HAS_DISPLAY = bool(os.environ.get("DISPLAY") or
                    sys.platform in ("win32", "darwin"))
 
 try:
-    from gpu_viewer.main import LoadWorker
+    from gpu_viewer.main import LoadWorker, SourceExportWorker
     HAS_DEPS = True
 except (ImportError, SystemExit):
     HAS_DEPS = False
@@ -71,6 +71,27 @@ class LoadWorkerStageTests(unittest.TestCase):
             self.assertIn("Packing mesh", contents)
             self.assertIn("handing scene to Qt GUI thread", contents)
             self.assertEqual(len(events), len(contents.splitlines()))
+
+    def test_editable_source_export_reports_substeps(self):
+        from n3_compile import compile_n3_text
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "synthetic.3d"
+            model, _ = compile_n3_text(SIMPLE_N3, path,
+                                       associate_planes=False)
+            trace = LoadActivityTrace(Path(temp) / "source.log")
+            worker = SourceExportWorker(
+                model, path.with_suffix(".3do"), activity_trace=trace)
+            results, errors = [], []
+            worker.ready.connect(lambda text, target: results.append(text))
+            worker.failed.connect(errors.append)
+            worker.run()
+            self.assertFalse(errors, errors)
+            self.assertEqual(len(results), 1)
+            self.assertIn("3D VERSION 3.0", results[0])
+            output = trace.path.read_text(encoding="utf-8")
+            self.assertIn("Editable source BEGIN", output)
+            self.assertIn("Editable source: record", output)
+            self.assertIn("Editable source DONE", output)
 
     def test_worker_failure_reports_error_not_readiness(self):
         with tempfile.TemporaryDirectory() as temp:
