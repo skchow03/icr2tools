@@ -50,7 +50,7 @@ try:
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-        QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
+        QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
@@ -96,6 +96,7 @@ from gpu_viewer.workspaces import (
 )
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
+from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
 
 
 VERTEX_SHADER = """
@@ -528,6 +529,7 @@ class GLViewport(QOpenGLWidget):
         self.inspection_kind = None
         self.inspection_offset = None
         self.inspection_points = None
+        self.split_preview_points = None
         self.render_mode = 'painter'  # painter | depth | all | wire
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
@@ -764,6 +766,34 @@ class GLViewport(QOpenGLWidget):
             self.inspection_offset = offset
             self.inspection_points = points
             self.update()
+
+    def set_split_preview(self, points=None):
+        """Two proposed cut points in raw Papyrus XYZ, or None."""
+        normalized = (tuple(tuple(float(v) for v in p) for p in points)
+                      if points is not None else None)
+        if self.split_preview_points != normalized:
+            self.split_preview_points = normalized
+            self.update()
+
+    def _paint_split_preview(self, projection, view):
+        if self.split_preview_points is None or self._mesh is None:
+            return
+        matrix = projection @ view
+        points = [raw_point_screen_position(
+            self._mesh, xyz, matrix, self.width(), self.height())
+            for xyz in self.split_preview_points]
+        if len(points) != 2 or any(point is None for point in points):
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor("#40e6e2")
+        painter.setPen(QPen(color, 3, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(*points[0]), QPointF(*points[1]))
+        painter.setPen(QPen(QColor("#12313b"), 2))
+        painter.setBrush(QBrush(color))
+        for point in points:
+            painter.drawEllipse(QPointF(*point), 5, 5)
+        painter.end()
 
     def _paint_source_inspection_markers(self, projection, view):
         """Draw source cursor markers over either GL render mode.
@@ -1380,6 +1410,7 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
             self._paint_wireframe(projection, view)
+            self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
         glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
@@ -1460,6 +1491,7 @@ class GLViewport(QOpenGLWidget):
         glUseProgram(0)
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
+        self._paint_split_preview(projection, view)
 
     def _draw_pmp(self, placement, projection, view):
         """Draw one palette-indexed transparent billboard at its BSP site."""
@@ -1740,6 +1772,8 @@ class Window(QMainWindow):
         self._source_save_target = None
         self._pending_vertex_pick = None
         self._pending_polygon_pick = None
+        self._split_polygon_offset = None
+        self._pending_split_label = None
         self.appearance_colors = load_colors(QSettings("ICR2Tools", "GPUViewer"))
         self.viewer = GLViewport()
         self.viewer.set_appearance_colors(self.appearance_colors)
@@ -1852,6 +1886,14 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.split_button = QPushButton("Split polygon…")
+        self.split_button.setCheckable(True)
+        self.split_button.setObjectName("openPolygonSplitPanel")
+        self.split_button.setToolTip(
+            "Open the polygon split controls beneath the viewport; click "
+            "a face in Polys pick mode to select the target.")
+        self.split_button.toggled.connect(self._toggle_split_tool)
+        distance_row.addWidget(self.split_button)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
@@ -2080,6 +2122,80 @@ class Window(QMainWindow):
         self.viewport_layout.setSpacing(0)
         self.viewport_layout.addWidget(self.distance_bar)
         self.viewport_layout.addWidget(self.viewer, stretch=1)
+        # Contextual split controls sit BELOW the GPU viewport rather than
+        # consuming the N3 source editor's horizontal space.
+        self.split_panel = QGroupBox("Polygon split")
+        self.split_panel.setObjectName("polygonSplitPanel")
+        split_layout = QVBoxLayout(self.split_panel)
+        split_layout.setContentsMargins(8, 5, 8, 6)
+        split_layout.setSpacing(4)
+        split_top = QHBoxLayout()
+        self.split_target_label = QLabel("Select a polygon in the viewport")
+        self.split_target_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        split_top.addWidget(self.split_target_label, 1)
+        self.split_mode_combo = QComboBox()
+        self.split_mode_combo.addItem("Cut between edges (new vertices)", "edges")
+        self.split_mode_combo.addItem("Diagonal between existing vertices", "vertices")
+        self.split_mode_combo.currentIndexChanged.connect(
+            self._split_controls_changed)
+        split_top.addWidget(self.split_mode_combo)
+        split_layout.addLayout(split_top)
+
+        self.split_edge_row = QWidget()
+        edge_row = QHBoxLayout(self.split_edge_row)
+        edge_row.setContentsMargins(0, 0, 0, 0)
+        self.split_edge_a = QComboBox()
+        self.split_edge_b = QComboBox()
+        self.split_fraction_a = QDoubleSpinBox()
+        self.split_fraction_b = QDoubleSpinBox()
+        for label, choice, fraction in (
+                ("Edge A", self.split_edge_a, self.split_fraction_a),
+                ("Edge B", self.split_edge_b, self.split_fraction_b)):
+            edge_row.addWidget(QLabel(label))
+            choice.setMinimumWidth(130)
+            choice.currentIndexChanged.connect(self._split_controls_changed)
+            edge_row.addWidget(choice, 1)
+            edge_row.addWidget(QLabel("Fraction"))
+            fraction.setDecimals(3)
+            fraction.setRange(0.001, 0.999)
+            fraction.setSingleStep(0.05)
+            fraction.setValue(0.5)
+            fraction.valueChanged.connect(self._split_controls_changed)
+            edge_row.addWidget(fraction)
+        split_layout.addWidget(self.split_edge_row)
+
+        self.split_vertex_row = QWidget()
+        vertex_row = QHBoxLayout(self.split_vertex_row)
+        vertex_row.setContentsMargins(0, 0, 0, 0)
+        self.split_vertex_a = QComboBox()
+        self.split_vertex_b = QComboBox()
+        for label, choice in (("Vertex A", self.split_vertex_a),
+                              ("Vertex B", self.split_vertex_b)):
+            vertex_row.addWidget(QLabel(label))
+            choice.currentIndexChanged.connect(self._split_controls_changed)
+            vertex_row.addWidget(choice, 1)
+        split_layout.addWidget(self.split_vertex_row)
+
+        split_bottom = QHBoxLayout()
+        self.split_preview_check = QCheckBox("Preview proposed cut")
+        self.split_preview_check.setChecked(True)
+        self.split_preview_check.toggled.connect(self._split_controls_changed)
+        split_bottom.addWidget(self.split_preview_check)
+        split_bottom.addStretch(1)
+        self.split_apply_button = QPushButton("Split polygon")
+        self.split_apply_button.clicked.connect(self._commit_polygon_split)
+        split_bottom.addWidget(self.split_apply_button)
+        split_cancel = QPushButton("Close")
+        split_cancel.clicked.connect(lambda: self.split_button.setChecked(False))
+        split_bottom.addWidget(split_cancel)
+        split_layout.addLayout(split_bottom)
+        self.split_hint_label = QLabel(
+            "Select a root-model POLY. Edge fractions run from 0 to 1.")
+        self.split_hint_label.setWordWrap(True)
+        split_layout.addWidget(self.split_hint_label)
+        self.viewport_layout.addWidget(self.split_panel)
+        self.split_panel.hide()
         self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
         self.editor_splitter.addWidget(self.viewport_panel)
         self.source_pane = SourcePane()
@@ -2108,6 +2224,7 @@ class Window(QMainWindow):
         self._workspace_changed(self.workspace_tabs.currentIndex())
         self._sync_projection_controls()
         self.source_pane.editor.textChanged.connect(self._update_window_title)
+        self.source_pane.editor.textChanged.connect(self._split_controls_changed)
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
         # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
@@ -2390,6 +2507,161 @@ class Window(QMainWindow):
             f"{pose.eye[2]:,.0f}) | Click viewport, use WASD/arrows; "
             f"Shift = 5x")
 
+    def _toggle_split_tool(self, enabled):
+        self.split_panel.setVisible(enabled)
+        if enabled:
+            self.pick_mode_combo.setCurrentIndex(
+                self.pick_mode_combo.findData("polygon"))
+            target = self.source_pane.current_target()
+            if target and target[0] == "polygon":
+                offset = target_offset(self.viewer._model, *target)
+                if offset is not None:
+                    self._set_split_target(offset)
+            self._split_controls_changed()
+        else:
+            self.viewer.set_split_preview()
+
+    def _set_split_target(self, offset):
+        """Populate cut choices from the exact selected root POLY order."""
+        model = self.viewer._model
+        if model is None or offset not in model.polygons:
+            offset = None
+        if offset == self._split_polygon_offset:
+            self._split_controls_changed()
+            return
+        self._split_polygon_offset = offset
+        polygon = model.polygons[offset] if offset is not None else None
+        for combo in (self.split_edge_a, self.split_edge_b,
+                      self.split_vertex_a, self.split_vertex_b):
+            combo.blockSignals(True)
+            combo.clear()
+        try:
+            if polygon is not None:
+                refs = polygon_boundary_refs(polygon)
+                for i, ref in enumerate(refs):
+                    self.split_vertex_a.addItem(f"#{i+1}  @{ref}", i)
+                    self.split_vertex_b.addItem(f"#{i+1}  @{ref}", i)
+                    name = f"#{i+1}  @{ref} → @{refs[(i+1)%len(refs)]}"
+                    self.split_edge_a.addItem(name, i)
+                    self.split_edge_b.addItem(name, i)
+                opposite = len(refs) // 2
+                self.split_edge_b.setCurrentIndex(opposite)
+                self.split_vertex_b.setCurrentIndex(opposite)
+        finally:
+            for combo in (self.split_edge_a, self.split_edge_b,
+                          self.split_vertex_a, self.split_vertex_b):
+                combo.blockSignals(False)
+        if polygon is None:
+            self.split_target_label.setText("Select a root-model polygon")
+        else:
+            self.split_target_label.setText(
+                f"Selected POLY @{offset} · {len(polygon_boundary_refs(polygon))} vertices · "
+                f"palette {polygon.color}")
+        self._split_controls_changed()
+
+    def _split_controls_changed(self, *_):
+        if not hasattr(self, "split_preview_check"):
+            return  # Fraction spin boxes emit during panel construction.
+        mode = self.split_mode_combo.currentData()
+        self.split_edge_row.setVisible(mode == "edges")
+        self.split_vertex_row.setVisible(mode == "vertices")
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        valid = (model is not None and offset in model.polygons
+                 and self.source_pane.ready and not self.source_pane.pending
+                 and not self._source_invalid and self._source_queued is None
+                 and self._source_busy_revision is None)
+        points = None
+        hint = "Choose a root-model POLY by clicking its face."
+        if valid:
+            polygon = model.polygons[offset]
+            refs = polygon_boundary_refs(polygon)
+            n = len(refs)
+            if mode == "edges":
+                a = self.split_edge_a.currentData()
+                b = self.split_edge_b.currentData()
+                valid = a is not None and b is not None and a != b
+                if valid:
+                    def edge_point(i, t):
+                        start = model.vertices[refs[i]].xyz
+                        end = model.vertices[refs[(i+1) % n]].xyz
+                        return tuple(start[j] + (end[j]-start[j])*t
+                                     for j in range(3))
+                    points = (edge_point(a, self.split_fraction_a.value()),
+                              edge_point(b, self.split_fraction_b.value()))
+                hint = ("Choose two different edges; fraction 0.5 is the "
+                        "midpoint. Matching adjacent faces are updated.")
+            else:
+                a = self.split_vertex_a.currentData()
+                b = self.split_vertex_b.currentData()
+                valid = (n >= 4 and a is not None and b is not None
+                         and a != b and (a-b) % n not in (1, n-1))
+                if valid:
+                    points = (model.vertices[refs[a]].xyz,
+                              model.vertices[refs[b]].xyz)
+                hint = ("Choose two nonadjacent vertices to make an internal "
+                        "diagonal; no new vertices will be created.")
+        elif model is not None and offset in model.polygons:
+            hint = ("Prepare or validate the editable .3D Source first. "
+                    "A pending or invalid source cannot be split.")
+        self.split_apply_button.setEnabled(bool(valid))
+        self.split_hint_label.setText(hint)
+        self.viewer.set_split_preview(
+            points if (self.split_panel.isVisible()
+                       and self.split_preview_check.isChecked()
+                       and valid) else None)
+
+    def _commit_polygon_split(self):
+        if not self.split_apply_button.isEnabled():
+            return
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        mode = self.split_mode_combo.currentData()
+        a, b = ((self.split_edge_a.currentData(),
+                 self.split_edge_b.currentData()) if mode == "edges" else
+                (self.split_vertex_a.currentData(),
+                 self.split_vertex_b.currentData()))
+        try:
+            candidate = split_n3_polygon(
+                model, self.source_pane.get_source(), offset, mode=mode,
+                index_a=a, index_b=b,
+                fraction_a=self.split_fraction_a.value(),
+                fraction_b=self.split_fraction_b.value())
+        except (ValueError, OverflowError, KeyError) as exc:
+            QMessageBox.warning(self, "Cannot split polygon", str(exc))
+            return
+        action = ("two new edge vertices" if mode == "edges"
+                  else "an existing-vertex diagonal")
+        details = (
+            f"Split POLY @{offset} using {action}?\n\n"
+            "The parent will refer to a LIST of two polygons. "
+            f"New vertices: {candidate.new_vertices}. "
+            f"Updated adjacent polygons: {candidate.updated_neighbors}.\n\n"
+            "Original .3D declarations and comments outside the affected "
+            "POLYs remain intact. Undo in the Source editor reverses the cut; "
+            "Save .3D Source or Export compiled 3DO to persist it.")
+        if candidate.warnings:
+            details += ("\n\nWarnings:\n" +
+                        "\n".join(candidate.warnings[:4]))
+        reply = QMessageBox.question(
+            self, "Split selected polygon", details,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.source_pane.apply_source_replacement(
+                candidate.source, f"Split POLY @{offset} ({mode})")
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot apply polygon split", str(exc))
+            return
+        self._pending_split_label = candidate.first_polygon_label
+        self.viewer.set_split_preview()
+        self.split_apply_button.setEnabled(False)
+        self.source_pane.apply_now()
+        self.statusBar().showMessage(
+            f"Splitting POLY @{offset}; validating N3 and rebuilding GPU preview…")
+
     def _toggle_source(self, checked):
         self.source_pane.setVisible(checked)
         if checked:
@@ -2445,6 +2717,7 @@ class Window(QMainWindow):
                 "Apply or fix the edited .3D Source before selecting polygons.")
             return
         self._pending_vertex_pick = None
+        self._set_split_target(offset)
         self._pending_polygon_pick = (model, offset)
         if not self.source_toggle.isChecked():
             self.source_toggle.setChecked(True)
@@ -2484,6 +2757,8 @@ class Window(QMainWindow):
         offset = target_offset(self.viewer._model, kind, label)
         self.viewer.set_source_inspection(kind, offset)
         self._refresh_source_polygon_visibility()
+        if kind == 'polygon' and self.split_panel.isVisible():
+            self._set_split_target(offset)
 
     def _refresh_source_polygon_visibility(self):
         target = self.source_pane.current_target()
@@ -2538,6 +2813,7 @@ class Window(QMainWindow):
         self._source_invalid = False
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
+        self._split_controls_changed()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -2548,6 +2824,7 @@ class Window(QMainWindow):
     def _source_requested(self, revision, source):
         # Keep only the latest revision while the previous worker runs.
         self._source_queued = (revision, source)
+        self._split_controls_changed()
         self._pump_source()
 
     def _pump_source(self):
@@ -2589,6 +2866,13 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            if self._pending_split_label is not None:
+                target = model.n3_label_offsets.get(self._pending_split_label)
+                self._pending_split_label = None
+                self._set_split_target(target)
+                if target is not None:
+                    self.source_pane.goto_model_polygon(model, target)
+            self._split_controls_changed()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -2597,6 +2881,8 @@ class Window(QMainWindow):
         if rev == self.source_pane.revision:
             self._source_invalid = True
             self.source_pane.mark_error(rev, error)
+            self._pending_split_label = None
+            self._split_controls_changed()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -3122,6 +3408,9 @@ class Window(QMainWindow):
             self._source_queued = None
             self._pending_vertex_pick = None
             self._pending_polygon_pick = None
+            self._pending_split_label = None
+            self._set_split_target(None)
+            self.split_button.setChecked(False)
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
                 self.model_path.resolve() != next_path.resolve()):
@@ -3199,6 +3488,7 @@ class Window(QMainWindow):
         self._preserve_view = False
         self._sync_source_distance_filter()
         self._source_target_changed(self.source_pane.current_target())
+        self._split_controls_changed()
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
         if not was_reloading and not from_source:

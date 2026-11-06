@@ -160,6 +160,8 @@ def install_menus(window):
     _add_action(edit, "Rename Selected &Pointer…",
                 lambda: window.source_pane.rename_selected_pointer())
     _add_action(edit, "&Scale Model…", window._scale_model)
+    _add_action(edit, "Split selected &Polygon…",
+                lambda: window.split_button.setChecked(True))
     _add_action(edit, "Apply .3D Source Now",
                 lambda: window._source_toolbar_action(
                     window.source_pane.apply_now))
