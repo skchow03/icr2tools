@@ -167,7 +167,7 @@ class TrackNavigation:
         # width on the derived camera-left axis would falsely make its
         # modest banking appear nearly vertical. Use the projected side
         # only for direction and the real horizontal span for magnitude.
-        roll = (math.copysign(math.atan2(rise, span), sideways)
+        roll = (math.atan2(rise, span) * (1 if sideways > 0 else -1)
                 if span > 1e-6 and abs(sideways) > 1e-6 else 0.0)
         eye = (float(x), float(y), float(z + self.eye_height))
         return TrackPose(dlong, self.dlat, section,
