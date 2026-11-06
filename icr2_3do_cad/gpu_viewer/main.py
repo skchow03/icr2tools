@@ -102,6 +102,7 @@ from gpu_viewer.vertex_label_data import (
     vertex_pointer_names, include_source_vertex_declarations,
 )
 from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
+from gpu_viewer.mip_browser import MipUVBrowser
 
 
 VERTEX_SHADER = """
@@ -1906,6 +1907,7 @@ class Window(QMainWindow):
         self.resize(1280, 850)
         self.worker = None
         self._info = {}
+        self.mip_browser = None  # Separate, non-modal texture reference window
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
@@ -2501,6 +2503,33 @@ class Window(QMainWindow):
         dialog.show()
         dialog.raise_()
         dialog.activateWindow()
+
+    def open_mip_browser(self):
+        """Open one independent MIP UV reference window beside the editor."""
+        if self.viewer._model is None:
+            QMessageBox.information(self, "No model", "Open a model first.")
+            return
+        if self.mip_browser is None:
+            self.mip_browser = MipUVBrowser(self)
+        # Refresh even when reopening a previously closed dialog, or after
+        # palette / texture overrides changed while it was hidden.
+        self._refresh_mip_browser(force=True)
+        self.mip_browser.show()
+        self.mip_browser.raise_()
+        self.mip_browser.activateWindow()
+
+    def _refresh_mip_browser(self, *, force=False):
+        """Refresh only committed, successfully loaded texture data."""
+        dialog = self.mip_browser
+        if (dialog is None or (dialog.isHidden() and not force)
+                or self.viewer._atlas is None
+                or self.viewer._palette is None):
+            return
+        model_name = (self._info.get("file")
+                      or (self._loaded_file_path.name
+                          if self._loaded_file_path is not None else "Model"))
+        dialog.set_model_textures(
+            self.viewer._atlas, self.viewer._palette, model_name)
 
     def _make_settings_dialog(self, key, title):
         """Create an optional settings window without occupying viewport space."""
@@ -3204,6 +3233,7 @@ class Window(QMainWindow):
         self.palette_path = Path(path)
         self.palette_status.setText(f"Palette: {self.palette_path.name} (256 colors)")
         self.viewer.set_palette(palette)
+        self._refresh_mip_browser()
 
     def open_palette_dialog(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -3654,6 +3684,7 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        self._refresh_mip_browser()
         if (self.source_pane.ready and not self.source_pane.pending
                 and not self._source_invalid):
             self.viewer.set_vertex_label_source(self.source_pane._source_index)
@@ -3864,6 +3895,8 @@ class Window(QMainWindow):
                 event.ignore()
                 return
         self._timer.stop()
+        if self.mip_browser is not None:
+            self.mip_browser.close()
         if self._source_export_worker is not None and self._source_export_worker.isRunning():
             self._source_export_worker.wait()
         if self.worker is not None and self.worker.isRunning():

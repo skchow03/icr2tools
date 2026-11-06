@@ -22,6 +22,9 @@ class TextureAtlas:
     missing_names: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
     textured_polygons: int = 0
+    # Exact, resolved files that made it into this atlas, including nested
+    # materials and user overrides. Used by the read-only MIP UV browser.
+    loaded_paths: tuple[str, ...] = ()
 
     @property
     def size_bytes(self):
@@ -213,8 +216,12 @@ def build_atlas(model, model_path, *, texture_folder=None,
         errors.append(f"{len(overflow)} MIPs exceed {max_side}x{max_side} atlas capacity")
     polygon_rects = {off:rects[key] for off, key in assignments.items()
                      if key in rects}
+    loaded_paths = tuple(str(path) for path in sorted(
+        (paths[key] for key in rects),
+        key=lambda path: (path.name.casefold(), str(path).casefold())))
     return TextureAtlas(
         np.ascontiguousarray(pixels), polygon_rects,
-        tuple(sorted(paths[key].name for key in rects)),
+        tuple(Path(path).name for path in loaded_paths),
         tuple(sorted(missing)), tuple(errors), textured_count,
+        loaded_paths,
     )

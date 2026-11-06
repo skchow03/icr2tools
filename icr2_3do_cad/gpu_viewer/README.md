@@ -203,6 +203,35 @@ Perspective is required and all three projection controls are disabled.
 Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
 the viewport so those letters can be typed normally in the N3 editor.
 
+## MIP texture and U,V reference window
+
+Choose **Assets → Browse Model MIPs / U,V…** after opening a model.
+This opens a **separate, non-modal window** that can stay visible next
+to the GPU viewport and `.3D Source` editor while you work.
+
+- The left list shows every **successfully resolved MIP used in the currently
+  loaded geometry**, including referenced external objects, MATERIAL MIPs,
+  and the active car-livery/fallback overrides. Multiple faces using the
+  same file appear only once. Missing textures are listed in the summary,
+  not misrepresented as loaded images. The full resolved path appears on hover.
+- Select a MIP to display its highest-resolution, 8-bit indexed image
+  recolored with the **same PCX palette currently in the GPU viewer**.
+  Use the **mouse wheel** or **+ / −** to zoom, **Fit** to see the entire
+  texture, and **100%** for original texel size. Enlargements use nearest
+  neighbor sampling; pixel-grid lines appear when sufficiently zoomed in.
+- **Middle-drag** or **Shift+left-drag** to pan. **Left-click** a texel
+  to highlight its 1×1 pixel area and show its integer **U,V**.
+  **Copy U,V** places `u, v` on the clipboard for N3 editing. U increases
+  rightward, V downward; `(0,0)` is the top-left pixel. These are **raw
+  Papyrus texel coordinates, not normalized 0..1 UVs**.
+- The open window follows successful model/source recompiles, palette
+  changes, and MIP asset reloads. It retains the selected texture when
+  possible. It never writes MIPs, source, or binary model files.
+
+**Note:** Only textures that actually made it into the GPU model atlas
+are listed. Unresolved, invalid, or atlas-capacity-excluded MIPs are
+reported by the existing load diagnostics, not shown with fabricated pixels.
+
 ## Display vertex pointer names
 
 Enable **Vertex labels** in the row immediately **above the GPU viewport**
