@@ -1820,6 +1820,7 @@ class Window(QMainWindow):
         self._pending_vertex_pick = None
         self._pending_polygon_pick = None
         self._split_polygon_offset = None
+        self._split_target_model = None
         self._pending_split_label = None
         self.appearance_colors = load_colors(QSettings("ICR2Tools", "GPUViewer"))
         self.viewer = GLViewport()
@@ -2582,10 +2583,15 @@ class Window(QMainWindow):
         model = self.viewer._model
         if model is None or offset not in model.polygons:
             offset = None
-        if offset == self._split_polygon_offset:
+        # A recompilation can reuse the same binary offset for different
+        # source declarations. Rebuild on model identity changes, not just
+        # when the selected numeric offset changes.
+        if (offset == self._split_polygon_offset
+                and model is self._split_target_model):
             self._split_controls_changed()
             return
         self._split_polygon_offset = offset
+        self._split_target_model = model
         polygon = model.polygons[offset] if offset is not None else None
         for combo in (self.split_edge_a, self.split_edge_b,
                       self.split_vertex_a, self.split_vertex_b):
@@ -2594,12 +2600,27 @@ class Window(QMainWindow):
         try:
             if polygon is not None:
                 refs = polygon_boundary_refs(polygon)
+                # Match the exact N3 declaration labels used by the project
+                # (including renamed pointers). The CPU topology algorithms
+                # still receive the same zero-based polygon vertex indices.
+                pointer_names = vertex_pointer_names(model)
                 for i, ref in enumerate(refs):
-                    self.split_vertex_a.addItem(f"#{i+1}  @{ref}", i)
-                    self.split_vertex_b.addItem(f"#{i+1}  @{ref}", i)
-                    name = f"#{i+1}  @{ref} → @{refs[(i+1)%len(refs)]}"
-                    self.split_edge_a.addItem(name, i)
-                    self.split_edge_b.addItem(name, i)
+                    name = pointer_names.get(ref, f"_{ref}")
+                    next_ref = refs[(i + 1) % len(refs)]
+                    next_name = pointer_names.get(next_ref, f"_{next_ref}")
+                    vertex_option = f"#{i+1}  {name}"
+                    edge_option = f"#{i+1}  {name} → {next_name}"
+                    vertex_tooltip = f"{name} · 3DO body offset @{ref}"
+                    edge_tooltip = (f"{name} (@{ref}) → "
+                                    f"{next_name} (@{next_ref})")
+                    for combo in (self.split_vertex_a, self.split_vertex_b):
+                        combo.addItem(vertex_option, i)
+                        combo.setItemData(
+                            i, vertex_tooltip, Qt.ItemDataRole.ToolTipRole)
+                    for combo in (self.split_edge_a, self.split_edge_b):
+                        combo.addItem(edge_option, i)
+                        combo.setItemData(
+                            i, edge_tooltip, Qt.ItemDataRole.ToolTipRole)
                 opposite = len(refs) // 2
                 self.split_edge_b.setCurrentIndex(opposite)
                 self.split_vertex_b.setCurrentIndex(opposite)
