@@ -2224,6 +2224,7 @@ class Window(QMainWindow):
         self._workspace_changed(self.workspace_tabs.currentIndex())
         self._sync_projection_controls()
         self.source_pane.editor.textChanged.connect(self._update_window_title)
+        self.source_pane.editor.textChanged.connect(self._split_controls_changed)
         # Single-letter viewport shortcuts must NOT intercept N3 typing in
         # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
         frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
@@ -2716,6 +2717,7 @@ class Window(QMainWindow):
                 "Apply or fix the edited .3D Source before selecting polygons.")
             return
         self._pending_vertex_pick = None
+        self._set_split_target(offset)
         self._pending_polygon_pick = (model, offset)
         if not self.source_toggle.isChecked():
             self.source_toggle.setChecked(True)
@@ -2755,6 +2757,8 @@ class Window(QMainWindow):
         offset = target_offset(self.viewer._model, kind, label)
         self.viewer.set_source_inspection(kind, offset)
         self._refresh_source_polygon_visibility()
+        if kind == 'polygon' and self.split_panel.isVisible():
+            self._set_split_target(offset)
 
     def _refresh_source_polygon_visibility(self):
         target = self.source_pane.current_target()
@@ -2809,6 +2813,7 @@ class Window(QMainWindow):
         self._source_invalid = False
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
+        self._split_controls_changed()
 
     def _source_export_failed(self, candidate, error):
         if candidate is self.viewer._model:
@@ -2819,6 +2824,7 @@ class Window(QMainWindow):
     def _source_requested(self, revision, source):
         # Keep only the latest revision while the previous worker runs.
         self._source_queued = (revision, source)
+        self._split_controls_changed()
         self._pump_source()
 
     def _pump_source(self):
@@ -2860,6 +2866,13 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            if self._pending_split_label is not None:
+                target = model.n3_label_offsets.get(self._pending_split_label)
+                self._pending_split_label = None
+                self._set_split_target(target)
+                if target is not None:
+                    self.source_pane.goto_model_polygon(model, target)
+            self._split_controls_changed()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -2868,6 +2881,8 @@ class Window(QMainWindow):
         if rev == self.source_pane.revision:
             self._source_invalid = True
             self.source_pane.mark_error(rev, error)
+            self._pending_split_label = None
+            self._split_controls_changed()
         if self._source_queued is not None:
             QTimer.singleShot(40, self._pump_source)
 
@@ -3393,6 +3408,9 @@ class Window(QMainWindow):
             self._source_queued = None
             self._pending_vertex_pick = None
             self._pending_polygon_pick = None
+            self._pending_split_label = None
+            self._set_split_target(None)
+            self.split_button.setChecked(False)
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
                 self.model_path.resolve() != next_path.resolve()):
@@ -3470,6 +3488,7 @@ class Window(QMainWindow):
         self._preserve_view = False
         self._sync_source_distance_filter()
         self._source_target_changed(self.source_pane.current_target())
+        self._split_controls_changed()
         # Keep manual mode selection for ambiguous files and all background
         # rebuilds. Only clearly recognized newly opened files select a tab.
         if not was_reloading and not from_source:
