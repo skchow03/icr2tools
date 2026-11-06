@@ -23,6 +23,22 @@ Keep `gamepal.pcx`: the GUI loads it by default. Keep `fixtures/`: tests read bi
 5. Write and parse a temporary candidate before atomic replacement, retaining the existing optional backup behavior.
 6. An edit to a parent or appearance preview must not implicitly rewrite referenced external files.
 
+## DYNAMIC preview orientation
+
+Binary DYNAMIC angles are stored in Z/Y/X slots (`+0x10`, `+0x14`,
+`+0x18`). The viewer applies them to column vectors as
+`Rz(Z) * Ry(-Y) * Rx(X)`; only the **rendering interpretation** of the
+second signed angle is negated. Editing and recompiling must preserve
+the actual angle fields, including negative signed values. Do not swap
+the Y and X slots.
+
+This sign convention is checked against stock Vancouver `pitsuite.3do`,
+whose vertical geometry is authored along local +X: the parent's
+`(+87.3° Z, +90° Y, 0° X)` placement must point the local +X axis
+upward (+Z), not downward. The third/X-axis sign remains unverified
+against an independently oriented stock object; leave it unchanged
+until supported by a specific counterexample.
+
 ## Regression tests
 
 ```sh
