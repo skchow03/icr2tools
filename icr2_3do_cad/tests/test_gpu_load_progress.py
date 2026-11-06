@@ -14,7 +14,6 @@ HAS_DISPLAY = bool(os.environ.get("DISPLAY") or
                    sys.platform in ("win32", "darwin"))
 
 try:
-    from PySide6.QtCore import QCoreApplication
     from gpu_viewer.main import LoadWorker
     HAS_DEPS = True
 except (ImportError, SystemExit):
@@ -33,8 +32,6 @@ root: LIST {p};
 @unittest.skipUnless(HAS_DEPS, "PySide6/OpenGL viewer dependencies required")
 class LoadWorkerStageTests(unittest.TestCase):
     def test_worker_emits_ordered_stages_then_ready(self):
-        app = QCoreApplication.instance() or QCoreApplication([])
-        del app  # Keep the object active through the Qt binding.
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "synthetic.3d"
             worker = LoadWorker(
@@ -55,8 +52,6 @@ class LoadWorkerStageTests(unittest.TestCase):
             self.assertEqual(ready[0][0].polygon_count, 1)
 
     def test_worker_failure_reports_error_not_readiness(self):
-        app = QCoreApplication.instance() or QCoreApplication([])
-        del app
         with tempfile.TemporaryDirectory() as temp:
             path = Path(temp) / "invalid.3d"
             worker = LoadWorker(path, path / "missing.pcx",
