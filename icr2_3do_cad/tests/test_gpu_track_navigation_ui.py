@@ -77,6 +77,24 @@ class TrackNavigationUITests(unittest.TestCase):
         self.assertIn("DLONG", self.window.trk_drive_status.text())
         self.assertIn("DLAT", self.window.trk_drive_status.text())
 
+    def test_horiz_eye_controls_only_change_background_position(self):
+        from gpu_viewer.skybox import SKY_EYE
+        view = self.window.viewer
+        self.assertEqual(view.sky_eye, tuple(SKY_EYE))
+        before = view._camera_eye_model()
+        # Without a loaded HORIZ the controls are disabled to users,
+        # but programmatic changes still exercise the signal/renderer wiring.
+        for spin in self.window.sky_eye_spins:
+            self.assertFalse(spin.isEnabled())
+        self.window.sky_eye_spins[0].setValue(150)
+        self.window.sky_eye_spins[1].setValue(-250)
+        self.window.sky_eye_spins[2].setValue(900)
+        self.assertEqual(view.sky_eye, (150., -250., 900.))
+        self.assertEqual(view._camera_eye_model(), before)
+        self.window.sky_eye_reset_button.setEnabled(True)
+        self.window.sky_eye_reset_button.click()
+        self.assertEqual(view.sky_eye, tuple(SKY_EYE))
+        self.window.sky_eye_reset_button.setEnabled(False)
     def test_steps_reset_and_disable_restore_free_camera(self):
         from PySide6.QtCore import Qt
         from PySide6.QtTest import QTest

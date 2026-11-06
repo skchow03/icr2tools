@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from gpu_viewer.track_navigation import (
     TrackNavigation, UNITS_PER_FOOT, DEFAULT_EYE_HEIGHT_FT,
+    DEFAULT_EYE_HEIGHT_UNITS,
     find_matching_trk,
 )
 
@@ -55,16 +56,21 @@ def curved_trk():
 
 
 class TrackCameraGeometryTests(unittest.TestCase):
-    def test_origin_is_centerline_at_six_feet_and_looks_forward(self):
+    def test_origin_is_ten_thousand_units_above_surface_and_looks_forward(self):
         nav = TrackNavigation("course.trk", flat_trk())
         pose = nav.pose()
         self.assertEqual((pose.dlong, pose.dlat, pose.section), (0, 0, 0))
         self.assertEqual(pose.ground, (0.0, 0.0, 12345.0))
-        self.assertEqual(pose.eye, (
-            0.0, 0.0, 12345.0 + DEFAULT_EYE_HEIGHT_FT * UNITS_PER_FOOT))
+        self.assertEqual(DEFAULT_EYE_HEIGHT_UNITS, 10000.0)
+        self.assertEqual(DEFAULT_EYE_HEIGHT_FT * UNITS_PER_FOOT, 10000.0)
+        self.assertEqual(pose.eye, (0.0, 0.0, 22345.0))
         self.assertAlmostEqual(pose.azimuth, -math.pi/2, places=7)
         self.assertAlmostEqual(pose.elevation, 0.0, places=7)
 
+    def test_explicit_eye_height_in_feet_is_still_supported(self):
+        nav = TrackNavigation('course.trk', flat_trk(), eye_height_ft=6.0)
+        pose = nav.pose()
+        self.assertEqual(pose.eye[2] - pose.ground[2], 36000.0)
     def test_wasd_forward_backward_and_signed_lateral_motion(self):
         nav = TrackNavigation("course.trk", flat_trk())
         pose = nav.move(forward_feet=10)

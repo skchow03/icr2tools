@@ -69,7 +69,7 @@ from gpu_viewer.visibility import (
 )
 from gpu_viewer.scene import build_scene, ordered_scene_indices, load_car_or_model
 from gpu_viewer.skybox import (
-    load_preferred_track_skybox, skybox_view_matrix,
+    SKY_EYE, load_preferred_track_skybox, skybox_view_matrix,
 )
 from gpu_viewer.track_lod import DEFAULT_WINDOW_COUNTS
 from gpu_viewer.track_navigation import (
@@ -501,6 +501,7 @@ class GLViewport(QOpenGLWidget):
         self._sky_atlas_texture = None
         self._sky_index_count = 0
         self.sky_enabled = True
+        self.sky_eye = tuple(SKY_EYE)  # independently adjustable HORIZ-local XYZ
         self._sprite_renderer = None
         self._sprite_events = ()
         self._atlas = None
@@ -1186,7 +1187,7 @@ class GLViewport(QOpenGLWidget):
         sky_projection = perspective_projection(
             aspect, 0.001, 100.0,
             self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
-        sky_view = skybox_view_matrix(view, sky.mesh)
+        sky_view = skybox_view_matrix(view, sky.mesh, eye=self.sky_eye)
         mvp = np.ascontiguousarray(
             (sky_projection @ sky_view).T, dtype=np.float32)
         glDisable(GL_DEPTH_TEST)
@@ -2247,7 +2248,8 @@ class Window(QMainWindow):
         self.track_drive_checkbox.setEnabled(False)
         self.track_drive_checkbox.setToolTip(
             "Find a same-named .TRK beside this track. Follow its physics "
-            "centerline from DLONG=0 at 6 feet above the surface. Click the "
+            "centerline from DLONG=0 at 10,000 Papyrus units (about 1.67 feet) "
+            "above the surface. Click the "
             "3D viewport, then W/Up forward, S/Down back, A/Left left "
             "(+DLAT), D/Right right (-DLAT); hold Shift for 5x movement.")
         self.track_drive_checkbox.toggled.connect(self._track_drive_toggled)
@@ -2278,9 +2280,30 @@ class Window(QMainWindow):
         self.show_skybox.setEnabled(False)
         self.show_skybox.setToolTip(
             "Display HORIZ.3DO or HORIZ.3D as a camera-following background at "
-            "its local eye (0, 0, 1000). Only available on indexed tracks.")
+            "its default local eye (0, 0, 100). Only available on indexed tracks.")
         self.show_skybox.toggled.connect(self._skybox_toggled)
         track_layout.addWidget(self.show_skybox)
+        sky_eye_row = QHBoxLayout()
+        sky_eye_row.addWidget(QLabel("HORIZ eye (raw XYZ)"))
+        self.sky_eye_spins = []
+        for axis, coordinate in zip(("X", "Y", "Z"), SKY_EYE):
+            sky_eye_row.addWidget(QLabel(axis))
+            spin = QSpinBox()
+            spin.setRange(-10_000_000, 10_000_000)
+            spin.setSingleStep(100)
+            spin.setValue(int(coordinate))
+            spin.setEnabled(False)
+            spin.setToolTip(
+                f"Camera {axis} position inside HORIZ (raw Papyrus units). "
+                "Affects skybox only, not track camera or 3DO data.")
+            spin.valueChanged.connect(self._sky_eye_changed)
+            sky_eye_row.addWidget(spin)
+            self.sky_eye_spins.append(spin)
+        track_layout.addLayout(sky_eye_row)
+        self.sky_eye_reset_button = QPushButton("Reset HORIZ eye (0, 0, 100)")
+        self.sky_eye_reset_button.setEnabled(False)
+        self.sky_eye_reset_button.clicked.connect(self._reset_sky_eye)
+        track_layout.addWidget(self.sky_eye_reset_button)
         self.skybox_status = QLabel("No track skybox loaded")
         self.skybox_status.setWordWrap(True)
         track_layout.addWidget(self.skybox_status)
@@ -3421,6 +3444,17 @@ class Window(QMainWindow):
         self.viewer.sky_enabled = bool(checked)
         self.viewer.update()
 
+    def _sky_eye_changed(self, *_):
+        # Only the background view changes; never recompile track/HORIZ data.
+        self.viewer.sky_eye = tuple(float(spin.value())
+                                    for spin in self.sky_eye_spins)
+        self.viewer.update()
+
+    def _reset_sky_eye(self):
+        for spin, coordinate in zip(self.sky_eye_spins, SKY_EYE):
+            spin.setValue(int(coordinate))
+        self._sky_eye_changed()
+
     def _track_window_changed(self, *_):
         self.viewer.track_window_counts = tuple(
             spin.value() for spin in self.track_window_spins)
@@ -3761,6 +3795,9 @@ class Window(QMainWindow):
             self.show_skybox.setChecked(skybox is not None)
             self.show_skybox.blockSignals(False)
         self.show_skybox.setEnabled(skybox is not None)
+        for spin in self.sky_eye_spins:
+            spin.setEnabled(skybox is not None)
+        self.sky_eye_reset_button.setEnabled(skybox is not None)
         self.viewer.sky_enabled = self.show_skybox.isChecked() and skybox is not None
         if skybox is not None:
             self.skybox_status.setText(

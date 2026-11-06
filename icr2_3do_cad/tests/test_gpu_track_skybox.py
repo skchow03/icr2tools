@@ -129,7 +129,7 @@ root: DYNAMIC 0,0,0,0,0,0,1, EXTERN "missing";
         self.assertEqual(sky.mesh.scale, 50000.0)
         np.testing.assert_allclose(
             np.asarray(SKY_EYE) - np.asarray(sky.mesh.center),
-            (0, 0, -4000))
+            (0, 0, -4900))
         self.assertEqual(path.read_bytes(), before)
 
     def test_sky_follows_rotation_but_ignores_camera_translation(self):
@@ -147,10 +147,26 @@ root: DYNAMIC 0,0,0,0,0,0,1, EXTERN "missing";
         sky_c = skybox_view_matrix(c, sky.mesh)
         np.testing.assert_allclose(sky_a, sky_b)
         self.assertFalse(np.allclose(sky_a, sky_c))
-        # View origin corresponds exactly to (0,0,1000) in raw sky geometry.
+        # View origin corresponds exactly to (0,0,100) in raw sky geometry.
         eye = (np.asarray(SKY_EYE) - np.asarray(sky.mesh.center)) / sky.mesh.scale
         np.testing.assert_allclose(sky_a @ np.r_[eye, 1.0], [0, 0, 0, 1])
 
+    def test_user_sky_eye_offset_is_independent_of_track_camera(self):
+        sky = load_track_skybox(self._write_model(), self.palette)
+        view = np.identity(4)
+        view[:3, 3] = (123.0, -567.0, 89.0)
+        initial = skybox_view_matrix(view, sky.mesh)
+        moved_eye = (250.0, -125.0, 2500.0)
+        changed = skybox_view_matrix(view, sky.mesh, eye=moved_eye)
+        self.assertFalse(np.allclose(initial, changed))
+        expected_eye = (np.asarray(moved_eye) - sky.mesh.center) / sky.mesh.scale
+        np.testing.assert_allclose(changed @ np.r_[expected_eye, 1.0],
+                                   (0., 0., 0., 1.))
+        other_main_view = view.copy()
+        other_main_view[:3, 3] = (-900., 200., 400.)
+        np.testing.assert_allclose(changed, skybox_view_matrix(
+            other_main_view, sky.mesh, eye=moved_eye))
+        self.assertEqual(tuple(SKY_EYE), (0.0, 0.0, 100.0))
     def test_track_scene_remains_unchanged_after_background_preparation(self):
         from gpu_viewer.mesh import make_mesh
         source = """3D VERSION 3.0;

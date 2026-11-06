@@ -1,6 +1,6 @@
 """Track-only, read-only Papyrus HORIZ.3DO/HORIZ.3D background scene.
 
-Skybox is a separate GPU pass: its eye remains at raw (0, 0, 1000)
+Skybox is a separate GPU pass: its default eye is raw (0, 0, 100)
 while its orientation follows the main camera. This avoids translation
 parallax and keeps sky geometry out of the track's BSP and frame bounds.
 """
@@ -16,7 +16,7 @@ from gpu_viewer.mesh import make_mesh
 from gpu_viewer.scene import build_scene, ordered_scene_indices
 from gpu_viewer.textures import build_atlas
 
-SKY_EYE = (0.0, 0.0, 1000.0)
+SKY_EYE = (0.0, 0.0, 100.0)
 
 
 @dataclass
@@ -53,7 +53,8 @@ def load_track_skybox(path, palette, *, texture_folder=None):
     scene = build_scene(model)
     atlas = build_atlas(scene.geometry, path, texture_folder=texture_folder)
     mesh = make_mesh(scene.geometry, palette, atlas)
-    # The eye stays fixed at the raw HORIZ coordinates.
+    # Use the default raw HORIZ eye for painter ordering. The viewport
+    # can position its virtual sky eye independently at draw time.
     indices, _, _ = ordered_scene_indices(
         scene, mesh, SKY_EYE, None, bsp_mode="off")
     if indices.size == 0:
