@@ -26,14 +26,14 @@ if str(CAD_ROOT) not in sys.path:
 try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
-        GL_DEPTH_TEST, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_DEPTH_TEST, GL_DEPTH_COMPONENT, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
         GL_STATIC_DRAW, GL_TRIANGLES, GL_LINES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
         GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
-        glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
+        glClear, glClearColor, glColorMask, glDepthMask, glReadPixels, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
         glDisable, glDrawArrays, glDrawElements, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
@@ -97,8 +97,10 @@ from gpu_viewer.workspaces import (
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
-from gpu_viewer.vertex_label_data import (vertex_pointer_names,
-                                          include_source_vertex_declarations)
+from gpu_viewer.vertex_label_data import (
+    filter_vertex_labels, polygon_vertex_refs, project_vertex_labels,
+    vertex_pointer_names, include_source_vertex_declarations,
+)
 from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
 
 
@@ -527,6 +529,8 @@ class GLViewport(QOpenGLWidget):
         self._vertex_picker = None
         self._label_vertex_picker = None
         self.vertex_pointer_names = {}
+        self.vertex_label_mode = "all"
+        self._depth_visible_vertex_labels = []
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
@@ -607,7 +611,17 @@ class GLViewport(QOpenGLWidget):
             overlay.raise_()
             if self.visibility_banner.isVisible():
                 self.visibility_banner.raise_()
-            overlay.update()
+        else:
+            self._depth_visible_vertex_labels = []
+        self.update()
+
+    def set_vertex_label_mode(self, mode):
+        if mode not in ("all", "visible", "selected"):
+            raise ValueError(f"Unknown vertex label mode: {mode}")
+        if mode != self.vertex_label_mode:
+            self.vertex_label_mode = mode
+            self._depth_visible_vertex_labels = []
+            self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -728,6 +742,7 @@ class GLViewport(QOpenGLWidget):
         self._vertex_picker = VertexPicker.from_model(model, mesh)
         self._label_vertex_picker = self._vertex_picker
         self.vertex_pointer_names = vertex_pointer_names(model)
+        self._depth_visible_vertex_labels = []
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
         self._sprite_events = ()
@@ -772,7 +787,7 @@ class GLViewport(QOpenGLWidget):
                 self._model, self._mesh, self._vertex_picker,
                 vertex_pointer_names(self._model), source_index))
         if not self.vertex_label_overlay.isHidden():
-            self.vertex_label_overlay.update()
+            self.update()
 
     def set_appearance_colors(self, colors):
         """Change viewport drawing colors without rebuilding buffers or meshes."""
@@ -1943,6 +1958,22 @@ class Window(QMainWindow):
         self.vertex_labels_toggle.toggled.connect(
             self.viewer.set_all_vertex_labels)
         distance_row.addWidget(self.vertex_labels_toggle)
+        self.vertex_label_mode_combo = QComboBox()
+        self.vertex_label_mode_combo.setObjectName("vertexLabelDisplayMode")
+        self.vertex_label_mode_combo.addItem("All", "all")
+        self.vertex_label_mode_combo.addItem("Visible only", "visible")
+        self.vertex_label_mode_combo.addItem("Selected poly", "selected")
+        self.vertex_label_mode_combo.setToolTip(
+            "All: every on-screen root-model vertex, including hidden ones. "
+            "Visible only: labels on the frontmost rendered polygon surfaces, "
+            "excluding geometry hidden behind the model. "
+            "Selected poly: only vertices belonging to the POLY currently "
+            "highlighted in .3D Source or picked in Polys mode. "
+            "Requires Vertex labels to be enabled.")
+        self.vertex_label_mode_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_vertex_label_mode(
+                self.vertex_label_mode_combo.currentData()))
+        distance_row.addWidget(self.vertex_label_mode_combo)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")
