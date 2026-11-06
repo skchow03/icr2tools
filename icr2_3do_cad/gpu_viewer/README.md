@@ -232,9 +232,13 @@ leaving the N3 editor visible alongside it.
   position (0.5 = midpoint) on each. The cyan dashed overlay previews the
   cut. This adds two vertices, generates two polygons in a LIST, and repairs
   adjacent polygons that share the exact original edge pointers.
+  Each edge is identified by its endpoint pointer names, for example
+  `#1 front_left → front_right`, rather than an internal body offset.
 - **Diagonal between existing vertices:** choose two nonadjacent numbered
   vertices; no vertices are added. The CPU editor's diagonal safety checks
   also reject cuts outside concave polygons.
+  The vertex dropdowns show the existing `.3D` declaration names, for
+  example `#1 front_left`. Raw offsets remain available as hover tooltips.
 - **Split polygon** shows a confirmation with the vertex and neighbor counts
   and any seam warnings. **Close** hides the panel.
 

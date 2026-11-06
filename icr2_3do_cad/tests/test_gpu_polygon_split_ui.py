@@ -44,6 +44,7 @@ class GPUSplitUITests(unittest.TestCase):
         cls.window.close()
 
     def setUp(self):
+        self.window.viewer._model = self.model
         self.pane.set_source(SOURCE, Path("split_ui.3d"))
         self.pane._debounce.stop()
         self.window._set_split_target(None)
@@ -68,11 +69,52 @@ class GPUSplitUITests(unittest.TestCase):
         self.window._set_split_target(self.model.n3_label_offsets["face"])
         self.assertEqual(self.window.split_edge_a.count(), 4)
         self.assertEqual(self.window.split_edge_b.currentData(), 2)
+        self.assertEqual(self.window.split_vertex_a.itemText(0), "#1  a")
+        self.assertEqual(self.window.split_vertex_b.itemText(2), "#3  c")
+        self.assertEqual(self.window.split_edge_a.itemText(0), "#1  a → b")
+        self.assertEqual(self.window.split_edge_b.itemText(3), "#4  d → a")
         self.assertTrue(self.window.split_apply_button.isEnabled())
         self.window.split_edge_b.setCurrentIndex(0)
         self.assertFalse(self.window.split_apply_button.isEnabled())
         self.window.split_edge_b.setCurrentIndex(2)
         self.assertTrue(self.window.split_apply_button.isEnabled())
+
+    def test_renamed_project_pointers_replace_offsets_in_both_selectors(self):
+        renamed = (SOURCE.replace("a: [", "front_left: [")
+                   .replace("b: [", "front_right: [")
+                   .replace("c: [", "rear_right: [")
+                   .replace("d: [", "rear_left: [")
+                   .replace("{a,b,c,d}", "{front_left,front_right,rear_right,rear_left}"))
+        model, _ = compile_n3_text(
+            renamed, "renamed_split.3d", associate_planes=False)
+        self.window.viewer._model = model
+        self.pane.set_source(renamed, Path("renamed_split.3d"))
+        self.window._set_split_target(model.n3_label_offsets["face"])
+        self.assertEqual(
+            self.window.split_vertex_a.itemText(0), "#1  front_left")
+        self.assertEqual(
+            self.window.split_edge_a.itemText(0),
+            "#1  front_left → front_right")
+        self.assertEqual(
+            self.window.split_edge_b.itemText(2),
+            "#3  rear_right → rear_left")
+        # The cut still uses positional indices, not string labels or
+        # mutable body offsets. Offsets are available only on hover.
+        self.assertEqual(self.window.split_vertex_b.itemData(3), 3)
+        from PySide6.QtCore import Qt
+        tooltip = self.window.split_vertex_a.itemData(
+            0, Qt.ItemDataRole.ToolTipRole)
+        self.assertIn("@", tooltip)
+
+    def test_binary_offsets_fallback_to_generated_pointer_names(self):
+        from three_do import Model
+        binary = Model("unlabeled.3do", raw_data=self.model.raw,
+                       associate_planes=False)
+        self.window.viewer._model = binary
+        self.window._set_split_target(next(iter(binary.polygons)))
+        first_ref = binary.polygons[next(iter(binary.polygons))].refs[0]
+        self.assertEqual(
+            self.window.split_vertex_a.itemText(0), f"#1  _{first_ref}")
 
     def test_existing_diagonal_commits_as_one_source_undo(self):
         from PySide6.QtWidgets import QMessageBox
