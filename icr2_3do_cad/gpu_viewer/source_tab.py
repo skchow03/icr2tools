@@ -703,6 +703,39 @@ class SourcePane(QWidget):
         value = self.editor.toPlainText()
         return value.replace('\n', '\r\n') if self.line_ending == '\r\n' else value
 
+    def apply_source_replacement(self, source, description):
+        """Apply a validated structural N3 transformation as one Undo step.
+
+        Keep the existing saved-source baseline, syntax help, live compiler,
+        source filters and rename tracker consistent with an ordinary edit.
+        """
+        if not self._ready or self.pending or self._last_error_line is not None:
+            raise ValueError("Apply or correct pending source edits before splitting.")
+        if self.filtered_list.state() == QAbstractItemView.State.EditingState:
+            raise ValueError("Finish the filtered-row edit before splitting.")
+        previous = self.editor.toPlainText()
+        if source == previous:
+            raise ValueError("The split did not change the source document.")
+        self._rename_timer.stop()
+        self._rename_pending = None
+        self._filtered_edit_active = False
+        self._applying_rename = True
+        cursor = QTextCursor(self.editor.document())
+        try:
+            cursor.beginEditBlock()
+            try:
+                cursor.select(QTextCursor.SelectionType.Document)
+                cursor.insertText(source)
+            finally:
+                cursor.endEditBlock()
+        finally:
+            self._applying_rename = False
+        self._rename_snapshot = source
+        self._edited()
+        self.change_log.appendPlainText(
+            f"[{QTime.currentTime().toString('HH:mm:ss')}] {description}")
+        self.status.setText(f"{description}. Validating GPU preview (unsaved).")
+
     def scale_model(self, factor, *, divide=False):
         """Uniformly scale the canonical source as one undoable operation.
 
