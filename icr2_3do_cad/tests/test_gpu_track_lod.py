@@ -8,8 +8,10 @@ from gpu_viewer.mesh import make_mesh
 from gpu_viewer.scene import build_scene, ordered_scene_indices
 from gpu_viewer.track_lod import (
     detect_track_section_lods, selected_track_section_lists,
+    selected_track_section_window_lists, track_section_dlongs,
 )
 from n3_compile import compile_n3_text
+from gpu_viewer.workspaces import suggest_workspace
 from three_do import Model
 
 
@@ -320,6 +322,86 @@ class IrregularBinaryTrackTests(unittest.TestCase):
             bad, "bad_extra.3d", associate_planes=False)
         self.assertFalse(detect_track_section_lods(model))
 
+
+
+class StockSuperobjTrackTests(unittest.TestCase):
+    """Stock Papyrus tracks wrap the indexed LIST and scenery in SUPEROBJ."""
+
+    def test_wrapped_binary_index_detected_and_preserves_sceneries(self):
+        # The synthetic binary-style index has repeated hash pointers and
+        # seven-slot section tables just like original compiled Vancouver.
+        source = (BINARY_TRACK_SOURCE
+                  + 'suite: DYNAMIC 0, 0, 0, 873, 900, 0, 1, EXTERN "pitsuite";\n'
+                  + 'stock_root: SUPEROBJ index, {suite};\n')
+        compiled, _ = compile_n3_text(
+            source, 'stock_vancouver_like.3d', associate_planes=False)
+        model = Model('stock_vancouver_like.3do',
+                      raw_data=compiled.raw, associate_planes=False)
+        root = model.root_offset
+        self.assertEqual(model.records[root], 16)
+        index = model.children[root][0]
+        self.assertEqual(model.records[index], 11)
+        self.assertEqual(model.records[model.children[root][1]], 15)
+        sections = detect_track_section_lods(model)
+        self.assertEqual(len(sections), 3)
+        scene = build_scene(model)
+        self.assertEqual(scene.track_section_lods, sections)
+        self.assertEqual(suggest_workspace('vancouvr.3do',
+                         {'track_section_lists': len(sections)}), 'track')
+        for tier, count in (('hi', 5), ('med', 3), ('lo', 2)):
+            with self.subTest(tier=tier):
+                overrides = selected_track_section_lists(
+                    sections, tier, model=model)
+                self.assertIn(index, overrides)
+                self.assertNotIn(root, overrides)
+                events = []
+                polys, _, _ = model.switched_polygons(
+                    0, (0, 0, 10000), 'off',
+                    list_overrides=overrides, events=events)
+                self.assertEqual(len(polys), count)
+                self.assertEqual(
+                    len([event for event in events if event[0] == 'dynamic']),
+                    1)  # Root SUPEROBJ scenery still traversed
+                mesh = make_mesh(scene.geometry)
+                indices, visible, stats = ordered_scene_indices(
+                    scene, mesh, (0, 0, 10000),
+                    track_detail=tier, bsp_mode='off')
+                self.assertEqual(stats['mesh_polygons'], count)
+                self.assertEqual(len(visible), count)
+                self.assertEqual(len(indices), 3 * count)
+
+    def test_wrapped_source_index_metadata_and_camera_window(self):
+        source = (TRACK_SOURCE
+                  + 'suite: DYNAMIC 0, 0, 0, 873, 900, 0, 1, EXTERN "pitsuite";\n'
+                  + 'stock_root: SUPEROBJ index, {suite};\n')
+        model, _ = compile_n3_text(source, 'stock_wrapped_source.3d',
+                                   associate_planes=False)
+        index = model.children[model.root_offset][0]
+        sections = detect_track_section_lods(model)
+        self.assertEqual(len(sections), 1)
+        dlongs = track_section_dlongs(model, sections)
+        self.assertEqual(set(dlongs), set(sections))
+        self.assertEqual(next(iter(dlongs.values())), (0, 0, 0, 0))
+        overrides = selected_track_section_window_lists(
+            sections, dlongs, model=model, camera_dlong=20,
+            track_length=100, counts=(0, 0, 0))
+        self.assertEqual(overrides[index], tuple(sections))
+        self.assertNotIn(model.root_offset, overrides)
+        events = []
+        model.switched_polygons(
+            0, (0, 0, 10000), 'off',
+            list_overrides=overrides, events=events)
+        self.assertEqual(
+            len([event for event in events if event[0] == 'dynamic']), 1)
+
+    def test_unrelated_superobj_is_not_misclassified(self):
+        source = (BINARY_TRACK_SOURCE
+                  + 'unrelated: LIST {h0};\n'
+                  + 'suite: DYNAMIC 0, 0, 0, 0, 0, 0, 1, EXTERN "pitsuite";\n'
+                  + 'stock_root: SUPEROBJ unrelated, {suite};\n')
+        model, _ = compile_n3_text(source, 'generic_superobj.3d',
+                                   associate_planes=False)
+        self.assertFalse(detect_track_section_lods(model))
 
 
 
