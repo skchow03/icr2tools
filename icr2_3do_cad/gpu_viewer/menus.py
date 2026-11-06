@@ -61,7 +61,8 @@ def clear_recent_files(window):
 def update_model_actions(window):
     """Avoid advertising Save, Export, or Reload on an empty viewer."""
     loaded = window.viewer._model is not None
-    for name in ("save", "save_as", "export", "reload", "reload_mips"):
+    for name in ("save", "save_as", "export", "reload", "reload_mips",
+                 "mip_browser"):
         window.menu_actions[name].setEnabled(loaded)
 
 
@@ -228,6 +229,9 @@ def install_menus(window):
     assets = bar.addMenu("&Assets")
     _add_action(assets, "Asset &Settings…",
                 lambda: window.open_settings_dialog("assets"))
+    assets.addSeparator()
+    window.menu_actions["mip_browser"] = _add_action(
+        assets, "Browse Model &MIPs / U,V…", window.open_mip_browser)
     assets.addSeparator()
     _add_action(assets, "Open PCX &Palette…", window.open_palette_dialog)
     _add_action(assets, "&Default Palette", window.restore_palette)
