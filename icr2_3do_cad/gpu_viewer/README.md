@@ -525,7 +525,15 @@ rebuilt. Back up and validate any edited model in ICR2.
   mean pixel-visible: other drawn polygons can still cover it.
 
 Loading and mesh creation run on a worker thread; the OpenGL context and
-buffer upload stay on Qt's GUI thread.
+buffer upload stay on Qt's GUI thread. A **stage progress bar** appears above
+the viewport while opening or rebuilding a model, even if Model Settings are
+closed. It reports model/reference parsing, palette, HORIZ skybox, TRK
+navigation, PMP sprites, MIP atlas, triangulation, and final GPU upload.
+Percentages are coarse completed-stage markers, **not** estimated time
+remaining: they may stay at a stage while a particularly large stock track is
+being processed. The bar briefly shows 100% on success, disappears after
+completion, and hides on failure while the existing error log remains
+available. Preparing editable N3 source has its own separate worker/status.
 
 ## N3 context-sensitive syntax help
 
