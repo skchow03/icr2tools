@@ -8,6 +8,10 @@ Original track .3DO compilers instead expand the index into a root LIST:
     root: LIST { expanded LIST, section-pointer-per-hash-bin, ... }
     section LIST: { HI x4, MED x2, LO x1 } (seven pointers)
 
+Papyrus's original stock tracks (for example Vancouver) may also wrap that
+root LIST in a SUPEROBJ, whose first/previous pointer leads to the index
+and whose remaining children are independent DYNAMIC trackside placements.
+Track LOD overrides must target only the nested LIST, not its SUPEROBJ.
 The expanded index references *all* sections in order. The root's hash
 entries reference only some of them, often multiple times. Most other
 expanded entries alias the same seven LOD pointers, but in some tracks
