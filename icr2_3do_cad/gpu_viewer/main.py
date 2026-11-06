@@ -52,7 +52,7 @@ try:
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
-        QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+        QProgressBar, QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
 except ImportError as exc:
@@ -233,6 +233,7 @@ def perspective_projection(aspect, near, far, fov_degrees=60.0):
 class LoadWorker(QThread):
     ready = Signal(object, object, object, object, object, object)
     failed = Signal(str)
+    progress = Signal(int, str)  # completed stage marker, not elapsed-time estimate
 
     def __init__(self, path, palette_path, texture_folder=None,
                  fallback_mip=None, *, objects_folder=None,
@@ -260,6 +261,7 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
+            self.progress.emit(5, "Parsing model and referenced 3DOs")
             if self.source_text is not None:
                 # Compile candidate text off the UI thread. Do not overwrite
                 # the last valid model until this AND the mesh/atlas succeed.
@@ -288,6 +290,7 @@ class LoadWorker(QThread):
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
+            self.progress.emit(30, "Reading color palette")
             selected_palette = self.palette_path
             palette_warning = None
             auto_palette = False
@@ -308,6 +311,7 @@ class LoadWorker(QThread):
                     auto_palette = True
             else:
                 palette = load_palette(self.palette_path)
+            self.progress.emit(42, "Preparing track skybox")
             # HORIZ is a separate camera-locked background for indexed tracks.
             # Try valid HORIZ.3DO files first; malformed/nonrenderable ones do
             # not prevent a standalone HORIZ.3D from being compiled in memory.
@@ -321,6 +325,7 @@ class LoadWorker(QThread):
                 elif sky_notes:
                     scene.warnings = tuple(
                         dict.fromkeys((*scene.warnings, sky_notes)))
+            self.progress.emit(55, "Reading track navigation")
             # A companion <trackstem>.TRK supplies physics centerline XYZ,
             # tangent and elevation for the camera, independently of 3DO BSP.
             # Ignore unrelated .TRK files in the directory.
@@ -332,6 +337,7 @@ class LoadWorker(QThread):
                     except (OSError, ValueError, IndexError, TypeError,
                             OverflowError, ZeroDivisionError) as exc:
                         scene.track_navigation_error = f"{trk_path.name}: {exc}"
+            self.progress.emit(63, "Decoding PMP sprites")
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
@@ -339,13 +345,16 @@ class LoadWorker(QThread):
                 scene, objects_folder=self.objects_folder,
                 texture_folder=self.texture_folder)
             scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
+            self.progress.emit(74, "Loading MIP textures and building atlas")
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip,
                                 mip_overrides=self.mip_overrides,
                                 body_mip=self.body_mip)
+            self.progress.emit(85, "Triangulating track geometry")
             mesh = make_mesh(scene.geometry,
                              palette.astype(np.float32) / 255.0, atlas)
+            self.progress.emit(89, "Finalizing loaded scene")
             stats = {
                 "file": self.path.name,
                 "palette_path": selected_palette,
@@ -1907,6 +1916,7 @@ class Window(QMainWindow):
         self.setWindowTitle("ICR2 GPU Viewer — Object workspace")
         self.resize(1280, 850)
         self.worker = None
+        self._load_progress_worker = None
         self._info = {}
         self.mip_browser = None  # Separate, non-modal texture reference window
         self.report_path = report_path
@@ -2328,6 +2338,16 @@ class Window(QMainWindow):
         self.viewport_layout.setContentsMargins(0, 0, 0, 0)
         self.viewport_layout.setSpacing(0)
         self.viewport_layout.addWidget(self.distance_bar)
+        # Always visible above the viewport during a load, even when the
+        # collapsible settings panel is closed. Stage markers are coarse,
+        # not predictions of time remaining.
+        self.load_progress = QProgressBar()
+        self.load_progress.setRange(0, 100)
+        self.load_progress.setValue(0)
+        self.load_progress.setTextVisible(True)
+        self.load_progress.setFormat("0% — Preparing load")
+        self.load_progress.hide()
+        self.viewport_layout.addWidget(self.load_progress)
         self.viewport_layout.addWidget(self.viewer, stretch=1)
         # Contextual split controls sit BELOW the GPU viewport rather than
         # consuming the N3 source editor's horizontal space.
@@ -3660,6 +3680,41 @@ class Window(QMainWindow):
         if path:
             self.load(Path(path))
 
+    def _begin_load_progress(self, worker):
+        self._load_progress_worker = worker
+        self.load_progress.setValue(0)
+        self.load_progress.setFormat("0% — Preparing load")
+        self.load_progress.show()
+
+    def _load_progress_stage(self, worker, percent, description, *, repaint=False):
+        if worker is not self._load_progress_worker:
+            return  # Ignore queued updates from an older load.
+        percent = max(0, min(int(percent), 99))
+        self.load_progress.setValue(percent)
+        self.load_progress.setFormat(f"{percent}% — {description}")
+        if repaint:
+            # The GPU upload runs synchronously on the GUI thread. Paint its
+            # stage now so Qt does not leave a stale 89% label until it ends.
+            self.load_progress.repaint()
+
+    def _end_load_progress(self, worker, *, success):
+        if worker is not self._load_progress_worker:
+            return
+        if not success:
+            self.load_progress.hide()
+            self._load_progress_worker = None
+            return
+        self.load_progress.setValue(100)
+        self.load_progress.setFormat("100% — Model ready")
+        # Briefly show completion, without an old timer hiding a newer load.
+        QTimer.singleShot(900, lambda current=worker:
+            self._hide_completed_load_progress(current))
+
+    def _hide_completed_load_progress(self, worker):
+        if worker is self._load_progress_worker:
+            self.load_progress.hide()
+            self._load_progress_worker = None
+
     def load(self, path, *, reuse_model=False):
         if self._busy():
             return
@@ -3711,17 +3766,32 @@ class Window(QMainWindow):
             auto_local_palette=not reuse_model)
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
+        self._begin_load_progress(self.worker)
+        self.worker.progress.connect(
+            lambda percent, stage, current=self.worker:
+                self._load_progress_stage(current, percent, stage))
         self.worker.start()
 
     def _loaded(self, mesh, stats, model, atlas, palette, scene,
                 *, from_source=False):
+        self._load_progress_stage(
+            self.worker, 92, "Uploading geometry, textures and skybox to GPU",
+            repaint=True)
         self._info = stats
         # Commit the auto-selected palette only after the whole model has
         # loaded successfully. Failed loads leave the prior palette intact.
         self.palette_path = Path(stats.get("palette_path", self.palette_path))
         was_reloading = self._preserve_view
-        self.viewer.set_mesh(mesh, model, atlas, palette, scene,
-                             preserve_view=was_reloading)
+        try:
+            self.viewer.set_mesh(mesh, model, atlas, palette, scene,
+                                 preserve_view=was_reloading)
+        except Exception as exc:
+            self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
+                              previous_preserved=False)
+            return
+        self._load_progress_stage(
+            self.worker, 97, "Finishing controls and track setup",
+            repaint=True)
         self._refresh_mip_browser()
         if (self.source_pane.ready and not self.source_pane.pending
                 and not self._source_invalid):
@@ -3916,9 +3986,14 @@ class Window(QMainWindow):
             self._ensure_source_loaded()
         if self.viewer.track_drive_enabled and not was_reloading and not from_source:
             self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+        if not from_source:
+            self._end_load_progress(self.worker, success=True)
 
-    def _load_failed(self, message):
-        self.load_label.setText("Load failed; previous model preserved")
+    def _load_failed(self, message, *, previous_preserved=True):
+        self._end_load_progress(self.worker, success=False)
+        self.load_label.setText(
+            "Load failed; previous model preserved" if previous_preserved
+            else "GPU setup failed; viewport may need reloading")
         self.stats_label.setText(message)
         self._update_load_error_log(
             self.model_path or "(no model)",
