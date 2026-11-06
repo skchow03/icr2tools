@@ -110,6 +110,14 @@ class MipBrowserUITests(unittest.TestCase):
         self.assertFalse(self.dialog.isModal())
         self.assertTrue(self.dialog.isVisible())
         self.assertTrue(self.dialog.windowFlags() & Qt.WindowType.Window)
+        # A parent-owned QDialog is kept above the main editor on Windows,
+        # regardless of setModal(False). A truly independent top-level
+        # window must have no parent/owner and no always-on-top flag.
+        self.assertIsNone(self.dialog.parentWidget())
+        self.assertIsNone(self.dialog.parent())
+        self.assertFalse(
+            bool(self.dialog.windowFlags() &
+                 Qt.WindowType.WindowStaysOnTopHint))
         self.assertEqual(self.dialog.mips.count(), 2)
         self.assertEqual(self.dialog.mips.item(0).text(), "BODY.MIP")
         self.assertEqual(self.dialog.mips.item(1).text(), "wheel.mip")
@@ -120,6 +128,22 @@ class MipBrowserUITests(unittest.TestCase):
         self.window.open_mip_browser()
         self.assertIs(self.window.mip_browser, previous)
         self.assertTrue(previous.isVisible())
+
+    def test_main_window_can_be_raised_while_mip_browser_stays_open(self):
+        from PySide6.QtCore import Qt
+        # Both are separate, regular top-level windows. Raising the editor
+        # does not close or hide the UV reference and does not reparent it.
+        self.window.show()
+        self.window.raise_()
+        self.window.activateWindow()
+        self.app.processEvents()
+        self.assertTrue(self.window.isVisible())
+        self.assertTrue(self.dialog.isVisible())
+        self.assertIsNone(self.dialog.parentWidget())
+        self.assertFalse(
+            bool(self.dialog.windowFlags() &
+                 Qt.WindowType.WindowStaysOnTopHint))
+        self.window.hide()
 
     def test_palette_rgb_image_is_decoded_at_exact_texel(self):
         from gpu_viewer.mip_browser import mip_rgb_image
