@@ -185,8 +185,13 @@ def _unit(vector):
     return vector / length
 
 
-def camera_view(azimuth, elevation, distance, target):
-    """Row-major world-to-view matrix, using Z-up like the existing editor."""
+def camera_view(azimuth, elevation, distance, target, *, roll=0.0):
+    """Row-major world-to-view matrix with optional road-banking roll.
+
+    Rotation occurs about the camera's own forward direction: positive
+    roll means the road's left side rises; skybox and scene use the same
+    rotated basis. Orbit and fixed cameras default to zero roll.
+    """
     eye_direction = np.array((
         math.cos(elevation)*math.sin(azimuth),
         -math.cos(elevation)*math.cos(azimuth),
@@ -198,6 +203,9 @@ def camera_view(azimuth, elevation, distance, target):
         right = np.array((1.0, 0.0, 0.0))
     right = _unit(right)
     up = _unit(np.cross(right, forward))
+    if roll:
+        c, s = math.cos(roll), math.sin(roll)
+        right, up = c * right - s * up, s * right + c * up
     eye = np.asarray(target, dtype=np.float64) + eye_direction * distance
     view = np.identity(4, dtype=np.float64)
     view[0, :3] = right
@@ -1302,8 +1310,11 @@ class GLViewport(QOpenGLWidget):
             target = fixed_eye_view_target(
                 self._mesh.center, self._mesh.scale, self.fixed_camera_eye,
                 self.azimuth, self.elevation, self.distance)
+        roll = (self._track_drive_pose.roll
+                if self.track_drive_enabled and self._track_drive_pose is not None
+                else 0.0)
         return camera_view(
-            self.azimuth, self.elevation, self.distance, target)
+            self.azimuth, self.elevation, self.distance, target, roll=roll)
 
     def _refresh_visibility(self):
         """Active GL context required. Never reparses or retessellates."""
@@ -2762,7 +2773,8 @@ class Window(QMainWindow):
             f"DLAT {pose.dlat/UNITS_PER_FOOT:+,.1f} ft "
             f"({pose.dlat:+,.0f} units) | "
             f"camera XYZ ({pose.eye[0]:,.0f}, {pose.eye[1]:,.0f}, "
-            f"{pose.eye[2]:,.0f}) | Click viewport, use WASD/arrows; "
+            f"{pose.eye[2]:,.0f}) | bank {math.degrees(pose.roll):+.1f}° | "
+            f"Click viewport, use WASD/arrows; "
             f"Shift = 5x")
 
     def _toggle_split_tool(self, enabled):

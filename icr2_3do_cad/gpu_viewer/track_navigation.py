@@ -26,6 +26,7 @@ DEFAULT_EYE_HEIGHT_UNITS = 10000.0  # raw Papyrus units above TRK ground
 DEFAULT_EYE_HEIGHT_FT = DEFAULT_EYE_HEIGHT_UNITS / UNITS_PER_FOOT
 DEFAULT_LONG_STEP_FT = 10.0
 DEFAULT_LAT_STEP_FT = 2.0
+BANK_SAMPLE_HALF_WIDTH_UNITS = 6000.0  # compare road heights one foot either side
 
 
 def find_matching_trk(model_path):
@@ -57,6 +58,7 @@ class TrackPose:
     eye: tuple[float, float, float]
     azimuth: float
     elevation: float
+    roll: float = 0.0  # radians; negative when left side is lower
 
 
 class TrackNavigation:
@@ -133,7 +135,41 @@ class TrackNavigation:
         azimuth = math.atan2(-dx, dy)
         # camera_view's forward Z is -sin(elevation).
         elevation = -math.atan2(dz, horizontal)
+
+        # Determine banking from the *TRK ground surface*, not from road
+        # markings or visual 3DO polygons. Samples a foot to either side
+        # of the current DLAT, so lanes with different crossfall and
+        # gradual transition sections get their own camera roll.
+        #
+        # Calculate roll in the unbanked view's right/up basis. Projecting
+        # onto that basis accounts for longitudinal grade and avoids
+        # assuming that positive DLAT always points physically left on
+        # every straight/curve section.
+        right_ground = getxyz(
+            self.trk, dlong, self.dlat - BANK_SAMPLE_HALF_WIDTH_UNITS,
+            self.centerline)
+        left_ground = getxyz(
+            self.trk, dlong, self.dlat + BANK_SAMPLE_HALF_WIDTH_UNITS,
+            self.centerline)
+        lateral = tuple(float(l - r)
+                        for l, r in zip(left_ground, right_ground))
+        tangent_length = math.hypot(horizontal, dz)
+        right_axis = (dy / horizontal, -dx / horizontal, 0.0)
+        up_axis = (-dx * dz / (horizontal * tangent_length),
+                   -dy * dz / (horizontal * tangent_length),
+                   horizontal / tangent_length)
+        sideways = -sum(lateral[i] * right_axis[i] for i in range(3))
+        rise = sum(lateral[i] * up_axis[i] for i in range(3))
+        span = math.hypot(lateral[0], lateral[1])
+        # Bank magnitude must use the *physical* cross-track width. On
+        # original Michigan, some stock straight centerline tangents are
+        # inconsistent with their section heading: projecting the full
+        # width on the derived camera-left axis would falsely make its
+        # modest banking appear nearly vertical. Use the projected side
+        # only for direction and the real horizontal span for magnitude.
+        roll = (math.atan2(rise, span) * (1 if sideways > 0 else -1)
+                if span > 1e-6 and abs(sideways) > 1e-6 else 0.0)
         eye = (float(x), float(y), float(z + self.eye_height))
         return TrackPose(dlong, self.dlat, section,
                          (float(x), float(y), float(z)),
-                         eye, azimuth, elevation)
+                         eye, azimuth, elevation, roll)
