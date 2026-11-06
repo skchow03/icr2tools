@@ -7,7 +7,8 @@ written to disk; the normal GPU source compiler validates the new document.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from copy import copy
+from dataclasses import dataclass, replace
 from decimal import Decimal, localcontext
 import re
 
@@ -32,6 +33,38 @@ class SourceSplitResult:
     new_vertices: int
     updated_neighbors: int
     warnings: tuple[str, ...]
+
+
+def polygon_boundary_refs(polygon):
+    """N3 compiler closes each POLY with a repeated first pointer.
+
+    The CPU topology algorithms use open cyclic boundary lists. Exclude only
+    the deliberate trailing closure; never collapse internal duplicate refs.
+    """
+    refs = tuple(polygon.refs)
+    if len(refs) > 3 and refs[0] == refs[-1]:
+        return refs[:-1]
+    return refs
+
+
+def _open_boundary_model(model):
+    """Read-only temporary input for CPU splitter; binary/source unchanged.
+
+    The normal GPU N3 compiler emits a repeated closing ref for every POLY.
+    Create a shallow Model snapshot with normalized polygon boundary lists
+    solely for geometric split computations. The splitter still produces and
+    reparses a fully validated 3DO, and the GUI persists only its N3 result.
+    """
+    if not any(polygon_boundary_refs(p) != tuple(p.refs)
+               for p in model.polygons.values()):
+        return model
+    prepared = copy(model)
+    prepared.polygons = {
+        off: (replace(poly, refs=polygon_boundary_refs(poly))
+              if polygon_boundary_refs(poly) != tuple(poly.refs) else poly)
+        for off, poly in model.polygons.items()
+    }
+    return prepared
 
 
 def _model_label_offset(model, label):
@@ -134,11 +167,12 @@ def split_n3_polygon(model, source, polygon_offset, *, mode="edges",
     document = parse_document(source, require_offsets=False)
     statements = document.statements
     selected = _polygon_declaration(model, statements, polygon_offset)
+    working = _open_boundary_model(model)
     if mode == "edges":
-        updated, result = model.split_polygon(
+        updated, result = working.split_polygon(
             polygon_offset, index_a, index_b, fraction_a, fraction_b)
     elif mode == "vertices":
-        updated, result = model.split_polygon_at_vertices(
+        updated, result = working.split_polygon_at_vertices(
             polygon_offset, index_a, index_b)
     else:
         raise ValueError("Unknown polygon split mode")
