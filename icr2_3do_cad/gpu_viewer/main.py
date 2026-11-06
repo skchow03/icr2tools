@@ -3202,10 +3202,6 @@ class Window(QMainWindow):
         worker.start()
 
     def _source_exported(self, candidate, text, path):
-        if (self._source_export_worker is not None and
-                self._source_export_worker.activity_trace is self._load_trace and
-                self._load_trace is not None):
-            self._load_trace.stop_watchdog()
         if candidate is not self.viewer._model:
             if self.source_toggle.isChecked():
                 QTimer.singleShot(80, self._ensure_source_loaded)
@@ -3224,6 +3220,10 @@ class Window(QMainWindow):
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
         self._split_controls_changed()
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
 
     def _source_export_failed(self, candidate, error):
         if (self._source_export_worker is not None and
@@ -3957,8 +3957,9 @@ class Window(QMainWindow):
             return
         if worker is self._load_activity_worker and self._load_trace is not None:
             exporting = (success and self._source_export_worker is not None
-                         and self._source_export_worker.isRunning()
-                         and self._source_export_worker.activity_trace is self._load_trace)
+                         and self._source_export_worker.activity_trace is self._load_trace
+                         and self._source_export_model is self.viewer._model
+                         and not self.source_pane.ready)
             if not exporting:
                 self._load_trace.stop_watchdog()
         if not success:
