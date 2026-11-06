@@ -80,7 +80,9 @@ reload the model, reset the camera, compile source, or discard unsaved edits.
   source candidate; an invalid/nonrenderable binary does not prevent
   trying source. The skybox
   is rendered in an independent background pass: its virtual eye stays at
-  raw `(0,0,1000)`, while camera yaw/pitch/tilt follows the viewer. Panning,
+  raw `(0,0,100)` by default, while camera yaw/pitch/tilt follows the viewer. The
+  Track tab has editable HORIZ eye X/Y/Z fields (raw Papyrus units) and a reset
+  button, allowing horizon alignment without changing the HORIZ file. Panning,
   zooming or moving a fixed camera does not translate the sky. The sky's
   named MIPs (`skyindex`, `page03b`, `page03` for the reference model)
   are resolved beside the selected HORIZ file, and missing textures are reported on the
@@ -91,7 +93,8 @@ reload the model, reset the camera, compile source, or discard unsaved edits.
   folder for `<model-stem>.trk` (case-insensitive) whenever a recognized
   track `.3D` or `.3DO` opens. If found, it loads the physics course using
   the shared `icr2_core.trk` parser and enables a perspective camera at
-  `DLONG=0, DLAT=0`, six feet above the TRK ground, oriented along the
+  `DLONG=0, DLAT=0`, 10,000 raw Papyrus units (about 1.67 feet) above
+  the TRK ground, oriented along the
   centerline's direction of travel. Click the GPU viewport to focus it, then
   **W / Up** = forward (increasing DLONG), **S / Down** = backward,
   **A / Left** = left (positive DLAT), and **D / Right** = right (negative
