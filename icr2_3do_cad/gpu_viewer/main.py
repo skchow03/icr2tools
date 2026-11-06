@@ -97,7 +97,8 @@ from gpu_viewer.workspaces import (
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
-from gpu_viewer.vertex_label_data import vertex_pointer_names
+from gpu_viewer.vertex_label_data import (vertex_pointer_names,
+                                          include_source_vertex_declarations)
 from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
 
 
@@ -524,6 +525,7 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._vertex_picker = None
+        self._label_vertex_picker = None
         self.vertex_pointer_names = {}
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
@@ -724,6 +726,7 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
+        self._label_vertex_picker = self._vertex_picker
         self.vertex_pointer_names = vertex_pointer_names(model)
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
@@ -755,6 +758,21 @@ class GLViewport(QOpenGLWidget):
             finally:
                 self.doneCurrent()
         self.update()
+
+    def set_vertex_label_source(self, source_index):
+        """Refresh authored pointer names, including plane-only N3 vertices.
+
+        Never alter picking: source-only plane vertices do not participate
+        in the rendered polygon mesh's hit testing.
+        """
+        if self._model is None or self._mesh is None:
+            return
+        self._label_vertex_picker, self.vertex_pointer_names = (
+            include_source_vertex_declarations(
+                self._model, self._mesh, self._vertex_picker,
+                vertex_pointer_names(self._model), source_index))
+        if not self.vertex_label_overlay.isHidden():
+            self.vertex_label_overlay.update()
 
     def set_appearance_colors(self, colors):
         """Change viewport drawing colors without rebuilding buffers or meshes."""
@@ -2848,6 +2866,7 @@ class Window(QMainWindow):
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
+        self.viewer.set_vertex_label_source(self.source_pane._source_index)
         self._source_invalid = False
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
@@ -2904,6 +2923,7 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
             if self._pending_split_label is not None:
                 target = model.n3_label_offsets.get(self._pending_split_label)
                 self._pending_split_label = None
@@ -3488,6 +3508,9 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        if (self.source_pane.ready and not self.source_pane.pending
+                and not self._source_invalid):
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
         # Indexed tracks default to BSP-selected polygons with GPU depth;
         # car/object modes keep their original painter default. Preserve an
         # explicitly chosen method across recompiles and asset reloads.
