@@ -119,6 +119,19 @@ class MipCanvas(QGraphicsView):
         self.resetTransform()
         self._zoom = 1.0
 
+    def view_state(self):
+        """Preserve zoom and image center while a live source recompile runs."""
+        return (self._zoom,
+                self.mapToScene(self.viewport().rect().center()))
+
+    def restore_view_state(self, zoom, center):
+        if self._item is None:
+            return
+        self.resetTransform()
+        self.scale(zoom, zoom)
+        self._zoom = zoom
+        self.centerOn(center)
+
     def texel_at(self, viewport_point):
         """Return the integer top-left-origin texel under a viewport pixel."""
         if self._item is None:
@@ -298,6 +311,9 @@ class MipUVBrowser(QDialog):
     def set_model_textures(self, atlas, palette, model_name):
         """Refresh on model/palette/recompile, retaining a still-valid selection."""
         previous_path = self._current_path
+        previous_uv = self._selection
+        previous_view = (self.canvas.view_state()
+                         if previous_path is not None else None)
         self._palette = np.asarray(palette, dtype=np.uint8).copy()
         paths = tuple(getattr(atlas, "loaded_paths", ()) or ())
         self.mips.blockSignals(True)
@@ -327,6 +343,21 @@ class MipUVBrowser(QDialog):
                     break
         if next_row >= 0:
             self.mips.setCurrentRow(next_row)
+            if (previous_path is not None
+                    and str(paths[next_row]).casefold() == previous_path.casefold()
+                    and previous_view is not None):
+                # A model recompile may change the atlas while the user is
+                # consulting a zoomed texel. Do not reset the reference.
+                def restore(path=str(paths[next_row]), state=previous_view,
+                            uv=previous_uv):
+                    if self._current_path != path:
+                        return
+                    self.canvas.restore_view_state(*state)
+                    if (uv is not None and 0 <= uv[0] < self.canvas._width
+                            and 0 <= uv[1] < self.canvas._height):
+                        self.canvas.mark_texel(*uv)
+                        self._clicked(*uv)
+                QTimer.singleShot(0, restore)
         else:
             self._selected_mip(None)
 
