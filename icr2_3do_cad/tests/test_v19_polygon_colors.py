@@ -5,7 +5,6 @@ from pathlib import Path
 from three_do import Model
 from geometry_add import create_model_polygon, list_insert_targets
 from raw_disassembly import disassemble
-from icr2_3do_cad import write_validated_3do
 from tempfile import TemporaryDirectory
 
 FIX=Path(__file__).resolve().parents[1]/'fixtures'
@@ -55,7 +54,10 @@ class PolygonColorTests(unittest.TestCase):
         self.assertIn(f'@{front}',disassemble(out))
         with TemporaryDirectory() as temp:
             dest=Path(temp)/'painted.3do'
-            saved=write_validated_3do(dest,raw,expected_vertices=len(new.vertices),expected_polygons=len(new.polygons))
+            dest.write_bytes(raw)
+            saved=Model(dest)
+            self.assertEqual(len(saved.vertices),len(new.vertices))
+            self.assertEqual(len(saved.polygons),len(new.polygons))
             self.assertEqual(saved.polygons[front].color,141)
             self.assertEqual(saved.polygons[back].color,141)
 

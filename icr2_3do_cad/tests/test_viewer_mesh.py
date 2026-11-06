@@ -1,0 +1,245 @@
+"""CPU-only tests for the optional read-only GPU viewport.
+
+No Qt, ModernGL, display server, or proprietary RENO.3D asset is required.
+"""
+import ast
+from pathlib import Path
+import shutil
+import tempfile
+from types import SimpleNamespace
+import unittest
+
+import numpy as np
+
+from mesh import make_mesh, read_palette, triangulate
+from visibility import camera_in_model_units, ordered_bsp_indices
+from textures import build_atlas, find_texture, load_palette
+from n3_compile import compile_n3_text
+from three_do import Model
+
+
+CAD_ROOT = Path(__file__).resolve().parents[1]
+
+
+def _area2(points):
+    return sum(a[0]*b[1]-b[0]*a[1]
+               for a,b in zip(points,points[1:]+points[:1]))
+
+
+class TriangulationTests(unittest.TestCase):
+    def test_convex_quad_yields_two_triangles(self):
+        polygon=[(0,0,0),(4,0,0),(4,3,0),(0,3,0)]
+        tris,fallback=triangulate(polygon)
+        self.assertFalse(fallback)
+        self.assertEqual(len(tris),2)
+        self.assertEqual(set(i for tri in tris for i in tri),{0,1,2,3})
+
+    def test_concave_polygon_preserves_surface_area(self):
+        polygon=[(0,0,0),(4,0,0),(4,4,0),(2,1,0),(0,4,0)]
+        tris,fallback=triangulate(polygon)
+        self.assertFalse(fallback)
+        self.assertEqual(len(tris),3)
+        contour=[(x,y) for x,y,z in polygon]
+        original=abs(_area2(contour))
+        triangles=sum(abs(_area2([contour[i] for i in tri])) for tri in tris)
+        self.assertAlmostEqual(original,triangles)
+
+    def test_z_up_wall_faces_are_supported(self):
+        vertical=[(0,3,0),(0,3,4),(0,0,4),(0,0,0)]
+        tris,fallback=triangulate(vertical)
+        self.assertEqual(len(tris),2)
+        self.assertFalse(fallback)
+
+    def test_degenerate_vertices_never_produce_triangles(self):
+        for points in ([],[(0,0,0),(1,1,1)],
+                       [(0,0,0),(1,1,1),(2,2,2)]):
+            with self.subTest(points=points):
+                self.assertEqual(triangulate(points)[0],[])
+
+
+class ModelMeshTests(unittest.TestCase):
+    def test_real_binary_fixture_mesh_is_gpu_ready(self):
+        model=Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                    associate_planes=False)
+        mesh=make_mesh(model, read_palette(CAD_ROOT/"gamepal.pcx"))
+        self.assertGreater(mesh.polygon_count,0)
+        self.assertGreater(mesh.triangle_count,0)
+        self.assertEqual(mesh.vertices.shape,(mesh.triangle_count*3,13))
+        self.assertEqual(mesh.vertices.dtype,np.float32)
+        self.assertTrue(mesh.vertices.flags.c_contiguous)
+        self.assertTrue(np.isfinite(mesh.vertices).all())
+        self.assertLessEqual(abs(mesh.vertices[:,:3]).max(),1.01)
+        self.assertTrue(((mesh.vertices[:,3:6]>=0) &
+                         (mesh.vertices[:,3:6]<=1)).all())
+        self.assertEqual(mesh.size_bytes,mesh.vertices.nbytes)
+
+    def test_flattened_model_does_not_mutate_binary_or_vertices(self):
+        model=Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                    associate_planes=False)
+        before=model.raw
+        refs={offset:v.xyz for offset,v in model.vertices.items()}
+        _=make_mesh(model)
+        self.assertEqual(model.raw,before)
+        self.assertEqual(refs,
+                         {offset:v.xyz for offset,v in model.vertices.items()})
+
+    def test_skip_edit_anchors_keeps_geometry_and_compiler_bytes(self):
+        source="""3D VERSION 3.0;
+nil: NIL;
+a: [<0,0,0>];
+b: [<200,0,0>];
+c: [<0,200,0>];
+p: POLY <44> {a,b,c};
+root: FACE (a,b,c), p;
+"""
+        edited,_=compile_n3_text(source,"gpu.3d")
+        fast,_=compile_n3_text(source,"gpu.3d",associate_planes=False)
+        self.assertEqual(fast.raw,edited.raw)
+        self.assertEqual(fast.vertices,edited.vertices)
+        self.assertEqual(set(fast.planes),set(edited.planes))
+        self.assertEqual(fast.polygons,edited.polygons)
+
+    def test_center_and_precision_with_large_track_coordinates(self):
+        points=[(3_000_000,4_000_000,-100_000),
+                (5_000_000,4_000_000,-100_000),
+                (5_000_000,6_000_000,-100_000),
+                (3_000_000,6_000_000,-100_000)]
+        vertices={i:SimpleNamespace(xyz=p) for i,p in enumerate(points)}
+        poly=SimpleNamespace(unique_refs=(0,1,2,3),color=44)
+        model=SimpleNamespace(vertices=vertices,polygons={8:poly})
+        mesh=make_mesh(model)
+        self.assertEqual(mesh.center,(4_000_000.0,5_000_000.0,-100_000.0))
+        self.assertEqual(mesh.scale,1_000_000.0)
+        self.assertAlmostEqual(float(mesh.vertices[:,:3].max()),1.0)
+        self.assertEqual(mesh.triangle_count,2)
+
+    def test_ranges_cover_every_emitted_triangle_exactly_once(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        self.assertEqual(len(mesh.polygon_ranges), mesh.polygon_count)
+        spans = sorted(mesh.polygon_ranges.values())
+        cursor = 0
+        for start, count in spans:
+            self.assertEqual(start, cursor)
+            self.assertGreater(count, 0)
+            self.assertEqual(count % 3, 0)
+            cursor += count
+        self.assertEqual(cursor, len(mesh.vertices))
+
+    def test_bsp_index_order_reuses_production_traversal(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        for y in (-80000, 0, 80000):
+            eye = (-36000, y, 7000)
+            actual, selected, info = ordered_bsp_indices(
+                model, mesh, eye, distance=0)
+            expected, _, _ = model.switched_polygons(
+                0, eye, bsp_mode='original')
+            self.assertEqual(selected, frozenset(expected))
+            expected_indices = [
+                v for offset in expected
+                if offset in mesh.polygon_ranges
+                for v in range(mesh.polygon_ranges[offset][0],
+                               sum(mesh.polygon_ranges[offset]))
+            ]
+            np.testing.assert_array_equal(
+                actual, np.asarray(expected_indices, dtype=np.uint32))
+            self.assertEqual(info['triangles'], len(actual) // 3)
+            self.assertTrue(actual.flags.c_contiguous)
+            self.assertTrue((actual < len(mesh.vertices)).all())
+
+    def test_bsp2_coincident_faces_selected_by_camera_side(self):
+        model = Model(CAD_ROOT/"fixtures"/"roadcar.3do",
+                      associate_planes=False)
+        mesh = make_mesh(model)
+        selected = {}
+        for y in (-80000, 80000):
+            _, offsets, _ = ordered_bsp_indices(
+                model, mesh, (-36000, y, 7000), 0)
+            selected[y] = offsets & {7076, 7108, 7136, 7168}
+            self.assertEqual(len(selected[y]), 2)
+        self.assertEqual(selected[-80000], {7108, 7136})
+        self.assertEqual(selected[80000], {7076, 7168})
+
+    def test_camera_position_undoes_gpu_recentering(self):
+        eye = camera_in_model_units(
+            (4000000, 5000000, -100000), 1000000,
+            (0.1, 0.2, 0), 0, 0, 4)
+        self.assertEqual(eye, (4100000.0, 1200000.0, -100000.0))
+
+    def test_strict_pcx_palette_trailer_matches_existing_reader(self):
+        path = CAD_ROOT/"gamepal.pcx"
+        raw = load_palette(path)
+        self.assertEqual(raw.shape, (256, 3))
+        self.assertEqual(raw.dtype, np.uint8)
+        self.assertEqual(raw[2].tolist(), [227, 0, 0])
+        np.testing.assert_allclose(
+            raw.astype(np.float32) / 255.0, read_palette(path), atol=1e-7)
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d)/"wrong.pcx"
+            bad.write_bytes(b"not a valid VGA PCX")
+            with self.assertRaises(ValueError):
+                load_palette(bad)
+
+    def test_case_insensitive_mip_resolution_and_indexed_atlas(self):
+        with tempfile.TemporaryDirectory() as d:
+            folder = Path(d)
+            shutil.copyfile(CAD_ROOT/"fixtures"/"ind96.mip",
+                            folder/"MyMiP.MIP")
+            self.assertEqual(
+                find_texture("mymip", folder/"test.3do", folder),
+                folder/"MyMiP.MIP")
+            points = [(0, 0, 0), (100, 0, 0), (0, 100, 0)]
+            uv = [(0, 0), (127, 0), (0, 164)]
+            vertices = {i:SimpleNamespace(xyz=p, uv=uv[i])
+                        for i, p in enumerate(points)}
+            polygon = SimpleNamespace(unique_refs=(0,1,2), color=43, kind=2)
+            model = SimpleNamespace(vertices=vertices,
+                                    polygons={8:polygon},
+                                    polygon_materials={8:"mymip"})
+            atlas = build_atlas(model, folder/"test.3do",
+                                texture_folder=folder)
+            self.assertEqual(atlas.loaded_names, ("MyMiP.MIP",))
+            self.assertEqual(atlas.textured_polygons, 1)
+            self.assertEqual(atlas.missing_names, ())
+            self.assertEqual(len(atlas.polygon_rects), 1)
+            x, y, w, h = atlas.polygon_rects[8]
+            self.assertEqual((w,h), (128,165))
+            self.assertEqual(atlas.pixels[y,x],
+                             np.asarray(atlas.pixels)[y,x])
+            mesh = make_mesh(model, read_palette(CAD_ROOT/"gamepal.pcx"),
+                             atlas)
+            self.assertEqual(mesh.vertices.shape,(3,13))
+            self.assertEqual(mesh.vertices[0,6], 43)
+            self.assertEqual(tuple(mesh.vertices[1,7:9]), (127,0))
+            self.assertEqual(tuple(mesh.vertices[2,9:13]), (x,y,w,h))
+            self.assertTrue(np.isfinite(mesh.vertices).all())
+
+    def test_missing_mip_falls_back_without_hiding_polygons(self):
+        vertices = {i:SimpleNamespace(xyz=p, uv=(0,0))
+                    for i,p in enumerate(((0,0,0),(100,0,0),(0,100,0)))}
+        poly = SimpleNamespace(unique_refs=(0,1,2), color=44, kind=2)
+        model = SimpleNamespace(vertices=vertices, polygons={8:poly},
+                                polygon_materials={8:"missing_asset_01"})
+        atlas = build_atlas(model, CAD_ROOT/"nothing.3do")
+        self.assertEqual(atlas.missing_names, ("missing_asset_01",))
+        self.assertEqual(atlas.polygon_rects, {})
+        mesh = make_mesh(model, atlas=atlas)
+        self.assertEqual(mesh.vertices.shape, (3,13))
+        self.assertTrue((mesh.vertices[:,9:13] == 0).all())
+
+    def test_qt_module_compiles_without_importing_optional_libraries(self):
+        path=CAD_ROOT/"icr2_3do_cad.py"
+        ast.parse(path.read_text(encoding="utf8"),filename=str(path))
+
+    def test_empty_geometry_mesh_is_valid(self):
+        model=SimpleNamespace(vertices={},polygons={})
+        mesh=make_mesh(model)
+        self.assertEqual(mesh.vertices.shape,(0,13))
+        self.assertEqual(mesh.triangle_count,0)
+
+
+if __name__=="__main__":
+    unittest.main()

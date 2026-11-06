@@ -2,52 +2,34 @@
 
 ## Architecture
 
-The editor currently uses **flat Python modules in this directory**. Run from `icr2_3do_cad/`. Avoid renaming runtime modules without updating their direct imports.
+The sole application entry point is `icr2_3do_cad.py` in this directory. It runs the PySide6/OpenGL editor (Python 3.10+). Its viewport, source editing, UI, car/track and texture modules now live alongside the existing 3DO parser and N3 compiler. There is no second front end.
 
-- `icr2_3do_cad.py`: Tkinter presentation, selection, edit commands and validated file writes.
-- `three_do.py`: Papyrus 3DO parser, original byte offsets, model state and binary output.
-- `topology_split.py` and `geometry_add.py`: append new structures and repoint the necessary original parent pointers rather than rebuilding the BSP tree.
-- `dynamic_scene.py`: read-only external model traversal and placement preview.
-- `car_appearance.py`: parses car RECOLOR/material wrappers independently of geometry.
-- `texture_preview.py` and `pmp_preview.py`: diagnostic rendering support; Pillow and NumPy are optional for core use.
-- `raw_disassembly.py`: read-only diagnostic structure listing.
+- `icr2_3do_cad.py`: Qt main window, OpenGL viewport, load/save/export commands and model workspaces.
+- `mesh.py`, `scene.py`, `textures.py`, `sprites.py`, `sprite_gl.py`, `skybox.py`, `track_lod.py`, `track_navigation.py`: scene construction, rendering and navigation.
+- `source_tab.py`, `source_*.py`, `active_source.py`, `polygon_split.py`: live N3 source editing, validation, inspections and source transformations.
+- `three_do.py`, `n3_compile.py`, `text_3d.py`, `n3_plane_points.py`: binary 3DO and N3 source compiler/interchange.
+- `dynamic_scene.py`, `car_appearance.py`, `texture_preview.py`, `pmp_preview.py`: model/asset decoding reused by the renderer.
+- `fixtures/`, `gamepal.pcx`: required sample files and default palette.
 
-Keep `gamepal.pcx`: the GUI loads it by default. Keep `fixtures/`: tests read binary fixtures and the editor also uses the directory as an explicit fallback for external/car model resolution.
+The application uses flat imports relative to this directory. Direct execution of `python icr2_3do_cad.py` and the Windows batch launcher must work without a separate Python package.
 
 ## Binary safety invariants
 
-1. Unmodified 3DO files must be byte-for-byte identical on a no-op round-trip.
-2. Preserve untouched original binary records, record offsets, child ordering and external resources.
-3. Changes to topology must explicitly account for appended records and redirected pointers; do not silently rebuild the existing hierarchy.
-4. Validate coordinates, plane equations, bounds, counts and references before saving.
-5. Write and parse a temporary candidate before atomic replacement, retaining the existing optional backup behavior.
-6. An edit to a parent or appearance preview must not implicitly rewrite referenced external files.
+1. Unmodified binary `.3do` parsing and byte-preserving `Model.build_modified_bytes()` operations must remain non-destructive.
+2. Preserve original records, offsets, ordering and references for direct binary edits; append/repoint topology rather than rewriting unrelated records.
+3. Validate coordinates, planes, bounds, counts and references before writing.
+4. Never silently overwrite an original `.3D` or `.3do`; exports must be explicitly requested by the user.
+5. Source recompilation can regenerate offsets and ordering. Do not confuse it with a byte-identical binary patch.
+6. Do not modify external models or textures while exporting a parent model.
 
 ## DYNAMIC preview orientation
 
-Binary DYNAMIC angles are stored in Z/Y/X slots (`+0x10`, `+0x14`,
-`+0x18`). The viewer applies them to column vectors as
-`Rz(Z) * Ry(-Y) * Rx(X)`; only the **rendering interpretation** of the
-second signed angle is negated. Editing and recompiling must preserve
-the actual angle fields, including negative signed values. Do not swap
-the Y and X slots.
+Binary DYNAMIC angles are stored in Z/Y/X slots (`+0x10`, `+0x14`, `+0x18`). The preview applies them to column vectors as `Rz(Z) * Ry(-Y) * Rx(X)`: only the rendering interpretation of the second signed angle is negated. Do not swap the Y and X slots or alter stored angles.
 
-This sign convention is checked against stock Vancouver `pitsuite.3do`,
-whose vertical geometry is authored along local +X: the parent's
-`(+87.3° Z, +90° Y, 0° X)` placement must point the local +X axis
-upward (+Z), not downward. The third/X-axis sign remains unverified
-against an independently oriented stock object; leave it unchanged
-until supported by a specific counterexample.
+Stock Vancouver `pitsuite.3do` provides one orientation check; the X-angle sign is not independently verified across all objects. Preserve the existing convention until contradicted by a reproducible example.
 
-## Regression tests
+## Regression checks
 
-```sh
-cd icr2_3do_cad
-python -m unittest discover -s tests -p "test_*.py"
-```
+From this directory, run `python -m unittest discover -s tests -p 'test_*.py'`. Run graphical tests with `xvfb-run -a`, PySide6, PyOpenGL, Pillow and NumPy. Use `python smoke_test.py fixtures/roadcar.3do` in an OpenGL 3.3-capable environment. For source/compiler changes, confirm saved results in the game as well as in the editor.
 
-Use Python 3.10+ with Tkinter. Texture-specific tests require `Pillow` and `numpy`; GUI tests require a desktop or Xvfb (`xvfb-run -a`). All tests live under `tests/`, with paths resolving to `../fixtures/` and `../gamepal.pcx`.
-
-Add regression tests for new writer operations: include unchanged-byte preservation, deliberate invalid inputs, and save/reload behavior. Prefer one focused test to a new version-numbered smoke script.
-
-Temporary screenshots belong in an ignored `screenshots/` directory. Prior release notes, throwaway smoke scripts and captured previews remain available through Git history. This cleanup intentionally does not refactor any runtime parser or GUI code.
+Keep local screenshots in the ignored `screenshots/` directory. Temporary models and benchmark reports are not source assets.

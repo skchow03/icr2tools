@@ -17,7 +17,8 @@ A suite of modern modding utilities for *IndyCar Racing II*, by SK Chow.
   - [Installation, usage and compatibility](icr2multicar/README.md)
 - **icr2_core/** – shared memory, DAT, TRK, MIP, and conversion code
   - [Architecture](icr2_core/ARCHITECTURE.md)
-- **icr2_3d_catalog_viewer/** – track 3D catalog viewer
+- **icr2_3do_cad/** – 3D/3DO CAD editor for Papyrus models (Qt/OpenGL)
+  - [Setup and user guide](icr2_3do_cad/README.md)
 - **tso_generator/** – trackside-object generator
 
 ## Development setup
@@ -73,6 +74,10 @@ folder and combines objects with the same filename into that file, in table orde
 The `.tsd` extension is optional. Export warns and stops if any object has no
 filename; existing output files require overwrite confirmation. Assignments are
 saved in the `.sgc` project and retained when duplicating objects.
+
+### ICR2 3DO CAD
+
+Run the supported editor with `python icr2_3do_cad/icr2_3do_cad.py`, or double-click `icr2_3do_cad/RUN_ME_WINDOWS.bat` on Windows. Install its dependencies with `python -m pip install -r icr2_3do_cad/requirements.txt`. See the [CAD editor guide](icr2_3do_cad/README.md).
 
 ### ICR2 Multi-Car Models
 

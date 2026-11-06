@@ -124,52 +124,20 @@ plane is identical, so check complex scenery visibility in-game.
 Legacy five-number overlays can still be imported for compatibility,
 but they are never emitted as canonical N3 source.
 
-## Open a standalone .3D (no source binary required)
+## Editing and exporting in 3DO CAD
 
-Use **File > Open…** and select any supported Papyrus/N3 `.3D`, or select
-**File > Open standalone N3 .3D…**. The editor now compiles a validated model
-directly from the text. The original `.3D` stays untouched; **Save Copy**
-produces a new binary `.3do`. Named pointers and `% comments` remain
-in the text source, even though binary 3DO has no fields for them.
+Use **File > Open Model…** to select a standalone `.3D` or an existing
+binary `.3do`. The editable source pane retains names and comments from
+text sources. Opening a binary model creates editable, compilable N3 source.
+After validation, choose **File > Save .3D Source As…** to keep the text or
+**File > Export Compiled 3DO…** to write a separate binary file.
 
-This new standalone compiler supports a documented subset of N3, including
-new vertex/polygon declarations and hierarchical LIST/FACE/BSP operations.
-See [STANDALONE_N3.md](STANDALONE_N3.md) for details and limitations.
+Exporting compiled source can reallocate binary records and is not a
+byte-preserving overlay onto the existing model. The previous application's
+in-place binary-overlay import is **not** part of the current GUI. The
+`text_3d.import_text` library functionality remains available to developers,
+but should not be presented as a menu command.
 
-## Existing binary-overlay workflow
-
-The following workflow remains useful when you explicitly want to patch the
-*original* 3DO without changing any of its binary record layout.
-
-1. Open the original **binary** \`.3do\` in the CAD editor.
-2. Export a \`.3D\` text file. Edit coordinates, UVs, polygon colors, raw
-   FACE/BSP coefficients, DYNAMIC positions/rotations, labels and comments.
-3. Keep each \`% ICR2_OFFSET: 123\` line immediately above its declaration,
-   even when renaming \`_123:\` to something descriptive like \`front_wing:\`.
-   Change corresponding references when renaming pointers.
-4. With the original binary model open, import the edited \`.3D\`.
-   Validation is **transactional**: a bad edit does not change the model.
-5. Inspect the result in the viewport and choose **Save Copy** to write the
-   validated \`.3do\`. Keep the \`.3D\` separately as the annotated source.
-
-Papyrus \`.3DO\` binary stores numeric pointers and geometry, **not** label
-names or text comments. When the edited \`.3D\` is imported and then exported
-again in the same editor session, the editor retains its labels and comments
-wherever possible. Reopen the text source when beginning a new editing session.
-
-## Binary-overlay limitations
-
-The **overlay import** is intentionally an **in-place binary patch**, not a general
-\`.3D\` compiler. It supports edits to original record values, but **does not
-yet compile added/deleted vertices or polygons, reordered LIST entries,
-rewired BSP pointers, new resource references, or altered record flavors**.
-These are rejected explicitly rather than silently corrupting the binary.
-
-The original source \`.3do\` must be loaded and its body offsets must match the
-\`.3D\` text file. \`3do23d\` exports using \`_123\` names can be mapped without
-annotations; renamed names need \`% ICR2_OFFSET\` annotations from CAD export.
-The numeric raw-plane representation is used to avoid inaccurate automatic
-plane reconstructions. This is N3-style text interchange, but full validation
-by external Papyrus/Noorok 3D compilers remains recommended.
-
-As with any 3DO edit, save to a separate copy and test the result in-game.
+Named pointers and `% comments` are not stored inside a binary 3DO. Retain
+annotated source files and validate complex output in the original game.
+See [STANDALONE_N3.md](STANDALONE_N3.md) for compiler details and limitations.

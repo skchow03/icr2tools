@@ -2,7 +2,6 @@
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from n3_compile import compile_n3_text
 from text_3d import export_standalone_text
@@ -132,29 +131,6 @@ class StandaloneN3Tests(unittest.TestCase):
             with self.subTest(snippet=snippet[-55:]):
                 with self.assertRaises(FormatError):
                     compile_n3_text(snippet,"error.3d")
-
-    def test_gui_can_open_standalone_file_and_save_binary(self):
-        from icr2_3do_cad import Editor
-        with tempfile.TemporaryDirectory() as temp:
-            path=Path(temp)/"direct.3d"
-            path.write_text(SIMPLE)
-            editor=Editor()
-            editor.withdraw()
-            try:
-                self.assertTrue(editor.load_file(path))
-                self.assertEqual(editor.model.path,path)
-                self.assertTrue(editor.imported_pending)
-                self.assertIsNotNone(editor.text_document)
-                target=Path(temp)/"direct.3do"
-                with mock.patch("icr2_3do_cad.filedialog.asksaveasfilename",return_value=str(target)):
-                    with mock.patch("icr2_3do_cad.messagebox.showinfo"):
-                        editor.save_as()
-                self.assertTrue(target.is_file())
-                model=Model(target)
-                self.assertEqual(len(model.polygons),1)
-                self.assertFalse(editor.imported_pending)
-            finally:
-                editor.destroy()
 
 if __name__=="__main__":
     unittest.main()
