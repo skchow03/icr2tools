@@ -56,7 +56,8 @@ class SpriteResources:
 
 
 def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
-                          max_images=2048, max_bytes=32 * 1024 * 1024):
+                          max_images=2048, max_bytes=32 * 1024 * 1024,
+                          on_activity=None):
     """Resolve every loaded 3DO instance's PMP/PMP2 variants, active or not.
 
     BSP selects a sprite per camera angle later, without reloading files.
@@ -69,7 +70,12 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
     placements = {}
     warnings = []
     bounds_points = []
+    if on_activity:
+        on_activity(f"Searching PMP/PMP2 records in {len(scene.instances):,} instances")
     for instance_id, instance in enumerate(scene.instances):
+        if on_activity and instance_id % 100 == 0:
+            on_activity(f"PMP scan: instance {instance_id + 1}/{len(scene.instances)} "
+                        f"({instance.model.path.name})")
         for offset, sprite in instance.model.pmp_sprites.items():
             vertex = instance.model.vertices.get(sprite.vertex_ref)
             if vertex is None:
@@ -90,6 +96,8 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                         f"PMP budget exceeded: maximum {max_images} unique images")
                     continue
                 try:
+                    if on_activity:
+                        on_activity(f"Decoding sprite: {location.name} [{location}]")
                     decoded = load_pmp(location, _INDEX_PALETTE)
                     rgba = np.asarray(decoded.rgba, dtype=np.uint8)
                     image = np.ascontiguousarray(
@@ -100,7 +108,12 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                             f"{location.name}: PMP memory budget exceeded")
                         continue
                     images[key] = (image, decoded.bounds)
+                    if on_activity:
+                        on_activity(f"Sprite decoded: {location.name} "
+                                    f"({image.shape[1]}x{image.shape[0]})")
                 except (OSError, PMPError, ValueError) as exc:
+                    if on_activity:
+                        on_activity(f"Sprite failed: {location.name}: {exc}")
                     warnings.append(f"{location.name}: {exc}")
                     continue
             image, bounds = images[key]
@@ -121,6 +134,9 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                 bounds_points.append(
                     tuple(float(v + sign * radius) for v in origin))
 
+    if on_activity:
+        on_activity(f"PMP scan finished: {len(images)} images, "
+                    f"{len(placements)} placements, {len(warnings)} warnings")
     return SpriteResources(
         {key: img for key, (img, _) in images.items()},
         placements, tuple(bounds_points),
