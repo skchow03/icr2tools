@@ -22,7 +22,8 @@ from icr2_core.trk.trk_utils import dlong2sect, get_cline_pos, getxyz
 
 
 UNITS_PER_FOOT = 6000.0
-DEFAULT_EYE_HEIGHT_FT = 6.0
+DEFAULT_EYE_HEIGHT_UNITS = 10000.0  # raw Papyrus units above TRK ground
+DEFAULT_EYE_HEIGHT_FT = DEFAULT_EYE_HEIGHT_UNITS / UNITS_PER_FOOT
 DEFAULT_LONG_STEP_FT = 10.0
 DEFAULT_LAT_STEP_FT = 2.0
 
@@ -59,7 +60,7 @@ class TrackPose:
 
 
 class TrackNavigation:
-    """TRK centerline driver; all distances are raw 1/6000-foot units."""
+    """TRK centerline driver; eye defaults to 10,000 Papyrus units above ground."""
 
     def __init__(self, path, trk, *, eye_height_ft=DEFAULT_EYE_HEIGHT_FT):
         self.path = Path(path)
