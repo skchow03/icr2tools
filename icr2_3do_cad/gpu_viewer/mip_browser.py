@@ -99,7 +99,9 @@ class MipCanvas(QGraphicsView):
     def zoom_by(self, factor, *, at_mouse=False):
         if self._item is None or factor <= 0:
             return
-        target = min(48.0, max(0.0625, self._zoom * factor))
+        # A tiny MIP can need >100x zoom just to fill a normal window.
+        # Never make a Zoom In action shrink a fitted 2x2 or 4x3 image.
+        target = min(4096.0, max(0.0625, self._zoom * factor))
         if abs(target - self._zoom) < 1e-9:
             return
         self.setTransformationAnchor(
