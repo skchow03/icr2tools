@@ -97,6 +97,9 @@ from gpu_viewer.workspaces import (
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
+from gpu_viewer.vertex_label_data import (vertex_pointer_names,
+                                          include_source_vertex_declarations)
+from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
 
 
 VERTEX_SHADER = """
@@ -522,6 +525,8 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._vertex_picker = None
+        self._label_vertex_picker = None
+        self.vertex_pointer_names = {}
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
@@ -581,10 +586,35 @@ class GLViewport(QOpenGLWidget):
             " padding: 10px 14px;"
             " font-size: 13px; font-weight: bold; }")
         self.visibility_banner.hide()
+        # Qt-composited child widget avoids GL/QPainter glyph corruption.
+        # The overlay is mouse transparent; picking/orbiting remain unchanged.
+        self.vertex_label_overlay = VertexLabelOverlay(self)
+
+    def update(self, *args):
+        """Keep optional labels aligned whenever camera/selection redraws."""
+        super().update(*args)
+        overlay = getattr(self, "vertex_label_overlay", None)
+        if overlay is not None and not overlay.isHidden():
+            overlay.update()
+
+    def set_all_vertex_labels(self, enabled):
+        overlay = self.vertex_label_overlay
+        if (not overlay.isHidden()) == bool(enabled):
+            return
+        overlay.setVisible(bool(enabled))
+        if enabled:
+            overlay.setGeometry(self.rect())
+            overlay.raise_()
+            if self.visibility_banner.isVisible():
+                self.visibility_banner.raise_()
+            overlay.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._size_visibility_banner()
+        overlay = getattr(self, 'vertex_label_overlay', None)
+        if overlay is not None:
+            overlay.setGeometry(self.rect())
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
@@ -696,6 +726,8 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
+        self._label_vertex_picker = self._vertex_picker
+        self.vertex_pointer_names = vertex_pointer_names(model)
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
         self._sprite_events = ()
@@ -726,6 +758,21 @@ class GLViewport(QOpenGLWidget):
             finally:
                 self.doneCurrent()
         self.update()
+
+    def set_vertex_label_source(self, source_index):
+        """Refresh authored pointer names, including plane-only N3 vertices.
+
+        Never alter picking: source-only plane vertices do not participate
+        in the rendered polygon mesh's hit testing.
+        """
+        if self._model is None or self._mesh is None:
+            return
+        self._label_vertex_picker, self.vertex_pointer_names = (
+            include_source_vertex_declarations(
+                self._model, self._mesh, self._vertex_picker,
+                vertex_pointer_names(self._model), source_index))
+        if not self.vertex_label_overlay.isHidden():
+            self.vertex_label_overlay.update()
 
     def set_appearance_colors(self, colors):
         """Change viewport drawing colors without rebuilding buffers or meshes."""
@@ -1886,6 +1933,15 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.vertex_labels_toggle = QCheckBox("Vertex labels")
+        self.vertex_labels_toggle.setObjectName("showAllVertexLabels")
+        self.vertex_labels_toggle.setToolTip(
+            "Show a small blue dot and N3 pointer name at every on-screen "
+            "root-model vertex. Selected vertices keep their larger yellow "
+            "marker. Off by default for large track models.")
+        self.vertex_labels_toggle.toggled.connect(
+            self.viewer.set_all_vertex_labels)
+        distance_row.addWidget(self.vertex_labels_toggle)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")
@@ -2810,6 +2866,7 @@ class Window(QMainWindow):
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
+        self.viewer.set_vertex_label_source(self.source_pane._source_index)
         self._source_invalid = False
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
@@ -2866,6 +2923,7 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
             if self._pending_split_label is not None:
                 target = model.n3_label_offsets.get(self._pending_split_label)
                 self._pending_split_label = None
@@ -3450,6 +3508,9 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         self.viewer.set_mesh(mesh, model, atlas, palette, scene,
                              preserve_view=was_reloading)
+        if (self.source_pane.ready and not self.source_pane.pending
+                and not self._source_invalid):
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
         # Indexed tracks default to BSP-selected polygons with GPU depth;
         # car/object modes keep their original painter default. Preserve an
         # explicitly chosen method across recompiles and asset reloads.
