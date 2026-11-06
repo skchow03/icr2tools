@@ -161,6 +161,8 @@ class LoadProgressUITests(unittest.TestCase):
                     self.assertEqual(win.load_activity_text.toPlainText(), old)
                     self.assertIn("GPU upload BEGIN", win._full_load_activity_text())
                 finally:
+                    if marker.activity_trace is not None:
+                        marker.activity_trace.stop_watchdog()
                     win.worker = previous
                     win._load_activity_worker = None
                     win._load_trace = None
