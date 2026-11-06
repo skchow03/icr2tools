@@ -96,7 +96,7 @@ from gpu_viewer.workspaces import (
 )
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
-from gpu_viewer.polygon_split import split_n3_polygon
+from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
 
 
 VERTEX_SHADER = """
@@ -2537,7 +2537,7 @@ class Window(QMainWindow):
             combo.clear()
         try:
             if polygon is not None:
-                refs = polygon.refs
+                refs = polygon_boundary_refs(polygon)
                 for i, ref in enumerate(refs):
                     self.split_vertex_a.addItem(f"#{i+1}  @{ref}", i)
                     self.split_vertex_b.addItem(f"#{i+1}  @{ref}", i)
@@ -2555,7 +2555,7 @@ class Window(QMainWindow):
             self.split_target_label.setText("Select a root-model polygon")
         else:
             self.split_target_label.setText(
-                f"Selected POLY @{offset} · {len(polygon.refs)} vertices · "
+                f"Selected POLY @{offset} · {len(polygon_boundary_refs(polygon))} vertices · "
                 f"palette {polygon.color}")
         self._split_controls_changed()
 
@@ -2575,7 +2575,7 @@ class Window(QMainWindow):
         hint = "Choose a root-model POLY by clicking its face."
         if valid:
             polygon = model.polygons[offset]
-            refs = polygon.refs
+            refs = polygon_boundary_refs(polygon)
             n = len(refs)
             if mode == "edges":
                 a = self.split_edge_a.currentData()
