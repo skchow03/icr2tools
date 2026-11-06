@@ -198,6 +198,7 @@ def install_menus(window):
     _add_action(view, "Customize &Colors…", window.customize_colors)
     _add_action(view, "Advanced &Diagnostics…",
                 lambda: window.open_settings_dialog("advanced"))
+    view.addAction(window.load_activity_dock.toggleViewAction())
     _add_action(view, "Load &Error Log…", window.open_load_error_log)
     options = view.addMenu("Display &Options")
     _bind_checkbox(options, "Textures", window.show_textures)
