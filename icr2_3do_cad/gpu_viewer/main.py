@@ -531,6 +531,7 @@ class GLViewport(QOpenGLWidget):
         self.vertex_pointer_names = {}
         self.vertex_label_mode = "all"
         self._depth_visible_vertex_labels = []
+        self._vertex_depth_error = None
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
@@ -1505,10 +1506,12 @@ class GLViewport(QOpenGLWidget):
             self._depth_visible_vertex_labels = filter_vertex_labels(
                 projected, "visible", vertex_offsets=eligible,
                 depth=depth, device_pixel_ratio=self.devicePixelRatioF())
-        except Exception:
+            self._vertex_depth_error = None
+        except Exception as error:
             # An unsupported depth readback (e.g. platform-specific
             # multisampled FBO) must not break rendering or expose hidden
             # vertices under the "Visible only" setting.
+            self._vertex_depth_error = str(error)
             self._depth_visible_vertex_labels = []
         finally:
             glBindVertexArray(0)
