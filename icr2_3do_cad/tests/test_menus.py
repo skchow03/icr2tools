@@ -205,7 +205,7 @@ class CADViewerMenuTests(unittest.TestCase):
             self.window.mode_combo.findData("depth"))
         self.assertFalse(wire.isChecked())
         self.assertTrue(self._action(
-            render_menu, "BSP selection + GPU depth").isChecked())
+            render_menu, "BSP selection + depth testing").isChecked())
         self.window.mode_combo.setCurrentIndex(
             self.window.mode_combo.findData("painter"))
         self.assertTrue(painter.isChecked())
