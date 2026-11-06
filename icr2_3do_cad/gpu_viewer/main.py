@@ -2506,6 +2506,161 @@ class Window(QMainWindow):
             f"{pose.eye[2]:,.0f}) | Click viewport, use WASD/arrows; "
             f"Shift = 5x")
 
+    def _toggle_split_tool(self, enabled):
+        self.split_panel.setVisible(enabled)
+        if enabled:
+            self.pick_mode_combo.setCurrentIndex(
+                self.pick_mode_combo.findData("polygon"))
+            target = self.source_pane.current_target()
+            if target and target[0] == "polygon":
+                offset = target_offset(self.viewer._model, *target)
+                if offset is not None:
+                    self._set_split_target(offset)
+            self._split_controls_changed()
+        else:
+            self.viewer.set_split_preview()
+
+    def _set_split_target(self, offset):
+        """Populate cut choices from the exact selected root POLY order."""
+        model = self.viewer._model
+        if model is None or offset not in model.polygons:
+            offset = None
+        if offset == self._split_polygon_offset:
+            self._split_controls_changed()
+            return
+        self._split_polygon_offset = offset
+        polygon = model.polygons[offset] if offset is not None else None
+        for combo in (self.split_edge_a, self.split_edge_b,
+                      self.split_vertex_a, self.split_vertex_b):
+            combo.blockSignals(True)
+            combo.clear()
+        try:
+            if polygon is not None:
+                refs = polygon.refs
+                for i, ref in enumerate(refs):
+                    self.split_vertex_a.addItem(f"#{i+1}  @{ref}", i)
+                    self.split_vertex_b.addItem(f"#{i+1}  @{ref}", i)
+                    name = f"#{i+1}  @{ref} → @{refs[(i+1)%len(refs)]}"
+                    self.split_edge_a.addItem(name, i)
+                    self.split_edge_b.addItem(name, i)
+                opposite = len(refs) // 2
+                self.split_edge_b.setCurrentIndex(opposite)
+                self.split_vertex_b.setCurrentIndex(opposite)
+        finally:
+            for combo in (self.split_edge_a, self.split_edge_b,
+                          self.split_vertex_a, self.split_vertex_b):
+                combo.blockSignals(False)
+        if polygon is None:
+            self.split_target_label.setText("Select a root-model polygon")
+        else:
+            self.split_target_label.setText(
+                f"Selected POLY @{offset} · {len(polygon.refs)} vertices · "
+                f"palette {polygon.color}")
+        self._split_controls_changed()
+
+    def _split_controls_changed(self, *_):
+        if not hasattr(self, "split_preview_check"):
+            return  # Fraction spin boxes emit during panel construction.
+        mode = self.split_mode_combo.currentData()
+        self.split_edge_row.setVisible(mode == "edges")
+        self.split_vertex_row.setVisible(mode == "vertices")
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        valid = (model is not None and offset in model.polygons
+                 and self.source_pane.ready and not self.source_pane.pending
+                 and not self._source_invalid and self._source_queued is None
+                 and self._source_busy_revision is None)
+        points = None
+        hint = "Choose a root-model POLY by clicking its face."
+        if valid:
+            polygon = model.polygons[offset]
+            refs = polygon.refs
+            n = len(refs)
+            if mode == "edges":
+                a = self.split_edge_a.currentData()
+                b = self.split_edge_b.currentData()
+                valid = a is not None and b is not None and a != b
+                if valid:
+                    def edge_point(i, t):
+                        start = model.vertices[refs[i]].xyz
+                        end = model.vertices[refs[(i+1) % n]].xyz
+                        return tuple(start[j] + (end[j]-start[j])*t
+                                     for j in range(3))
+                    points = (edge_point(a, self.split_fraction_a.value()),
+                              edge_point(b, self.split_fraction_b.value()))
+                hint = ("Choose two different edges; fraction 0.5 is the "
+                        "midpoint. Matching adjacent faces are updated.")
+            else:
+                a = self.split_vertex_a.currentData()
+                b = self.split_vertex_b.currentData()
+                valid = (n >= 4 and a is not None and b is not None
+                         and a != b and (a-b) % n not in (1, n-1))
+                if valid:
+                    points = (model.vertices[refs[a]].xyz,
+                              model.vertices[refs[b]].xyz)
+                hint = ("Choose two nonadjacent vertices to make an internal "
+                        "diagonal; no new vertices will be created.")
+        elif model is not None and offset in model.polygons:
+            hint = ("Prepare or validate the editable .3D Source first. "
+                    "A pending or invalid source cannot be split.")
+        self.split_apply_button.setEnabled(bool(valid))
+        self.split_hint_label.setText(hint)
+        self.viewer.set_split_preview(
+            points if (self.split_panel.isVisible()
+                       and self.split_preview_check.isChecked()
+                       and valid) else None)
+
+    def _commit_polygon_split(self):
+        if not self.split_apply_button.isEnabled():
+            return
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        mode = self.split_mode_combo.currentData()
+        a, b = ((self.split_edge_a.currentData(),
+                 self.split_edge_b.currentData()) if mode == "edges" else
+                (self.split_vertex_a.currentData(),
+                 self.split_vertex_b.currentData()))
+        try:
+            candidate = split_n3_polygon(
+                model, self.source_pane.get_source(), offset, mode=mode,
+                index_a=a, index_b=b,
+                fraction_a=self.split_fraction_a.value(),
+                fraction_b=self.split_fraction_b.value())
+        except (ValueError, OverflowError, KeyError) as exc:
+            QMessageBox.warning(self, "Cannot split polygon", str(exc))
+            return
+        action = ("two new edge vertices" if mode == "edges"
+                  else "an existing-vertex diagonal")
+        details = (
+            f"Split POLY @{offset} using {action}?\n\n"
+            "The parent will refer to a LIST of two polygons. "
+            f"New vertices: {candidate.new_vertices}. "
+            f"Updated adjacent polygons: {candidate.updated_neighbors}.\n\n"
+            "Original .3D declarations and comments outside the affected "
+            "POLYs remain intact. Undo in the Source editor reverses the cut; "
+            "Save .3D Source or Export compiled 3DO to persist it.")
+        if candidate.warnings:
+            details += ("\n\nWarnings:\n" +
+                        "\n".join(candidate.warnings[:4]))
+        reply = QMessageBox.question(
+            self, "Split selected polygon", details,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.source_pane.apply_source_replacement(
+                candidate.source, f"Split POLY @{offset} ({mode})")
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot apply polygon split", str(exc))
+            return
+        self._pending_split_label = candidate.first_polygon_label
+        self.viewer.set_split_preview()
+        self.split_apply_button.setEnabled(False)
+        self.source_pane.apply_now()
+        self.statusBar().showMessage(
+            f"Splitting POLY @{offset}; validating N3 and rebuilding GPU preview…")
+
     def _toggle_source(self, checked):
         self.source_pane.setVisible(checked)
         if checked:
