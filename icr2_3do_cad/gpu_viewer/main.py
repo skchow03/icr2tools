@@ -843,19 +843,19 @@ class GLViewport(QOpenGLWidget):
             try:
                 if on_activity:
                     on_activity("GPU upload BEGIN: geometry VBO/EBO")
-                self._upload_mesh()
+                self._upload_mesh(on_activity=on_activity)
                 if on_activity:
                     on_activity("GPU upload DONE: geometry VBO/EBO")
                     on_activity("GPU upload BEGIN: texture and palette atlas")
-                self._upload_texture_assets()
+                self._upload_texture_assets(on_activity=on_activity)
                 if on_activity:
                     on_activity("GPU upload DONE: texture and palette atlas")
                     on_activity("GPU upload BEGIN: HORIZ skybox buffers")
-                self._upload_skybox()
+                self._upload_skybox(on_activity=on_activity)
                 if on_activity:
                     on_activity("GPU upload DONE: HORIZ skybox buffers")
                     on_activity("GPU upload BEGIN: PMP sprite textures")
-                self._upload_sprite_assets()
+                self._upload_sprite_assets(on_activity=on_activity)
                 if on_activity:
                     on_activity("GPU upload DONE: PMP sprite textures")
             finally:
@@ -1128,7 +1128,7 @@ class GLViewport(QOpenGLWidget):
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
 
-    def _upload_mesh(self):
+    def _upload_mesh(self, *, on_activity=None):
         if self._program is None:
             return
         started = perf_counter()
@@ -1163,6 +1163,8 @@ class GLViewport(QOpenGLWidget):
             self._surface_ebo = int(glGenBuffers(1))
             glBindVertexArray(self._vao)
             glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
+            if on_activity:
+                on_activity(f"GPU glBufferData: main geometry {len(payload):,} bytes")
             glBufferData(GL_ARRAY_BUFFER, len(payload),
                          payload if payload else None, GL_STATIC_DRAW)
             glEnableVertexAttribArray(0)
@@ -1184,11 +1186,15 @@ class GLViewport(QOpenGLWidget):
             glBindVertexArray(0)
             glBindBuffer(GL_ARRAY_BUFFER, 0)
             # One synchronization at load time; never in the render loop.
+            if on_activity:
+                on_activity("GPU glFinish BEGIN: synchronizing geometry buffers")
             glFinish()
+            if on_activity:
+                on_activity("GPU glFinish DONE: geometry buffers synchronized")
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
 
-    def _upload_texture_assets(self):
+    def _upload_texture_assets(self, *, on_activity=None):
         """OpenGL texture setup is GUI-thread-only; never called on orbit."""
         if self._program is None or self._atlas is None or self._palette is None:
             return
@@ -1204,8 +1210,12 @@ class GLViewport(QOpenGLWidget):
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         pixels = np.ascontiguousarray(self._atlas.pixels, dtype=np.uint8)
         h, w = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: main MIP atlas {w}x{h}")
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, w, h, 0,
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+        if on_activity:
+            on_activity("GPU upload: 256-color PCX palette")
         self._upload_palette()
         self.texture_upload_ms = (perf_counter() - started) * 1000
 
@@ -1225,7 +1235,7 @@ class GLViewport(QOpenGLWidget):
             self._sky_atlas_texture = None
         self._sky_index_count = 0
 
-    def _upload_skybox(self):
+    def _upload_skybox(self, *, on_activity=None):
         """Upload the sky's own VBO, EBO and MIP atlas once per model load."""
         self._delete_skybox_buffers()
         sky = self._scene.skybox if self._scene is not None else None
@@ -1238,6 +1248,8 @@ class GLViewport(QOpenGLWidget):
         self._sky_ebo = int(glGenBuffers(1))
         glBindVertexArray(self._sky_vao)
         glBindBuffer(GL_ARRAY_BUFFER, self._sky_vbo)
+        if on_activity:
+            on_activity(f"GPU glBufferData: HORIZ geometry {payload.nbytes:,} bytes")
         glBufferData(GL_ARRAY_BUFFER, payload.nbytes, payload, GL_STATIC_DRAW)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
@@ -1262,6 +1274,8 @@ class GLViewport(QOpenGLWidget):
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         pixels = np.ascontiguousarray(sky.atlas.pixels, dtype=np.uint8)
         height, width = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: HORIZ MIP atlas {width}x{height}")
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, width, height, 0,
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
 
@@ -1287,7 +1301,7 @@ class GLViewport(QOpenGLWidget):
         glDrawElements(GL_TRIANGLES, self._sky_index_count, GL_UNSIGNED_INT, None)
         # The caller restores the main view transform, atlas, and depth mode.
 
-    def _upload_sprite_assets(self):
+    def _upload_sprite_assets(self, *, on_activity=None):
         """Upload indexed PMP assets on the GUI GL thread, never the worker."""
         if self._program is None or self._scene is None:
             return
@@ -1296,6 +1310,8 @@ class GLViewport(QOpenGLWidget):
             if self._sprite_renderer is not None:
                 self._sprite_renderer.upload(None)
             return
+        if on_activity:
+            on_activity(f"GPU PMP upload: {len(assets.images)} sprite textures")
         if self._sprite_renderer is None:
             self._sprite_renderer = PMPGLRenderer()
         self._sprite_renderer.upload(assets)
