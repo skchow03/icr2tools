@@ -1,6 +1,7 @@
 """Regression tests for external DYNAMIC geometry and read-only placement edits."""
 import math
 import struct
+from types import SimpleNamespace
 import tempfile
 import unittest
 from pathlib import Path
@@ -90,6 +91,40 @@ class DynamicParserTests(unittest.TestCase):
             self.assertEqual(len(failures),5)
             self.assertTrue(any(f.placement is None for f in faces))
             self.assertTrue(all(f.placement is None for f in faces))
+
+    def test_dynamic_heading_is_applied_after_local_y_rotation(self):
+        """Z is heading; Y spin/tilt must happen before that heading."""
+        placement=SimpleNamespace(xyz=(200.,300.,400.),
+                                  angles=(degrees_to_papyrus(90),
+                                          degrees_to_papyrus(90),0))
+        transform=placement_transform(placement)
+        # Local X tips down about Y, unaffected by the later Z heading.
+        point=transform.apply((100.,0.,0.))
+        for got,want in zip(point,(200.,300.,300.)):
+            self.assertAlmostEqual(got,want,places=6)
+        # The local Y axis turns into -X when Z heading is +90.
+        point=transform.apply((0.,100.,0.))
+        for got,want in zip(point,(100.,300.,400.)):
+            self.assertAlmostEqual(got,want,places=6)
+        # BSP eye calculations must use the same inverse transform.
+        original=(40.,-30.,8.)
+        transformed=transform.apply(original)
+        for got,want in zip(transform.inverse_point(transformed),original):
+            self.assertAlmostEqual(got,want,places=6)
+
+    def test_stock_vancouver_style_y_rotation_preserves_local_y_height(self):
+        """Stock track 90-degree second field is Y, not mislabeled X.
+
+        Changing Z heading should not turn a Y-aligned bridge/span upward.
+        """
+        placement=SimpleNamespace(xyz=(0.,0.,0.),
+                                  angles=(degrees_to_papyrus(-51.3),
+                                          degrees_to_papyrus(90),0))
+        transform=placement_transform(placement)
+        start=transform.apply((0.,0.,0.))
+        end=transform.apply((0.,10000.,0.))
+        self.assertAlmostEqual(end[2]-start[2],0.,places=6)
+        self.assertAlmostEqual(math.dist(start,end),10000.,places=6)
 
     def test_angles_and_rotation(self):
         self.assertEqual(degrees_to_papyrus(180),-(1<<31))
