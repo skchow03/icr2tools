@@ -11,6 +11,7 @@ from gpu_viewer.track_lod import (
     selected_track_section_window_lists, track_section_dlongs,
 )
 from n3_compile import compile_n3_text
+from gpu_viewer.workspaces import suggest_workspace
 from three_do import Model
 
 
@@ -345,6 +346,8 @@ class StockSuperobjTrackTests(unittest.TestCase):
         self.assertEqual(len(sections), 3)
         scene = build_scene(model)
         self.assertEqual(scene.track_section_lods, sections)
+        self.assertEqual(suggest_workspace('vancouvr.3do',
+                         {'track_section_lists': len(sections)}), 'track')
         for tier, count in (('hi', 5), ('med', 3), ('lo', 2)):
             with self.subTest(tier=tier):
                 overrides = selected_track_section_lists(
