@@ -9,7 +9,6 @@ import unittest
 import numpy as np
 
 from gpu_viewer.textures import build_atlas
-from gpu_viewer.mip_browser import mip_rgb_image
 
 DISPLAY = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")
                or sys.platform in ("win32", "darwin"))
@@ -54,14 +53,6 @@ class MipBrowserResolverTests(unittest.TestCase):
                 {(root / "BODY.MIP").resolve(),
                  (root / "wheel.mip").resolve()})
             self.assertEqual(len(atlas.polygon_rects), 3)
-            # Read-only RGB conversion uses exact indices and PCX colors.
-            image = mip_rgb_image(root / "BODY.MIP", palette_fixture())
-            self.assertEqual((image.width(), image.height()), (4, 3))
-            self.assertEqual(
-                (image.pixelColor(2, 1).red(),
-                 image.pixelColor(2, 1).green(),
-                 image.pixelColor(2, 1).blue()),
-                (6, 249, 18))
 
 
 @unittest.skipUnless(DISPLAY, "Requires Qt desktop or Xvfb")
@@ -129,6 +120,16 @@ class MipBrowserUITests(unittest.TestCase):
         self.window.open_mip_browser()
         self.assertIs(self.window.mip_browser, previous)
         self.assertTrue(previous.isVisible())
+
+    def test_palette_rgb_image_is_decoded_at_exact_texel(self):
+        from gpu_viewer.mip_browser import mip_rgb_image
+        image = mip_rgb_image(self.root / "BODY.MIP", palette_fixture())
+        self.assertEqual((image.width(), image.height()), (4, 3))
+        self.assertEqual(
+            (image.pixelColor(2, 1).red(),
+             image.pixelColor(2, 1).green(),
+             image.pixelColor(2, 1).blue()),
+            (6, 249, 18))
 
     def test_click_reads_top_origin_integer_uv_and_copy_to_clipboard(self):
         from PySide6.QtCore import QPointF, Qt, QEvent
