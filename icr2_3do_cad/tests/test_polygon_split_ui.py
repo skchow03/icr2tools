@@ -58,9 +58,9 @@ class GPUSplitUITests(unittest.TestCase):
         self.pane.set_source(SOURCE, Path("split_ui.3d"))
 
     def test_panel_below_viewport_and_edge_controls(self):
-        self.assertIs(self.window.viewport_layout.itemAt(1).widget(),
-                      self.window.viewer)
         self.assertIs(self.window.viewport_layout.itemAt(2).widget(),
+                      self.window.viewer)
+        self.assertIs(self.window.viewport_layout.itemAt(3).widget(),
                       self.window.split_panel)
         self.assertTrue(self.window.split_panel.isHidden())
         self.window.split_button.setChecked(True)
