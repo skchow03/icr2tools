@@ -1,5 +1,6 @@
 """Read-only load trace regressions; no commercial track files needed."""
 import tempfile
+import time
 import threading
 import unittest
 from pathlib import Path
@@ -52,6 +53,21 @@ class LoadActivityTraceTests(unittest.TestCase):
             self.assertEqual(len(lines), 100)
             self.assertEqual(len(set(lines)), 100)
             self.assertTrue(all("worker" in line for line in lines))
+
+    def test_watchdog_snapshots_inactivity_without_resetting_last_operation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            trace = LoadActivityTrace(Path(temp) / "watchdog.log")
+            trace.write("GPU upload BEGIN: HORIZ buffers")
+            trace.start_watchdog(quiet_seconds=0.05, repeat_seconds=5.0)
+            try:
+                time.sleep(1.25)  # The watchdog samples once per second.
+                content = trace.path.read_text(encoding="utf-8")
+                self.assertIn("INACTIVITY SNAPSHOT", content)
+                self.assertIn("GPU upload BEGIN: HORIZ buffers", content)
+                self.assertIn("PYTHON THREAD", content)
+                self.assertEqual(content.count("INACTIVITY SNAPSHOT"), 1)
+            finally:
+                trace.stop_watchdog()
 
     def test_scene_mip_and_mesh_callbacks_identify_active_phase(self):
         with tempfile.TemporaryDirectory() as temp:
