@@ -46,13 +46,17 @@ def find_track_skybox(track_path, objects_folder=None):
     return None
 
 
-def load_track_skybox(path, palette, *, texture_folder=None):
+def load_track_skybox(path, palette, *, texture_folder=None,
+                      on_activity=None):
     """Prepare background geometry on a worker without OpenGL operations."""
     path = Path(path)
+    if on_activity:
+        on_activity(f"Parsing skybox model: {path.name}")
     model = load_model_candidate(path)
-    scene = build_scene(model)
-    atlas = build_atlas(scene.geometry, path, texture_folder=texture_folder)
-    mesh = make_mesh(scene.geometry, palette, atlas)
+    scene = build_scene(model, on_activity=on_activity)
+    atlas = build_atlas(scene.geometry, path, texture_folder=texture_folder,
+                        on_activity=on_activity)
+    mesh = make_mesh(scene.geometry, palette, atlas, on_activity=on_activity)
     # Use the default raw HORIZ eye for painter ordering. The viewport
     # can position its virtual sky eye independently at draw time.
     indices, _, _ = ordered_scene_indices(
@@ -63,16 +67,25 @@ def load_track_skybox(path, palette, *, texture_folder=None):
 
 
 def load_preferred_track_skybox(track_path, palette, *,
-                                objects_folder=None, texture_folder=None):
+                                objects_folder=None, texture_folder=None,
+                                on_activity=None):
     """Find fully renderable sky: valid .3do first, then valid .3d."""
     problems = []
     for candidate in skybox_candidates(track_path, objects_folder):
+        if on_activity:
+            on_activity(f"Trying skybox asset: {candidate.name} [{candidate}]")
         try:
             sky = load_track_skybox(
-                candidate, palette, texture_folder=texture_folder)
+                candidate, palette, texture_folder=texture_folder,
+                on_activity=on_activity)
         except (OSError, ValueError, UnicodeError, OverflowError) as exc:
+            if on_activity:
+                on_activity(f"Skybox rejected: {candidate.name}: {exc}")
             problems.append(f"{candidate.name}: {exc}")
             continue
+        if on_activity:
+            on_activity(f"Skybox ready: {candidate.name} "
+                        f"({sky.mesh.polygon_count:,} polygons)")
         return sky, "; ".join(problems) if problems else None
     return None, "; ".join(problems) if problems else None
 

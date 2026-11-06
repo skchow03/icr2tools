@@ -11,6 +11,7 @@ import json
 import math
 import os
 import tempfile
+import traceback
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -50,6 +51,7 @@ try:
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+        QDockWidget,
         QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QProgressBar, QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
@@ -63,6 +65,7 @@ except ImportError as exc:
     ) from exc
 
 from gpu_viewer.mesh import MeshData, make_mesh, read_palette
+from gpu_viewer.load_activity import LoadActivityTrace, DEFAULT_LOAD_LOG
 from gpu_viewer.wireframe import make_wireframe
 from gpu_viewer.visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
@@ -242,12 +245,14 @@ class LoadWorker(QThread):
     ready = Signal(object, object, object, object, object, object)
     failed = Signal(str)
     progress = Signal(int, str)  # completed stage marker, not elapsed-time estimate
+    activity = Signal(str)  # timestamped line from worker thread
 
     def __init__(self, path, palette_path, texture_folder=None,
                  fallback_mip=None, *, objects_folder=None,
                  mip_overrides=None, object_overrides=None, body_mip=None,
                  existing_model=None, source_text=None, source_path=None,
-                 appearance_override=None, auto_local_palette=False):
+                 appearance_override=None, auto_local_palette=False,
+                 activity_trace=None):
         super().__init__()
         self.path = Path(path)
         self.palette_path = Path(palette_path)
@@ -262,6 +267,23 @@ class LoadWorker(QThread):
         self.source_path = Path(source_path) if source_path is not None else None
         self.appearance_override = appearance_override
         self.auto_local_palette = auto_local_palette
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        # Persist before notifying Qt: GUI signals cannot be painted during
+        # a slow OpenGL driver operation, but the file survives a hang.
+        if self.activity_trace is not None:
+            try:
+                line = self.activity_trace.write(message)
+            except OSError as exc:
+                line = f"[Log write failure: {exc}] {message}"
+        else:
+            line = str(message)
+        self.activity.emit(line)
+
+    def _stage(self, percent, name):
+        self._activity(f"STAGE {percent}%: {name}")
+        self.progress.emit(percent, name)
 
     def run(self):
         try:
@@ -269,41 +291,55 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
-            self.progress.emit(5, "Parsing model and referenced 3DOs")
+            # Live N3 recompile runs frequently without a durable trace.
+            # Avoid per-object Qt signal traffic in that workflow.
+            detail = self._activity if self.activity_trace is not None else None
+            self._activity(f"START model load: {self.path}")
+            self._stage(5, "Parsing model and referenced 3DOs")
             if self.source_text is not None:
                 # Compile candidate text off the UI thread. Do not overwrite
                 # the last valid model until this AND the mesh/atlas succeed.
+                self._activity(f"Compiling N3 source: {self.source_path}")
                 model, _ = compile_n3_text(
                     self.source_text, self.source_path, associate_planes=False)
                 appearance = self.appearance_override
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides,
-                                    appearance=appearance)
+                                    appearance=appearance,
+                                    on_activity=detail)
             elif self.path.suffix.lower() == ".3do":
                 model, scene, appearance = load_car_or_model(
                     self.path, existing_model=self.existing_model,
                     objects_folder=self.objects_folder,
                     object_overrides=self.object_overrides,
-                    fixtures_folder=CAD_ROOT / 'fixtures')
+                    fixtures_folder=CAD_ROOT / 'fixtures',
+                    on_activity=detail)
             elif self.path.suffix.lower() == ".3d":
                 if self.existing_model is not None:
                     model = self.existing_model
                 else:
+                    self._activity(f"Reading source: {self.path}")
                     text = self.path.read_text(encoding="utf-8-sig")
+                    self._activity(f"Compiling source: {self.path.name}")
                     model, _ = compile_n3_text(
                         text, self.path, associate_planes=False)
                 scene = build_scene(model, objects_folder=self.objects_folder,
-                                    object_overrides=self.object_overrides)
+                                    object_overrides=self.object_overrides,
+                                    on_activity=detail)
                 appearance = None
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
-            self.progress.emit(30, "Reading color palette")
+            self._activity(f"Model and references parsed in {parse_ms:.0f} ms; "
+                           f"scene has {len(scene.geometry.polygons):,} polygons, "
+                           f"{len(scene.instances)} instances")
+            self._stage(30, "Reading color palette")
             selected_palette = self.palette_path
             palette_warning = None
             auto_palette = False
             local_sunny = (find_model_sunny_palette(self.path)
                            if self.auto_local_palette else None)
+            self._activity(f"Palette: {local_sunny or self.palette_path}")
             if local_sunny is not None:
                 try:
                     palette = load_palette(local_sunny)
@@ -319,7 +355,7 @@ class LoadWorker(QThread):
                     auto_palette = True
             else:
                 palette = load_palette(self.palette_path)
-            self.progress.emit(42, "Preparing track skybox")
+            self._stage(42, "Preparing track skybox")
             # HORIZ is a separate camera-locked background for indexed tracks.
             # Try valid HORIZ.3DO files first; malformed/nonrenderable ones do
             # not prevent a standalone HORIZ.3D from being compiled in memory.
@@ -327,13 +363,14 @@ class LoadWorker(QThread):
                 scene.skybox, sky_notes = load_preferred_track_skybox(
                     self.path, palette.astype(np.float32) / 255.0,
                     objects_folder=self.objects_folder,
-                    texture_folder=self.texture_folder)
+                    texture_folder=self.texture_folder,
+                    on_activity=detail)
                 if scene.skybox is None:
                     scene.skybox_error = sky_notes
                 elif sky_notes:
                     scene.warnings = tuple(
                         dict.fromkeys((*scene.warnings, sky_notes)))
-            self.progress.emit(55, "Reading track navigation")
+            self._stage(55, "Reading track navigation")
             # A companion <trackstem>.TRK supplies physics centerline XYZ,
             # tangent and elevation for the camera, independently of 3DO BSP.
             # Ignore unrelated .TRK files in the directory.
@@ -341,28 +378,36 @@ class LoadWorker(QThread):
                 trk_path = find_matching_trk(self.path)
                 if trk_path is not None:
                     try:
+                        self._activity(f"Parsing TRK: {trk_path}")
                         scene.track_navigation = TrackNavigation.from_file(trk_path)
+                        self._activity(f"TRK ready: {scene.track_navigation.trk.num_sects} sections")
                     except (OSError, ValueError, IndexError, TypeError,
                             OverflowError, ZeroDivisionError) as exc:
                         scene.track_navigation_error = f"{trk_path.name}: {exc}"
-            self.progress.emit(63, "Decoding PMP sprites")
+            self._stage(63, "Decoding PMP sprites")
             # Decode every PMP variant once in this worker, including
             # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
             # RG8 palette-index/alpha images stay independent of PCX colors.
             scene.sprite_resources = prepare_scene_sprites(
                 scene, objects_folder=self.objects_folder,
-                texture_folder=self.texture_folder)
+                texture_folder=self.texture_folder,
+                on_activity=detail)
             scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
-            self.progress.emit(74, "Loading MIP textures and building atlas")
+            self._stage(74, "Loading MIP textures and building atlas")
             atlas = build_atlas(scene.geometry, self.path,
                                 texture_folder=self.texture_folder,
                                 fallback_mip=self.fallback_mip,
                                 mip_overrides=self.mip_overrides,
-                                body_mip=self.body_mip)
-            self.progress.emit(85, "Triangulating track geometry")
+                                body_mip=self.body_mip,
+                                on_activity=detail)
+            self._stage(85, "Triangulating track geometry")
             mesh = make_mesh(scene.geometry,
-                             palette.astype(np.float32) / 255.0, atlas)
-            self.progress.emit(89, "Finalizing loaded scene")
+                             palette.astype(np.float32) / 255.0, atlas,
+                             on_activity=detail)
+            self._activity(f"Mesh ready: {mesh.polygon_count:,} polygons, "
+                           f"{mesh.triangle_count:,} triangles, "
+                           f"{mesh.size_bytes / 1048576:.1f} MiB")
+            self._stage(89, "Finalizing loaded scene")
             stats = {
                 "file": self.path.name,
                 "palette_path": selected_palette,
@@ -409,8 +454,12 @@ class LoadWorker(QThread):
             }
             # The parsed, read-only hierarchy is needed to evaluate BSP
             # planes, but polygon geometry is never rebuilt during orbit.
+            self._activity("CPU load completed; handing scene to Qt GUI thread")
             self.ready.emit(mesh, stats, model, atlas, palette, scene)
         except Exception as exc:
+            self._activity(f"WORKER FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
             self.failed.emit(f"{type(exc).__name__}: {exc}")
 
 
@@ -418,27 +467,44 @@ class SourceExportWorker(QThread):
     """Generate editable source without blocking Qt/OpenGL for large models."""
     ready = Signal(str, object)
     failed = Signal(str)
+    activity = Signal(str)
 
-    def __init__(self, model, opened_path):
+    def __init__(self, model, opened_path, *, activity_trace=None):
         super().__init__()
         self.model = model
         self.opened_path = Path(opened_path)
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        if self.activity_trace is None:
+            return
+        try:
+            line = self.activity_trace.write(message)
+        except OSError as exc:
+            line = f"[Log write failure: {exc}] {message}"
+        self.activity.emit(line)
 
     def run(self):
         try:
             from text_3d import export_compilable_text
+            self._activity(f"Editable source BEGIN: {self.model.path.name}")
             if self.opened_path.suffix.lower() == '.3d':
-                # Preserve authored N3 source, including user comments/names.
+                self._activity(f"Reading authored N3 source: {self.opened_path}")
                 source = self.opened_path.read_text(encoding='utf-8-sig')
                 target = self.opened_path
             else:
-                # For individual-car wrappers, export BASE geometry, not the
-                # zero-polygon MATERIAL->RECOLOR wrapper. Standalone source
-                # does not need original 3DO offsets to recompile.
-                source = export_compilable_text(self.model)
+                # Only source text is created; no referenced file is rewritten.
+                source = export_compilable_text(
+                    self.model, on_activity=(self._activity
+                                             if self.activity_trace is not None
+                                             else None))
                 target = self.model.path.with_suffix('.3d')
+            self._activity(f"Editable source DONE: {len(source):,} characters")
             self.ready.emit(source, target)
         except Exception as exc:
+            self._activity(f"Editable source FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
             self.failed.emit(f'{type(exc).__name__}: {exc}')
 
 
@@ -756,7 +822,9 @@ class GLViewport(QOpenGLWidget):
             self.doneCurrent()
 
     def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
-                 *, preserve_view=False):
+                 *, preserve_view=False, on_activity=None):
+        if on_activity:
+            on_activity("GPU setup: preparing vertex and polygon pickers")
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
@@ -765,6 +833,8 @@ class GLViewport(QOpenGLWidget):
         self._depth_visible_vertex_labels = []
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
+        if on_activity:
+            on_activity("GPU setup: pickers and scene assigned")
         self._sprite_events = ()
         self._surface_index_count = 0
         self._wire_mesh = None
@@ -784,14 +854,33 @@ class GLViewport(QOpenGLWidget):
         # If origin view is enabled while opening another model, keep the
         # eye pinned to that model's (0,0,0), not its bounding-box center.
         if self._program is not None:
+            if on_activity:
+                on_activity("GPU context: BEGIN makeCurrent()")
             self.makeCurrent()
             try:
-                self._upload_mesh()
-                self._upload_texture_assets()
-                self._upload_skybox()
-                self._upload_sprite_assets()
+                if on_activity:
+                    on_activity("GPU upload BEGIN: geometry VBO/EBO")
+                self._upload_mesh(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: geometry VBO/EBO")
+                    on_activity("GPU upload BEGIN: texture and palette atlas")
+                self._upload_texture_assets(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: texture and palette atlas")
+                    on_activity("GPU upload BEGIN: HORIZ skybox buffers")
+                self._upload_skybox(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: HORIZ skybox buffers")
+                    on_activity("GPU upload BEGIN: PMP sprite textures")
+                self._upload_sprite_assets(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: PMP sprite textures")
             finally:
+                if on_activity:
+                    on_activity("GPU context: releasing current context")
                 self.doneCurrent()
+        elif on_activity:
+            on_activity("GPU context not initialized; upload deferred")
         self.update()
 
     def set_vertex_label_source(self, source_index):
@@ -1056,7 +1145,7 @@ class GLViewport(QOpenGLWidget):
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
 
-    def _upload_mesh(self):
+    def _upload_mesh(self, *, on_activity=None):
         if self._program is None:
             return
         started = perf_counter()
@@ -1091,6 +1180,8 @@ class GLViewport(QOpenGLWidget):
             self._surface_ebo = int(glGenBuffers(1))
             glBindVertexArray(self._vao)
             glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
+            if on_activity:
+                on_activity(f"GPU glBufferData: main geometry {len(payload):,} bytes")
             glBufferData(GL_ARRAY_BUFFER, len(payload),
                          payload if payload else None, GL_STATIC_DRAW)
             glEnableVertexAttribArray(0)
@@ -1112,11 +1203,15 @@ class GLViewport(QOpenGLWidget):
             glBindVertexArray(0)
             glBindBuffer(GL_ARRAY_BUFFER, 0)
             # One synchronization at load time; never in the render loop.
+            if on_activity:
+                on_activity("GPU glFinish BEGIN: synchronizing geometry buffers")
             glFinish()
+            if on_activity:
+                on_activity("GPU glFinish DONE: geometry buffers synchronized")
         self.upload_ms = (perf_counter()-started)*1000
         self.statsChanged.emit(f"GPU upload: {self.upload_ms:.1f} ms")
 
-    def _upload_texture_assets(self):
+    def _upload_texture_assets(self, *, on_activity=None):
         """OpenGL texture setup is GUI-thread-only; never called on orbit."""
         if self._program is None or self._atlas is None or self._palette is None:
             return
@@ -1132,8 +1227,12 @@ class GLViewport(QOpenGLWidget):
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         pixels = np.ascontiguousarray(self._atlas.pixels, dtype=np.uint8)
         h, w = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: main MIP atlas {w}x{h}")
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, w, h, 0,
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+        if on_activity:
+            on_activity("GPU upload: 256-color PCX palette")
         self._upload_palette()
         self.texture_upload_ms = (perf_counter() - started) * 1000
 
@@ -1153,7 +1252,7 @@ class GLViewport(QOpenGLWidget):
             self._sky_atlas_texture = None
         self._sky_index_count = 0
 
-    def _upload_skybox(self):
+    def _upload_skybox(self, *, on_activity=None):
         """Upload the sky's own VBO, EBO and MIP atlas once per model load."""
         self._delete_skybox_buffers()
         sky = self._scene.skybox if self._scene is not None else None
@@ -1166,6 +1265,8 @@ class GLViewport(QOpenGLWidget):
         self._sky_ebo = int(glGenBuffers(1))
         glBindVertexArray(self._sky_vao)
         glBindBuffer(GL_ARRAY_BUFFER, self._sky_vbo)
+        if on_activity:
+            on_activity(f"GPU glBufferData: HORIZ geometry {payload.nbytes:,} bytes")
         glBufferData(GL_ARRAY_BUFFER, payload.nbytes, payload, GL_STATIC_DRAW)
         glEnableVertexAttribArray(0)
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
@@ -1190,6 +1291,8 @@ class GLViewport(QOpenGLWidget):
         glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
         pixels = np.ascontiguousarray(sky.atlas.pixels, dtype=np.uint8)
         height, width = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: HORIZ MIP atlas {width}x{height}")
         glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, width, height, 0,
                      GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
 
@@ -1215,7 +1318,7 @@ class GLViewport(QOpenGLWidget):
         glDrawElements(GL_TRIANGLES, self._sky_index_count, GL_UNSIGNED_INT, None)
         # The caller restores the main view transform, atlas, and depth mode.
 
-    def _upload_sprite_assets(self):
+    def _upload_sprite_assets(self, *, on_activity=None):
         """Upload indexed PMP assets on the GUI GL thread, never the worker."""
         if self._program is None or self._scene is None:
             return
@@ -1224,6 +1327,8 @@ class GLViewport(QOpenGLWidget):
             if self._sprite_renderer is not None:
                 self._sprite_renderer.upload(None)
             return
+        if on_activity:
+            on_activity(f"GPU PMP upload: {len(assets.images)} sprite textures")
         if self._sprite_renderer is None:
             self._sprite_renderer = PMPGLRenderer()
         self._sprite_renderer.upload(assets)
@@ -1928,6 +2033,8 @@ class Window(QMainWindow):
         self.resize(1280, 850)
         self.worker = None
         self._load_progress_worker = None
+        self._load_activity_worker = None
+        self._load_trace = None
         self._info = {}
         self.mip_browser = None  # Separate, non-modal texture reference window
         self.report_path = report_path
@@ -2456,6 +2563,7 @@ class Window(QMainWindow):
         assets_layout.addWidget(self.texture_status)
         assets_layout.addWidget(self.sprite_status)
         self.setCentralWidget(root)
+        self._init_load_activity_dock()
         # Source is the only secondary pane, shown alongside the viewport.
         self.source_toggle.setChecked(True)
         install_menus(self)
@@ -3080,13 +3188,17 @@ class Window(QMainWindow):
         model = self.viewer._model
         self._source_export_model = model
         self.source_pane.status.setText('Preparing editable .3D source on worker…')
-        worker = SourceExportWorker(model, self.model_path)
+        worker = SourceExportWorker(
+            model, self.model_path, activity_trace=self._load_trace)
         self._source_export_worker = worker
         worker.ready.connect(
             lambda text, path, candidate=model:
                 self._source_exported(candidate, text, path))
         worker.failed.connect(
             lambda err, candidate=model: self._source_export_failed(candidate, err))
+        worker.activity.connect(
+            lambda line, origin=self._load_activity_worker:
+                self._append_load_activity(origin, line))
         worker.start()
 
     def _source_exported(self, candidate, text, path):
@@ -3096,17 +3208,28 @@ class Window(QMainWindow):
             return
         if self.source_pane.ready:
             return
+        self._record_load_activity(
+            f"GUI editable-source insertion BEGIN: {len(text):,} characters")
         self.source_pane.set_source(
             text, path,
             status=(f'Editable source for {candidate.path.name}. '
                     'Valid changes update the GPU preview without saving.'))
         self.viewer.set_vertex_label_source(self.source_pane._source_index)
         self._source_invalid = False
+        self._record_load_activity("GUI editable-source insertion DONE")
         self._finish_pending_vertex_pick()
         self._finish_pending_polygon_pick()
         self._split_controls_changed()
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
 
     def _source_export_failed(self, candidate, error):
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
         if candidate is self.viewer._model:
             self.source_pane.status.setText(
                 f'Cannot generate editable source: {error}')
@@ -3692,6 +3815,126 @@ class Window(QMainWindow):
         if path:
             self.load(Path(path))
 
+    def _init_load_activity_dock(self):
+        """Nonmodal diagnostic log; the full trace also survives on disk."""
+        dock = QDockWidget("Live Load Activity", self)
+        dock.setObjectName("liveLoadActivityDock")
+        dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
+        content = QWidget(dock)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(5, 4, 5, 4)
+        controls = QHBoxLayout()
+        self.load_activity_path_label = QLabel(str(DEFAULT_LOAD_LOG))
+        self.load_activity_path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.load_activity_path_label.setWordWrap(True)
+        self.load_activity_path_label.setMinimumWidth(0)
+        self.load_activity_path_label.setToolTip(
+            "The full log is written to disk immediately. "
+            "Use it if the GPU viewer stops responding.")
+        controls.addWidget(self.load_activity_path_label, stretch=1)
+        copy_button = QPushButton("Copy full log")
+        copy_button.clicked.connect(self._copy_load_activity)
+        controls.addWidget(copy_button)
+        save_button = QPushButton("Save as…")
+        save_button.clicked.connect(self._save_load_activity)
+        controls.addWidget(save_button)
+        layout.addLayout(controls)
+        self.load_activity_text = QPlainTextEdit(content)
+        self.load_activity_text.setObjectName("liveLoadActivityText")
+        self.load_activity_text.setReadOnly(True)
+        self.load_activity_text.setLineWrapMode(
+            QPlainTextEdit.LineWrapMode.NoWrap)
+        self.load_activity_text.document().setMaximumBlockCount(4000)
+        self.load_activity_text.setMinimumHeight(100)
+        layout.addWidget(self.load_activity_text)
+        if DEFAULT_LOAD_LOG.is_file():
+            try:
+                last = DEFAULT_LOAD_LOG.read_bytes()[-256000:].decode(
+                    "utf-8", errors="replace")
+                self.load_activity_text.setPlainText(last)
+            except OSError:
+                pass
+        dock.setWidget(content)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        dock.hide()
+        self.load_activity_dock = dock
+
+    def _full_load_activity_text(self):
+        path = (self._load_trace.path if self._load_trace is not None
+                else DEFAULT_LOAD_LOG)
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return self.load_activity_text.toPlainText()
+
+    def _copy_load_activity(self):
+        QApplication.clipboard().setText(self._full_load_activity_text())
+
+    def _save_load_activity(self):
+        default = ((self.model_path.stem if self.model_path else "gpu_viewer")
+                   + "_load.log")
+        destination, _ = QFileDialog.getSaveFileName(
+            self, "Save full load activity", str(Path.home() / default),
+            "Log files (*.log *.txt);;All files (*)")
+        if destination:
+            try:
+                Path(destination).write_text(self._full_load_activity_text(),
+                                             encoding="utf-8")
+            except OSError as exc:
+                QMessageBox.warning(self, "Unable to save load log", str(exc))
+
+    def _append_load_activity(self, worker, line):
+        if worker is not self._load_activity_worker:
+            return
+        scrollbar = self.load_activity_text.verticalScrollBar()
+        at_end = scrollbar.value() >= scrollbar.maximum() - 2
+        self.load_activity_text.appendPlainText(line)
+        if at_end:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _record_load_activity(self, message):
+        """GUI-thread trace, used before potentially blocking OpenGL calls."""
+        if self.worker is not self._load_activity_worker:
+            return
+        if self._load_trace is not None:
+            try:
+                line = self._load_trace.write(message)
+            except OSError as exc:
+                line = f"[Disk log error: {exc}] {message}"
+        else:
+            line = str(message)
+        self._append_load_activity(self.worker, line)
+
+    def _begin_load_activity(self, worker):
+        # A previous model's lazy N3 export may still be running. Keep its
+        # queued events from contaminating this newly reset "last load" file.
+        if (self._source_export_worker is not None and
+                self._source_export_worker.isRunning()):
+            self._source_export_worker.activity_trace = None
+        if self._load_trace is not None:
+            self._load_trace.stop_watchdog()
+        self._load_activity_worker = worker
+        self.load_activity_text.clear()
+        try:
+            trace = LoadActivityTrace()
+        except OSError:
+            # Preserve diagnostics on systems with a read-only home folder.
+            try:
+                trace = LoadActivityTrace(
+                    Path(tempfile.gettempdir()) / "icr2_gpu_viewer_last_load.log")
+            except OSError:
+                trace = None
+        self._load_trace = trace
+        worker.activity_trace = trace
+        location = str(trace.path) if trace is not None else "(memory only)"
+        self.load_activity_path_label.setText(f"Full log: {location}")
+        self.load_activity_dock.show()
+        self.load_activity_dock.raise_()
+        self._record_load_activity(f"LOAD REQUEST: {self.model_path}")
+        if trace is not None:
+            trace.start_watchdog()
+
     def _begin_load_progress(self, worker):
         self._load_progress_worker = worker
         self.load_progress.setValue(0)
@@ -3712,6 +3955,13 @@ class Window(QMainWindow):
     def _end_load_progress(self, worker, *, success):
         if worker is not self._load_progress_worker:
             return
+        if worker is self._load_activity_worker and self._load_trace is not None:
+            exporting = (success and self._source_export_worker is not None
+                         and self._source_export_worker.activity_trace is self._load_trace
+                         and self._source_export_model is self.viewer._model
+                         and not self.source_pane.ready)
+            if not exporting:
+                self._load_trace.stop_watchdog()
         if not success:
             self.load_progress.hide()
             self._load_progress_worker = None
@@ -3778,7 +4028,11 @@ class Window(QMainWindow):
             auto_local_palette=not reuse_model)
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
+        self._begin_load_activity(self.worker)
         self._begin_load_progress(self.worker)
+        self.worker.activity.connect(
+            lambda line, current=self.worker:
+                self._append_load_activity(current, line))
         self.worker.progress.connect(
             lambda percent, stage, current=self.worker:
                 self._load_progress_stage(current, percent, stage))
@@ -3786,6 +4040,9 @@ class Window(QMainWindow):
 
     def _loaded(self, mesh, stats, model, atlas, palette, scene,
                 *, from_source=False):
+        if not from_source:
+            self._record_load_activity(
+                f"Worker finished. Starting GUI/GL setup for {stats['file']}")
         self._load_progress_stage(
             self.worker, 92, "Uploading geometry, textures and skybox to GPU",
             repaint=True)
@@ -3796,14 +4053,24 @@ class Window(QMainWindow):
         was_reloading = self._preserve_view
         try:
             self.viewer.set_mesh(mesh, model, atlas, palette, scene,
-                                 preserve_view=was_reloading)
+                                 preserve_view=was_reloading,
+                                 on_activity=(self._record_load_activity
+                                              if not from_source else None))
         except Exception as exc:
+            if not from_source:
+                self._record_load_activity(
+                    f"GUI/GL ERROR: {type(exc).__name__}: {exc}")
+                for line in traceback.format_exc().splitlines():
+                    self._record_load_activity(f"TRACEBACK: {line}")
             self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
                               previous_preserved=False)
             return
         self._load_progress_stage(
             self.worker, 97, "Finishing controls and track setup",
             repaint=True)
+        if not from_source:
+            self._record_load_activity(
+                "GUI setup: updating MIP browser, camera, workspace and controls")
         self._refresh_mip_browser()
         if (self.source_pane.ready and not self.source_pane.pending
                 and not self._source_invalid):
@@ -3999,9 +4266,14 @@ class Window(QMainWindow):
         if self.viewer.track_drive_enabled and not was_reloading and not from_source:
             self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
         if not from_source:
+            self._record_load_activity(
+                f"LOAD COMPLETE: {stats['file']}, "
+                f"{mesh.polygon_count:,} polygons, "
+                f"{len(collect_load_issues(stats))} reported issues")
             self._end_load_progress(self.worker, success=True)
 
     def _load_failed(self, message, *, previous_preserved=True):
+        self._record_load_activity(f"LOAD FAILED: {message}")
         self._end_load_progress(self.worker, success=False)
         self.load_label.setText(
             "Load failed; previous model preserved" if previous_preserved

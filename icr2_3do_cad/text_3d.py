@@ -201,7 +201,7 @@ def _export_default(model):
     return "\n".join(lines)+"\n"
 
 
-def export_compilable_text(model: Model) -> str:
+def export_compilable_text(model: Model, *, on_activity=None) -> str:
     """Generate clean, independent N3 source for a binary 3DO.
 
     This is for the GPU viewer's edit/recompile/export workflow, where the
@@ -209,14 +209,23 @@ def export_compilable_text(model: Model) -> str:
     still uses export_text() with ICR2_OFFSET identities to patch the
     corresponding records of the original loaded 3DO.
     """
+    if on_activity:
+        on_activity(f"Editable source: building modified bytes for {model.path.name}")
     checked = Model(model.path, raw_data=model.build_modified_bytes()[0])
+    if on_activity:
+        on_activity(f"Editable source: checking compiled 3DO records for {model.path.name}")
     offsets = _all_offsets(checked)
+    if on_activity:
+        on_activity(f"Editable source: converting {len(offsets):,} N3 records")
     root = checked.root_offset
     if root not in offsets:
         raise FormatError("Cannot export independent N3 source: root record missing")
     labels = {off: ("root" if off == root else f"_{off}") for off in offsets}
     lines = ["3D VERSION 3.0;", ""]
-    for off in offsets:
+    for index, off in enumerate(offsets, 1):
+        if on_activity and (index == 1 or index % 500 == 0):
+            on_activity(f"Editable source: record {index:,}/{len(offsets):,} "
+                        f"offset={off}")
         command = _command(checked, off)
         # Replace actual pointer tokens, not numerals, quoted asset names or
         # portions of longer identifiers. All references to the binary root
@@ -227,6 +236,8 @@ def export_compilable_text(model: Model) -> str:
                        else labels.get(int(m.group(1)), m.group(0))),
             command)
         lines.append(f"{labels[off]}: {command};")
+    if on_activity:
+        on_activity(f"Editable source: finished {len(offsets):,} records")
     return "\n".join(lines) + "\n"
 
 
