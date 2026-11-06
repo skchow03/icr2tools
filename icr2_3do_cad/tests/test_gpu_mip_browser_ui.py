@@ -168,10 +168,17 @@ class MipBrowserUITests(unittest.TestCase):
         self.assertIn("2 × 2", self.dialog.details.text())
         # Palette changes refresh the currently shown texture without
         # recreating the dialog or losing the selected MIP.
+        self.dialog.canvas.zoom_by(1.25)
+        zoom_before = self.dialog.canvas.zoom
+        self.dialog.canvas.mark_texel(1, 1)
+        self.dialog._clicked(1, 1)
         updated = palette_fixture()
         updated[0] = [7, 8, 9]
         self.window.viewer._palette = updated
         self.window._refresh_mip_browser()
+        self.app.processEvents()
+        self.assertEqual(self.dialog.selected_uv, (1, 1))
+        self.assertAlmostEqual(self.dialog.canvas.zoom, zoom_before)
         self.assertEqual(self.dialog.mips.currentRow(), 1)
         self.assertEqual(
             self.dialog.canvas._item.pixmap().toImage().pixelColor(0, 0).getRgb()[:3],
