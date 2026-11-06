@@ -303,7 +303,9 @@ def run(path):
                                 # Test actual click -> projected root vertex ->
                                 # source navigation on a live OpenGL viewport.
                                 from PySide6.QtCore import QPoint
-                                pick = view.pick_nearest_vertex(*point)
+                                click_x, click_y = (int(round(point[0])),
+                                                    int(round(point[1])))
+                                pick = view.pick_nearest_vertex(click_x, click_y)
                                 if pick is None:
                                     result["error"] = "Projected viewport vertex could not be picked"
                                 else:
@@ -313,8 +315,7 @@ def run(path):
                                         window.pick_mode_combo.findData("vertex"))
                                     QTest.mouseClick(
                                         view, Qt.MouseButton.LeftButton,
-                                        pos=QPoint(int(round(point[0])),
-                                                   int(round(point[1]))))
+                                        pos=QPoint(click_x, click_y))
                                     target = pane.current_target()
                                     if (target is None or target[0] != "vertex"
                                             or target_offset(
@@ -323,7 +324,12 @@ def run(path):
                                             or view._vbo != inspected_vbo):
                                         result["error"] = (
                                             "Live viewport click did not navigate "
-                                            "to its nearest N3 vertex")
+                                            f"to its nearest N3 vertex: point=({click_x},{click_y}) "
+                                            f"mode={view.pick_mode} "
+                                            f"source_target={target!r} expected_offset={pick} "
+                                            f"inspection=({view.inspection_kind},"
+                                            f"{view.inspection_offset}) "
+                                            f"vbo_changed={view._vbo != inspected_vbo}")
             inspection["tested"] = True
             if result["error"] != "timed out":
                 timer.stop()
