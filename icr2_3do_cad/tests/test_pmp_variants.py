@@ -11,9 +11,9 @@ from pathlib import Path
 
 from pmp_preview import PMPError, load_pmp
 from three_do import Model
-from gpu_viewer.scene import build_scene, ordered_scene_indices
-from gpu_viewer.mesh import make_mesh
-from gpu_viewer.sprites import prepare_scene_sprites
+from scene import build_scene, ordered_scene_indices
+from mesh import make_mesh
+from sprites import prepare_scene_sprites
 
 
 PALETTE = [(i, i, i) for i in range(256)]

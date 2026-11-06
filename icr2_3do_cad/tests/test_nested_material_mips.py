@@ -14,8 +14,8 @@ import tempfile
 import unittest
 
 from n3_compile import compile_n3_text
-from gpu_viewer.scene import build_scene
-from gpu_viewer.textures import build_atlas
+from scene import build_scene
+from textures import build_atlas
 
 ROOT = Path(__file__).resolve().parents[1]
 

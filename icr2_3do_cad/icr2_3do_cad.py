@@ -1,3686 +1,4384 @@
-"""ICR2 3DO CAD: vertex and polygon editor with lossless 3DO output."""
+"""ICR2 3DO CAD: Qt/OpenGL editor for Papyrus 3D and 3DO models."""
 from __future__ import annotations
+
 import argparse
-import colorsys
-from collections import OrderedDict
-from functools import lru_cache
+import ctypes
+import json
 import math
 import os
 import tempfile
-from time import perf_counter
+import traceback
 from pathlib import Path
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+import sys
+from time import perf_counter
+from collections import deque
 
-from three_do import Model, FormatError, dot, sub, cross, NAMES, PlaneEdit, polygon_triplet_refs
-from car_appearance import read_car_appearance, locate_base_geometry, AppearanceError
-from texture_preview import ENABLED as TEXTURE_AVAILABLE, load_mip, TextureError, rasterize_polygon
-from dynamic_scene import ExternalResolver, Transform, gather_faces, RenderSprite, degrees_to_papyrus, papyrus_to_degrees
-from pmp_preview import load_pmp, PMPError
-from text_3d import export_text, import_text, parse_document, export_standalone_text
-from n3_compile import compile_n3_text
-from vertex_labels import names_for_vertices, declaration_label, rename_vertex_in_source
-from n3_source_editor import SourceEditor
-from performance_profile import from_environment, profiled
-CAD_PROFILE=from_environment()
-if TEXTURE_AVAILABLE:
-    from PIL import Image, ImageDraw, ImageTk
+import numpy as np
+
+# Allow: python icr2_3do_cad/icr2_3do_cad.py RENO.3D
+CAD_ROOT = Path(__file__).resolve().parent
+if str(CAD_ROOT) not in sys.path:
+    sys.path.insert(0, str(CAD_ROOT))
+
+try:
+    from OpenGL.GL import (
+        GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
+        GL_DEPTH_TEST, GL_DEPTH_COMPONENT, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_STATIC_DRAW, GL_TRIANGLES, GL_LINES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
+        GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
+        GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
+        GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
+        GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
+        glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
+        glClear, glClearColor, glColorMask, glDepthMask, glReadPixels, glCompileShader, glCreateProgram, glCreateShader,
+        glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
+        glDisable, glDrawArrays, glDrawElements, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
+        glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
+        glGetShaderInfoLog, glGetShaderiv, glGetUniformLocation, glLinkProgram,
+        glShaderSource, glUniformMatrix4fv, glUseProgram, glVertexAttribPointer,
+        glPolygonOffset,
+        glViewport, glGenTextures, glDeleteTextures, glBindTexture,
+        glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
+        glUniform1i, glUniform3f,
+    )
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings
+    from PySide6.QtGui import (
+        QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
+    )
+    from PySide6.QtWidgets import (
+        QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
+        QDockWidget,
+        QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
+        QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
+        QProgressBar, QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
+    )
+    from PySide6.QtOpenGLWidgets import QOpenGLWidget
+except ImportError as exc:
+    raise SystemExit(
+        "3DO CAD dependencies are missing. Run:\n"
+        "  python -m pip install -r icr2_3do_cad/requirements.txt\n"
+        f"Original import error: {exc}"
+    ) from exc
+
+from mesh import MeshData, make_mesh, read_palette
+from load_activity import LoadActivityTrace, DEFAULT_LOAD_LOG
+from wireframe import make_wireframe
+from visibility import (
+    FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
+)
+from scene import build_scene, ordered_scene_indices, load_car_or_model
+from skybox import (
+    SKY_EYE, load_preferred_track_skybox, skybox_view_matrix,
+)
+from track_lod import DEFAULT_WINDOW_COUNTS
+from track_navigation import (
+    find_matching_trk, TrackNavigation, DEFAULT_LONG_STEP_FT,
+    DEFAULT_LAT_STEP_FT, UNITS_PER_FOOT,
+)
+from sprites import prepare_scene_sprites, draw_runs
+from sprite_gl import PMPGLRenderer
+from textures import (build_atlas, load_palette,
+                                 find_model_sunny_palette)
+from appearance import DARK_COLORS, load_colors, save_colors, validated_colors
+from appearance_dialog import AppearanceDialog
+from confirmations import confirm_destructive_action
+from source_tab import SourcePane
+from scale_dialog import ScaleModelDialog
+from source_inspection import (
+    target_offset, polygon_mesh_range, polygon_inspection_notice,
+    vertex_screen_position, raw_point_screen_position, bsp_winding_arrows,
+    VertexPicker, PolygonPicker,
+)
+from workspaces import (
+    WORKSPACE_MODES, suggest_workspace, workspace_scene_summary,
+    resolve_lod_distance, max_switch_distance,
+)
+from menus import install_menus, remember_recent_model, update_model_actions
+from load_diagnostics import LoadIssue, collect_load_issues, format_load_log
+from polygon_split import split_n3_polygon, polygon_boundary_refs
+from vertex_label_data import (
+    filter_vertex_labels, polygon_vertex_refs, project_vertex_labels,
+    vertex_pointer_names, include_source_vertex_declarations,
+)
+from vertex_label_overlay import VertexLabelOverlay
+from mip_browser import MipUVBrowser
 
 
+VERTEX_SHADER = """
+#version 330 core
+layout(location = 0) in vec3 in_pos;
+layout(location = 1) in vec3 in_color;
+layout(location = 2) in float in_index;
+layout(location = 3) in vec2 in_uv;
+layout(location = 4) in vec4 in_rect;
+uniform mat4 u_mvp;
+out vec3 v_color;
+flat out int v_index;
+out vec2 v_uv;
+flat out vec4 v_rect;
+void main() {
+    gl_Position = u_mvp * vec4(in_pos, 1.0);
+    v_color = in_color;
+    v_index = int(in_index + 0.5);
+    v_uv = in_uv;
+    v_rect = in_rect;
+}
+"""
 
-@lru_cache(maxsize=128)
-def _view_basis(az,el):
-    """Cache trig per camera pose, not once per vertex projection."""
-    right=(math.cos(az),math.sin(az),0)
-    up=(-math.sin(az)*math.sin(el),math.cos(az)*math.sin(el),math.cos(el))
-    toward=(math.sin(az)*math.cos(el),-math.cos(az)*math.cos(el),math.sin(el))
-    return right,up,toward
+FRAGMENT_SHADER = """
+#version 330 core
+in vec3 v_color;
+flat in int v_index;
+in vec2 v_uv;
+flat in vec4 v_rect;
+uniform usampler2D u_mips;
+uniform sampler2D u_palette;
+uniform int u_textures;
+uniform int u_repeat;
+uniform int u_inspect_poly;
+uniform vec3 u_inspect_dark_tint;
+uniform vec3 u_inspect_light_tint;
+uniform int u_wireframe;
+uniform vec3 u_wire_color;
+uniform vec3 u_selected_wire_color;
+out vec4 fragColor;
+void main() {
+    // Wireframe is a separate untextured line pass. Do not sample MIP/PCX.
+    if (u_wireframe != 0) {
+        fragColor = vec4(
+            u_wireframe == 2 ? u_selected_wire_color : u_wire_color, 1.0);
+        return;
+    }
+    int index = clamp(v_index, 0, 255);
+    if (u_textures != 0 && v_rect.z >= 1.0 && v_rect.w >= 1.0) {
+        ivec2 size_px = ivec2(v_rect.zw);
+        ivec2 texel = ivec2(floor(v_uv + vec2(0.5)));
+        if (u_repeat != 0) {
+            texel = ivec2((texel.x % size_px.x + size_px.x) % size_px.x,
+                          (texel.y % size_px.y + size_px.y) % size_px.y);
+        } else {
+            texel = clamp(texel, ivec2(0), size_px - ivec2(1));
+        }
+        index = int(texelFetch(u_mips, ivec2(v_rect.xy) + texel, 0).r);
+    }
+    vec3 color = texelFetch(u_palette, ivec2(index, 0), 0).rgb;
+    if (u_inspect_poly != 0) {
+        // Brightening clips pale/white POLYs to white, making selection
+        // invisible. Use a warm tint for dark pixels, a strong contrasting
+        // blue tint for bright pixels, and a smooth transition for MIPs.
+        float brightness = dot(color, vec3(0.2126, 0.7152, 0.0722));
+        float light_mix = smoothstep(0.48, 0.75, brightness);
+        vec3 on_dark = mix(color, u_inspect_dark_tint, 0.74);
+        vec3 on_light = mix(color, u_inspect_light_tint, 0.82);
+        color = mix(on_dark, on_light, light_mix);
+    }
+    fragColor = vec4(color, 1.0);
+}
+"""
 
 
-def blend(a,b,t):
-    return tuple(int((1-t)*x+t*y) for x,y in zip(a,b))
+def _unit(vector):
+    length = float(np.linalg.norm(vector))
+    if length < 1e-10:
+        raise ValueError("Camera axis is degenerate")
+    return vector / length
 
 
-def rgbhex(rgb):
-    return '#' + ''.join(f'{max(0,min(255,round(v))):02x}' for v in rgb)
+def camera_view(azimuth, elevation, distance, target, *, roll=0.0):
+    """Row-major world-to-view matrix with optional road-banking roll.
 
-
-def read_pcx_palette(path: Path):
-    """Read an indexed VGA 256-color palette from a PCX trailer.
-
-    Reading the original PCX palette does not require decoding its RLE image.
+    Rotation occurs about the camera's own forward direction: positive
+    roll means the road's left side rises; skybox and scene use the same
+    rotated basis. Orbit and fixed cameras default to zero roll.
     """
-    data=Path(path).read_bytes()
-    if (len(data)<897 or data[0]!=10 or data[3]!=8 or data[-769]!=12):
-        raise ValueError('Not an 8-bit PCX with a 256-color VGA palette trailer')
-    values=data[-768:]
-    return [tuple(values[i*3:i*3+3]) for i in range(256)]
+    eye_direction = np.array((
+        math.cos(elevation)*math.sin(azimuth),
+        -math.cos(elevation)*math.cos(azimuth),
+        math.sin(elevation),
+    ), dtype=np.float64)
+    forward = -_unit(eye_direction)
+    right = np.cross(forward, np.array((0.0, 0.0, 1.0)))
+    if np.linalg.norm(right) < 1e-8:
+        right = np.array((1.0, 0.0, 0.0))
+    right = _unit(right)
+    up = _unit(np.cross(right, forward))
+    if roll:
+        c, s = math.cos(roll), math.sin(roll)
+        right, up = c * right - s * up, s * right + c * up
+    eye = np.asarray(target, dtype=np.float64) + eye_direction * distance
+    view = np.identity(4, dtype=np.float64)
+    view[0, :3] = right
+    view[1, :3] = up
+    view[2, :3] = -forward
+    view[0, 3] = -np.dot(right, eye)
+    view[1, 3] = -np.dot(up, eye)
+    view[2, 3] = np.dot(forward, eye)
+    return view, right, up
 
 
-def _atomic_write(path: Path, data: bytes):
-    """Write through a sibling temporary file so existing files survive errors."""
-    fd, tmp = tempfile.mkstemp(prefix='.'+path.name+'.',suffix='.tmp',dir=path.parent)
-    try:
-        with os.fdopen(fd,'wb') as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(tmp,path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+def ortho_projection(half_height, aspect, near, far):
+    half_width = max(half_height * aspect, 0.01)
+    matrix = np.identity(4, dtype=np.float64)
+    matrix[0, 0] = 1.0 / half_width
+    matrix[1, 1] = 1.0 / half_height
+    matrix[2, 2] = -2.0 / (far - near)
+    matrix[2, 3] = -(far + near) / (far - near)
+    return matrix
 
 
-def write_validated_3do(target: Path, data: bytes, *,
-                        expected_vertices: int, expected_polygons: int,
-                        backup=False):
-    """Validate a new 3DO before replacing the target, then back it up.
-
-    The caller handles the confirmation dialogs. If backup=True, the current
-    on-disk target bytes (not an old in-memory copy) overwrite `.3do.bak`.
-    """
-    target=Path(target)
-    fd,tmp=tempfile.mkstemp(prefix='.'+target.name+'.',suffix='.3do',dir=target.parent)
-    try:
-        with os.fdopen(fd,'wb') as stream:
-            stream.write(data)
-            stream.flush()
-            os.fsync(stream.fileno())
-        candidate=Model(tmp)
-        if (len(candidate.polygons)!=expected_polygons or
-                len(candidate.vertices)!=expected_vertices):
-            raise FormatError('Saved model has different vertex/polygon counts')
-        if backup:
-            backup_path=target.with_suffix(target.suffix+'.bak')
-            _atomic_write(backup_path,target.read_bytes())
-        os.replace(tmp,target)
-        return Model(target)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+def perspective_projection(aspect, near, far, fov_degrees=60.0):
+    factor = 1.0 / math.tan(math.radians(fov_degrees) / 2.0)
+    matrix = np.zeros((4, 4), dtype=np.float64)
+    matrix[0, 0] = factor / max(aspect, 0.01)
+    matrix[1, 1] = factor
+    matrix[2, 2] = -(far + near) / (far - near)
+    matrix[2, 3] = -2.0 * far * near / (far - near)
+    matrix[3, 2] = -1.0
+    return matrix
 
 
-class Editor(tk.Tk):
-    def __init__(self, path=None):
+class LoadWorker(QThread):
+    ready = Signal(object, object, object, object, object, object)
+    failed = Signal(str)
+    progress = Signal(int, str)  # completed stage marker, not elapsed-time estimate
+    activity = Signal(str)  # timestamped line from worker thread
+
+    def __init__(self, path, palette_path, texture_folder=None,
+                 fallback_mip=None, *, objects_folder=None,
+                 mip_overrides=None, object_overrides=None, body_mip=None,
+                 existing_model=None, source_text=None, source_path=None,
+                 appearance_override=None, auto_local_palette=False,
+                 activity_trace=None):
         super().__init__()
-        self.title('ICR2 3DO CAD • Editor v1.9')
-        self.geometry('1320x900')
-        self.minsize(850,580)
-        self.configure(background='#171d29')
-        self.model = None
-        self.text_document = None  # N3 labels/comments stay in the .3D text, not in a binary 3DO.
-        self.imported_pending = False
-        self.standalone_n3_binary = None
-        self._original_n3_source=False
-        self.vertex_pointer_names={}
-        self._source_invalid=False
-        self._source_sync_job=None
-        self._source_model_loading=False
-        self.external_resolver=ExternalResolver()
-        self.external_model_cache={}
-        self._pmp_cache={}
-        self.dynamic_order=[]
-        self.selected_dynamic=None
-        self.dynamic_info=tk.StringVar(value='No DYNAMIC placements loaded')
-        self.dynamic_file_info=tk.StringVar(value='')
-        self.dynamic_posvars=[tk.StringVar() for _ in range(3)]
-        self.dynamic_rotvars=[tk.StringVar() for _ in range(3)]
-        self._screen_dynamics=[]
-        self.appearance = None  # Separate 3DO MATERIAL->RECOLOR wrapper, preview-only
-        self.appearance_info = tk.StringVar(value="Car appearance: base polygon colors (no RECOLOR file)")
-        self.vertex_order = []
-        self.selected = None
-        self.selected_poly = None
-        self.visible_polygon_offsets = set()
-        self._screen_polygons = []
-        self.poly_order = []
-        self.poly_plane_offsets = []
-        self.poly_ref_options = []
-        self.poly_selected_plane = tk.StringVar(value='')
-        self.poly_detail = tk.StringVar(value='Select a polygon to inspect')
-        self.poly_color_index=tk.StringVar(value='')
-        self.poly_color_explanation=tk.StringVar(value='Select a polygon to edit its original color index.')
-        self.poly_color_pair=tk.BooleanVar(value=True)
-        self.poly_plane_info = tk.StringVar(value='Select a target FACE/BSP plane')
-        self.poly_edit_status = tk.StringVar(value='')
-        self.split_edge_a=tk.StringVar(value='')
-        self.split_edge_b=tk.StringVar(value='')
-        self.split_fraction_a=tk.StringVar(value='0.5')
-        self.split_fraction_b=tk.StringVar(value='0.5')
-        self.split_hint=tk.StringVar(value='Choose two different edges to split this polygon.')
-        self.split_preview=tk.BooleanVar(value=False)
-        self.draft_vertices=[]  # stage-only IDs, not saved until used by new polygon
-        self.geometry_anchor=tk.StringVar(value='8484')
-        self.geometry_insertion=tk.StringVar(value='')
-        self.geometry_insertion_targets=[]
-        self.geometry_placement=tk.StringVar(value='after')
-        self.geometry_two_sided=tk.BooleanVar(value=True)
-        self.geometry_textured=tk.BooleanVar(value=False)
-        self.geometry_color=tk.StringVar(value='40')
-        self.geometry_group=tk.StringVar(value='0')
-        self.geometry_points=tk.StringVar(value='')
-        self.geometry_xyz=[tk.StringVar(value='0') for _ in range(3)]
-        self.geometry_uv=[tk.StringVar(value='0') for _ in range(2)]
-        self.geometry_drafts=tk.StringVar(value='No draft vertices (not stored in 3DO until used)')
-        self.geometry_status=tk.StringVar(value='Select anchor POLY, LIST insertion point, and ordered vertices.')
-        self.geometry_fin_a=tk.StringVar(value='')
-        self.geometry_fin_b=tk.StringVar(value='')
-        self.geometry_fin_height=tk.StringVar(value='5000')
-        self.existing_split_a=tk.StringVar(value='')
-        self.existing_split_b=tk.StringVar(value='')
-        self.existing_split_preview=tk.BooleanVar(value=True)
-        self.existing_split_hint=tk.StringVar(value='Choose two nonadjacent numbered vertices. No new vertices are created.')
-        self.poly_ref_selections = [tk.StringVar() for _ in range(3)]
-        self.poly_only_visible = tk.BooleanVar(value=False)
-        self.poly_vertex_labels = tk.BooleanVar(value=True)
-        self.show_hidden_polygon_outline = tk.BooleanVar(value=False)
-        self.undo_stack=[]
-        self.redo_stack=[]
-        self.azimuth = math.radians(35)
-        self.elevation = math.radians(25)
-        self.zoom = 1.0
-        self.pan = (0.0,0.0)
-        self.center = (0.0,0.0,0.0)
-        self.extent=1.0
-        self.scale=1.0
-        self.palette=None
-        self.palette_source='No palette'
-        default_palette=Path(__file__).with_name('gamepal.pcx')
-        if default_palette.is_file():
+        self.path = Path(path)
+        self.palette_path = Path(palette_path)
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.objects_folder = objects_folder
+        self.mip_overrides = dict(mip_overrides or {})
+        self.object_overrides = dict(object_overrides or {})
+        self.body_mip = body_mip
+        self.existing_model = existing_model
+        self.source_text = source_text
+        self.source_path = Path(source_path) if source_path is not None else None
+        self.appearance_override = appearance_override
+        self.auto_local_palette = auto_local_palette
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        # Persist before notifying Qt: GUI signals cannot be painted during
+        # a slow OpenGL driver operation, but the file survives a hang.
+        if self.activity_trace is not None:
             try:
-                self.palette=read_pcx_palette(default_palette)
-                self.palette_source=f'Default: {default_palette.name}'
-            except (OSError,ValueError):
-                self.palette_source='Invalid bundled palette (fallback colors)'
-        self.show_textures=tk.BooleanVar(value=True)
-        self.texture_repeat=tk.BooleanVar(value=False)
-        # Static preview stays detailed; continuous camera/vertex motion uses a
-        # cheaper sampling grid, then automatically refines when movement ends.
-        self.texture_quality=tk.StringVar(value='Balanced (75%)')
-        self._interactive_view=False
-        self._pending_view_redraw=None
-        self._pending_refine=None
-        self.last_render_seconds=0.0
-        self.texture_folder=None
-        self._mip_path_cache={}  # avoid repeated directory scans for every textured face
-        self.texture_manual={}  # ('polygon',offset) or ('group',group): Path
-        self.texture_cache={}
-        self._texture_photos=[]
-        # Keep a bounded cache of static-view tiles: selection/BSP inspector
-        # changes no longer force a second UV rasterization of unchanged faces.
-        self._texture_tile_cache=OrderedDict()
-        self._texture_tile_cache_bytes=0
-        self.texture_info=tk.StringVar(value='Texture: select a polygon')
-        self.projection=tk.StringVar(value='Orthographic')
-        self.lighting=tk.BooleanVar(value=False)
-        self.fov_degrees=55.0
-        self.show_faces=tk.BooleanVar(value=True)
-        self.show_edges=tk.BooleanVar(value=True)
-        self.show_points=tk.BooleanVar(value=True)
-        self._point_raster_threshold=1200  # Large tracks use one RGBA overlay, not thousands of ovals.
-        self.vertex_label_mode=tk.StringVar(value='Off')
-        self.pointer_name_var=tk.StringVar(value='')
-        self.show_axes=tk.BooleanVar(value=True)
-        self.lod_mode=tk.StringVar(value='SWITCH DISTANCE')
-        self.lod_distance=tk.DoubleVar(value=0)
-        self.lod_distance_text=tk.StringVar(value='0')
-        self.bsp_mode=tk.StringVar(value='Original 3DO planes')
-        self.preview_stats=tk.StringVar(value='Preview: no model loaded')
-        self.active_vertices=set()
-        self.axis=tk.StringVar(value='X')
-        self.nudge_step=tk.StringVar(value='500')
-        self.posvars=[tk.StringVar() for _ in range(3)]
-        self.uvvars=[tk.StringVar(),tk.StringVar()]
-        self.header=tk.StringVar(value='Open a .3do file to begin')
-        self.stats=tk.StringVar(value='3DO body-relative offsets shown throughout')
-        self.status=tk.StringVar(value='Click a vertex to select. Right-drag orbit, mouse wheel zoom.')
-        self.selection_label=tk.StringVar(value='No vertex selected')
-        self.context_title=tk.StringVar(value='Nothing selected')
-        self.context_detail=tk.StringVar(value='Open a 3DO to begin.')
-        self.unsaved_state=tk.StringVar(value='No edits')
-        self.show_header_details=tk.BooleanVar(value=False)
-        self.show_view_settings=tk.BooleanVar(value=False)
-        self.show_advanced_polygon=tk.BooleanVar(value=False)
-        self._model_extent=1.0
-        self._drag=None
-        self._setup_style()
-        self._setup_menu()
-        self._build_ui()
-        self.protocol('WM_DELETE_WINDOW',self.on_close)
-        if path:
-            self.after(0,lambda: self.load_file(path))
-
-    def _setup_style(self):
-        s=ttk.Style(self)
-        if 'clam' in s.theme_names(): s.theme_use('clam')
-        s.configure('TFrame',background='#222a38')
-        s.configure('TLabel',background='#222a38',foreground='#dce5f1',font=('Segoe UI',10))
-        s.configure('Sub.TLabel',background='#222a38',foreground='#96a7bb')
-        s.configure('Header.TLabel',background='#222a38',foreground='#f2f7ff',font=('Segoe UI',13,'bold'))
-        s.configure('TButton',font=('Segoe UI',10),padding=(8,6))
-        s.configure('TEntry',padding=(4,4))
-        s.configure('TRadiobutton',background='#222a38',foreground='#dbe5f4')
-        s.configure('TCheckbutton',background='#222a38',foreground='#dbe5f4')
-        s.map('TCheckbutton',background=[('active','#222a38')])
-        s.map('TRadiobutton',background=[('active','#222a38')])
-
-    def _setup_menu(self):
-        bar=tk.Menu(self)
-        filemenu=tk.Menu(bar,tearoff=0)
-        filemenu.add_command(label='Open 3DO…     Ctrl+O',command=self.open_file)
-        filemenu.add_command(label='Save As…       Ctrl+Shift+S',command=self.save_as)
-        filemenu.add_separator()
-        filemenu.add_command(label='Export editable N3 .3D text…',command=self.export_n3_text)
-        filemenu.add_command(label='Import N3 .3D onto current 3DO…',command=self.import_n3_text)
-        filemenu.add_command(label='Open standalone N3 .3D…',command=self.open_standalone_n3)
-        filemenu.add_separator()
-        filemenu.add_command(label='Load individual car RECOLOR 3DO…',command=self.open_car_appearance)
-        filemenu.add_command(label='Clear individual car RECOLOR preview',command=self.clear_car_appearance)
-        filemenu.add_separator()
-        filemenu.add_command(label='Open 256-color PCX palette…',command=self.open_palette)
-        filemenu.add_command(label='Use bundled gamepal.pcx (default)',command=self.use_default_palette)
-        filemenu.add_command(label='Remove palette',command=self.remove_palette)
-        filemenu.add_separator()
-        filemenu.add_command(label='Choose MIP texture folder…',command=self.choose_texture_folder)
-        filemenu.add_command(label='Choose external 3DO folder (wheels, helmet)…',
-                             command=self.choose_external_folder)
-        filemenu.add_command(label='Assign MIP to selected polygon…',command=self.assign_polygon_texture)
-        filemenu.add_command(label='Assign MIP to selected texture group…',command=self.assign_group_texture)
-        filemenu.add_command(label='Clear selected texture assignment',command=self.clear_texture_assignment)
-        filemenu.add_separator()
-        filemenu.add_command(label='Exit' ,command=self.on_close)
-        bar.add_cascade(label='File',menu=filemenu)
-        edit=tk.Menu(bar,tearoff=0)
-        edit.add_command(label='Undo    Ctrl+Z',command=self.undo)
-        edit.add_command(label='Redo    Ctrl+Y',command=self.redo)
-        edit.add_command(label='Reset all XYZ, UV, plane and DYNAMIC edits',command=self.reset_edits)
-        bar.add_cascade(label='Edit',menu=edit)
-        view=tk.Menu(bar,tearoff=0)
-        for title, var in [('Filled polygons',self.show_faces),('Polygon edges',self.show_edges),
-                           ('Vertex dots',self.show_points),('Axes',self.show_axes)]:
-            view.add_checkbutton(label=title,variable=var,command=self.redraw)
-        vertex_labels_menu=tk.Menu(view,tearoff=0)
-        for mode,title in [('Off','Off'),('Names','Pointer names (offset fallback)'),
-                           ('Offsets','Body offset numbers')]:
-            vertex_labels_menu.add_radiobutton(label=title,
-                      variable=self.vertex_label_mode,value=mode,command=self.redraw)
-        view.add_cascade(label='Vertex labels',menu=vertex_labels_menu)
-        view.add_checkbutton(label='Number selected polygon vertices',
-                             variable=self.poly_vertex_labels,command=self.redraw)
-        view.add_checkbutton(label='Show selected polygon even if BSP-hidden (dashed)',
-                             variable=self.show_hidden_polygon_outline,command=self.redraw)
-        view.add_separator()
-        for option in ('Orthographic','Perspective (depth)'):
-            view.add_radiobutton(label=option,variable=self.projection,value=option,
-                                 command=self.redraw)
-        view.add_checkbutton(label='Lighting (off by default)',variable=self.lighting,
-                             command=self.redraw)
-        view.add_checkbutton(label='Textured polygons (requires Pillow + NumPy)',
-                             variable=self.show_textures, command=self.redraw)
-        view.add_checkbutton(label='Repeat UVs outside texture edges (default clamp)',
-                             variable=self.texture_repeat,command=self.redraw)
-        quality_menu=tk.Menu(view,tearoff=0)
-        for quality in ('Fast (50%)','Balanced (75%)','Full (100%)'):
-            quality_menu.add_radiobutton(label=quality,variable=self.texture_quality,
-                                         value=quality,command=self.redraw)
-        view.add_cascade(label='Texture preview quality',menu=quality_menu)
-        view.add_separator()
-        view.add_radiobutton(label='All LOD branches',variable=self.lod_mode,
-                             value='All branches',command=self.redraw)
-        view.add_radiobutton(label='Select SWITCH DISTANCE branch',variable=self.lod_mode,
-                             value='SWITCH DISTANCE',command=self.redraw)
-        view.add_separator()
-        for label,value in [('No BSP culling','Off (show all)'),
-                            ('BSP from original 3DO','Original 3DO planes'),
-                            ('BSP from recalculated planes','Rebuilt planes')]:
-            view.add_radiobutton(label=label,variable=self.bsp_mode,value=value,
-                                 command=self.redraw)
-        view.add_separator()
-        view.add_command(label='Frame entire model     F',command=self.frame_model)
-        view.add_command(label='Frame selected     Shift+F',command=self.frame_selection)
-        camera_menu=tk.Menu(view,tearoff=0)
-        for label in ('Three-quarter','Top','Front','Side'):
-            camera_menu.add_command(label=label,command=lambda name=label:self.set_camera_view(name))
-        view.add_cascade(label='Camera presets',menu=camera_menu)
-        view.add_command(label='Polygon editing mode     P',command=lambda:self.notebook.select(self.poly_page))
-        view.add_command(label='DYNAMIC component mode',command=lambda:self.notebook.select(self.component_page))
-        view.add_command(label='Vertex editing mode       V',command=lambda:self.notebook.select(self.vertex_page))
-        view.add_command(label='Plane rebuild report…',command=self.show_report)
-        bar.add_cascade(label='View',menu=view)
-        helpmenu=tk.Menu(bar,tearoff=0)
-        helpmenu.add_command(label='Controls and limitations',command=self.show_help)
-        bar.add_cascade(label='Help',menu=helpmenu)
-        self.configure(menu=bar)
-        self.bind_all('<Control-o>',lambda event: self.open_file())
-        self.bind_all('<Control-Shift-S>',lambda event: self.save_as())
-        self.bind_all('<Control-z>',self._undo_shortcut)
-        self.bind_all('<Control-y>',self._redo_shortcut)
-        self.bind_all('<F4>',lambda event: self.show_report())
-        self.bind_all('<KeyPress-f>',self._hotkey_frame)
-        self.bind_all('<Shift-F>',self._hotkey_frame_selection)
-        self.bind_all('<KeyPress-p>',lambda e:self._hotkey_tab(e,self.poly_page))
-        self.bind_all('<KeyPress-v>',lambda e:self._hotkey_tab(e,self.vertex_page))
-
-    def _undo_shortcut(self,event):
-        if isinstance(event.widget,tk.Text):
-            return
-        self.undo()
-
-    def _redo_shortcut(self,event):
-        if isinstance(event.widget,tk.Text):
-            return
-        self.redo()
-
-    def _hotkey_frame(self, event):
-        if not isinstance(event.widget,(tk.Entry,ttk.Entry)):
-            self.frame_model()
-
-    def _hotkey_frame_selection(self,event):
-        if not isinstance(event.widget,(tk.Entry,ttk.Entry,ttk.Combobox,tk.Text)):
-            self.frame_selection()
-
-    def _toggle_view_settings_from_button(self):
-        self.show_view_settings.set(not self.show_view_settings.get())
-        self.toggle_view_settings()
-
-    def _toggle_polygon_advanced_from_button(self):
-        self.show_advanced_polygon.set(not self.show_advanced_polygon.get())
-        self.toggle_polygon_advanced()
-
-    def toggle_header_details(self):
-        if self.show_header_details.get():
-            self.diagnostics_frame.pack(fill='x',pady=(3,0))
+                line = self.activity_trace.write(message)
+            except OSError as exc:
+                line = f"[Log write failure: {exc}] {message}"
         else:
-            self.diagnostics_frame.pack_forget()
+            line = str(message)
+        self.activity.emit(line)
 
-    def toggle_view_settings(self):
-        if self.show_view_settings.get():
-            self.view_options.pack(fill='x',pady=(6,0))
-        else:
-            self.view_options.pack_forget()
+    def _stage(self, percent, name):
+        self._activity(f"STAGE {percent}%: {name}")
+        self.progress.emit(percent, name)
 
-    def toggle_polygon_advanced(self):
-        if self.show_advanced_polygon.get():
-            self.poly_advanced_container.pack(fill='x',pady=(4,8))
-            self.poly_advanced_button.configure(text='Hide advanced splitting / BSP tools')
-        else:
-            self.poly_advanced_container.pack_forget()
-            self.poly_advanced_button.configure(text='Show advanced splitting / BSP tools')
-
-    def _update_selection_summary(self):
-        if not hasattr(self,'context_title') or not hasattr(self,'notebook'):
-            return
-        self.unsaved_state.set('Unsaved changes' if self.model and (self.model.dirty or self.imported_pending) else 'No edits')
-        if not self.model:
-            label='Nothing selected'
-            detail='Open a 3DO model to begin.'
-            can_frame=False
-        else:
-            page=self.notebook.select()
-            if page in (str(self.poly_page),str(self.geometry_page)) and self.selected_poly in self.model.polygons:
-                poly=self.model.polygons[self.selected_poly]
-                label=f'Polygon @{poly.offset}'
-                detail=f'{len(poly.unique_refs)} vertices  •  palette {self._color_label(poly)}  •  group {poly.group}'
-                can_frame=True
-            elif page==str(self.component_page) and self.selected_dynamic in self.model.dynamics:
-                part=self.model.dynamics[self.selected_dynamic]
-                label=f'Part: {part.name}.3do'
-                detail=f'DYNAMIC @{self.selected_dynamic}  •  placement in parent model'
-                can_frame=True
-            elif page==str(self.vertex_page) and self.selected in self.model.vertices:
-                vertex=self.model.vertices[self.selected]
-                named=self.vertex_pointer_names.get(self.selected)
-                label=f'{named}  •  Vertex @{self.selected}' if named else f'Vertex @{self.selected}'
-                detail=f'X {vertex.xyz[0]:,}   Y {vertex.xyz[1]:,}   Z {vertex.xyz[2]:,}'
-                can_frame=True
+    def run(self):
+        try:
+            # Do not import Qt or create GL resources on this worker thread.
+            from three_do import Model
+            from n3_compile import compile_n3_text
+            t0 = perf_counter()
+            # Live N3 recompile runs frequently without a durable trace.
+            # Avoid per-object Qt signal traffic in that workflow.
+            detail = self._activity if self.activity_trace is not None else None
+            self._activity(f"START model load: {self.path}")
+            self._stage(5, "Parsing model and referenced 3DOs")
+            if self.source_text is not None:
+                # Compile candidate text off the UI thread. Do not overwrite
+                # the last valid model until this AND the mesh/atlas succeed.
+                self._activity(f"Compiling N3 source: {self.source_path}")
+                model, _ = compile_n3_text(
+                    self.source_text, self.source_path, associate_planes=False)
+                appearance = self.appearance_override
+                scene = build_scene(model, objects_folder=self.objects_folder,
+                                    object_overrides=self.object_overrides,
+                                    appearance=appearance,
+                                    on_activity=detail)
+            elif self.path.suffix.lower() == ".3do":
+                model, scene, appearance = load_car_or_model(
+                    self.path, existing_model=self.existing_model,
+                    objects_folder=self.objects_folder,
+                    object_overrides=self.object_overrides,
+                    fixtures_folder=CAD_ROOT / 'fixtures',
+                    on_activity=detail)
+            elif self.path.suffix.lower() == ".3d":
+                if self.existing_model is not None:
+                    model = self.existing_model
+                else:
+                    self._activity(f"Reading source: {self.path}")
+                    text = self.path.read_text(encoding="utf-8-sig")
+                    self._activity(f"Compiling source: {self.path.name}")
+                    model, _ = compile_n3_text(
+                        text, self.path, associate_planes=False)
+                scene = build_scene(model, objects_folder=self.objects_folder,
+                                    object_overrides=self.object_overrides,
+                                    on_activity=detail)
+                appearance = None
             else:
-                label='Nothing selected'
-                detail='Click a visible element, or select it from the list.'
-                can_frame=False
-        self.context_title.set(label)
-        self.context_detail.set(detail)
-        if hasattr(self,'frame_selected_button'):
-            self.frame_selected_button.configure(state='normal' if can_frame else 'disabled')
-        if hasattr(self,'toolbar_save'):
-            self.toolbar_save.configure(state='normal' if self.model else 'disabled')
-            self.toolbar_undo.configure(state='normal' if self.undo_stack else 'disabled')
-            self.toolbar_redo.configure(state='normal' if self.redo_stack else 'disabled')
-
-    def _hotkey_tab(self,event,page):
-        if isinstance(event.widget,(tk.Entry,ttk.Entry,ttk.Combobox,tk.Text)):
-            return
-        self.notebook.select(page)
-
-    def _build_ui(self):
-        top=tk.Frame(self,bg='#151b25',padx=16,pady=10)
-        top.pack(side='top',fill='x')
-        tk.Label(top,textvariable=self.header,bg='#151b25',fg='#eef5ff',
-                 font=('Segoe UI',14,'bold'),anchor='w').pack(anchor='w')
-        tk.Checkbutton(top,text='Technical details',variable=self.show_header_details,
-                       command=self.toggle_header_details,bg='#151b25',fg='#94a6ba',
-                       activebackground='#151b25',activeforeground='#eef5ff',
-                       selectcolor='#151b25').pack(anchor='e')
-        self.diagnostics_frame=tk.Frame(top,bg='#151b25')
-        tk.Label(self.diagnostics_frame,textvariable=self.stats,bg='#151b25',fg='#94a6ba',
-                 anchor='w',font=('Segoe UI',9)).pack(anchor='w')
-        tk.Label(self.diagnostics_frame,textvariable=self.appearance_info,bg='#151b25',fg='#accfbe',
-                 anchor='w',font=('Segoe UI',9)).pack(anchor='w')
-        toolbar=tk.Frame(self,bg='#1b2533',padx=10,pady=5)
-        toolbar.pack(side='top',fill='x')
-        ttk.Button(toolbar,text='Open…',command=self.open_file).pack(side='left',padx=(0,4))
-        self.toolbar_save=ttk.Button(toolbar,text='Save Copy…',command=self.save_as)
-        self.toolbar_save.pack(side='left',padx=(0,10))
-        self.toolbar_undo=ttk.Button(toolbar,text='Undo',command=self.undo)
-        self.toolbar_undo.pack(side='left',padx=(0,4))
-        self.toolbar_redo=ttk.Button(toolbar,text='Redo',command=self.redo)
-        self.toolbar_redo.pack(side='left',padx=(0,10))
-        ttk.Label(toolbar,textvariable=self.unsaved_state,style='Sub.TLabel').pack(side='right',padx=6)
-        main=tk.PanedWindow(self,orient='horizontal',bg='#10141d',sashwidth=6,
-                             borderwidth=0)
-        main.pack(expand=True,fill='both')
-        self._main_pane=main
-        self._initial_panes_job=self.after(180,self._initial_panes)
-        left=tk.Frame(main,bg='#131924')
-        main.add(left,stretch='always',minsize=480)
-        bar=tk.Frame(left,bg='#1b2533',padx=8,pady=4)
-        bar.pack(fill='x')
-        quick=tk.Frame(bar,bg='#1b2533');quick.pack(fill='x')
-        ttk.Label(quick,text='Select:',style='Sub.TLabel').pack(side='left',padx=(0,4))
-        for caption,which in (('Vertex','vertex_page'),('Polygon','poly_page'),('Part','component_page')):
-            ttk.Button(quick,text=caption,
-                       command=lambda name=which:self.notebook.select(getattr(self,name))).pack(side='left',padx=(0,3))
-        camera_row=tk.Frame(bar,bg='#1b2533');camera_row.pack(fill='x',pady=(4,0))
-        ttk.Label(camera_row,text='View:',style='Sub.TLabel').pack(side='left',padx=(0,4))
-        for caption,name in (('3D','Three-quarter'),('Top','Top'),('Front','Front'),('Side','Side')):
-            ttk.Button(camera_row,text=caption,
-                       command=lambda preset=name:self.set_camera_view(preset)).pack(side='left',padx=(0,2))
-        ttk.Button(camera_row,text='Display…',command=self._toggle_view_settings_from_button).pack(side='right')
-        framing=tk.Frame(bar,bg='#1b2533');framing.pack(fill='x',pady=(4,0))
-        ttk.Button(framing,text='Frame All (F)',command=self.frame_model).pack(side='left',padx=(0,4))
-        self.frame_selected_button=ttk.Button(framing,text='Frame Selection (Shift+F)',command=self.frame_selection)
-        self.frame_selected_button.pack(side='left')
-        labels_row=tk.Frame(bar,bg='#1b2533');labels_row.pack(fill='x',pady=(4,0))
-        ttk.Label(labels_row,text='Vertex labels:',style='Sub.TLabel').pack(side='left',padx=(0,5))
-        self.vertex_labels_combo=ttk.Combobox(labels_row,textvariable=self.vertex_label_mode,
-                           values=('Off','Names','Offsets'),state='readonly',width=12)
-        self.vertex_labels_combo.pack(side='left')
-        self.vertex_labels_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        self.view_options=tk.Frame(bar,bg='#1b2533')
-        line1=tk.Frame(self.view_options,bg='#1b2533');line1.pack(fill='x')
-        tk.Label(line1,text='LOD',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,6))
-        self.lod_combo=ttk.Combobox(line1,textvariable=self.lod_mode,
-             values=['SWITCH DISTANCE','All branches'],state='readonly',width=19)
-        self.lod_combo.pack(side='left')
-        self.lod_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        tk.Label(line1,text='BSP preview',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(20,6))
-        self.bsp_combo=ttk.Combobox(line1,textvariable=self.bsp_mode,
-             values=['Off (show all)','Original 3DO planes','Rebuilt planes'],
-             state='readonly',width=21)
-        self.bsp_combo.pack(side='left')
-        self.bsp_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        lineview=tk.Frame(self.view_options,bg='#1b2533');lineview.pack(fill='x',pady=(7,0))
-        tk.Label(lineview,text='Projection',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,6))
-        self.projection_combo=ttk.Combobox(lineview,textvariable=self.projection,
-            values=['Orthographic','Perspective (depth)'],state='readonly',width=20)
-        self.projection_combo.pack(side='left')
-        self.projection_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        tk.Checkbutton(lineview,text='Lighting',variable=self.lighting,
-            bg='#1b2533',fg='#c9d8ec',selectcolor='#1b2533',
-            activebackground='#1b2533',activeforeground='#c9d8ec',
-            command=self.redraw).pack(side='left',padx=(16,0))
-        tk.Checkbutton(lineview,text='Textures',variable=self.show_textures,
-            bg='#1b2533',fg='#c9d8ec',selectcolor='#1b2533',
-            activebackground='#1b2533',activeforeground='#c9d8ec',
-            command=self.redraw).pack(side='left',padx=(16,0))
-        linequality=tk.Frame(self.view_options,bg='#1b2533');linequality.pack(fill='x',pady=(5,0))
-        tk.Label(linequality,text='Texture detail',bg='#1b2533',fg='#c9d8ec').pack(side='left',padx=(0,7))
-        quality_combo=ttk.Combobox(linequality,textvariable=self.texture_quality,
-             values=['Fast (50%)','Balanced (75%)','Full (100%)'],
-             state='readonly',width=18)
-        quality_combo.pack(side='left')
-        quality_combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-        tk.Label(linequality,text='Motion preview renders faster; refines when idle',
-            bg='#1b2533',fg='#91a6bb').pack(side='left',padx=10)
-        line2=tk.Frame(self.view_options,bg='#1b2533');line2.pack(fill='x',pady=(7,0))
-        tk.Label(line2,text='SWITCH distance (raw units)',bg='#1b2533',fg='#c9d8ec').pack(side='left')
-        self.lod_slider=ttk.Scale(line2,from_=0,to=1200000,
-             variable=self.lod_distance,command=self._slider_distance)
-        self.lod_slider.pack(side='left',fill='x',expand=True,padx=10)
-        self.lod_entry=ttk.Entry(line2,textvariable=self.lod_distance_text,width=13)
-        self.lod_entry.pack(side='left')
-        self.lod_entry.bind('<Return>',self._apply_distance_entry)
-        self.lod_entry.bind('<FocusOut>',self._apply_distance_entry)
-        tk.Label(self.view_options,textvariable=self.preview_stats,bg='#1b2533',fg='#a9bed5',
-                 anchor='w',font=('Consolas',9)).pack(fill='x',pady=(5,0))
-        self.canvas=tk.Canvas(left,bg='#131924',highlightthickness=0,confine=True)
-        self.canvas.pack(fill='both',expand=True)
-        self.canvas.bind('<Configure>',lambda e: self.redraw())
-        self.canvas.bind('<ButtonPress-1>',self.start_pick)
-        self.canvas.bind('<B1-Motion>',self.move_vertex_drag)
-        self.canvas.bind('<ButtonRelease-1>',self.finish_vertex_drag)
-        self.canvas.bind('<ButtonPress-3>',self.start_orbit)
-        self.canvas.bind('<B3-Motion>',self.orbit)
-        self.canvas.bind('<ButtonRelease-3>',self.finish_view_motion)
-        self.canvas.bind('<ButtonPress-2>',self.start_pan)
-        self.canvas.bind('<B2-Motion>',self.pan_view)
-        self.canvas.bind('<ButtonRelease-2>',self.finish_view_motion)
-        self.canvas.bind('<MouseWheel>',self.wheel_zoom)
-        self.canvas.bind('<Button-4>',lambda e: self.wheel_zoom(e,120))
-        self.canvas.bind('<Button-5>',lambda e: self.wheel_zoom(e,-120))
-        self.canvas.bind('<Double-Button-1>',lambda e:self.frame_model())
-        sidebar_shell=tk.Frame(main,bg='#222a38')
-        main.add(sidebar_shell,minsize=370,width=410)
-        context=tk.Frame(sidebar_shell,bg='#222a38',padx=10,pady=7)
-        context.pack(fill='x')
-        tk.Label(context,textvariable=self.context_title,bg='#222a38',fg='#f2f7ff',
-                 font=('Segoe UI',11,'bold'),anchor='w').pack(anchor='w')
-        tk.Label(context,textvariable=self.context_detail,bg='#222a38',fg='#96a7bb',
-                 font=('Segoe UI',9),anchor='w',wraplength=370,justify='left').pack(anchor='w')
-        self.notebook=ttk.Notebook(sidebar_shell)
-        self.notebook.pack(fill='both',expand=True)
-        sidebar=tk.Frame(self.notebook,bg='#222a38',padx=12,pady=12)
-        self.vertex_page=sidebar
-        self.poly_page=tk.Frame(self.notebook,bg='#222a38')
-        self.poly_canvas=tk.Canvas(self.poly_page,bg='#222a38',highlightthickness=0)
-        self.poly_canvas.pack(side='left',fill='both',expand=True)
-        self.poly_scrollbar=ttk.Scrollbar(self.poly_page,orient='vertical',command=self.poly_canvas.yview)
-        self.poly_scrollbar.pack(side='right',fill='y')
-        self.poly_canvas.configure(yscrollcommand=self.poly_scrollbar.set)
-        self.poly_contents=tk.Frame(self.poly_canvas,bg='#222a38',padx=11,pady=10)
-        self.poly_canvas_window=self.poly_canvas.create_window((0,0),window=self.poly_contents,anchor='nw')
-        self.poly_contents.bind('<Configure>',lambda e:self.poly_canvas.configure(scrollregion=self.poly_canvas.bbox('all')))
-        self.poly_canvas.bind('<Configure>',lambda e:self.poly_canvas.itemconfigure(self.poly_canvas_window,width=e.width))
-        self.notebook.add(self.vertex_page,text='Vertex')
-        self.notebook.add(self.poly_page,text='Polygon')
-        self.component_page=tk.Frame(self.notebook,bg='#222a38',padx=10,pady=10)
-        self.notebook.add(self.component_page,text='Parts')
-        self.geometry_page=tk.Frame(self.notebook,bg='#222a38')
-        self.geometry_canvas=tk.Canvas(self.geometry_page,bg='#222a38',highlightthickness=0)
-        self.geometry_canvas.pack(side='left',fill='both',expand=True)
-        self.geometry_scroll=ttk.Scrollbar(self.geometry_page,orient='vertical',command=self.geometry_canvas.yview)
-        self.geometry_scroll.pack(side='right',fill='y')
-        self.geometry_canvas.configure(yscrollcommand=self.geometry_scroll.set)
-        self.geometry_contents=tk.Frame(self.geometry_canvas,bg='#222a38',padx=11,pady=10)
-        self.geometry_window=self.geometry_canvas.create_window((0,0),window=self.geometry_contents,anchor='nw')
-        self.geometry_contents.bind('<Configure>',lambda e:self.geometry_canvas.configure(scrollregion=self.geometry_canvas.bbox('all')))
-        self.geometry_canvas.bind('<Configure>',lambda e:self.geometry_canvas.itemconfigure(self.geometry_window,width=e.width))
-        self.notebook.add(self.geometry_page,text='Create')
-        self.raw_page=tk.Frame(self.notebook,bg='#222a38',padx=8,pady=8)
-        self.notebook.add(self.raw_page,text='Raw')
-        self.source_page=tk.Frame(self.notebook,bg='#222a38')
-        self.source_editor=SourceEditor(self.source_page,
-                         on_valid=self._accept_live_source,
-                         on_invalid=self._reject_live_source)
-        self.source_editor.pack(fill='both',expand=True)
-        self.notebook.add(self.source_page,text='.3D Source')
-        self.notebook.bind('<<NotebookTabChanged>>',lambda e:self._change_edit_mode())
-        ttk.Label(sidebar,text='VERTEX EDITOR',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(sidebar,textvariable=self.selection_label,style='Sub.TLabel',wraplength=290).pack(anchor='w',pady=(4,8))
-        pointer=ttk.LabelFrame(sidebar,text='Pointer name (.3D source)')
-        pointer.pack(fill='x',pady=(0,10))
-        pointer_row=ttk.Frame(pointer);pointer_row.pack(fill='x',padx=5,pady=5)
-        self.pointer_entry=ttk.Entry(pointer_row,textvariable=self.pointer_name_var)
-        self.pointer_entry.pack(side='left',fill='x',expand=True,padx=(0,5))
-        self.pointer_entry.bind('<Return>',lambda e:self.apply_vertex_pointer_name())
-        self.pointer_apply=ttk.Button(pointer_row,text='Rename',command=self.apply_vertex_pointer_name)
-        self.pointer_apply.pack(side='right')
-        ttk.Label(pointer,text='Names survive XYZ/UV edits, but are not stored in binary .3DO.',
-                  style='Sub.TLabel',wraplength=345,justify='left').pack(anchor='w',padx=5,pady=(0,5))
-        f=ttk.Frame(sidebar)
-        f.pack(fill='x')
-        for i,name in enumerate('XYZ'):
-            ttk.Label(f,text=name,width=3).grid(row=i,column=0,sticky='w',pady=4)
-            e=ttk.Entry(f,textvariable=self.posvars[i])
-            e.grid(row=i,column=1,sticky='ew',padx=(4,0),pady=4)
-            e.bind('<Return>',lambda event:self.apply_coordinates())
-        f.columnconfigure(1,weight=1)
-        ttk.Button(sidebar,text='Apply coordinates',command=self.apply_coordinates).pack(fill='x',pady=(8,10))
-        uv_frame=ttk.Frame(sidebar);uv_frame.pack(fill='x')
-        ttk.Label(uv_frame,text='Texture UV (raw uint16)',style='Sub.TLabel').grid(
-                 row=0,column=0,columnspan=2,sticky='w',pady=(1,3))
-        for i,name in enumerate(('U','V')):
-            ttk.Label(uv_frame,text=name,width=3).grid(row=i+1,column=0,sticky='w',pady=2)
-            entry=ttk.Entry(uv_frame,textvariable=self.uvvars[i],width=11)
-            entry.grid(row=i+1,column=1,sticky='ew',padx=(4,0),pady=2)
-            entry.bind('<Return>',lambda e:self.apply_uv())
-        uv_frame.columnconfigure(1,weight=1)
-        self.uv_apply=ttk.Button(sidebar,text='Apply texture UV',command=self.apply_uv)
-        self.uv_apply.pack(fill='x',pady=(5,12))
-        ttk.Label(sidebar,text='Mouse drag axis').pack(anchor='w')
-        axisrow=ttk.Frame(sidebar);axisrow.pack(fill='x',pady=(4,10))
-        for name in 'XYZ':
-            ttk.Radiobutton(axisrow,text=name,value=name,variable=self.axis).pack(side='left',padx=(0,20))
-        stepframe=ttk.Frame(sidebar);stepframe.pack(fill='x')
-        ttk.Label(stepframe,text='Nudge / drag step').pack(side='left')
-        ttk.Entry(stepframe,textvariable=self.nudge_step,width=9).pack(side='right')
-        nrow=ttk.Frame(sidebar);nrow.pack(fill='x',pady=(8,14))
-        ttk.Button(nrow,text='− Step',command=lambda:self.nudge(-1)).pack(side='left',expand=True,fill='x',padx=(0,5))
-        ttk.Button(nrow,text='+ Step',command=lambda:self.nudge(1)).pack(side='left',expand=True,fill='x')
-        tt=ttk.Frame(sidebar);tt.pack(fill='x')
-        ttk.Label(tt,text='Vertices (body offsets)').pack(side='left')
-        self.modified_label=tk.Label(tt,text='0 modified',bg='#222a38',fg='#8fa3bb',font=('Segoe UI',9))
-        self.modified_label.pack(side='right')
-        searchrow=ttk.Frame(sidebar);searchrow.pack(fill='x',pady=(6,5))
-        ttk.Label(searchrow,text='Find offset').pack(side='left',padx=(0,8))
-        self.offset_entry=ttk.Entry(searchrow,width=13)
-        self.offset_entry.pack(side='left',fill='x',expand=True)
-        self.offset_entry.bind('<Return>',lambda e:self.find_offset())
-        ttk.Button(searchrow,text='Go',command=self.find_offset).pack(side='left',padx=(4,0))
-        listframe=ttk.Frame(sidebar);listframe.pack(fill='both',expand=True)
-        self.listbox=tk.Listbox(listframe,activestyle='none',font=('Consolas',9),
-                                bg='#121924',fg='#bac9dc',selectbackground='#3d77b4',
-                                selectforeground='#ffffff',relief='flat',highlightthickness=0,
-                                exportselection=False)
-        self.listbox.pack(side='left',fill='both',expand=True)
-        scrollbar=ttk.Scrollbar(listframe,orient='vertical',command=self.listbox.yview)
-        scrollbar.pack(side='right',fill='y')
-        self.listbox.configure(yscrollcommand=scrollbar.set)
-        self.listbox.bind('<<ListboxSelect>>',self.select_from_list)
-        ttk.Button(sidebar,text='Save edited copy…',command=self.save_as).pack(fill='x',pady=(12,5))
-        ttk.Button(sidebar,text='View plane rebuild report',command=self.show_report).pack(fill='x')
-        self._build_polygon_panel(self.poly_contents)
-        self._build_component_panel(self.component_page)
-        self._build_geometry_panel(self.geometry_contents)
-        self._build_raw_panel(self.raw_page)
-        self._bind_polygon_scroll(self.geometry_contents)
-        # Wheel events over any polygon inspector control scroll its sidebar;
-        # the viewport keeps its own mousewheel zoom behavior.
-        self._bind_polygon_scroll(self.poly_contents)
-        self._update_selection_summary()
-        bottom=tk.Label(self,textvariable=self.status,bg='#151b25',fg='#afc2d8',
-                        anchor='w',font=('Segoe UI',9),padx=12,pady=8)
-        bottom.pack(side='bottom',fill='x')
-
-    def _initial_panes(self):
-        try:
-            width=self.winfo_width()
-            if width>=1050:
-                # Keep the Geometry and Raw tabs accessible at ordinary laptop
-                # resolutions, while preserving a resizable viewport.
-                self._main_pane.sash_place(0,max(480,width-465),0)
-        except tk.TclError:
-            pass
-
-    def _build_component_panel(self, sidebar):
-        ttk.Label(sidebar,text='DYNAMIC COMPONENTS',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(sidebar,text='Referenced 3DOs are loaded read-only. Only placement XYZ and '
-                  'Z/Y/X rotations are saved into the currently editable parent 3DO.',
-                  style='Sub.TLabel',wraplength=365,justify='left').pack(anchor='w',pady=(5,10))
-        ttk.Button(sidebar,text='Choose wheel / external 3DO folder…',
-                   command=self.choose_external_folder).pack(fill='x',pady=(0,6))
-        ttk.Label(sidebar,textvariable=self.dynamic_file_info,style='Sub.TLabel',
-                  wraplength=365,justify='left').pack(anchor='w',pady=(0,8))
-        treeframe=ttk.Frame(sidebar);treeframe.pack(fill='both',expand=True)
-        self.dynamic_tree=ttk.Treeview(treeframe,columns=('offset','part','edited'),
-                      show='headings',height=9,selectmode='browse')
-        for key,label,width in [('offset','Offset',80),('part','External 3DO',170),('edited','Edited',65)]:
-            self.dynamic_tree.heading(key,text=label)
-            self.dynamic_tree.column(key,width=width,anchor='center',stretch=(key=='part'))
-        self.dynamic_tree.pack(side='left',fill='both',expand=True)
-        scroll=ttk.Scrollbar(treeframe,orient='vertical',command=self.dynamic_tree.yview)
-        scroll.pack(side='right',fill='y')
-        self.dynamic_tree.configure(yscrollcommand=scroll.set)
-        self.dynamic_tree.bind('<<TreeviewSelect>>',self.select_dynamic_from_list)
-        ttk.Label(sidebar,textvariable=self.dynamic_info,style='Sub.TLabel',
-                  wraplength=365,justify='left').pack(anchor='w',pady=(10,6))
-        xyz=ttk.LabelFrame(sidebar,text='Position • raw 3DO units')
-        xyz.pack(fill='x',pady=(2,8))
-        for i,axis in enumerate('XYZ'):
-            ttk.Label(xyz,text=axis,width=3).grid(row=i,column=0,padx=6,pady=4)
-            entry=ttk.Entry(xyz,textvariable=self.dynamic_posvars[i])
-            entry.grid(row=i,column=1,sticky='ew',padx=4,pady=3)
-            entry.bind('<Return>',lambda event:self.apply_dynamic_transform())
-        xyz.columnconfigure(1,weight=1)
-        ang=ttk.LabelFrame(sidebar,text='Rotation • degrees')
-        ang.pack(fill='x',pady=(0,8))
-        for i,axis in enumerate(('Z','Y','X')):
-            ttk.Label(ang,text=axis,width=3).grid(row=i,column=0,padx=6,pady=4)
-            entry=ttk.Entry(ang,textvariable=self.dynamic_rotvars[i])
-            entry.grid(row=i,column=1,sticky='ew',padx=4,pady=3)
-            entry.bind('<Return>',lambda event:self.apply_dynamic_transform())
-        ang.columnconfigure(1,weight=1)
-        ttk.Button(sidebar,text='Apply position and rotation',
-                   command=self.apply_dynamic_transform).pack(fill='x',pady=(3,5))
-        ttk.Button(sidebar,text='Restore selected placement',
-                   command=self.reset_dynamic_transform).pack(fill='x')
-        ttk.Label(sidebar,text='Wheel and helmet mesh files are never modified. '
-                  'Changing a component transform does not alter its polygons or BSP tree.',
-                  style='Sub.TLabel',wraplength=365,justify='left').pack(anchor='w',pady=(12,0))
-
-    def choose_external_folder(self):
-        initial=(self.external_resolver.directory or
-                 (self.model.path.parent if self.model else Path.cwd()))
-        folder=filedialog.askdirectory(title='Folder containing sfront.3do / srear.3do / helmet.3do',
-                                       initialdir=str(initial))
-        if folder:
-            self.external_resolver.choose_directory(folder)
-            self.external_model_cache.clear()
-            self.refresh_dynamic_list()
-            self.redraw()
-            self.status.set(f'External 3DO directory: {folder}')
-
-    def refresh_dynamic_list(self):
-        if not hasattr(self,'dynamic_tree'):return
-        self.dynamic_tree.delete(*self.dynamic_tree.get_children())
-        if self.model:
-            for ref in sorted(self.model.dynamics):
-                placement=self.model.dynamics[ref]
-                self.dynamic_tree.insert('','end',iid=str(ref),
-                    values=(ref,placement.name+'.3do','Yes' if placement.modified else ''))
-        self._update_dynamic_panel()
-        if self.selected_dynamic is not None and self.dynamic_tree.exists(str(self.selected_dynamic)):
-            self.dynamic_tree.selection_set(str(self.selected_dynamic))
-            self.dynamic_tree.see(str(self.selected_dynamic))
-
-    def select_dynamic_from_list(self,event=None):
-        selected=self.dynamic_tree.selection()
-        if selected:
-            ref=int(selected[0])
-            if ref!=self.selected_dynamic:
-                self.choose_dynamic(ref)
-
-    def choose_dynamic(self,ref):
-        if not self.model or ref not in self.model.dynamics:return
-        self.selected_dynamic=ref
-        if self.dynamic_tree.exists(str(ref)):
-            self.dynamic_tree.selection_set(str(ref))
-            self.dynamic_tree.see(str(ref))
-        self._update_dynamic_panel()
-        self.redraw()
-
-    @staticmethod
-    def _format_dynamic_angle(raw):
-        # Keep the display readable; unchanged entry strings preserve the
-        # exact 32-bit source angle when Apply is pressed.
-        return f'{papyrus_to_degrees(raw):.5f}'.rstrip('0').rstrip('.')
-
-    def _update_dynamic_panel(self):
-        if not self.model:
-            self.dynamic_info.set('No 3DO loaded')
-            self.dynamic_file_info.set('')
-            return
-        count=len(self.model.dynamics)
-        missing=[]
-        for obj in self.model.dynamics.values():
-            if self.external_resolver.find(obj.name,self.model.path) is None:
-                missing.append(obj.name+'.3do')
-        unique_missing=sorted(set(missing))
-        self.dynamic_file_info.set(
-            f'{count} placements  •  {count-len(missing)} resolved'
-            + ('\\nMissing: '+', '.join(unique_missing) if unique_missing else '')
-            + ('\\nSearch folder: '+str(self.external_resolver.directory) if self.external_resolver.directory else '')
-        )
-        obj=self.model.dynamics.get(self.selected_dynamic)
-        if not obj:
-            self.dynamic_info.set('Select a DYNAMIC record or click its visible component')
-            return
-        self.dynamic_info.set(f'DYNAMIC @{obj.offset}: {obj.name}.3do'
-                    + ('  •  MODIFIED' if obj.modified else ''))
-        for i,value in enumerate(obj.xyz):
-            self.dynamic_posvars[i].set(str(value))
-        for i,raw in enumerate(obj.angles):
-            self.dynamic_rotvars[i].set(self._format_dynamic_angle(raw))
-
-    def apply_dynamic_transform(self):
-        if not self.model or self.selected_dynamic not in self.model.dynamics:return
-        placement=self.model.dynamics[self.selected_dynamic]
-        before=(placement.xyz,placement.angles)
-        try:
-            pos=tuple(int(v.get().strip()) for v in self.dynamic_posvars)
-            angles=tuple(
-                old if var.get().strip()==self._format_dynamic_angle(old)
-                else degrees_to_papyrus(var.get().strip())
-                for var,old in zip(self.dynamic_rotvars,placement.angles)
-            )
-            self.model.set_dynamic(placement.offset,pos,angles)
-        except (ValueError,OverflowError) as exc:
-            messagebox.showerror('Invalid DYNAMIC transform',
-                        'Use whole numbers for XYZ and finite degrees for Z/Y/X.\\n'+str(exc))
-            return
-        after=(placement.xyz,placement.angles)
-        if before!=after:
-            self.undo_stack.append(('dynamic',placement.offset,before,after))
-            self.redo_stack.clear()
-        self.refresh_dynamic_list()
-        self.redraw()
-        self.status.set(f'DYNAMIC @{placement.offset}: placement updated (external mesh unchanged)')
-        self._notify_visual_model_edited()
-
-    def reset_dynamic_transform(self):
-        if not self.model or self.selected_dynamic not in self.model.dynamics:return
-        obj=self.model.dynamics[self.selected_dynamic]
-        before=(obj.xyz,obj.angles)
-        after=(obj.original_xyz,obj.original_angles)
-        if before!=after:
-            self.model.set_dynamic(obj.offset,*after)
-            self.undo_stack.append(('dynamic',obj.offset,before,after))
-            self.redo_stack.clear()
-        self.refresh_dynamic_list()
-        self.redraw()
-        self._notify_visual_model_edited()
-
-    def _bind_polygon_scroll(self,widget):
-        def scroll(event):
-            if event.num==4:direction=-1
-            elif event.num==5:direction=1
-            else:direction=-int(event.delta/120) if event.delta else 0
-            if direction:self.poly_canvas.yview_scroll(direction,'units')
-            return 'break'
-        # Leave Treeview scrolling to its own scroll bindings; users can use
-        # the sidebar scrollbar when the pointer is over a list.
-        if not isinstance(widget,(ttk.Treeview,ttk.Combobox)):
-            widget.bind('<MouseWheel>',scroll)
-            widget.bind('<Button-4>',scroll)
-            widget.bind('<Button-5>',scroll)
-        for ch in widget.winfo_children():
-            self._bind_polygon_scroll(ch)
-
-    def _build_polygon_panel(self,sidebar):
-        ttk.Label(sidebar,text='POLYGON EDITOR',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(sidebar,text='Select a polygon in the viewport or list. Plane edits affect the chosen FACE/BSP record only.',
-                  style='Sub.TLabel',wraplength=380).pack(anchor='w',pady=(3,8))
-        appearance_buttons=ttk.Frame(sidebar);appearance_buttons.pack(fill='x',pady=(0,7))
-        ttk.Button(appearance_buttons,text='Load car RECOLOR 3DO',
-                   command=self.open_car_appearance).pack(side='left',fill='x',expand=True,padx=(0,4))
-        ttk.Button(appearance_buttons,text='Clear RECOLOR',
-                   command=self.clear_car_appearance).pack(side='left')
-        bar=ttk.Frame(sidebar);bar.pack(fill='x',pady=(0,5))
-        ttk.Label(bar,text='Find poly offset').pack(side='left')
-        self.poly_find_entry=ttk.Entry(bar,width=12)
-        self.poly_find_entry.pack(side='left',fill='x',expand=True,padx=(6,4))
-        self.poly_find_entry.bind('<Return>',lambda e:self.find_polygon())
-        ttk.Button(bar,text='Go',command=self.find_polygon).pack(side='left')
-        ttk.Checkbutton(sidebar,text='List only polygons in active LOD/BSP preview',
-                        variable=self.poly_only_visible,command=self.refresh_polygon_list).pack(anchor='w',pady=(0,5))
-        polyframe=ttk.Frame(sidebar);polyframe.pack(fill='x',expand=False)
-        self.poly_tree=ttk.Treeview(polyframe,columns=('offset','type','verts','color'),
-                                    show='headings',selectmode='browse',height=4)
-        for key,label,width in [('offset','Offset',78),('type','Type',90),
-                                ('verts','Verts',52),('color','Color / RECOLOR',114)]:
-            self.poly_tree.heading(key,text=label)
-            self.poly_tree.column(key,width=width,stretch=(key=='type'),anchor='center')
-        self.poly_tree.pack(side='left',fill='both',expand=True)
-        sc=ttk.Scrollbar(polyframe,orient='vertical',command=self.poly_tree.yview)
-        sc.pack(side='right',fill='y')
-        self.poly_tree.configure(yscrollcommand=sc.set)
-        self.poly_tree.bind('<<TreeviewSelect>>',self.select_polygon_from_list)
-        ttk.Label(sidebar,textvariable=self.poly_detail,style='Sub.TLabel',
-                  wraplength=385).pack(anchor='w',pady=(8,4))
-        # A real POLY record stores a signed 32-bit field used as a palette slot.
-        # Keep this separate from the individual-car RECOLOR preview wrapper.
-        colorbox=ttk.LabelFrame(sidebar,text='Polygon color (editable)')
-        colorbox.pack(fill='x',pady=(5,8))
-        cbar=ttk.Frame(colorbox);cbar.pack(fill='x',padx=6,pady=(5,2))
-        ttk.Label(cbar,text='Base palette index (0–255)').pack(side='left')
-        self.poly_color_entry=ttk.Entry(cbar,textvariable=self.poly_color_index,width=6)
-        self.poly_color_entry.pack(side='left',padx=(7,4))
-        self.poly_color_entry.bind('<Return>',lambda e:self.apply_polygon_color())
-        ttk.Button(cbar,text='Palette…',command=self.choose_polygon_palette_color).pack(side='left',padx=(0,4))
-        ttk.Button(cbar,text='Apply',command=self.apply_polygon_color).pack(side='left')
-        self.poly_color_swatch=tk.Label(cbar,width=4,height=1,relief='solid',bg='#414a5b')
-        self.poly_color_swatch.pack(side='right',padx=(4,0))
-        ttk.Checkbutton(colorbox,text='Also update opposite FACE2 side (if present)',
-                        variable=self.poly_color_pair).pack(anchor='w',padx=6,pady=2)
-        ttk.Label(colorbox,textvariable=self.poly_color_explanation,style='Sub.TLabel',
-                  wraplength=365,justify='left').pack(anchor='w',padx=6,pady=(2,6))
-        ttk.Checkbutton(sidebar,text='Show numbered vertices on selected polygon',
-                        variable=self.poly_vertex_labels,command=self.redraw).pack(anchor='w',pady=(2,2))
-        ttk.Checkbutton(sidebar,text='Show ghost outline when BSP-hidden',
-                        variable=self.show_hidden_polygon_outline,command=self.redraw).pack(anchor='w',pady=(0,5))
-        ttk.Label(sidebar,text='Polygon texture (UVs in texel units)',style='TLabel').pack(anchor='w',pady=(4,0))
-        ttk.Label(sidebar,textvariable=self.texture_info,style='Sub.TLabel',
-                  wraplength=385).pack(anchor='w',pady=(2,3))
-        texbuttons=ttk.Frame(sidebar);texbuttons.pack(fill='x',pady=(0,7))
-        ttk.Button(texbuttons,text='Assign polygon MIP',command=self.assign_polygon_texture).pack(
-                   side='left',padx=(0,3))
-        ttk.Button(texbuttons,text='Assign group MIP',command=self.assign_group_texture).pack(
-                   side='left',padx=(0,3))
-        ttk.Button(texbuttons,text='Clear',command=self.clear_texture_assignment).pack(side='left')
-        ttk.Label(sidebar,text='Polygon vertices (ordered)',style='TLabel').pack(anchor='w')
-        vframe=ttk.Frame(sidebar);vframe.pack(fill='x',expand=False,pady=(4,7))
-        self.poly_vertex_tree=ttk.Treeview(vframe,columns=('idx','offset','xyz','uv'),
-                    show='headings',selectmode='browse',height=4)
-        for key,label,width in [('idx','#',30),('offset','Offset',70),
-                                ('xyz','X, Y, Z',185),('uv','U, V',95)]:
-            self.poly_vertex_tree.heading(key,text=label)
-            self.poly_vertex_tree.column(key,width=width,stretch=(key=='xyz'),anchor='w')
-        self.poly_vertex_tree.pack(side='left',fill='both',expand=True)
-        sc2=ttk.Scrollbar(vframe,orient='vertical',command=self.poly_vertex_tree.yview)
-        sc2.pack(side='right',fill='y')
-        self.poly_vertex_tree.configure(yscrollcommand=sc2.set)
-        self.poly_vertex_tree.bind('<Double-1>',self._open_vertex_from_polygon)
-        self.poly_advanced_button=ttk.Button(sidebar,text='Show advanced splitting / BSP tools',
-                                              command=self._toggle_polygon_advanced_from_button)
-        self.poly_advanced_button.pack(fill='x',pady=(5,6))
-        self.poly_advanced_container=tk.Frame(sidebar,bg='#222a38')
-        advanced=self.poly_advanced_container
-        # Split already-established polygon vertices, no new vertex records.
-        existingframe=ttk.LabelFrame(advanced,text='Split between existing vertices (no new vertices)')
-        existingframe.pack(fill='x',pady=(6,8))
-        ttk.Label(existingframe,text='Choose two nonadjacent numbered vertices; cut follows their diagonal.',
-                  style='Sub.TLabel',wraplength=360).pack(anchor='w',padx=5,pady=(4,4))
-        pickrow=ttk.Frame(existingframe);pickrow.pack(fill='x',padx=5,pady=2)
-        self.existing_split_combos=[]
-        for label,variable in (('Vertex A',self.existing_split_a),('Vertex B',self.existing_split_b)):
-            ttk.Label(pickrow,text=label).pack(side='left',padx=(0,3))
-            combo=ttk.Combobox(pickrow,textvariable=variable,state='readonly',width=11)
-            combo.pack(side='left',fill='x',expand=True,padx=(0,8))
-            combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-            self.existing_split_combos.append(combo)
-        ttk.Checkbutton(existingframe,text='Preview existing-vertex diagonal',
-                        variable=self.existing_split_preview,command=self.redraw).pack(
-                        anchor='w',padx=5,pady=3)
-        ttk.Button(existingframe,text='Split using existing vertices',
-                   command=self.commit_existing_vertex_split).pack(fill='x',padx=5,pady=4)
-        ttk.Label(existingframe,textvariable=self.existing_split_hint,style='Sub.TLabel',
-                  wraplength=365,justify='left').pack(anchor='w',padx=5,pady=(0,4))
-        # Split tool: cut from an interpolated point on each selected edge.
-        splitframe=ttk.LabelFrame(advanced,text='Split selected polygon (adds vertices)')
-        splitframe.pack(fill='x',pady=(6,10))
-        ttk.Label(splitframe,text='Edge #n means vertex #n → next vertex.',
-                  style='Sub.TLabel',wraplength=310).pack(anchor='w',padx=5,pady=(4,4))
-        self.split_edge_combos=[]
-        for label,selector,fraction in [('Edge A',self.split_edge_a,self.split_fraction_a),
-                                        ('Edge B',self.split_edge_b,self.split_fraction_b)]:
-            line=ttk.Frame(splitframe);line.pack(fill='x',padx=5,pady=2)
-            ttk.Label(line,text=label,width=7).pack(side='left')
-            combo=ttk.Combobox(line,textvariable=selector,state='readonly',width=15)
-            combo.pack(side='left',padx=(1,4))
-            combo.bind('<<ComboboxSelected>>',lambda e:self.redraw())
-            self.split_edge_combos.append(combo)
-            ttk.Label(line,text='t').pack(side='left')
-            entry=ttk.Entry(line,textvariable=fraction,width=5)
-            entry.pack(side='left',padx=(3,0))
-            entry.bind('<Return>',lambda e:self.redraw())
-            entry.bind('<FocusOut>',lambda e:self.redraw())
-        ttk.Checkbutton(splitframe,text='Show proposed cut in preview',variable=self.split_preview,
-                        command=self.redraw).pack(anchor='w',padx=5,pady=3)
-        ttk.Button(splitframe,text='Split polygon (append + repoint)',
-                   command=self.commit_polygon_split).pack(fill='x',padx=5,pady=5)
-        ttk.Label(splitframe,textvariable=self.split_hint,style='Sub.TLabel',
-                  wraplength=375,justify='left').pack(anchor='w',padx=5,pady=(0,4))
-        ttk.Label(advanced,text='Target FACE/BSP plane',style='TLabel').pack(anchor='w')
-        self.poly_plane_combo=ttk.Combobox(advanced,textvariable=self.poly_selected_plane,
-                                            state='readonly',width=35)
-        self.poly_plane_combo.pack(fill='x',pady=(4,3))
-        self.poly_plane_combo.bind('<<ComboboxSelected>>',lambda e:self.update_poly_plane_panel())
-        ttk.Label(advanced,textvariable=self.poly_plane_info,style='Sub.TLabel',
-                  wraplength=385,justify='left').pack(anchor='w',pady=(2,7))
-        ttk.Label(advanced,text='Planes may intentionally be noncoplanar with the polygon. '
-                                'Choose any 3 distinct, noncollinear vertices; the maximum '
-                                'deviation is shown as a diagnostic, not a restriction.',
-                  style='Sub.TLabel',wraplength=385,justify='left').pack(anchor='w',pady=(0,7))
-        ttk.Label(advanced,text='Manual plane: 3 ordered vertices (P1 → P2 → P3)',
-                  style='TLabel').pack(anchor='w')
-        triplet=ttk.Frame(advanced);triplet.pack(fill='x',pady=(4,7))
-        self.poly_ref_combos=[]
-        for i,label in enumerate(('P1','P2','P3')):
-            frm=ttk.Frame(triplet);frm.pack(side='left',fill='x',expand=True,padx=(0,3))
-            ttk.Label(frm,text=label,style='Sub.TLabel').pack(anchor='w')
-            cmb=ttk.Combobox(frm,textvariable=self.poly_ref_selections[i],
-                             width=12,state='readonly')
-            cmb.pack(fill='x')
-            self.poly_ref_combos.append(cmb)
-        actions=ttk.Frame(advanced);actions.pack(fill='x')
-        ttk.Button(actions,text='Auto calculate',command=self.auto_polygon_plane).pack(
-                   side='left',fill='x',expand=True,padx=(0,3))
-        ttk.Button(actions,text='Use P1/P2/P3',command=self.manual_polygon_plane).pack(
-                   side='left',fill='x',expand=True)
-        actions2=ttk.Frame(advanced);actions2.pack(fill='x',pady=(5,0))
-        ttk.Button(actions2,text='Flip plane orientation',command=self.flip_polygon_plane).pack(
-                   side='left',fill='x',expand=True,padx=(0,3))
-        ttk.Button(actions2,text='Clear override',command=self.clear_polygon_plane).pack(
-                   side='left',fill='x',expand=True)
-        ttk.Label(advanced,textvariable=self.poly_edit_status,style='Sub.TLabel',
-                  wraplength=385,justify='left').pack(anchor='w',pady=(6,7))
-
-
-    def _build_geometry_panel(self, frame):
-        ttk.Label(frame,text='ADD GEOMETRY',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(frame,text='All new surfaces are appended, then inserted through ONE chosen parent LIST link. '
-                  'Original BSP tree, geometry, and other LOD pointers remain byte-identical.',
-                  style='Sub.TLabel',wraplength=370,justify='left').pack(anchor='w',pady=(4,10))
-        first=ttk.LabelFrame(frame,text='1. Anchor and paint-order placement')
-        first.pack(fill='x',pady=(0,8))
-        row=ttk.Frame(first);row.pack(fill='x',padx=6,pady=5)
-        ttk.Label(row,text='Anchor POLY @').pack(side='left')
-        ttk.Entry(row,textvariable=self.geometry_anchor,width=12).pack(side='left',padx=(4,5))
-        ttk.Button(row,text='Find LIST links',command=self.refresh_geometry_targets).pack(side='left')
-        ttk.Label(first,text='Choose the parent link; one path is repointed, not every use of the LIST.',
-                  style='Sub.TLabel',wraplength=350).pack(anchor='w',padx=6)
-        self.geometry_target_combo=ttk.Combobox(first,textvariable=self.geometry_insertion,
-                                                width=42,state='readonly')
-        self.geometry_target_combo.pack(fill='x',padx=6,pady=5)
-        for txt,value in [('Paint BEFORE anchor child','before'),('Paint AFTER anchor child','after')]:
-            ttk.Radiobutton(first,text=txt,value=value,
-                           variable=self.geometry_placement).pack(anchor='w',padx=6,pady=2)
-        ttk.Label(first,text='Fixed LIST paint order is NOT automatic near/far BSP sorting. '
-                  'Test multiple camera directions and adjust this placement as needed.',
-                  style='Sub.TLabel',wraplength=360).pack(anchor='w',padx=6,pady=(3,7))
-        second=ttk.LabelFrame(frame,text='2. Stage a free vertex (optional)')
-        second.pack(fill='x',pady=6)
-        ttk.Label(second,text='Drafts live only in memory until included in a created polygon.',
-                  style='Sub.TLabel',wraplength=345).pack(anchor='w',padx=6,pady=4)
-        fields=ttk.Frame(second);fields.pack(fill='x',padx=6)
-        for i,axis in enumerate(('X','Y','Z')):
-            ttk.Label(fields,text=axis).grid(row=i,column=0,sticky='w')
-            ttk.Entry(fields,textvariable=self.geometry_xyz[i],width=19).grid(row=i,column=1,sticky='ew',padx=5,pady=2)
-        for i,axis in enumerate(('U','V')):
-            ttk.Label(fields,text=axis).grid(row=i,column=2,sticky='w',padx=(10,0))
-            ttk.Entry(fields,textvariable=self.geometry_uv[i],width=8).grid(row=i,column=3,sticky='ew',padx=5,pady=2)
-        ttk.Button(second,text='Stage vertex as V1, V2, …',command=self.stage_geometry_vertex).pack(fill='x',padx=6,pady=5)
-        ttk.Label(second,textvariable=self.geometry_drafts,style='Sub.TLabel',wraplength=355).pack(anchor='w',padx=6)
-        ttk.Button(second,text='Clear unused drafts',command=self.clear_geometry_drafts).pack(fill='x',padx=6,pady=(4,6))
-        third=ttk.LabelFrame(frame,text='3. Create polygon')
-        third.pack(fill='x',pady=7)
-        ttk.Label(third,text='Ordered points: existing offsets like @1234, draft IDs like V1, '
-                  'or inline XYZ coordinates like (100,0,500). Separate with semicolons.',
-                  style='Sub.TLabel',wraplength=345).pack(anchor='w',padx=6,pady=(5,4))
-        entry=ttk.Entry(third,textvariable=self.geometry_points)
-        entry.pack(fill='x',padx=6,pady=(0,6))
-        ttk.Checkbutton(third,text='Two-sided (FACE2 + reversed rear polygon)',
-                        variable=self.geometry_two_sided).pack(anchor='w',padx=6,pady=2)
-        ttk.Checkbutton(third,text='Textured POLY [T] (all vertices need U/V)',
-                        variable=self.geometry_textured).pack(anchor='w',padx=6,pady=2)
-        row=ttk.Frame(third);row.pack(fill='x',padx=6,pady=5)
-        ttk.Label(row,text='Color').pack(side='left')
-        ttk.Entry(row,textvariable=self.geometry_color,width=9).pack(side='left',padx=(4,13))
-        ttk.Label(row,text='Texture group').pack(side='left')
-        ttk.Entry(row,textvariable=self.geometry_group,width=9).pack(side='left',padx=4)
-        ttk.Button(third,text='Create polygon (append + repoint)',
-                   command=self.create_geometry_polygon).pack(fill='x',padx=6,pady=(2,8))
-        fin=ttk.LabelFrame(frame,text='Quick tool: upright triangular fin')
-        fin.pack(fill='x',pady=7)
-        ttk.Label(fin,text='Uses two existing vertices on the anchor polygon, '
-                  'plus one new apex elevated in +Z.',style='Sub.TLabel',wraplength=350).pack(anchor='w',padx=6,pady=5)
-        row=ttk.Frame(fin);row.pack(fill='x',padx=6)
-        ttk.Label(row,text='Base A').pack(side='left')
-        self.fin_base_a=ttk.Combobox(row,textvariable=self.geometry_fin_a,state='readonly',width=9)
-        self.fin_base_a.pack(side='left',padx=(3,5))
-        ttk.Label(row,text='Base B').pack(side='left')
-        self.fin_base_b=ttk.Combobox(row,textvariable=self.geometry_fin_b,state='readonly',width=9)
-        self.fin_base_b.pack(side='left',padx=(3,0))
-        row=ttk.Frame(fin);row.pack(fill='x',padx=6,pady=5)
-        ttk.Label(row,text='Apex height (+Z)').pack(side='left')
-        ttk.Entry(row,textvariable=self.geometry_fin_height,width=14).pack(side='left',padx=5)
-        ttk.Button(fin,text='Create fin using anchor edge',command=self.create_geometry_fin).pack(
-                   fill='x',padx=6,pady=(2,7))
-        ttk.Label(frame,textvariable=self.geometry_status,style='Sub.TLabel',wraplength=365,
-                  justify='left').pack(anchor='w',pady=6)
-
-    def _build_raw_panel(self, frame):
-        ttk.Label(frame,text='3DO DISASSEMBLY  •  READ ONLY',style='Header.TLabel').pack(anchor='w')
-        ttk.Label(frame,text='Body-relative offsets; retained pointers, FACE/BSP equations, '
-                  'LIST order, switches, vertices and external models.',style='Sub.TLabel',
-                  wraplength=365).pack(anchor='w',pady=5)
-        row=ttk.Frame(frame);row.pack(fill='x',pady=5)
-        self.raw_find=tk.StringVar(value='')
-        ttk.Entry(row,textvariable=self.raw_find,width=14).pack(side='left')
-        ttk.Button(row,text='Jump to @offset',command=self.raw_jump).pack(side='left',padx=5)
-        ttk.Button(row,text='Refresh',command=self.refresh_raw).pack(side='left')
-        rawframe=ttk.Frame(frame);rawframe.pack(fill='both',expand=True)
-        self.raw_text=tk.Text(rawframe,wrap='none',font=('Consolas',9),
-                             bg='#131924',fg='#c6d7e9',insertbackground='#fff',
-                             borderwidth=0,highlightthickness=0)
-        self.raw_text.pack(side='left',fill='both',expand=True)
-        scroll=ttk.Scrollbar(rawframe,command=self.raw_text.yview)
-        scroll.pack(side='right',fill='y');self.raw_text.configure(yscrollcommand=scroll.set)
-        self.raw_text.configure(state='disabled')
-
-    def refresh_raw(self):
-        from raw_disassembly import disassemble
-        self.raw_text.configure(state='normal')
-        self.raw_text.delete('1.0','end')
-        if self.model:self.raw_text.insert('1.0',disassemble(self.model))
-        self.raw_text.configure(state='disabled')
-
-    def raw_jump(self):
-        try:target=int(self.raw_find.get().strip().lstrip('@'),0)
-        except ValueError:
-            try:target=int(self.raw_find.get().strip().lstrip('@'))
-            except ValueError:return
-        text=self.raw_text.get('1.0','end')
-        for i,line in enumerate(text.splitlines(),1):
-            if line.startswith(f'@{target:<7} '):
-                self.raw_text.see(f'{i}.0')
-                self.raw_text.tag_remove('sel','1.0','end')
-                self.raw_text.tag_add('sel',f'{i}.0',f'{i}.end')
-                break
-
-    def stage_geometry_vertex(self):
-        try:
-            xyz=tuple(int(v.get()) for v in self.geometry_xyz)
-            uv=tuple(int(v.get()) for v in self.geometry_uv)
-            if any(not -(1<<31)<=v<(1<<31) for v in xyz) or any(not 0<=v<65536 for v in uv):
-                raise ValueError('XYZ must be int32, U/V must be uint16')
-        except ValueError as e:
-            messagebox.showerror('Invalid draft vertex',str(e));return
-        self.draft_vertices.append((*xyz,*uv))
-        self.geometry_drafts.set('  '.join(f'V{i+1}=<{p[0]},{p[1]},{p[2]}>'
-                              for i,p in enumerate(self.draft_vertices)))
-        self.geometry_status.set(f'Added draft V{len(self.draft_vertices)}. Reference it in ordered polygon points.')
-        self.redraw()
-
-    def clear_geometry_drafts(self):
-        self.draft_vertices=[]
-        self.geometry_drafts.set('No draft vertices (not stored in 3DO until used)')
-        self.redraw()
-
-    def refresh_geometry_targets(self):
-        from geometry_add import list_insert_targets
-        if not self.model:return
-        try:anchor=int(self.geometry_anchor.get().strip().lstrip('@'))
-        except ValueError:
-            self.geometry_status.set('Enter an existing POLY body offset.');return
-        targets=list_insert_targets(self.model,anchor)
-        self.geometry_insertion_targets=targets
-        names=[]
-        for list_off,child_idx,parent,slot in targets:
-            child=self.model.children[list_off][child_idx]
-            names.append(f'LIST @{list_off} child @{child} → '
-                         + (f'parent @{parent} slot @{slot}' if parent>=0 else 'ROOT'))
-        self.geometry_target_combo.configure(values=names)
-        if names:self.geometry_insertion.set(names[0])
-        else:self.geometry_insertion.set('')
-        self.geometry_status.set(f'{len(targets)} valid insertion occurrence(s) for POLY @{anchor}. '
-                                 'Choose one occurrence to avoid affecting unrelated branches.')
-        vals=[f'#{j+1} @{v}' for j,v in enumerate(self.model.polygons[anchor].refs)] if anchor in self.model.polygons else []
-        self.fin_base_a.configure(values=vals)
-        self.fin_base_b.configure(values=vals)
-        if vals:self.geometry_fin_a.set(vals[0])
-        if len(vals)>1:self.geometry_fin_b.set(vals[1])
-
-    def _geometry_vertex_specs(self):
-        import re
-        items=[p.strip() for p in self.geometry_points.get().split(';') if p.strip()]
-        specs=[]
-        for item in items:
-            if item.startswith('@'):
-                specs.append(int(item[1:]))
-            elif re.fullmatch(r'V\d+',item,re.IGNORECASE):
-                k=int(item[1:])-1
-                if not 0<=k<len(self.draft_vertices):
-                    raise ValueError(f'Draft vertex {item} does not exist')
-                xyzuv=self.draft_vertices[k]
-                specs.append(xyzuv if self.geometry_textured.get() else xyzuv[:3])
+                raise ValueError("Open a .3D or .3DO file")
+            parse_ms = (perf_counter() - t0) * 1000
+            self._activity(f"Model and references parsed in {parse_ms:.0f} ms; "
+                           f"scene has {len(scene.geometry.polygons):,} polygons, "
+                           f"{len(scene.instances)} instances")
+            self._stage(30, "Reading color palette")
+            selected_palette = self.palette_path
+            palette_warning = None
+            auto_palette = False
+            local_sunny = (find_model_sunny_palette(self.path)
+                           if self.auto_local_palette else None)
+            self._activity(f"Palette: {local_sunny or self.palette_path}")
+            if local_sunny is not None:
+                try:
+                    palette = load_palette(local_sunny)
+                except (OSError, ValueError) as exc:
+                    # A damaged SUNNY.PCX must not prevent opening otherwise
+                    # valid geometry. Fall back to the existing user palette.
+                    palette_warning = (
+                        f"{local_sunny.name}: {exc}; "
+                        f"using {self.palette_path.name}")
+                    palette = load_palette(self.palette_path)
+                else:
+                    selected_palette = local_sunny
+                    auto_palette = True
             else:
-                nums=[int(v.strip()) for v in item.strip('()[]<>').split(',')]
-                specs.append(tuple(nums))
-        return specs
+                palette = load_palette(self.palette_path)
+            self._stage(42, "Preparing track skybox")
+            # HORIZ is a separate camera-locked background for indexed tracks.
+            # Try valid HORIZ.3DO files first; malformed/nonrenderable ones do
+            # not prevent a standalone HORIZ.3D from being compiled in memory.
+            if scene.track_section_lods:
+                scene.skybox, sky_notes = load_preferred_track_skybox(
+                    self.path, palette.astype(np.float32) / 255.0,
+                    objects_folder=self.objects_folder,
+                    texture_folder=self.texture_folder,
+                    on_activity=detail)
+                if scene.skybox is None:
+                    scene.skybox_error = sky_notes
+                elif sky_notes:
+                    scene.warnings = tuple(
+                        dict.fromkeys((*scene.warnings, sky_notes)))
+            self._stage(55, "Reading track navigation")
+            # A companion <trackstem>.TRK supplies physics centerline XYZ,
+            # tangent and elevation for the camera, independently of 3DO BSP.
+            # Ignore unrelated .TRK files in the directory.
+            if scene.track_section_lods:
+                trk_path = find_matching_trk(self.path)
+                if trk_path is not None:
+                    try:
+                        self._activity(f"Parsing TRK: {trk_path}")
+                        scene.track_navigation = TrackNavigation.from_file(trk_path)
+                        self._activity(f"TRK ready: {scene.track_navigation.trk.num_sects} sections")
+                    except (OSError, ValueError, IndexError, TypeError,
+                            OverflowError, ZeroDivisionError) as exc:
+                        scene.track_navigation_error = f"{trk_path.name}: {exc}"
+            self._stage(63, "Decoding PMP sprites")
+            # Decode every PMP variant once in this worker, including
+            # nested DYNAMIC/EXTERN placements and nonselected BSP branches.
+            # RG8 palette-index/alpha images stay independent of PCX colors.
+            scene.sprite_resources = prepare_scene_sprites(
+                scene, objects_folder=self.objects_folder,
+                texture_folder=self.texture_folder,
+                on_activity=detail)
+            scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
+            self._stage(74, "Loading MIP textures and building atlas")
+            atlas = build_atlas(scene.geometry, self.path,
+                                texture_folder=self.texture_folder,
+                                fallback_mip=self.fallback_mip,
+                                mip_overrides=self.mip_overrides,
+                                body_mip=self.body_mip,
+                                on_activity=detail)
+            self._stage(85, "Triangulating track geometry")
+            mesh = make_mesh(scene.geometry,
+                             palette.astype(np.float32) / 255.0, atlas,
+                             on_activity=detail)
+            self._activity(f"Mesh ready: {mesh.polygon_count:,} polygons, "
+                           f"{mesh.triangle_count:,} triangles, "
+                           f"{mesh.size_bytes / 1048576:.1f} MiB")
+            self._stage(89, "Finalizing loaded scene")
+            stats = {
+                "file": self.path.name,
+                "palette_path": selected_palette,
+                "palette_auto": auto_palette,
+                "palette_warning": palette_warning,
+                "parse_ms": parse_ms,
+                "mesh_ms": mesh.build_ms,
+                "model_polygons": len(model.polygons),
+                "model_vertices": len(model.vertices),
+                "model_planes": len(model.planes),
+                "external_objects": len(model.dynamics),
+                "mips": len(model.mip_names),
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
+                "dynamic_instances": scene.loaded_instances,
+                "external_warnings": scene.warnings,
+                "pmp_warnings": scene.sprite_resources.warnings,
+                "pmp_images": len(scene.sprite_resources.images),
+                "pmp_placements": len(scene.sprite_resources.placements),
+                "switches": sum(len(inst.model.switches)
+                                for inst in scene.instances),
+                "track_section_lists": len(scene.track_section_lods or {}),
+                "skybox_path": str(scene.skybox.path) if scene.skybox else "",
+                "skybox_error": scene.skybox_error or "",
+                "trk_path": (str(scene.track_navigation.path)
+                             if scene.track_navigation else ""),
+                "trk_error": scene.track_navigation_error or "",
+                "skybox_missing_mips": (scene.skybox.atlas.missing_names
+                                        if scene.skybox else ()),
+                "skybox_texture_errors": (scene.skybox.atlas.errors
+                                          if scene.skybox else ()),
+                "recolor_pairs": scene.recolor_pairs,
+                "appearance_geometry": (appearance.geometry_name if appearance else ""),
+                "appearance_mip": (appearance.texture_name if appearance else ""),
+                "geometry_file": model.path.name,
+                "body_textured_faces": len(scene.geometry.body_polygons),
+                "material_names": tuple(sorted(set(
+                    scene.geometry.polygon_materials.values()),
+                    key=str.casefold)),
+            }
+            # The parsed, read-only hierarchy is needed to evaluate BSP
+            # planes, but polygon geometry is never rebuilt during orbit.
+            self._activity("CPU load completed; handing scene to Qt GUI thread")
+            self.ready.emit(mesh, stats, model, atlas, palette, scene)
+        except Exception as exc:
+            self._activity(f"WORKER FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
 
-    def _commit_new_geometry(self,specs):
-        from geometry_add import create_model_polygon
-        from three_do import FormatError
-        if not self.model:return
+
+class SourceExportWorker(QThread):
+    """Generate editable source without blocking Qt/OpenGL for large models."""
+    ready = Signal(str, object)
+    failed = Signal(str)
+    activity = Signal(str)
+
+    def __init__(self, model, opened_path, *, activity_trace=None):
+        super().__init__()
+        self.model = model
+        self.opened_path = Path(opened_path)
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        if self.activity_trace is None:
+            return
         try:
-            index=self.geometry_target_combo.current()
-            if not 0<=index<len(self.geometry_insertion_targets):
-                raise ValueError('Choose a LIST insertion occurrence')
-            anchor=int(self.geometry_anchor.get().strip().lstrip('@'))
-            target=self.geometry_insertion_targets[index]
-            updated,result=create_model_polygon(self.model,anchor,*target,specs,
-                color=int(self.geometry_color.get()),group=int(self.geometry_group.get()),
-                textured=self.geometry_textured.get(),two_sided=self.geometry_two_sided.get(),
-                after=self.geometry_placement.get()=='after')
-        except (ValueError,FormatError,OverflowError,IndexError) as e:
-            messagebox.showerror('Cannot add geometry',str(e));return
-        details=(f'Add {len(result.new_vertices)} vertices, {len(result.new_polygons)} polygon(s), '
-                 f'FACE @ {result.face_offset}, LIST @ {result.replacement_list}.\n\n'
-                 f'Repoint only parent slot @{result.patched_slot}.\n\n'
-                 'Existing geometry remains in place; fixed LIST ordering may cause occlusion errors. '
-                 'Test multiple views in-game.')
-        if not messagebox.askyesno('Commit geometry?',details):return
-        before=self.model
-        self.undo_stack.append(('topology',before,updated));self.redo_stack.clear()
-        self._sync_topology_model(updated,result.new_polygons[0])
-        self.draft_vertices=[]
-        self.geometry_drafts.set('No draft vertices (not stored in 3DO until used)')
-        self.geometry_status.set(f'Created FACE @{result.face_offset}, '
-            f'POLY @{result.new_polygons[0]} with {len(result.new_vertices)} new vertices. '
-            'Saved only when you save the parent 3DO.')
-        self.refresh_geometry_targets()
-        self.refresh_raw()
+            line = self.activity_trace.write(message)
+        except OSError as exc:
+            line = f"[Log write failure: {exc}] {message}"
+        self.activity.emit(line)
 
-    def create_geometry_polygon(self):
-        try:specs=self._geometry_vertex_specs()
-        except (ValueError,IndexError) as e:
-            messagebox.showerror('Invalid polygon points',str(e));return
-        self._commit_new_geometry(specs)
-
-    def create_geometry_fin(self):
-        if not self.model:return
+    def run(self):
         try:
-            anchor=int(self.geometry_anchor.get().strip().lstrip('@'))
-            refs=self.model.polygons[anchor].refs
-            a=int(self.geometry_fin_a.get().split()[0].lstrip('#'))-1
-            b=int(self.geometry_fin_b.get().split()[0].lstrip('#'))-1
-            if a==b:raise ValueError('Choose two different base vertices')
-            pa=self.model.vertices[refs[a]].xyz
-            pb=self.model.vertices[refs[b]].xyz
-            height=int(self.geometry_fin_height.get())
-            if height==0:raise ValueError('Apex height cannot be zero')
-            apex=(round((pa[0]+pb[0])/2),round((pa[1]+pb[1])/2),
-                  round((pa[2]+pb[2])/2)+height)
-            self.geometry_textured.set(False)
-        except (ValueError,KeyError,IndexError) as e:
-            messagebox.showerror('Invalid fin base',str(e));return
-        self._commit_new_geometry([refs[a],refs[b],apex])
+            from text_3d import export_compilable_text
+            self._activity(f"Editable source BEGIN: {self.model.path.name}")
+            if self.opened_path.suffix.lower() == '.3d':
+                self._activity(f"Reading authored N3 source: {self.opened_path}")
+                source = self.opened_path.read_text(encoding='utf-8-sig')
+                target = self.opened_path
+            else:
+                # Only source text is created; no referenced file is rewritten.
+                source = export_compilable_text(
+                    self.model, on_activity=(self._activity
+                                             if self.activity_trace is not None
+                                             else None))
+                target = self.model.path.with_suffix('.3d')
+            self._activity(f"Editable source DONE: {len(source):,} characters")
+            self.ready.emit(source, target)
+        except Exception as exc:
+            self._activity(f"Editable source FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
+            self.failed.emit(f'{type(exc).__name__}: {exc}')
 
-    def _change_edit_mode(self):
-        if (self.model and self.notebook.select()!=str(self.source_page)
-             and hasattr(self,'source_editor') and self.source_editor.pending):
-            if not self.source_editor.apply_now():
-                self.after_idle(lambda:self.notebook.select(self.source_page))
-                return
-        if self.model and self.notebook.select()==str(self.geometry_page):
-            if self.selected_poly in self.model.polygons:
-                self.geometry_anchor.set(str(self.selected_poly))
-                self.refresh_geometry_targets()
-        if self.model and self.notebook.select()==str(self.raw_page):
-            self.refresh_raw()
-        if self.model:
-            self.redraw()
-        page=self.notebook.select()
-        if page==str(self.poly_page):
-            self.status.set('Polygon mode: click a visible parent polygon. External parts are read-only.')
-        elif page==str(self.component_page):
-            self.status.set('Components: click a wheel/helmet in the viewport or use the list; edit XYZ and rotation here.')
+
+class TextureReloadWorker(QThread):
+    """Read changed MIP bytes on a worker, without reloading car/3DO models."""
+    ready = Signal(object, object, object)
+    failed = Signal(str)
+
+    def __init__(self, scene, mesh, palette, model_path, texture_folder,
+                 fallback_mip, mip_overrides, body_mip, previous_atlas):
+        super().__init__()
+        self.scene = scene
+        self.mesh = mesh
+        self.palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        self.model_path = model_path
+        self.texture_folder = texture_folder
+        self.fallback_mip = fallback_mip
+        self.mip_overrides = dict(mip_overrides)
+        self.body_mip = body_mip
+        self.previous_atlas = previous_atlas
+
+    def run(self):
+        try:
+            atlas = build_atlas(
+                self.scene.geometry, self.model_path,
+                texture_folder=self.texture_folder,
+                fallback_mip=self.fallback_mip,
+                mip_overrides=self.mip_overrides,
+                body_mip=self.body_mip)
+            # Texture edits normally change only indexed pixels. VBO and BSP
+            # index ordering remain completely untouched in the fast path.
+            mesh = None
+            if atlas.polygon_rects != self.previous_atlas.polygon_rects:
+                mesh = make_mesh(
+                    self.scene.geometry,
+                    self.palette.astype(np.float32) / 255.0, atlas)
+            stats = {
+                "texture_count": len(atlas.loaded_names),
+                "missing_textures": atlas.missing_names,
+                "texture_errors": atlas.errors,
+                "textured_faces": len(atlas.polygon_rects),
+                "textured_candidates": atlas.textured_polygons,
+                "atlas_shape": atlas.pixels.shape,
+            }
+            self.ready.emit(atlas, mesh, stats)
+        except Exception as exc:
+            self.failed.emit(f"{type(exc).__name__}: {exc}")
+
+
+class GLViewport(QOpenGLWidget):
+    statsChanged = Signal(str)
+    visibilityChanged = Signal(str)
+    fixedCameraModeChanged = Signal(bool)
+    trackDriveModeChanged = Signal(bool)
+    trackDrivePositionChanged = Signal(object)
+    vertexPicked = Signal(int)  # root-model vertex body offset from a click
+    polygonPicked = Signal(int)  # root-model POLY body offset from a click
+
+    def __init__(self):
+        super().__init__()
+        self.setMinimumSize(600, 400)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setMouseTracking(True)
+        self.setAcceptDrops(False)
+        self._program = None
+        self._uniform = None
+        self._texture_uniform = None
+        self._repeat_uniform = None
+        self._inspection_uniform = None
+        self._inspection_dark_uniform = None
+        self._inspection_light_uniform = None
+        self._atlas_texture = None
+        self._palette_texture = None
+        self._sky_vao = None
+        self._sky_vbo = None
+        self._sky_ebo = None
+        self._sky_atlas_texture = None
+        self._sky_index_count = 0
+        self.sky_enabled = True
+        self.sky_eye = tuple(SKY_EYE)  # independently adjustable HORIZ-local XYZ
+        self._sprite_renderer = None
+        self._sprite_events = ()
+        self._atlas = None
+        self._palette = None
+        self.textures_enabled = True
+        self.sprites_enabled = True
+        # Papyrus texture coordinates address an infinitely tiled MIP;
+        # clamp-to-edge remains an explicit diagnostic option in Display.
+        self.texture_repeat = True
+        self.texture_upload_ms = None
+        self._resources_released = False
+        self._vbo = None
+        self._ebo = None
+        self._surface_ebo = None
+        self._surface_index_count = 0
+        self._wire_vao = None
+        self._wire_vbo = None
+        self._wire_ebo = None
+        self._wire_mesh = None
+        self._wire_index_count = 0
+        self._wire_uniform = None
+        self._wire_color_uniform = None
+        self._selected_wire_color_uniform = None
+        self.colors = dict(DARK_COLORS)
+        self._vao = None
+        self._mesh = None
+        self._vertex_picker = None
+        self._label_vertex_picker = None
+        self.vertex_pointer_names = {}
+        self.vertex_label_mode = "all"
+        self._depth_visible_vertex_labels = []
+        self._vertex_depth_error = None
+        self._polygon_picker = None
+        self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
+        self._model = None
+        self._scene = None
+        self.inspection_kind = None
+        self.inspection_offset = None
+        self.inspection_points = None
+        self.split_preview_points = None
+        self.render_mode = 'painter'  # painter | depth | all | wire
+        self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
+        self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
+        self.track_window_counts = DEFAULT_WINDOW_COUNTS
+        self._visibility_dirty = True
+        self._index_count = 0
+        self._visible_set = frozenset()
+        self._visibility_info = {}
+        self.upload_ms = None
+        self.azimuth = math.radians(35)
+        self.elevation = math.radians(28)
+        self.target = np.zeros(3, dtype=np.float64)
+        self.distance = 4.0
+        self.half_height = 1.6
+        self.perspective = False
+        self.fixed_camera_mode = False
+        self.track_navigation = None
+        self.track_drive_enabled = False
+        self._track_drive_pose = None
+        self._saved_track_view = None
+        self.track_forward_step_ft = DEFAULT_LONG_STEP_FT
+        self.track_lateral_step_ft = DEFAULT_LAT_STEP_FT
+        self.fixed_camera_eye = tuple(FIXED_CAMERA_DEFAULT_EYE)
+        self.fixed_camera_fov = 60.0
+        self._saved_external_view = None
+        self._drag = None
+        self._pick_press = None
+        self._pick_dragged = False
+        self._frametimes = deque(maxlen=240)
+        self._frame_count = 0
+        self.fps = 0.0
+        self.frameSwapped.connect(self._on_frame_swapped)
+        # IMPORTANT: text drawn via QPainter inside paintGL was corrupted on
+        # some drivers (glyphs become speckled/striped after raw GL calls).
+        # A child QLabel paints through Qt's widget compositor independently
+        # of the OpenGL shader / buffer state.
+        self.visibility_banner = QLabel(self)
+        self.visibility_banner.setObjectName("sourceVisibilityBanner")
+        self.visibility_banner.setTextFormat(Qt.TextFormat.PlainText)
+        self.visibility_banner.setWordWrap(True)
+        self.visibility_banner.setAlignment(
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        self.visibility_banner.setAttribute(
+            Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.visibility_banner.setStyleSheet(
+            "QLabel#sourceVisibilityBanner {"
+            " background: #171e2b; color: #ffffff;"
+            " border: 2px solid #dca04b; border-radius: 6px;"
+            " padding: 10px 14px;"
+            " font-size: 13px; font-weight: bold; }")
+        self.visibility_banner.hide()
+        # Qt-composited child widget avoids GL/QPainter glyph corruption.
+        # The overlay is mouse transparent; picking/orbiting remain unchanged.
+        self.vertex_label_overlay = VertexLabelOverlay(self)
+
+    def update(self, *args):
+        """Keep optional labels aligned whenever camera/selection redraws."""
+        super().update(*args)
+        overlay = getattr(self, "vertex_label_overlay", None)
+        if overlay is not None and not overlay.isHidden():
+            overlay.update()
+
+    def set_all_vertex_labels(self, enabled):
+        overlay = self.vertex_label_overlay
+        if (not overlay.isHidden()) == bool(enabled):
+            return
+        overlay.setVisible(bool(enabled))
+        if enabled:
+            overlay.setGeometry(self.rect())
+            overlay.raise_()
+            if self.visibility_banner.isVisible():
+                self.visibility_banner.raise_()
         else:
-            self.status.set('Vertex mode: left-click a parent vertex and drag it along the chosen axis.')
+            self._depth_visible_vertex_labels = []
+        self.update()
 
-    def refresh_polygon_list(self):
-        if not hasattr(self,'poly_tree'):
+    def set_vertex_label_mode(self, mode):
+        if mode not in ("all", "visible", "selected"):
+            raise ValueError(f"Unknown vertex label mode: {mode}")
+        if mode != self.vertex_label_mode:
+            self.vertex_label_mode = mode
+            self._depth_visible_vertex_labels = []
+            self.update()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._size_visibility_banner()
+        overlay = getattr(self, 'vertex_label_overlay', None)
+        if overlay is not None:
+            overlay.setGeometry(self.rect())
+
+    def _size_visibility_banner(self):
+        width = max(120, min(660, self.width() - 24))
+        self.visibility_banner.setGeometry(12, 12, width, 76)
+
+    def _set_visibility_warning(self, notice):
+        if not notice:
+            if self.visibility_banner.isVisible():
+                self.visibility_banner.hide()
             return
-        previously=self.selected_poly
-        self.poly_tree.delete(*self.poly_tree.get_children())
-        if self.model:
-            for off in self.poly_order:
-                if self.poly_only_visible.get() and off not in self.visible_polygon_offsets:
-                    continue
-                poly=self.model.polygons[off]
-                kind='POLY [T]' if poly.kind==2 else 'POLY'
-                self.poly_tree.insert('', 'end',iid=str(off),values=(off,kind,
-                                       len(poly.unique_refs),self._color_label(poly)))
-        if previously is not None and self.poly_tree.exists(str(previously)):
-            self.poly_tree.selection_set(str(previously))
-            self.poly_tree.see(str(previously))
+        # Two deliberate lines: Qt owns font rendering and wraps the detail
+        # at the *logical* widget width, independent of device pixel ratio.
+        reason = notice.partition(": ")[2] if ": " in notice else notice
+        text = "POLY NOT VISIBLE\n" + reason[0].upper() + reason[1:]
+        if self.visibility_banner.text() != text:
+            self.visibility_banner.setText(text)
+        self._size_visibility_banner()
+        if not self.visibility_banner.isVisible():
+            self.visibility_banner.show()
+        self.visibility_banner.raise_()
 
-    def choose_polygon(self,off):
-        if not self.model or off not in self.model.polygons:
-            return
-        self.selected_poly=off
-        if self.poly_tree.exists(str(off)):
-            self.poly_tree.selection_set(str(off))
-            self.poly_tree.see(str(off))
-        self._refresh_polygon_inspector()
-        self.redraw()
-
-    def select_polygon_from_list(self,event=None):
-        if not self.model:
-            return
-        selected=self.poly_tree.selection()
-        if selected:
-            off=int(selected[0])
-            if off!=self.selected_poly:
-                self.selected_poly=off
-                self._refresh_polygon_inspector()
-                self.redraw()
-
-    def find_polygon(self):
-        if not self.model:return
+    def initializeGL(self):
+        """Qt owns the active FBO. PyOpenGL operates on it without wrapping."""
+        self._resources_released = False
+        self.context().aboutToBeDestroyed.connect(self.shutdown_gl)
+        vertex_shader = glCreateShader(GL_VERTEX_SHADER)
+        fragment_shader = glCreateShader(GL_FRAGMENT_SHADER)
         try:
-            word=self.poly_find_entry.get().strip().lower()
-            off=int(word,16) if word.startswith('0x') else int(word)
-            if off not in self.model.polygons:
-                messagebox.showinfo('Polygon not found',f'No polygon at body offset {off}.')
-                return
-            self.choose_polygon(off)
-        except ValueError:
-            messagebox.showwarning('Invalid offset','Use a decimal or 0x hexadecimal 3DO body offset.')
-
-    def _open_vertex_from_polygon(self,event=None):
-        selected=self.poly_vertex_tree.selection()
-        if selected and self.model:
-            idx=int(selected[0])
-            refs=self.model.polygons[self.selected_poly].refs
-            self.notebook.select(self.vertex_page)
-            self.choose(refs[idx])
-
-    def _refresh_polygon_inspector(self):
-        self._refresh_texture_info()
-        self.poly_vertex_tree.delete(*self.poly_vertex_tree.get_children())
-        self.poly_plane_offsets=[]
-        self.poly_plane_combo.configure(values=[])
-        self.poly_selected_plane.set('')
-        self.poly_ref_options=[]
-        for selection,combo in zip(self.poly_ref_selections,self.poly_ref_combos):
-            selection.set('');combo.configure(values=[])
-        if self.model is None or self.selected_poly is None:
-            self.poly_detail.set('Select a polygon to inspect')
-            self._refresh_poly_color_control()
-            self.poly_plane_info.set('No plane selected')
-            return
-        poly=self.model.polygons[self.selected_poly]
-        present=self.selected_poly in self.visible_polygon_offsets
-        mode=('VISIBLE' if present else ('HIDDEN (ghost outline enabled)' if self.show_hidden_polygon_outline.get()
-                                        else 'HIDDEN by current LOD/BSP preview'))
-        self._refresh_poly_color_control()
-        self.poly_detail.set(f'POLY @{poly.offset}  •  {len(poly.unique_refs)} unique vertices  •  '
-                             f'Color {self._color_label(poly)}  •  Group {poly.group}  •  {mode}')
-        edge_options=[f'{j+1}: #{j+1} → #{(j+1)%len(poly.refs)+1}'
-                      for j in range(len(poly.refs))]
-        vertex_choices=[f'#{j+1}' for j,ref in enumerate(poly.refs)]
-        for combo in self.existing_split_combos:
-            combo.configure(values=vertex_choices)
-        self.existing_split_a.set(vertex_choices[0] if len(vertex_choices)>=4 else '')
-        self.existing_split_b.set(vertex_choices[2] if len(vertex_choices)>=4 else '')
-        for combo in self.split_edge_combos:combo.configure(values=edge_options)
-        self.split_edge_a.set(edge_options[0] if edge_options else '')
-        self.split_edge_b.set(edge_options[min(2,len(edge_options)-1)] if edge_options else '')
-        for ix,ref in enumerate(poly.refs):
-            vert=self.model.vertices[ref]
-            xyz=', '.join(map(str,vert.xyz))
-            uv=(', '.join(map(str,vert.uv)) if vert.uv is not None else '—')
-            self.poly_vertex_tree.insert('', 'end',iid=str(ix),values=(ix+1,ref,xyz,uv))
-        options=[f'{i+1}: {r}' for i,r in enumerate(poly.unique_refs)]
-        self.poly_ref_options=list(poly.unique_refs)
-        best=polygon_triplet_refs(poly,self.model.vertices)
-        for j,comb in enumerate(self.poly_ref_combos):
-            comb.configure(values=options)
-            if best and j<len(best):
-                choice=options[self.poly_ref_options.index(best[j])]
-                self.poly_ref_selections[j].set(choice)
-            elif j<len(options):
-                self.poly_ref_selections[j].set(options[j])
-        self.poly_plane_offsets=self.model.planes_for_polygon(poly.offset)
-        labels=[]
-        for off in self.poly_plane_offsets:
-            plane=self.model.planes[off]
-            rel=self.model.plane_relationship(poly.offset,off)
-            mark='*' if off in self.model.plane_edits else ' '
-            labels.append(f'{mark} {NAMES[plane.kind]} @{off}  [{rel}]')
-        self.poly_plane_combo.configure(values=labels)
-        if labels:
-            # Prefer an already customized target, otherwise the first
-            # verified local match, otherwise the closest candidate.
-            selected=next((j for j,off in enumerate(self.poly_plane_offsets)
-                           if off in self.model.plane_edits and
-                           self.model.plane_edits[off].polygon==poly.offset),0)
-            self.poly_selected_plane.set(labels[selected])
-        self.update_poly_plane_panel()
-
-    def _refresh_poly_color_control(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            self.poly_color_index.set('')
-            self.poly_color_swatch.configure(bg='#414a5b')
-            self.poly_color_explanation.set('Select a polygon to edit its original color index.')
-            return
-        poly=self.model.polygons[self.selected_poly]
-        self.poly_color_index.set(str(poly.color))
-        mapped=self.effective_color(poly)
-        palette=self.palette
-        if palette is not None and 0<=mapped<len(palette):
-            self.poly_color_swatch.configure(bg=rgbhex(palette[mapped]))
-        else:
-            self.poly_color_swatch.configure(bg=rgbhex(self._color(poly)))
-        desc=f'Stored color {poly.color}'
-        if mapped!=poly.color:
-            desc+=f' → RECOLOR preview {mapped} (wrapper remains unchanged)'
-        elif self.appearance:
-            desc+=' (no RECOLOR remapping for this index)'
-        if self.model.face2_pair(poly.offset) is not None:
-            desc+=f'. Paired face @{self.model.face2_pair(poly.offset)}.'
-        self.poly_color_explanation.set(desc)
-
-    def apply_polygon_color(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            return
-        try:
-            text=self.poly_color_index.get().strip()
-            if not text or any(ch not in '0123456789' for ch in text):
-                raise ValueError('Enter a decimal palette index (0–255)')
-            color=int(text)
-            if color<0 or color>255:
-                raise ValueError('Palette index must be between 0 and 255')
-            targets=[self.selected_poly]
-            paired=self.model.face2_pair(self.selected_poly)
-            if paired is not None and self.poly_color_pair.get():
-                targets.append(paired)
-            edits=[]
-            for off in targets:
-                before=self.model.polygons[off].color
-                if before!=color:
-                    self.model.set_polygon_color(off,color)
-                    edits.append((off,before,color))
-            if edits:
-                self.undo_stack.append(('colors',tuple(edits)))
-                self.redo_stack.clear()
-                self._texture_tile_cache.clear()
-                self._texture_tile_cache_bytes=0
-                self._texture_photos.clear()
-                self.refresh_polygon_list()
-                self.refresh_raw()
-                self.redraw()
-                self.status.set(f'Updated {len(edits)} POLY color(s) to {color}. Save edited 3DO to persist.')
-                self._notify_visual_model_edited()
-            self._refresh_poly_color_control()
-        except (ValueError,KeyError) as exc:
-            messagebox.showerror('Invalid polygon color',str(exc))
-
-    def choose_polygon_palette_color(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            return
-        if not self.palette or len(self.palette)<256:
-            messagebox.showinfo('No palette','Load a 256-color PCX palette first.')
-            return
-        win=tk.Toplevel(self)
-        win.title('Choose 3DO palette color')
-        win.configure(bg='#222a38')
-        win.resizable(False,False)
-        tk.Label(win,text='Select a palette index; Apply saves the selection to the polygon.',
-                 bg='#222a38',fg='#dbe5f4').pack(padx=10,pady=(9,5))
-        canvas=tk.Canvas(win,width=16*25,height=16*25,bg='#121822',highlightthickness=0)
-        canvas.pack(padx=10,pady=4)
-        def select(event):
-            col=max(0,min(15,event.x//25))
-            row=max(0,min(15,event.y//25))
-            self.poly_color_index.set(str(row*16+col))
-            win.destroy()
-        for idx,rgb in enumerate(self.palette[:256]):
-            x=(idx%16)*25;y=(idx//16)*25
-            canvas.create_rectangle(x+1,y+1,x+24,y+24,
-                                    fill=rgbhex(rgb),outline='#26303d')
-        canvas.bind('<Button-1>',select)
-        tk.Label(win,text='Palette selection fills the index field; click Apply to commit.',
-                 bg='#222a38',fg='#9eabc0').pack(pady=(2,9))
-        win.transient(self)
-        win.grab_set()
-
-    def _split_args(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            raise ValueError('Select a polygon first')
-        def get_edge(text):
-            if not text:raise ValueError('Select both edges')
-            return int(text.split(':',1)[0])-1
-        a,b=get_edge(self.split_edge_a.get()),get_edge(self.split_edge_b.get())
-        fa,fb=float(self.split_fraction_a.get()),float(self.split_fraction_b.get())
-        if a==b or not 0<fa<1 or not 0<fb<1:
-            raise ValueError('Use two different edges with fractions between 0 and 1')
-        return a,b,fa,fb
-
-    def _existing_vertex_split_args(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            raise ValueError('Select a polygon first')
-        def index(value):
-            if not value or not value.startswith('#'):
-                raise ValueError('Select two vertices')
-            return int(value.split()[0][1:])-1
-        a=index(self.existing_split_a.get());b=index(self.existing_split_b.get())
-        n=len(self.model.polygons[self.selected_poly].refs)
-        if n<4 or a==b or (a-b)%n in (1,n-1):
-            raise ValueError('Choose two nonadjacent vertices from a polygon with at least four vertices')
-        return a,b
-
-    def commit_existing_vertex_split(self):
-        if not self.model:return
-        try:
-            a,b=self._existing_vertex_split_args()
-            updated,result=self.model.split_polygon_at_vertices(self.selected_poly,a,b)
-        except (FormatError,ValueError,OverflowError) as exc:
-            messagebox.showerror('Cannot split polygon',str(exc));return
-        message=(f'Split POLY @{result.original_polygon} along vertex #{a+1} → #{b+1}.\n\n'
-                 f'Append two polygons @{result.new_polygons[0]} and @{result.new_polygons[1]} '
-                 f'under LIST @{result.replacement_list}.\n\n'
-                 'New vertices: 0. Existing polygon vertex order, UVs, color, '
-                 'texture group, BSP planes, and other model records are preserved. '
-                 'The original POLY record remains unreferenced.')
-        if not messagebox.askyesno('Commit existing-vertex split?',message):return
-        before=self.model
-        self.undo_stack.append(('topology',before,updated))
-        self.redo_stack.clear()
-        old_key=('polygon',result.original_polygon)
-        if old_key in self.texture_manual:
-            for off in result.new_polygons:
-                self.texture_manual[('polygon',off)]=self.texture_manual[old_key]
-        self._sync_topology_model(updated,result.new_polygons[0])
-        self.existing_split_hint.set('Created POLYs '
-               f'@{result.new_polygons[0]} and @{result.new_polygons[1]} with zero new vertices. '
-               'Undo restores the original polygon.')
-        self.status.set('Existing-vertex polygon split committed. Save edited 3DO to persist.')
-
-    def draw_existing_vertex_split_preview(self):
-        if (not self.model or not self.existing_split_preview.get() or self.selected_poly is None
-                or self.notebook.select()!=str(self.poly_page)):
-            return
-        if self.selected_poly not in self.visible_polygon_offsets:return
-        try:
-            a,b=self._existing_vertex_split_args()
-            refs=self.model.polygons[self.selected_poly].refs
-            x,y=self._project(self.model.vertices[refs[a]].xyz),self._project(self.model.vertices[refs[b]].xyz)
-            self.canvas.create_line(x[0],x[1],y[0],y[1],
-                                    fill='#bc83ff',width=3,dash=(6,4),tags='existing_split_preview')
-            for sx,sy,_ in (x,y):
-                self.canvas.create_oval(sx-5,sy-5,sx+5,sy+5,
-                    fill='#bc83ff',outline='#28133c',width=2,tags='existing_split_preview')
-        except (ValueError,KeyError,ZeroDivisionError):pass
-
-    def _sync_topology_model(self,model,selected_poly=None):
-        self.model=model
-        self._refresh_vertex_pointer_names()
-        self.poly_order=sorted(model.polygons)
-        self.vertex_order=sorted(model.vertices)
-        self.dynamic_order=sorted(model.dynamics)
-        self.selected=None
-        self.selected_poly=(selected_poly if selected_poly in model.polygons else None)
-        self.header.set(model.path.name+(' *' if model.dirty else ''))
-        self.stats.set(model.summary().replace('\n','  |  '))
-        with CAD_PROFILE.measure("ui.vertex_list"):
-            self._populate_vertex_list()
-        self._texture_tile_cache.clear();self._texture_tile_cache_bytes=0
-        self._texture_photos.clear()
-        self._listed_preview_set=None
-        self.refresh_polygon_list()
-        self._refresh_polygon_inspector()
-        self.update_edit_panel()
-        self.refresh_dynamic_list()
-        self.refresh_raw()
-        self.redraw()
-        self._notify_visual_model_edited()
-
-    def commit_polygon_split(self):
-        if not self.model:return
-        try:
-            args=self._split_args()
-            updated,result=self.model.split_polygon(self.selected_poly,*args)
-        except (FormatError,ValueError,OverflowError) as exc:
-            messagebox.showerror('Cannot split polygon',str(exc));return
-        message=(f'Original POLY @{result.original_polygon} will be redirected to a new LIST '
-                 f'@{result.replacement_list} containing POLYs {result.new_polygons[0]} and '
-                 f'{result.new_polygons[1]}.\n\n'
-                 f'New vertices: {len(result.new_vertices)}; adjoining polygons updated: '
-                 f'{len(result.updated_neighbors)}.\n\n'
-                 'The existing FACE/BSP plane is preserved. This is a geometry-only, '
-                 'single-polygon split; reshaping the pieces into different planes may '
-                 'require manual BSP edits.')
-        if result.warnings:
-            message+='\n\nReview warnings:\n'+'\n'.join(result.warnings[:4])
-        if not messagebox.askyesno('Commit polygon split?',message):return
-        before=self.model
-        self.undo_stack.append(('topology',before,updated))
-        self.redo_stack.clear()
-        old_key=('polygon',result.original_polygon)
-        if old_key in self.texture_manual:
-            for off in result.new_polygons:
-                self.texture_manual[('polygon',off)]=self.texture_manual[old_key]
-        self._sync_topology_model(updated,result.new_polygons[0])
-        self.split_hint.set(f'Split created POLY @{result.new_polygons[0]} and '
-                            f'@{result.new_polygons[1]}. Undo restores previous geometry.')
-        self.status.set('Polygon split committed to working copy. Save edited 3DO to persist.')
-
-    def draw_polygon_split_preview(self):
-        if (not self.model or not self.split_preview.get() or self.selected_poly is None
-                or self.notebook.select()!=str(self.poly_page)):return
-        if self.selected_poly not in self.visible_polygon_offsets:return
-        try:
-            a,b,ta,tb=self._split_args()
-            poly=self.model.polygons[self.selected_poly]
-            refs=poly.refs
-            def point(i,t):
-                x=self.model.vertices[refs[i]].xyz
-                y=self.model.vertices[refs[(i+1)%len(refs)]].xyz
-                return tuple(x[j]+(y[j]-x[j])*t for j in range(3))
-            x,y=self._project(point(a,ta)),self._project(point(b,tb))
-            self.canvas.create_line(x[0],x[1],y[0],y[1],
-                                    fill='#40e6e2',width=3,dash=(6,4),tags='split_preview')
-            for sx,sy,_ in (x,y):
-                self.canvas.create_oval(sx-5,sy-5,sx+5,sy+5,
-                    fill='#40e6e2',outline='#103448',width=2,tags='split_preview')
-        except (ValueError,KeyError,ZeroDivisionError):pass
-
-    def current_plane_offset(self):
-        text=self.poly_selected_plane.get()
-        try:
-            index=list(self.poly_plane_combo['values']).index(text)
-        except ValueError:
-            return None
-        return self.poly_plane_offsets[index] if index<len(self.poly_plane_offsets) else None
-
-    def update_poly_plane_panel(self):
-        po=self.current_plane_offset()
-        if po is None or self.model is None or self.selected_poly is None:
-            self.poly_plane_info.set('No ancestor FACE/BSP plane. Polygon has no editable plane relationship.')
-            self.poly_edit_status.set('')
-            return
-        plane=self.model.planes[po]
-        edit=self.model.plane_edits.get(po)
-        effective=None
-        try:
-            effective=self.model.effective_plane(po)
-            desc=', '.join(map(str,effective))
-        except FormatError as exc:
-            desc=f'ERROR: {exc}'
-        diagnostic=''
-        if isinstance(effective,tuple) and len(effective)==4:
-            distance,percent=self.model.polygon_plane_deviation(self.selected_poly,effective)
-            diagnostic=(f'\nMax deviation: {distance:,.1f} raw units '
-                        f'({percent*100:.2f}% of bbox diagonal)'
-                        + ('  •  noncoplanar is permitted for explicit edits' if distance>1 else ''))
-        label=(f'{self.model.plane_relationship(self.selected_poly,po)}\n'
-               f'Source: {plane.equation}\nEffective: ({desc}){diagnostic}')
-        self.poly_plane_info.set(label)
-        self.poly_edit_status.set(f'Override: {edit.mode}' + (' (flipped)' if edit.flip else '')
-                                  if edit else 'Override: none (automatic safe-rebuild rules)')
-        if edit and edit.mode=='manual' and edit.polygon==self.selected_poly:
-            refs=self.model.polygons[self.selected_poly].unique_refs
-            for i,ref in enumerate(edit.refs):
-                self.poly_ref_selections[i].set(f'{refs.index(ref)+1}: {ref}')
-
-    def _plane_action(self,action,mode=None):
-        if self.model is None or self.selected_poly is None:
-            return
-        off=self.current_plane_offset()
-        if off is None:
-            messagebox.showinfo('No related plane','This polygon has no ancestor FACE/BSP record to edit.')
-            return
-        relation=self.model.plane_relationship(self.selected_poly,off)
-        if action in ('auto','manual') and relation.startswith('ancestor partition'):
-            if not messagebox.askyesno('Non-coplanar BSP partition',
-                f'Plane {off} does not lie on this polygon in the source 3DO.\n\n'
-                'Using this polygon to replace a sorting/partition plane may change visibility '
-                'for many surfaces. Proceed with the override?'):
-                return
-        before=self.model.plane_edits.get(off)
-        try:
-            if action=='auto':
-                self.model.set_plane_edit(off,self.selected_poly,'auto',flip=(before.flip if before else False))
-            elif action=='manual':
-                refs=[]
-                for field in self.poly_ref_selections:
-                    value=field.get()
-                    idx=int(value.split(':')[0])-1
-                    refs.append(self.poly_ref_options[idx])
-                self.model.set_plane_edit(off,self.selected_poly,'manual',tuple(refs),
-                                          flip=(before.flip if before else False))
-            elif action=='flip':
-                self.model.flip_plane(off,self.selected_poly)
-            elif action=='clear':
-                self.model.restore_plane_edit(off,None)
-            else:return
-        except (ValueError,IndexError,FormatError) as exc:
-            messagebox.showerror('Plane edit rejected',str(exc))
-            return
-        after=self.model.plane_edits.get(off)
-        if before!=after:
-            self.undo_stack.append(('plane',off,before,after))
-            self.redo_stack.clear()
-        self._refresh_polygon_inspector()
-        # Retain chosen target when multiple candidate ancestor planes exist.
-        self._select_plane_offset(off)
-        # Edits should be immediately visible in diagnostic preview.
-        self.bsp_mode.set('Rebuilt planes')
-        self.redraw()
-        self.status.set(f'Plane {off}: {action}  (POLY {self.selected_poly})')
-        self._notify_visual_model_edited()
-
-    def _select_plane_offset(self,off):
-        if off not in self.poly_plane_offsets:return
-        i=self.poly_plane_offsets.index(off)
-        self.poly_plane_combo.current(i)
-        self.update_poly_plane_panel()
-
-    def auto_polygon_plane(self):self._plane_action('auto')
-    def manual_polygon_plane(self):self._plane_action('manual')
-    def flip_polygon_plane(self):self._plane_action('flip')
-    def clear_polygon_plane(self):self._plane_action('clear')
-
-    @staticmethod
-    def _point_in_polygon(x,y,coords):
-        inside=False
-        j=len(coords)-1
-        for i in range(len(coords)):
-            xi,yi=coords[i];xj,yj=coords[j]
-            if ((yi>y)!=(yj>y)) and x < (xj-xi)*(y-yi)/(yj-yi)+xi:
-                inside=not inside
-            j=i
-        return inside
-
-    @staticmethod
-    def _near_segment(x,y,p,q,limit=7):
-        ax,ay=p; bx,by=q
-        vx,vy=bx-ax,by-ay
-        t=max(0,min(1,((x-ax)*vx+(y-ay)*vy)/(vx*vx+vy*vy or 1)))
-        return (x-(ax+t*vx))**2+(y-(ay+t*vy))**2<=limit**2
-
-    def pick_dynamic(self,event):
-        for ref,xy in reversed(self._screen_dynamics):
-            if len(xy)>2 and self._point_in_polygon(event.x,event.y,xy):
-                self.choose_dynamic(ref)
-                return
-            if len(xy)==2 and self._near_segment(event.x,event.y,*xy):
-                self.choose_dynamic(ref)
-                return
-        self.status.set('No external component hit; select a DYNAMIC record in the Components tab.')
-
-    def pick_polygon(self,event):
-        for off,xy in reversed(self._screen_polygons):
-            if len(xy)>2 and self._point_in_polygon(event.x,event.y,xy):
-                self.choose_polygon(off)
-                return
-            if len(xy)==2 and self._near_segment(event.x,event.y,*xy):
-                self.choose_polygon(off)
-                return
-        self.status.set('No polygon hit. Right-drag to orbit or choose a polygon in the list.')
-
-    def export_n3_text(self):
-        """Write N3 text without losing standalone pointer/annotation mappings."""
-        if self.model and not self._ensure_live_source_current():return
-        if not self.model:
-            messagebox.showinfo('Open a model', 'Open a 3DO or N3 .3D model before exporting.')
-            return
-        standalone=(self.standalone_n3_binary is not None and self.text_document is not None)
-        try:
-            if standalone:
-                text=export_standalone_text(self.model,self.text_document,self.standalone_n3_binary)
-                # Standalone N3 labels (including 'nil') are not binary offsets.
-                # The original compiler's Document contains the correct mapping;
-                # parse_document(text) defaults to the legacy overlay rules and
-                # would reject perfectly valid standalone N3 declarations.
-                next_document=self.text_document
-            else:
-                text=export_text(self.model,self.text_document)
-                # Validate metadata *before* touching the destination file.
-                next_document=parse_document(text)
-        except (FormatError,ValueError,OverflowError,OSError) as exc:
-            messagebox.showerror('Cannot export .3D',str(exc))
-            return
-        source=self.model.path
-        out=filedialog.asksaveasfilename(title='Export Papyrus N3 .3D',
-                 defaultextension='.3d',initialdir=str(source.parent),
-                 initialfile=source.stem+'.3d',
-                 filetypes=[('N3 .3D text','*.3d'),('All files','*.*')])
-        if not out:return
-        target=Path(out)
-        if standalone and target.resolve()==source.resolve():
-            messagebox.showerror('Choose a separate text file',
-                'The original standalone .3D is your annotated source. '
-                'Export to a different filename to avoid replacing it.')
-            return
-        try:
-            # Atomic replacement prevents partial files if writing fails.
-            # For an unchanged standalone source, preserve CRLF exactly.
-            _atomic_write(target,text.encode('utf-8'))
-        except (OSError,UnicodeError) as exc:
-            messagebox.showerror('Cannot write N3 text',str(exc))
-            return
-        self.text_document=next_document
-        self.status.set(f'Exported {target.name}; N3 pointer labels and comments preserved.')
-        if standalone:
-            messagebox.showinfo('N3 export saved',
-                'Exported the standalone .3D model. Your original source remains unchanged.\n\n'
-                'To load the exported text, use File > Open. '
-                'Use Save Copy to generate a binary .3DO.')
-        else:
-            messagebox.showinfo('N3 export saved',
-                'Exported the annotated .3D text. Keep it to preserve pointer names '
-                'and comments, which cannot be stored in the binary .3DO.')
-
-    def _load_source_editor(self):
-        """Populate the Source tab on opening either a binary or N3 model."""
-        if not self.model:return
-        try:
-            if self.text_document is not None:
-                source=self.text_document.original_text
-            else:
-                source=export_text(self.model)
-            self.source_editor.set_source(source,path=self.model.path.with_suffix('.3d'))
-            self._source_invalid=False
-        except (FormatError,ValueError,OverflowError) as exc:
-            self.source_editor.message.set(f'Cannot represent this 3DO as editable N3: {exc}')
-            self._source_invalid=True
-
-    def _reject_live_source(self,error,line):
-        self._source_invalid=True
-        self.status.set(f'.3D source error at line {line}: {error}. Last valid preview retained.')
-
-    def _accept_live_source(self,model,doc,text):
-        """Swap in a fully compiled model, never a partially invalid preview."""
-        self._source_model_loading=True
-        try:
-            old=self.model
-            prior_label=(declaration_label(old,self.text_document,self.selected)
-                         if old is not None and self.selected in old.vertices else None)
-            self.model=model
-            self.text_document=doc
-            self._refresh_vertex_pointer_names()
-            self.standalone_n3_binary=bytes(model.raw)
-            self.imported_pending=True
-            self._source_invalid=False
-            self.undo_stack.clear();self.redo_stack.clear()
-            self.poly_order=sorted(model.polygons)
-            self.vertex_order=sorted(model.vertices)
-            self.dynamic_order=sorted(model.dynamics)
-            new_offset=next((stmt.offset for stmt in doc.statements
-                              if prior_label and stmt.label==prior_label
-                              and stmt.offset in model.vertices),None)
-            self.selected=(new_offset if new_offset is not None else
-                           self.selected if self.selected in model.vertices else None)
-            self.selected_poly=(self.selected_poly if self.selected_poly in model.polygons else None)
-            self.selected_dynamic=(self.selected_dynamic if self.selected_dynamic in model.dynamics else None)
-            self.external_model_cache.clear()
-            self.external_resolver.missing.clear()
-            self._texture_tile_cache.clear();self._texture_tile_cache_bytes=0
-            self._texture_photos.clear()
-            self.texture_manual={key:value for key,value in self.texture_manual.items()
-                                 if key[0]!='polygon' or key[1] in model.polygons}
-            self.header.set(model.path.name+' *')
-            self.stats.set(model.summary().replace('\n','  |  '))
-            self.listbox.delete(0,'end')
-            for off in self.vertex_order:
-                self.listbox.insert('end',self._vertex_list_text(off))
-            if model.switches:
-                threshold=max((a for switch in model.switches.values()
-                                 for a,_ in switch.branches),default=1)
-                self.lod_slider.configure(to=max(1,int(threshold*1.3)))
-            else:
-                self.lod_mode.set('All branches')
-                self.lod_slider.configure(to=1)
-            self.refresh_dynamic_list()
-            self.refresh_polygon_list()
-            self._refresh_polygon_inspector()
-            self.update_edit_panel()
-            self.refresh_raw()
-            self.refresh_geometry_targets()
-            # Preserve camera angle/zoom while editing text, unless this is
-            # the first model or the old camera was never framed.
-            if old is None:
-                self.frame_model()
-            else:
-                self.redraw()
-            self.status.set(f'N3 preview updated: {len(model.vertices)} vertices, '
-                            f'{len(model.polygons)} polygons.')
+            for shader, source in ((vertex_shader, VERTEX_SHADER),
+                                   (fragment_shader, FRAGMENT_SHADER)):
+                glShaderSource(shader, source)
+                glCompileShader(shader)
+                if not glGetShaderiv(shader, GL_COMPILE_STATUS):
+                    raise RuntimeError(glGetShaderInfoLog(shader))
+            program = glCreateProgram()
+            glAttachShader(program, vertex_shader)
+            glAttachShader(program, fragment_shader)
+            glLinkProgram(program)
+            if not glGetProgramiv(program, GL_LINK_STATUS):
+                raise RuntimeError(glGetProgramInfoLog(program))
+            self._program = program
+            self._uniform = glGetUniformLocation(program, "u_mvp")
+            self._texture_uniform = glGetUniformLocation(program, "u_textures")
+            self._repeat_uniform = glGetUniformLocation(program, "u_repeat")
+            self._inspection_uniform = glGetUniformLocation(program, "u_inspect_poly")
+            self._inspection_dark_uniform = glGetUniformLocation(
+                program, "u_inspect_dark_tint")
+            self._inspection_light_uniform = glGetUniformLocation(
+                program, "u_inspect_light_tint")
+            self._wire_uniform = glGetUniformLocation(program, "u_wireframe")
+            self._wire_color_uniform = glGetUniformLocation(program, "u_wire_color")
+            self._selected_wire_color_uniform = glGetUniformLocation(
+                program, "u_selected_wire_color")
+            glUseProgram(program)
+            glUniform1i(glGetUniformLocation(program, "u_mips"), 0)
+            glUniform1i(glGetUniformLocation(program, "u_palette"), 1)
+            glUseProgram(0)
         finally:
-            self._source_model_loading=False
+            glDeleteShader(vertex_shader)
+            glDeleteShader(fragment_shader)
+        glEnable(GL_DEPTH_TEST)
+        self._visibility_dirty = True
+        if self._mesh is not None:
+            self._upload_mesh()
+            self._upload_texture_assets()
+            self._upload_skybox()
+            self._upload_sprite_assets()
 
-    def _notify_visual_model_edited(self):
-        """Schedule model -> text synchronization after a visual edit."""
-        if self._source_model_loading or not self.model or not hasattr(self,'source_editor'):
+    def shutdown_gl(self):
+        """Delete our VBO/VAO/shader before Qt destroys its GL context."""
+        if self._resources_released:
             return
-        if self.source_editor.pending or self._source_invalid:
-            self.status.set('Unapplied/invalid N3 source: fix and apply the text '
-                            'before changing the model in other tabs.')
+        self._resources_released = True
+        if self._program is None:
             return
-        if self._source_sync_job is not None:
-            self.after_cancel(self._source_sync_job)
-        self._source_sync_job=self.after(140,self._synchronize_model_to_source)
-
-    def _synchronize_model_to_source(self):
-        self._source_sync_job=None
-        if not self.model or self.source_editor.pending or self._source_invalid:
-            return
-        self._refresh_vertex_pointer_names()
+        self.makeCurrent()
         try:
-            if self.standalone_n3_binary is not None and self.text_document is not None:
-                updated=export_standalone_text(self.model,self.text_document,
-                                               self.standalone_n3_binary)
-            else:
-                updated=export_text(self.model,self.text_document)
-        except (FormatError,ValueError,OverflowError) as exc:
-            self.source_editor.message.set(f'Visual edit cannot be represented in N3: {exc}')
-            self._source_invalid=True
-            return
-        if updated!=self.source_editor.get_source():
-            self.source_editor.set_source(updated,path=self.model.path.with_suffix('.3d'),
-                       status='Synchronized with the visual editor. N3 source updated.')
-        self._source_invalid=False
+            if self._vao is not None:
+                glDeleteVertexArrays(1, [self._vao])
+                self._vao = None
+            if self._vbo is not None:
+                glDeleteBuffers(1, [self._vbo])
+                self._vbo = None
+            if self._ebo is not None:
+                glDeleteBuffers(1, [self._ebo])
+                self._ebo = None
+            if self._surface_ebo is not None:
+                glDeleteBuffers(1, [self._surface_ebo])
+                self._surface_ebo = None
+            self._surface_index_count = 0
+            self._release_wire_buffers()
+            self._wire_mesh = None
+            self._delete_skybox_buffers()
+            textures = [tex for tex in (self._atlas_texture, self._palette_texture)
+                        if tex is not None]
+            if textures:
+                glDeleteTextures(len(textures), textures)
+            self._atlas_texture = self._palette_texture = None
+            if self._sprite_renderer is not None:
+                self._sprite_renderer.release()
+                self._sprite_renderer = None
+            glDeleteProgram(self._program)
+            self._program = None
+        finally:
+            self.doneCurrent()
 
-    def _ensure_live_source_current(self):
-        """Block saving stale binaries while text is invalid or still parsing."""
-        if not hasattr(self,'source_editor'):
-            return True
-        if self.source_editor.pending and not self.source_editor.apply_now():
-            messagebox.showerror('Cannot save: invalid N3 source',
-                  'The Source tab has an error. Fix the highlighted statement '
-                  'or save the unfinished .3D text separately before writing a 3DO.')
-            self.notebook.select(self.source_page)
+    def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
+                 *, preserve_view=False, on_activity=None):
+        if on_activity:
+            on_activity("GPU setup: preparing vertex and polygon pickers")
+        self._mesh = mesh
+        self._model = model
+        self._vertex_picker = VertexPicker.from_model(model, mesh)
+        self._label_vertex_picker = self._vertex_picker
+        self.vertex_pointer_names = vertex_pointer_names(model)
+        self._depth_visible_vertex_labels = []
+        self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
+        self._scene = scene
+        if on_activity:
+            on_activity("GPU setup: pickers and scene assigned")
+        self._sprite_events = ()
+        self._surface_index_count = 0
+        self._wire_mesh = None
+        self._wire_index_count = 0
+        self.inspection_kind = None
+        self.inspection_offset = None
+        self.inspection_points = None
+        self._atlas = atlas
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        self._visibility_dirty = True
+        self._visible_set = frozenset()
+        self._visibility_info = {}
+        self._frametimes.clear()
+        self._frame_count = 0
+        if not preserve_view and not self.fixed_camera_mode:
+            self.frame_all()
+        # If origin view is enabled while opening another model, keep the
+        # eye pinned to that model's (0,0,0), not its bounding-box center.
+        if self._program is not None:
+            if on_activity:
+                on_activity("GPU context: BEGIN makeCurrent()")
+            self.makeCurrent()
+            try:
+                if on_activity:
+                    on_activity("GPU upload BEGIN: geometry VBO/EBO")
+                self._upload_mesh(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: geometry VBO/EBO")
+                    on_activity("GPU upload BEGIN: texture and palette atlas")
+                self._upload_texture_assets(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: texture and palette atlas")
+                    on_activity("GPU upload BEGIN: HORIZ skybox buffers")
+                self._upload_skybox(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: HORIZ skybox buffers")
+                    on_activity("GPU upload BEGIN: PMP sprite textures")
+                self._upload_sprite_assets(on_activity=on_activity)
+                if on_activity:
+                    on_activity("GPU upload DONE: PMP sprite textures")
+            finally:
+                if on_activity:
+                    on_activity("GPU context: releasing current context")
+                self.doneCurrent()
+        elif on_activity:
+            on_activity("GPU context not initialized; upload deferred")
+        self.update()
+
+    def set_vertex_label_source(self, source_index):
+        """Refresh authored pointer names, including plane-only N3 vertices.
+
+        Never alter picking: source-only plane vertices do not participate
+        in the rendered polygon mesh's hit testing.
+        """
+        if self._model is None or self._mesh is None:
+            return
+        self._label_vertex_picker, self.vertex_pointer_names = (
+            include_source_vertex_declarations(
+                self._model, self._mesh, self._vertex_picker,
+                vertex_pointer_names(self._model), source_index))
+        if not self.vertex_label_overlay.isHidden():
+            self.update()
+
+    def set_appearance_colors(self, colors):
+        """Change viewport drawing colors without rebuilding buffers or meshes."""
+        self.colors = validated_colors(colors)
+        self.update()
+
+    def _vertex_marker_colors(self):
+        return (QColor(self.colors["viewport_vertex_outline"]),
+                QColor(self.colors["viewport_vertex_dot"]))
+
+    def _wire_color_rgb(self, name):
+        color = QColor(self.colors[name])
+        return color.redF(), color.greenF(), color.blueF()
+
+    def set_source_inspection(self, kind=None, offset=None, *, plane_points=None):
+        """Select one source overlay; do not alter model, BSP, or GPU buffers.
+
+        BSP uses three ordered raw XYZ points from the source plane operand,
+        not a binary plane's normal (which does not preserve winding).
+        """
+        points = None
+        if kind == "bsp" and plane_points is not None:
+            try:
+                points = tuple(tuple(float(x) for x in xyz)
+                               for xyz in plane_points)
+                if len(points) != 3 or any(len(xyz) != 3 for xyz in points):
+                    points = None
+                elif not all(np.isfinite(x) for xyz in points for x in xyz):
+                    points = None
+            except (TypeError, ValueError):
+                points = None
+            kind, offset = ("bsp", None) if points is not None else (None, None)
+        elif kind not in ("polygon", "vertex") or offset is None:
+            kind, offset = None, None
+        if ((self.inspection_kind, self.inspection_offset,
+             self.inspection_points) != (kind, offset, points)):
+            self.inspection_kind = kind
+            self.inspection_offset = offset
+            self.inspection_points = points
+            self.update()
+
+    def set_split_preview(self, points=None):
+        """Two proposed cut points in raw Papyrus XYZ, or None."""
+        normalized = (tuple(tuple(float(v) for v in p) for p in points)
+                      if points is not None else None)
+        if self.split_preview_points != normalized:
+            self.split_preview_points = normalized
+            self.update()
+
+    def _paint_split_preview(self, projection, view):
+        if self.split_preview_points is None or self._mesh is None:
+            return
+        matrix = projection @ view
+        points = [raw_point_screen_position(
+            self._mesh, xyz, matrix, self.width(), self.height())
+            for xyz in self.split_preview_points]
+        if len(points) != 2 or any(point is None for point in points):
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor("#40e6e2")
+        painter.setPen(QPen(color, 3, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(*points[0]), QPointF(*points[1]))
+        painter.setPen(QPen(QColor("#12313b"), 2))
+        painter.setBrush(QBrush(color))
+        for point in points:
+            painter.drawEllipse(QPointF(*point), 5, 5)
+        painter.end()
+
+    def _paint_source_inspection_markers(self, projection, view):
+        """Draw source cursor markers over either GL render mode.
+
+        All paths are QPainter geometry (no text glyphs rendered inside GL):
+        cyan BSP 1→2→3→1 winding arrows vs yellow single-vertex edit dot.
+        """
+        kind = self.inspection_kind
+        if kind not in ("vertex", "bsp"):
+            return
+        matrix = projection @ view
+        if kind == "vertex":
+            position = vertex_screen_position(
+                self._model, self._mesh, self.inspection_offset,
+                matrix, self.width(), self.height())
+            if position is None:
+                return
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            outline, fill = self._vertex_marker_colors()
+            painter.setPen(QPen(outline, 2))
+            painter.setBrush(QBrush(fill))
+            painter.drawEllipse(QPointF(*position), 6.0, 6.0)
+            painter.end()
+            return
+
+        if self.inspection_points is None:
+            return
+        positions = tuple(raw_point_screen_position(
+            self._mesh, xyz, matrix, self.width(), self.height())
+            for xyz in self.inspection_points)
+        if all(point is None for point in positions):
+            return
+        arrow_color = QColor(self.colors["viewport_bsp_arrow"])
+        dot_color = QColor(self.colors["viewport_bsp_vertex"])
+        outline = QColor(self.colors["viewport_bsp_outline"])
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(arrow_color, 2.8))
+        for start, end, left, right in bsp_winding_arrows(positions):
+            # Shaft and two chevrons at its destination show winding order.
+            painter.drawLine(QPointF(*start), QPointF(*end))
+            painter.drawLine(QPointF(*end), QPointF(*left))
+            painter.drawLine(QPointF(*end), QPointF(*right))
+        painter.setPen(QPen(outline, 2.2))
+        painter.setBrush(QBrush(dot_color))
+        for point in positions:
+            if point is not None:
+                painter.drawEllipse(QPointF(*point), 9.5, 9.5)
+        painter.end()
+
+    def _release_wire_buffers(self):
+        """Release cached boundary geometry in a current OpenGL context."""
+        if self._wire_vao is not None:
+            glDeleteVertexArrays(1, [self._wire_vao])
+            self._wire_vao = None
+        if self._wire_vbo is not None:
+            glDeleteBuffers(1, [self._wire_vbo])
+            self._wire_vbo = None
+        if self._wire_ebo is not None:
+            glDeleteBuffers(1, [self._wire_ebo])
+            self._wire_ebo = None
+        self._wire_index_count = 0
+
+    def _ensure_wireframe_buffers(self):
+        """Build boundary edges only when first requested for this model."""
+        if self._program is None or self._mesh is None or self._scene is None:
+            return
+        if self._wire_vao is not None:
+            return
+        if self._wire_mesh is None:
+            self._wire_mesh = make_wireframe(self._scene.geometry, self._mesh)
+        payload = self._wire_mesh.vertices
+        self._wire_vao = int(glGenVertexArrays(1))
+        self._wire_vbo = int(glGenBuffers(1))
+        self._wire_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._wire_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._wire_vbo)
+        glBufferData(GL_ARRAY_BUFFER, payload.nbytes,
+                     payload if payload.size else None, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, ctypes.c_void_p(0))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._wire_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        glBindBuffer(GL_ARRAY_BUFFER, 0)
+
+    def _refresh_wire_visibility(self):
+        """Select original polygon edges by RES and track detail, not BSP.
+
+        The fully expanded branch view remains available via Show all detail
+        levels. Otherwise the standard camera-relative/manual RES distance
+        applies exactly as in the filled renderer, while all BSP-facing
+        branches remain see-through.
+        """
+        all_branches = self.lod_distance is None and not self._track_lod_active()
+        if all_branches:
+            # Preserve the legacy full-geometry diagnostic in explicit
+            # Show all detail levels for non-track models.
+            self._wire_index_count = 0
+            self._visible_set = frozenset(self._model.polygons)
+            self._visibility_info = {}
+            self._visibility_dirty = False
+            self.visibilityChanged.emit(
+                f"Wireframe: {self._wire_mesh.segment_count:,} boundary edges "
+                f"across {self._wire_mesh.polygon_count:,} polygons "
+                "(all RES branches; BSP ignored; no triangle diagonals)")
+            return
+
+        eye = self._camera_eye_model()
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation))
+        detail = self.track_detail if self._track_lod_active() else None
+        window = None
+        if detail == 'window':
+            nav = self.track_navigation
+            if nav is not None and self._scene.track_section_dlongs:
+                window = (nav.dlong, nav.length, self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'
+        indices, visible, info = ordered_scene_indices(
+            self._scene, self._wire_mesh, eye, self.lod_distance,
+            view_direction=direction, bsp_mode='off',
+            track_detail=detail, track_window=window)
+        glBindVertexArray(self._wire_vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._wire_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        self._wire_index_count = int(indices.size)
+        self._visible_set = visible
+        self._visibility_info = info
+        self._visibility_dirty = False
+        selected = ("selected track polygons" if self._track_lod_active()
+                    else "selected polygons")
+        self.visibilityChanged.emit(
+            f"Wireframe: {self._wire_index_count // 2:,} boundary edges "
+            f"across {info['mesh_polygons']:,} {selected} "
+            "(RES respected; BSP ignored)")
+
+    def _paint_wireframe(self, projection, view):
+        """Only GL_LINES: no filled faces, sprites, skybox, or diagonal edges."""
+        self._ensure_wireframe_buffers()
+        if self._wire_vao is None:
+            glUseProgram(0)
+            return
+        if self._visibility_dirty:
+            self._refresh_wire_visibility()
+        glUniform1i(self._wire_uniform, 1)
+        glBindVertexArray(self._wire_vao)
+        if self.lod_distance is None and not self._track_lod_active():
+            if self._wire_mesh.vertices.size:
+                glDrawArrays(GL_LINES, 0, len(self._wire_mesh.vertices))
+        elif self._wire_index_count:
+            glDrawElements(GL_LINES, self._wire_index_count, GL_UNSIGNED_INT, None)
+
+        notice = None
+        if self.inspection_kind == "polygon":
+            flattened = self._scene.polygon_lookup.get((0, self.inspection_offset))
+            span = self._wire_mesh.polygon_ranges.get(flattened)
+            if span is None:
+                notice = "POLY has no renderable outline in this scene"
+            elif (self.lod_distance is not None or self._track_lod_active()) and (
+                    self.inspection_offset not in self._visible_set):
+                notice = "POLY not drawn: inactive SWITCH DISTANCE / track detail"
+            else:
+                glUniform1i(self._wire_uniform, 2)
+                glDrawArrays(GL_LINES, *span)
+                glUniform1i(self._wire_uniform, 1)
+        glBindVertexArray(0)
+        glUniform1i(self._wire_uniform, 0)
+        glUseProgram(0)
+        self._set_visibility_warning(notice)
+        self._paint_source_inspection_markers(projection, view)
+
+    def _upload_mesh(self, *, on_activity=None):
+        if self._program is None:
+            return
+        started = perf_counter()
+        self._release_wire_buffers()
+        self._wire_mesh = None
+        # Rebuild only on open. Camera movement never uploads geometry.
+        if self._vao is not None:
+            glDeleteVertexArrays(1, [self._vao])
+            self._vao = None
+        if self._vbo is not None:
+            glDeleteBuffers(1, [self._vbo])
+            self._vbo = None
+        if self._ebo is not None:
+            glDeleteBuffers(1, [self._ebo])
+            self._ebo = None
+        if self._surface_ebo is not None:
+            glDeleteBuffers(1, [self._surface_ebo])
+            self._surface_ebo = None
+        self._surface_index_count = 0
+        self._visibility_dirty = True
+        has_sprites = (self._scene is not None and
+                       getattr(self._scene, "sprite_resources", None) is not None and
+                       bool(self._scene.sprite_resources.placements))
+        if self._mesh is not None and (self._mesh.vertices.size or has_sprites):
+            # PMP-only 3DOs have no polygon VBO contents, but still need a
+            # live VAO/EBO so BSP traversal and sprite draw passes run.
+            payload = np.ascontiguousarray(
+                self._mesh.vertices, dtype=np.float32).tobytes()
+            self._vao = int(glGenVertexArrays(1))
+            self._vbo = int(glGenBuffers(1))
+            self._ebo = int(glGenBuffers(1))
+            self._surface_ebo = int(glGenBuffers(1))
+            glBindVertexArray(self._vao)
+            glBindBuffer(GL_ARRAY_BUFFER, self._vbo)
+            if on_activity:
+                on_activity(f"GPU glBufferData: main geometry {len(payload):,} bytes")
+            glBufferData(GL_ARRAY_BUFFER, len(payload),
+                         payload if payload else None, GL_STATIC_DRAW)
+            glEnableVertexAttribArray(0)
+            glVertexAttribPointer(
+                0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
+            glEnableVertexAttribArray(1)
+            glVertexAttribPointer(
+                1, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(12))
+            for location, length, offset in ((2, 1, 24), (3, 2, 28),
+                                             (4, 4, 36)):
+                glEnableVertexAttribArray(location)
+                glVertexAttribPointer(
+                    location, length, GL_FLOAT, GL_FALSE, 52,
+                    ctypes.c_void_p(offset))
+            # Element buffer stays attached to the VAO. Upload only integer
+            # indices when BSP visibility changes, never the XYZ/RGB VBO.
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, 0, None, GL_DYNAMIC_DRAW)
+            glBindVertexArray(0)
+            glBindBuffer(GL_ARRAY_BUFFER, 0)
+            # One synchronization at load time; never in the render loop.
+            if on_activity:
+                on_activity("GPU glFinish BEGIN: synchronizing geometry buffers")
+            glFinish()
+            if on_activity:
+                on_activity("GPU glFinish DONE: geometry buffers synchronized")
+        self.upload_ms = (perf_counter()-started)*1000
+        self.statsChanged.emit(f"OpenGL upload: {self.upload_ms:.1f} ms")
+
+    def _upload_texture_assets(self, *, on_activity=None):
+        """OpenGL texture setup is GUI-thread-only; never called on orbit."""
+        if self._program is None or self._atlas is None or self._palette is None:
+            return
+        started = perf_counter()
+        if self._atlas_texture is None:
+            self._atlas_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        pixels = np.ascontiguousarray(self._atlas.pixels, dtype=np.uint8)
+        h, w = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: main MIP atlas {w}x{h}")
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, w, h, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+        if on_activity:
+            on_activity("GPU upload: 256-color PCX palette")
+        self._upload_palette()
+        self.texture_upload_ms = (perf_counter() - started) * 1000
+
+    def _delete_skybox_buffers(self):
+        """Called only while the widget's OpenGL context is current."""
+        if self._sky_vao is not None:
+            glDeleteVertexArrays(1, [self._sky_vao])
+            self._sky_vao = None
+        if self._sky_vbo is not None:
+            glDeleteBuffers(1, [self._sky_vbo])
+            self._sky_vbo = None
+        if self._sky_ebo is not None:
+            glDeleteBuffers(1, [self._sky_ebo])
+            self._sky_ebo = None
+        if self._sky_atlas_texture is not None:
+            glDeleteTextures(1, [self._sky_atlas_texture])
+            self._sky_atlas_texture = None
+        self._sky_index_count = 0
+
+    def _upload_skybox(self, *, on_activity=None):
+        """Upload the sky's own VBO, EBO and MIP atlas once per model load."""
+        self._delete_skybox_buffers()
+        sky = self._scene.skybox if self._scene is not None else None
+        if sky is None or not sky.indices.size:
+            return
+        payload = np.ascontiguousarray(sky.mesh.vertices, dtype=np.float32)
+        indices = np.ascontiguousarray(sky.indices, dtype=np.uint32)
+        self._sky_vao = int(glGenVertexArrays(1))
+        self._sky_vbo = int(glGenBuffers(1))
+        self._sky_ebo = int(glGenBuffers(1))
+        glBindVertexArray(self._sky_vao)
+        glBindBuffer(GL_ARRAY_BUFFER, self._sky_vbo)
+        if on_activity:
+            on_activity(f"GPU glBufferData: HORIZ geometry {payload.nbytes:,} bytes")
+        glBufferData(GL_ARRAY_BUFFER, payload.nbytes, payload, GL_STATIC_DRAW)
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(0))
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(12))
+        for location, length, offset in ((2, 1, 24), (3, 2, 28),
+                                         (4, 4, 36)):
+            glEnableVertexAttribArray(location)
+            glVertexAttribPointer(
+                location, length, GL_FLOAT, GL_FALSE, 52, ctypes.c_void_p(offset))
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._sky_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes, indices, GL_STATIC_DRAW)
+        glBindVertexArray(0)
+        self._sky_index_count = int(indices.size)
+        self._sky_atlas_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._sky_atlas_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        pixels = np.ascontiguousarray(sky.atlas.pixels, dtype=np.uint8)
+        height, width = pixels.shape
+        if on_activity:
+            on_activity(f"GPU glTexImage2D: HORIZ MIP atlas {width}x{height}")
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8UI, width, height, 0,
+                     GL_RED_INTEGER, GL_UNSIGNED_BYTE, pixels)
+
+    def _draw_skybox(self, view, aspect):
+        """Draw at a fixed local eye with camera rotation; no sky parallax."""
+        sky = self._scene.skybox if self._scene is not None else None
+        if (not self.sky_enabled or sky is None or self._sky_vao is None
+                or not self._sky_index_count):
+            return
+        # A perspective background is used even for the orthographic track
+        # editor, so the enclosed sky always fills the distant background.
+        sky_projection = perspective_projection(
+            aspect, 0.001, 100.0,
+            self.fixed_camera_fov if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
+        sky_view = skybox_view_matrix(view, sky.mesh, eye=self.sky_eye)
+        mvp = np.ascontiguousarray(
+            (sky_projection @ sky_view).T, dtype=np.float32)
+        glDisable(GL_DEPTH_TEST)
+        glUniformMatrix4fv(self._uniform, 1, GL_FALSE, mvp)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._sky_atlas_texture)
+        glBindVertexArray(self._sky_vao)
+        glDrawElements(GL_TRIANGLES, self._sky_index_count, GL_UNSIGNED_INT, None)
+        # The caller restores the main view transform, atlas, and depth mode.
+
+    def _upload_sprite_assets(self, *, on_activity=None):
+        """Upload indexed PMP assets on the GUI GL thread, never the worker."""
+        if self._program is None or self._scene is None:
+            return
+        assets = getattr(self._scene, "sprite_resources", None)
+        if assets is None or not assets.images:
+            if self._sprite_renderer is not None:
+                self._sprite_renderer.upload(None)
+            return
+        if on_activity:
+            on_activity(f"GPU PMP upload: {len(assets.images)} sprite textures")
+        if self._sprite_renderer is None:
+            self._sprite_renderer = PMPGLRenderer()
+        self._sprite_renderer.upload(assets)
+
+    def _upload_palette(self):
+        if self._program is None or self._palette is None:
+            return
+        if self._palette_texture is None:
+            self._palette_texture = int(glGenTextures(1))
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 1)
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB8, 256, 1, 0, GL_RGB,
+                     GL_UNSIGNED_BYTE, self._palette)
+
+    def set_atlas(self, atlas):
+        """Replace MIP pixel texture only: preserve VAO/VBO and BSP EBO."""
+        self._atlas = atlas
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_texture_assets()
+            finally:
+                self.doneCurrent()
+        self.update()
+
+    def set_palette(self, palette):
+        """Swap the 256-color lookup without retessellating/reuploading XYZ."""
+        self._palette = np.ascontiguousarray(palette, dtype=np.uint8)
+        if self._program is not None:
+            self.makeCurrent()
+            try:
+                self._upload_palette()
+            finally:
+                self.doneCurrent()
+        self.update()
+
+    def invalidate_visibility(self):
+        """Reevaluate only the BSP indices at the next draw, not the mesh."""
+        self._visibility_dirty = True
+        self.update()
+
+    def _track_lod_active(self):
+        return bool(self._scene is not None and
+                    self._scene.track_section_lods and self.track_detail)
+
+    def set_render_mode(self, mode):
+        if mode not in ('painter', 'depth', 'all', 'wire'):
+            raise ValueError(f"Unknown render mode: {mode}")
+        self.render_mode = mode
+        if mode == 'all' and not self._track_lod_active():
+            self.visibilityChanged.emit(
+                f"All polygons: {self._mesh.polygon_count:,} geometry faces "
+                "(BSP and LOD ignored; GPU depth test)"
+                if self._mesh is not None else "All polygons"
+            )
+            self.update()
+        else:
+            self.invalidate_visibility()
+
+    def _camera_eye_model(self):
+        """Unscaled Papyrus eye used for BSP and automatic RES switches."""
+        if self.track_drive_enabled and self._track_drive_pose is not None:
+            return self._track_drive_pose.eye
+        if self.fixed_camera_mode:
+            return self.fixed_camera_eye
+        return camera_in_model_units(
+            self._mesh.center, self._mesh.scale, self.target,
+            self.azimuth, self.elevation, self.distance)
+
+    def _camera_view_matrix(self):
+        """Fixed and track cameras change orientation without moving their eye."""
+        target = self.target
+        if (self.track_drive_enabled and self._track_drive_pose is not None
+                and self._mesh is not None):
+            target = fixed_eye_view_target(
+                self._mesh.center, self._mesh.scale, self._track_drive_pose.eye,
+                self.azimuth, self.elevation, self.distance)
+        elif self.fixed_camera_mode and self._mesh is not None:
+            target = fixed_eye_view_target(
+                self._mesh.center, self._mesh.scale, self.fixed_camera_eye,
+                self.azimuth, self.elevation, self.distance)
+        roll = (self._track_drive_pose.roll
+                if self.track_drive_enabled and self._track_drive_pose is not None
+                else 0.0)
+        return camera_view(
+            self.azimuth, self.elevation, self.distance, target, roll=roll)
+
+    def _refresh_visibility(self):
+        """Active GL context required. Never reparses or retessellates."""
+        if self._model is None or self._mesh is None or self._vao is None:
+            return
+        eye = self._camera_eye_model()
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation),
+            )
+        window = None
+        detail = self.track_detail if self._track_lod_active() else None
+        if detail == 'window':
+            navigation = self.track_navigation
+            if (navigation is not None and self._scene.track_section_dlongs):
+                window = (navigation.dlong, navigation.length,
+                          self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'  # No TRK/metadata: safe global HI fallback.
+        use_tsd = bool(self.render_mode == 'depth'
+                       and self._scene.track_surface_details)
+        traversal = ordered_scene_indices(
+            self._scene, self._mesh, eye,
+            None if self.render_mode == 'all' else self.lod_distance,
+            view_direction=direction, with_sprites=True,
+            with_surface_details=use_tsd,
+            bsp_mode='off' if self.render_mode == 'all' else 'original',
+            track_detail=detail, track_window=window)
+        if use_tsd:
+            indices, visible, info, sprite_events, surface_indices = traversal
+        else:
+            indices, visible, info, sprite_events = traversal
+            surface_indices = np.empty(0, dtype=np.uint32)
+        glBindVertexArray(self._vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        if self._surface_ebo is not None:
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._surface_ebo)
+            glBufferData(GL_ELEMENT_ARRAY_BUFFER, surface_indices.nbytes,
+                         surface_indices if surface_indices.size else None,
+                         GL_DYNAMIC_DRAW)
+            # The regular EBO is the VAO's persistent binding; after drawing
+            # decals below it must be restored too.
+            glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+        glBindVertexArray(0)
+        self._surface_index_count = int(surface_indices.size)
+        self._index_count = len(indices)
+        self._sprite_events = sprite_events
+        self._visible_set = visible
+        self._visibility_info = info
+        self._visibility_dirty = False
+        self.visibilityChanged.emit(
+            f"BSP visible {info['mesh_polygons']:,}/{self._mesh.polygon_count:,} "
+            f"renderable polygons | {info['triangles']:,} triangles | "
+            f"{info['tested_planes']:,} plane tests | "
+            f"{info['culled_nodes']:,} pruned nodes | "
+            f"{info['lod_selections']:,} LOD selections | "
+            f"{info['instances_visited']:,} instances | "
+            f"{info['pmp_sprites']:,} PMP sprites"
+        )
+
+    def _projection_and_view(self):
+        """Use identical camera/frustum math for rendering and vertex clicks."""
+        width = max(1, self.width())
+        height = max(1, self.height())
+        aspect = width / height
+        near = 0.001
+        far = max(100.0, 40.0 * self.distance)
+        view, _, _ = self._camera_view_matrix()
+        if self.perspective:
+            projection = perspective_projection(
+                aspect, near, far,
+                self.fixed_camera_fov
+                if (self.fixed_camera_mode or self.track_drive_enabled) else 60.0)
+        else:
+            projection = ortho_projection(
+                self.half_height, aspect, near, far)
+        return projection, view
+
+    def set_pick_mode(self, mode):
+        if mode not in ('vertex', 'polygon'):
+            raise ValueError(f"Unknown viewport pick mode: {mode}")
+        self.pick_mode = mode
+
+    def pick_nearest_polygon(self, x, y):
+        """Pick a rendered root POLY, honoring the current BSP/RES selection.
+
+        Geometry from DYNAMIC/external child files is not selectable in the
+        root .3D Source pane. Picking reads the existing GPU mesh on the CPU
+        without touching GL or changing the drawn scene.
+        """
+        if self._polygon_picker is None or self._mesh is None:
+            return None
+        all_visible = (self.render_mode == 'all' and
+                       not self._track_lod_active())
+        if self._visibility_dirty and not all_visible:
+            return None
+        selected = None if all_visible else self._visible_set
+        if selected is not None and not selected:
+            return None
+        projection, view = self._projection_and_view()
+        return self._polygon_picker.nearest(
+            projection @ view, x, y, self.width(), self.height(),
+            eligible_offsets=selected)
+
+    def pick_nearest_vertex(self, x, y):
+        """Pick the closest on-screen *root* vertex near a left-click.
+
+        DYNAMIC/external children have separate source files and cannot be
+        selected in the currently edited root N3 pane. Honor the latest
+        BSP/RES/track selection when it is available; never force unselected
+        geometry into the view. No GL calls or source modifications.
+        """
+        if self._vertex_picker is None or self._mesh is None:
+            return None
+        if self._visibility_dirty and not (
+                self.render_mode == 'all' and not self._track_lod_active()):
+            return None
+        selected = None
+        if not (self.render_mode == 'all' and
+                not self._track_lod_active()):
+            if not self._visible_set:
+                return None
+            selected = set()
+            for polygon_offset in self._visible_set:
+                polygon = self._model.polygons.get(polygon_offset)
+                if polygon is not None:
+                    selected.update(polygon.unique_refs)
+            if not selected:
+                return None
+        projection, view = self._projection_and_view()
+        return self._vertex_picker.nearest(
+            projection @ view, x, y, self.width(), self.height(),
+            eligible_offsets=selected)
+
+    def _capture_depth_visible_labels(self, projection, view, width, height):
+        """Read a geometry-only depth pass for frontmost vertex labels.
+
+        Painter's LIST order and wireframe intentionally disable depth tests.
+        Draw a temporary, color-masked filled pass into the Qt-owned depth
+        buffer *after* the visible image is complete. This does not alter
+        color pixels, model geometry, source, or the editor's render mode.
+        One contiguous readback is considerably cheaper than one GPU read
+        per vertex, especially for large track models.
+        """
+        if (self.vertex_label_mode != "visible"
+                or self.vertex_label_overlay.isHidden()
+                or self._label_vertex_picker is None
+                or self._model is None or self._vao is None):
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Restrict labels to vertices belonging to the active root polygons,
+        # not unused source points, unselected RES branches, or plane-only
+        # declarations that do not belong to a surface.
+        if self.render_mode == "all" and not self._track_lod_active():
+            active = self._model.polygons
+        else:
+            active = self._visible_set
+        eligible = polygon_vertex_refs(self._model, active)
+        if not eligible:
+            self._depth_visible_vertex_labels = []
+            return
+        projected = project_vertex_labels(
+            self._label_vertex_picker, self.vertex_pointer_names,
+            projection @ view, self.width(), self.height(),
+            include_depth=True)
+        if not projected:
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Use the same depth shader and triangles as the viewport, without
+        # textures or color writes. GL_DEPTH_TEST is intentionally enabled
+        # even in Painter/Wireframe so back-side car vertices are excluded.
+        try:
+            glViewport(0, 0, width, height)
+            glColorMask(False, False, False, False)
+            glDepthMask(True)
+            glEnable(GL_DEPTH_TEST)
+            glClear(GL_DEPTH_BUFFER_BIT)
+            glUseProgram(self._program)
+            matrix = np.ascontiguousarray(
+                (projection @ view).T, dtype=np.float32)
+            glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
+            glUniform1i(self._wire_uniform, 0)
+            glUniform1i(self._inspection_uniform, 0)
+            glUniform1i(self._texture_uniform, 0)
+            glBindVertexArray(self._vao)
+            if self.render_mode == "wire" or (
+                    self.render_mode == "all" and not self._track_lod_active()):
+                # Wireframe has no triangle EBO. Its filled occlusion test
+                # includes all faces; label membership still respects wire
+                # detail/RES selection.
+                glDrawArrays(GL_TRIANGLES, 0, len(self._mesh.vertices))
+            elif self._index_count:
+                glDrawElements(
+                    GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+            glBindVertexArray(0)
+            raw_depth = glReadPixels(
+                0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT)
+            if isinstance(raw_depth, (bytes, bytearray, memoryview)):
+                depth = np.frombuffer(raw_depth, dtype=np.float32)
+            else:
+                depth = np.asarray(raw_depth, dtype=np.float32)
+            depth = depth.reshape((height, width))
+            self._depth_visible_vertex_labels = filter_vertex_labels(
+                projected, "visible", vertex_offsets=eligible,
+                depth=depth, device_pixel_ratio=self.devicePixelRatioF())
+            self._vertex_depth_error = None
+        except Exception as error:
+            # An unsupported depth readback (e.g. platform-specific
+            # multisampled FBO) must not break rendering or expose hidden
+            # vertices under the "Visible only" setting.
+            self._vertex_depth_error = str(error)
+            self._depth_visible_vertex_labels = []
+        finally:
+            glBindVertexArray(0)
+            glColorMask(True, True, True, True)
+            glUniform1i(self._texture_uniform, int(self.textures_enabled))
+            glUseProgram(0)
+            if self.render_mode in ("painter", "wire"):
+                glDisable(GL_DEPTH_TEST)
+            else:
+                glEnable(GL_DEPTH_TEST)
+        self.vertex_label_overlay.update()
+
+    def paintGL(self):
+        if self._program is None:
+            return
+        # QOpenGLWidget makes its Qt-owned framebuffer current before
+        # paintGL. Raw GL operates on it without taking ownership of it.
+        w=max(1,int(self.width()*self.devicePixelRatioF()))
+        h=max(1,int(self.height()*self.devicePixelRatioF()))
+        glViewport(0,0,w,h)
+        if self.render_mode in ('painter', 'wire'):
+            # Wireframe is see-through; painter respects original LIST order. Depth testing
+            # would defeat authored overlaps and coincident BSP2 front/back.
+            glDisable(GL_DEPTH_TEST)
+        else:
+            glEnable(GL_DEPTH_TEST)
+        glClearColor(*QColor(self.colors['viewport_background']).getRgbF())
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        if self._vao is None:
+            return
+        aspect=w/h
+        projection, view = self._projection_and_view()
+        matrix=np.ascontiguousarray((projection@view).T,dtype=np.float32)
+        glUseProgram(self._program)
+        glUniform3f(self._wire_color_uniform,
+                    *self._wire_color_rgb("viewport_wire"))
+        glUniform3f(self._selected_wire_color_uniform,
+                    *self._wire_color_rgb("viewport_selected_wire"))
+        glUniform3f(self._inspection_dark_uniform,
+                    *self._wire_color_rgb("viewport_poly_tint_dark"))
+        glUniform3f(self._inspection_light_uniform,
+                    *self._wire_color_rgb("viewport_poly_tint_light"))
+        glUniformMatrix4fv(self._uniform,1,GL_FALSE,matrix)
+        glUniform1i(self._texture_uniform, int(self.textures_enabled))
+        glUniform1i(self._repeat_uniform, int(self.texture_repeat))
+        glUniform1i(self._inspection_uniform, 0)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
+        if self.render_mode == 'wire':
+            self._paint_wireframe(projection, view)
+            self._capture_depth_visible_labels(projection, view, w, h)
+            self._paint_split_preview(projection, view)
+            return
+        self._draw_skybox(view, aspect)
+        glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        if self.render_mode != 'painter':
+            glEnable(GL_DEPTH_TEST)
+        if (self.render_mode != 'all' or self._track_lod_active()) and self._visibility_dirty:
+            self._refresh_visibility()
+        glBindVertexArray(self._vao)
+        pmp_enabled = (self.textures_enabled and self.sprites_enabled and
+                       self._sprite_renderer is not None and
+                       self._scene is not None and
+                       getattr(self._scene, "sprite_resources", None) is not None)
+        if self.render_mode == 'all' and not self._track_lod_active():
+            glDrawArrays(GL_TRIANGLES,0,self._mesh.vertices.shape[0])
+            if pmp_enabled:
+                # Diagnostic mode deliberately includes all LOD/BSP variants.
+                for placement in self._scene.sprite_resources.placements.values():
+                    self._draw_pmp(placement, projection, view)
+        elif pmp_enabled and self._sprite_events:
+            # Split the SAME EBO at sprite insertion markers so LIST/DYNAMIC
+            # painter ordering remains faithful without repacking geometry.
+            for command in draw_runs(self._index_count, self._sprite_events):
+                if command[0] == "polygons":
+                    glDrawElements(GL_TRIANGLES, command[2], GL_UNSIGNED_INT,
+                                   ctypes.c_void_p(command[1] * 4))
+                else:
+                    placement = self._scene.sprite_resources.placements.get(
+                        command[1])
+                    if placement is not None:
+                        self._draw_pmp(placement, projection, view)
+        elif self._index_count:
+            glDrawElements(GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+
+        # Papyrus TSDs are coplanar or nearly coplanar POLYs painted onto
+        # textured road sections. With GPU depth testing, drawing them only
+        # once can lose depth tests and interleave road/marking pixels. Keep
+        # authored BSP selection, then redraw ONLY the visible TSD triangles
+        # with a slight depth bias toward the eye. Depth still rejects road
+        # markings hidden by genuinely closer scenery. No source XYZ edits.
+        # One batched draw avoids a GL call per stripe/line section.
+        if (self.render_mode == 'depth' and self._surface_index_count and
+                self._surface_ebo is not None):
+            glEnable(GL_POLYGON_OFFSET_FILL)
+            glPolygonOffset(-1.0, -4.0)
+            try:
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._surface_ebo)
+                glDrawElements(GL_TRIANGLES, self._surface_index_count,
+                               GL_UNSIGNED_INT, None)
+            finally:
+                glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._ebo)
+                glDisable(GL_POLYGON_OFFSET_FILL)
+
+        # Source highlighting never draws a BSP/LOD-excluded polygon.
+        # Apply contrast-aware color tinting to selected rendered faces.
+        notice = None
+        if self.inspection_kind == "polygon":
+            span = polygon_mesh_range(
+                self._scene, self._mesh, self.inspection_offset)
+            if span is None or not span[1]:
+                notice = "POLY has no renderable triangles in this scene"
+            elif ((self.render_mode != "all" or self._track_lod_active()) and
+                  self.inspection_offset not in self._visible_set):
+                notice = polygon_inspection_notice(
+                    self._model, self.inspection_offset, self._visible_set,
+                    self.lod_distance, self._camera_eye_model(),
+                    self.render_mode)
+            else:
+                # The selected face is part of the active traversal; tint
+                # bright (even white) and dark polygons differently.
+                glDisable(GL_DEPTH_TEST)
+                glUniform1i(self._inspection_uniform, 1)
+                glDrawArrays(GL_TRIANGLES, *span)
+                glUniform1i(self._inspection_uniform, 0)
+
+        glBindVertexArray(0)
+        glUseProgram(0)
+        self._capture_depth_visible_labels(projection, view, w, h)
+        self._set_visibility_warning(notice)
+        self._paint_source_inspection_markers(projection, view)
+        self._paint_split_preview(projection, view)
+
+    def _draw_pmp(self, placement, projection, view):
+        """Draw one palette-indexed transparent billboard at its BSP site."""
+        self._sprite_renderer.draw(
+            placement, self._mesh, projection, view, self._palette_texture)
+        # Restore polygon state for the next BSP span or source highlight.
+        glUseProgram(self._program)
+        glBindVertexArray(self._vao)
+        glActiveTexture(GL_TEXTURE0)
+        glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
+        glActiveTexture(GL_TEXTURE1)
+        glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
+
+    def _on_frame_swapped(self):
+        now = perf_counter()
+        self._frame_count += 1
+        self._frametimes.append(now)
+        if len(self._frametimes) >= 2:
+            duration = self._frametimes[-1] - self._frametimes[0]
+            if duration > 0.25:
+                self.fps = (len(self._frametimes) - 1) / duration
+
+    def set_track_navigation(self, navigation, *, preserve=False):
+        """Attach a TRK without changing the already loaded geometry.
+
+        Recompiling a track retains DLONG/DLAT and the user's on/off choice.
+        Opening a different track starts at the start/finish line.
+        """
+        previous = self.track_navigation
+        same = bool(preserve and navigation is not None and previous is not None
+                    and navigation.path.resolve() == previous.path.resolve())
+        active = self.track_drive_enabled
+        if same:
+            navigation.set_coordinates(previous.dlong, previous.dlat)
+        elif active:
+            self.set_track_drive_enabled(False)
+        self.track_navigation = navigation
+        if navigation is None:
+            self._track_drive_pose = None
+            return
+        if same:
+            if active:
+                self._update_track_drive_pose()
+        else:
+            self.set_track_drive_enabled(True)
+
+    def set_track_drive_enabled(self, enabled):
+        """Follow TRK centerline in perspective, or restore prior orbit."""
+        enabled = bool(enabled)
+        if enabled and self.track_navigation is None:
+            return
+        if enabled == self.track_drive_enabled:
+            return
+        if enabled:
+            if self.fixed_camera_mode:
+                self.set_fixed_camera_mode(False)
+            self._saved_track_view = (
+                self.target.copy(), self.distance, self.half_height,
+                self.perspective, self.azimuth, self.elevation)
+            self.track_drive_enabled = True
+            self.perspective = True
+            self.fixed_camera_fov = 60.0
+            self._update_track_drive_pose()
+        else:
+            self.track_drive_enabled = False
+            self._track_drive_pose = None
+            if self._saved_track_view is not None:
+                (target, self.distance, self.half_height, self.perspective,
+                 self.azimuth, self.elevation) = self._saved_track_view
+                self.target = target.copy()
+            self._saved_track_view = None
+            self.invalidate_visibility()
+        self.trackDriveModeChanged.emit(enabled)
+
+    def _update_track_drive_pose(self):
+        if not self.track_drive_enabled or self.track_navigation is None:
+            return
+        pose = self.track_navigation.pose()
+        self._track_drive_pose = pose
+        self.azimuth, self.elevation = pose.azimuth, pose.elevation
+        self.trackDrivePositionChanged.emit(pose)
+        self.invalidate_visibility()
+
+    def move_track_drive(self, *, forward_feet=0.0, left_feet=0.0):
+        if not self.track_drive_enabled or self.track_navigation is None:
             return False
-        if self._source_invalid:
-            messagebox.showerror('Cannot save: invalid N3 source',
-                     'Fix the highlighted .3D source error before saving a binary copy.')
-            self.notebook.select(self.source_page)
-            return False
-        if self._source_sync_job is not None:
-            self.after_cancel(self._source_sync_job)
-            self._synchronize_model_to_source()
+        self.track_navigation.move(
+            forward_feet=forward_feet, left_feet=left_feet)
+        self._update_track_drive_pose()
         return True
 
-    def open_standalone_n3(self):
-        filename=filedialog.askopenfilename(title='Open standalone Papyrus N3 .3D',
-                filetypes=[('Papyrus N3 text','*.3d'),('All files','*.*')])
-        if filename:
-            self.load_file(filename)
-
-    def import_n3_text(self):
-        """Patch binary model or load standalone N3 when no original is open."""
-        if not self.model or self.model.path.suffix.lower()=='.3d':
-            self.open_standalone_n3()
-            return
-        if self.model.dirty or self.imported_pending:
-            if not messagebox.askyesno('Replace unsaved edits?',
-                  'Importing .3D text replaces unsaved changes in the current model. Continue?'):
+    def keyPressEvent(self, event):
+        """W/Up forward, S/Down backward, A/Left left, D/Right right."""
+        if self.track_drive_enabled and not (
+                event.modifiers() & (Qt.KeyboardModifier.ControlModifier
+                                     | Qt.KeyboardModifier.AltModifier)):
+            multiplier = (5 if event.modifiers()
+                          & Qt.KeyboardModifier.ShiftModifier else 1)
+            key = event.key()
+            forward, left = 0.0, 0.0
+            if key in (Qt.Key.Key_W, Qt.Key.Key_Up):
+                forward = self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_S, Qt.Key.Key_Down):
+                forward = -self.track_forward_step_ft * multiplier
+            elif key in (Qt.Key.Key_A, Qt.Key.Key_Left):
+                left = self.track_lateral_step_ft * multiplier
+            elif key in (Qt.Key.Key_D, Qt.Key.Key_Right):
+                left = -self.track_lateral_step_ft * multiplier
+            else:
+                super().keyPressEvent(event)
                 return
-        filename=filedialog.askopenfilename(title='Import annotated N3 .3D text',
-                    initialdir=str(self.model.path.parent),
-                    filetypes=[('Papyrus N3 text','*.3d'),('All files','*.*')])
-        if not filename:return
-        try:
-            text=Path(filename).read_text(encoding='utf-8-sig')
-            # For an already edited model, import against its current raw state,
-            # and never partially modify the displayed model on parse errors.
-            original_raw=self.model.raw
-            checked,doc=import_text(self.model,text)
-        except (OSError,UnicodeError,FormatError,ValueError,OverflowError) as exc:
-            messagebox.showerror('N3 import rejected',str(exc))
+            self.move_track_drive(forward_feet=forward, left_feet=left)
+            event.accept()
             return
-        self.model=checked
-        self.text_document=doc
-        self._original_n3_source=True
-        self._refresh_vertex_pointer_names()
-        self.imported_pending=(checked.raw!=original_raw) or self.imported_pending
-        self.selected=None
-        self.selected_poly=None
-        self.selected_dynamic=None
-        self.undo_stack.clear()
-        self.redo_stack.clear()
-        self.poly_order=sorted(checked.polygons)
-        self.vertex_order=sorted(checked.vertices)
-        self.dynamic_order=sorted(checked.dynamics)
-        self.header.set(checked.path.name+(' *' if self.imported_pending else ''))
-        self.stats.set(checked.summary().replace('\n','  |  '))
-        with CAD_PROFILE.measure("ui.vertex_list"):
-            self._populate_vertex_list()
-        self.refresh_dynamic_list()
-        self.refresh_polygon_list()
-        self._refresh_polygon_inspector()
-        self.update_edit_panel()
-        self.refresh_raw()
-        self.refresh_geometry_targets()
-        self.frame_model()
-        self._load_source_editor()
-        self.status.set(f'Imported {Path(filename).name}: validated against original 3DO record topology; '
-                        'Save Copy writes the edited binary.')
-        messagebox.showinfo('N3 import validated',
-            'Imported and validated the text edits in memory.\n'
-            'Save Copy to write a new binary .3DO.\n\n'
-            'Keep your .3D file for pointer names and comments; they are not stored in .3DO.')
+        super().keyPressEvent(event)
 
-    def open_file(self):
-        path=filedialog.askopenfilename(title='Open Papyrus 3DO or N3 .3D',
-            filetypes=[('3DO and N3 model files','*.3do *.3d'),
-                       ('Papyrus 3DO binary','*.3do'),
-                       ('Papyrus N3 text','*.3d'),('All files','*.*')])
-        if path: self.load_file(path)
+    def set_fixed_camera_eye(self, x, y, z):
+        """Update the raw Papyrus XYZ eye without changing orbit, mesh or FOV."""
+        eye = tuple(float(v) for v in (x, y, z))
+        if not all(math.isfinite(v) for v in eye):
+            raise ValueError("Fixed Camera XYZ must be finite")
+        if eye == self.fixed_camera_eye:
+            return
+        self.fixed_camera_eye = eye
+        if self.fixed_camera_mode:
+            self.invalidate_visibility()
 
-    def load_file(self,path):
-        is_n3=Path(path).suffix.lower()=='.3d'
-        if not is_n3:
-            # Individual car 3DOs contain an appearance wrapper, not local mesh.
-            try:
-                appearance=read_car_appearance(path)
-            except (OSError,AppearanceError):
-                appearance=None
-            if appearance is not None:
-                return self.load_car_appearance(path,appearance=appearance)
-        if self.model and (self.model.dirty or self.imported_pending):
-            if not messagebox.askyesno('Discard edits?',
-                    'Discard unsaved edits and load another model?'):
+    def set_fixed_camera_mode(self, enabled):
+        """Toggle a stationary perspective eye at user-specified raw XYZ."""
+        enabled = bool(enabled)
+        if enabled and self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
+        if self.fixed_camera_mode == enabled:
+            return
+        if enabled:
+            self._saved_external_view = (
+                self.target.copy(), self.distance, self.half_height,
+                self.perspective, self.azimuth, self.elevation)
+            self.fixed_camera_mode = True
+            self.perspective = True
+            self.azimuth = 0.0       # Looking toward +Y from the fixed eye
+            self.elevation = 0.0     # Level view for interior inspection
+            self.fixed_camera_fov = 60.0
+        else:
+            self.fixed_camera_mode = False
+            if self._saved_external_view is not None:
+                (target, self.distance, self.half_height, self.perspective,
+                 self.azimuth, self.elevation) = self._saved_external_view
+                self.target = target.copy()
+            self._saved_external_view = None
+        self.fixedCameraModeChanged.emit(self.fixed_camera_mode)
+        self.invalidate_visibility()
+
+    def frame_all(self):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
+        if self.fixed_camera_mode:
+            self.set_fixed_camera_mode(False)
+        self.target[:] = 0
+        self.distance = 4.0
+        self.half_height = 1.6
+        self.invalidate_visibility()
+
+    def set_view(self, name):
+        if self.track_drive_enabled:
+            self.set_track_drive_enabled(False)
+        if name == "3D":
+            self.azimuth, self.elevation = math.radians(35), math.radians(28)
+        elif name == "Top":
+            self.azimuth, self.elevation = 0.0, math.pi / 2
+        elif name == "Front":
+            self.azimuth, self.elevation = 0.0, 0.0
+        elif name == "Side":
+            self.azimuth, self.elevation = math.pi / 2, 0.0
+        self.invalidate_visibility()
+
+    def wheelEvent(self, event):
+        notches = event.angleDelta().y() / 120.0
+        multiplier = math.exp(-notches * 0.15)
+        if self.fixed_camera_mode or self.track_drive_enabled:
+            # Fixed/track camera position stays put; wheel changes FOV.
+            # letting skybox authors examine details while stationary.
+            self.fixed_camera_fov = min(110.0, max(20.0, self.fixed_camera_fov * multiplier))
+            self.update()
+        else:
+            self.half_height = min(1000.0, max(.0001, self.half_height * multiplier))
+            self.distance = min(1000.0, max(.001, self.distance * multiplier))
+            self.invalidate_visibility()
+        event.accept()
+
+    def mousePressEvent(self, event):
+        self.setFocus(Qt.FocusReason.MouseFocusReason)
+        self._drag = (event.position(), event.button())
+        self._pick_press = (
+            event.position(), event.button(), event.modifiers())
+        self._pick_dragged = False
+        event.accept()
+
+    def mouseReleaseEvent(self, event):
+        pressed = self._pick_press
+        self._drag = None
+        self._pick_press = None
+        if (pressed is not None
+                and pressed[1] == Qt.MouseButton.LeftButton
+                and event.button() == Qt.MouseButton.LeftButton
+                and not self._pick_dragged
+                and not (pressed[2] | event.modifiers())
+                & Qt.KeyboardModifier.ShiftModifier):
+            if self.pick_mode == 'polygon':
+                offset = self.pick_nearest_polygon(
+                    event.position().x(), event.position().y())
+                if offset is not None:
+                    self.polygonPicked.emit(offset)
+            else:
+                offset = self.pick_nearest_vertex(
+                    event.position().x(), event.position().y())
+                if offset is not None:
+                    self.vertexPicked.emit(offset)
+        event.accept()
+
+    def mouseMoveEvent(self, event):
+        if self._drag is None:
+            return
+        old, button = self._drag
+        dx = event.position().x() - old.x()
+        dy = event.position().y() - old.y()
+        if self._pick_press is not None:
+            origin = self._pick_press[0]
+            if ((event.position().x() - origin.x())**2 +
+                    (event.position().y() - origin.y())**2 > 16):
+                self._pick_dragged = True
+        self._drag = (event.position(), button)
+        if button == Qt.MouseButton.MiddleButton or (
+            event.modifiers() & Qt.KeyboardModifier.ShiftModifier
+        ):
+            if not self.fixed_camera_mode and not self.track_drive_enabled:
+                _, right, up = self._camera_view_matrix()
+                world_per_pixel = (2 * self.half_height) / max(self.height(), 1)
+                self.target += (-dx * right + dy * up) * world_per_pixel
+            # Fixed Camera disables pan: eye stays at selected raw XYZ.
+        else:
+            self.azimuth -= dx * .006
+            self.elevation = max(-math.pi/2, min(math.pi/2,
+                                                 self.elevation + dy*.006))
+        self.invalidate_visibility()
+        event.accept()
+
+
+def _migrate_legacy_preferences():
+    """Keep previously saved colors and recent models after app consolidation."""
+    current = QSettings("ICR2Tools", "3DOCAD")
+    if current.value("preferences_migrated", False, type=bool):
+        return
+    previous = QSettings("ICR2Tools", "GPUViewer")
+    for key in previous.allKeys():
+        if not current.contains(key):
+            current.setValue(key, previous.value(key))
+    current.setValue("preferences_migrated", True)
+
+
+BODY_MATERIAL = "__car_body__"  # internal target, never an asset filename
+
+
+class Window(QMainWindow):
+    def __init__(self, path=None, *, benchmark=False, report_path=None):
+        super().__init__()
+        self.setWindowTitle("ICR2 3DO CAD — Object workspace")
+        self.resize(1280, 850)
+        self.worker = None
+        self._load_progress_worker = None
+        self._load_activity_worker = None
+        self._load_trace = None
+        self._info = {}
+        self.mip_browser = None  # Separate, non-modal texture reference window
+        self.report_path = report_path
+        self.palette_path = CAD_ROOT / "gamepal.pcx"
+        self.texture_folder = None
+        self.objects_folder = None
+        self.mip_overrides = {}
+        self.object_overrides = {}
+        self.body_mip = None
+        self.fallback_mip = None
+        self.model_path = None
+        self._loaded_file_path = None  # committed open, not an in-flight/failed file
+        self._find_text = ""
+        self._preserve_view = False
+        self._source_invalid = False
+        self._source_busy_revision = None
+        self._source_queued = None
+        self._source_export_worker = None
+        self._source_export_model = None
+        self._source_applied = False
+        self._last_valid_source_text = None
+        self._source_save_target = None
+        self._pending_vertex_pick = None
+        self._pending_polygon_pick = None
+        self._split_polygon_offset = None
+        self._split_target_model = None
+        self._pending_split_label = None
+        _migrate_legacy_preferences()
+        self.appearance_colors = load_colors(QSettings("ICR2Tools", "3DOCAD"))
+        self.viewer = GLViewport()
+        self.viewer.set_appearance_colors(self.appearance_colors)
+        self.load_label = QLabel("Open a .3D or .3DO model")
+        self.load_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.stats_label = QLabel("No model loaded")
+        self.visibility_label = QLabel("BSP status will appear here")
+        self.polygon_status = QLabel("Enter a polygon body offset to inspect")
+        self.palette_status = QLabel("Palette: bundled gamepal.pcx")
+        self.texture_status = QLabel("MIPs: no model loaded")
+        self.sprite_status = QLabel("PMP sprites: no model loaded")
+        self.car_status = QLabel("Individual-car RECOLOR: not loaded")
+        root = QWidget()
+        layout = QVBoxLayout(root)
+        # Collapsible, scrollable settings leave the majority of the window to the model.
+        # The document area contains only the OpenGL viewport and N3 editor.
+        # The former sidebar widgets live in nonmodal, scrollable dialogs,
+        # so all existing controls and signal connections remain intact.
+        self.settings_dialogs = {}
+        self._load_issues = ()
+        self._load_log_file = None
+        self._init_load_error_dialog()
+        model_layout = self._make_settings_dialog("model", "Model Settings")
+        display_layout = self._make_settings_dialog("display", "Display Settings")
+        assets_layout = self._make_settings_dialog("assets", "Asset Settings")
+        advanced_layout = self._make_settings_dialog(
+            "advanced", "Advanced Diagnostics")
+
+        self.fixed_camera_button = QPushButton("Fixed Camera")
+        self.fixed_camera_button.setCheckable(True)
+        self.fixed_camera_button.setToolTip(
+            "Lock the camera at user-selected raw Papyrus XYZ. "
+            "Default: (0, 0, 5000). Drag to look around; the wheel changes "
+            "FOV without moving the camera. Frame All or untoggle "
+            "to return to the exterior orbit.")
+        self.fixed_camera_button.toggled.connect(self.viewer.set_fixed_camera_mode)
+        advanced_layout.addWidget(self.fixed_camera_button)
+        self.perspective_toggle = QCheckBox("Perspective")
+        self.perspective_toggle.toggled.connect(self._set_perspective)
+        display_layout.addWidget(self.perspective_toggle)
+        # Menu state is backed by this control, but there is no toolbar.
+        self.source_toggle = QPushButton(".3D Source", self)
+        self.source_toggle.setCheckable(True)
+        self.source_toggle.toggled.connect(self._toggle_source)
+        self.source_toggle.hide()
+        self.benchmark_toggle = QCheckBox("Continuous 60 Hz benchmark")
+        self.benchmark_toggle.setChecked(benchmark)
+        advanced_layout.addWidget(self.benchmark_toggle)
+
+        # Expose raw Papyrus coordinates while Fixed Camera is active.
+        # Keep these controls outside the already-crowded view toolbar.
+        self.fixed_camera_controls = QWidget(root)
+        fixedbar = QVBoxLayout(self.fixed_camera_controls)
+        fixedbar.setContentsMargins(0, 0, 0, 0)
+        fixedbar.addWidget(QLabel("Fixed Camera eye (raw XYZ):"))
+        self.fixed_camera_coords = []
+        for axis, raw in zip("XYZ", FIXED_CAMERA_DEFAULT_EYE):
+            fixedbar.addWidget(QLabel(axis + ":"))
+            spin = QSpinBox()
+            spin.setRange(-2_000_000_000, 2_000_000_000)
+            spin.setSingleStep(1000)
+            spin.setValue(int(raw))
+            spin.setMinimumWidth(112)
+            spin.setToolTip(
+                f"Raw Papyrus {axis} camera coordinate, in model units. "
+                "Enter a value to move the fixed camera.")
+            spin.valueChanged.connect(self._fixed_camera_coords_changed)
+            self.fixed_camera_coords.append(spin)
+            fixedbar.addWidget(spin)
+        fixedbar.addStretch()
+        self.fixed_camera_controls.hide()
+        advanced_layout.addWidget(self.fixed_camera_controls)
+        advanced_layout.addWidget(QLabel("Rendering method"))
+        self.mode_combo = QComboBox()
+        self.mode_combo.addItem("Papyrus drawing order (no depth)", "painter")
+        self.mode_combo.addItem("BSP selection + depth testing", "depth")
+        self.mode_combo.addItem("All polygons + depth testing", "all")
+        self.mode_combo.addItem("Wireframe (polygon outlines only)", "wire")
+        self.mode_combo.currentIndexChanged.connect(self._mode_changed)
+        advanced_layout.addWidget(self.mode_combo)
+
+        # Compact control bar lives directly above the GPU viewport, not in
+        # the optional Display Settings dialog. Reuse the existing widgets and
+        # LOD signals; there must be only one authoritative distance value.
+        self.distance_bar = QWidget()
+        distance_row = QHBoxLayout(self.distance_bar)
+        distance_row.setContentsMargins(5, 3, 5, 3)
+        distance_row.setSpacing(6)
+        distance_row.addWidget(QLabel("Projection"))
+        self.projection_combo = QComboBox()
+        self.projection_combo.setObjectName("projectionCombo")
+        self.projection_combo.addItem("Perspective", True)
+        self.projection_combo.addItem("Orthographic", False)
+        self.projection_combo.setToolTip(
+            "Switch camera projection. Fixed Camera and TRK driving "
+            "require Perspective.")
+        self.projection_combo.currentIndexChanged.connect(
+            self._projection_changed)
+        self.perspective_toggle.setChecked(True)
+        distance_row.addWidget(self.projection_combo)
+        distance_row.addWidget(QLabel("Pick"))
+        self.pick_mode_combo = QComboBox()
+        self.pick_mode_combo.setObjectName("viewportPickMode")
+        self.pick_mode_combo.addItem("Vertices", "vertex")
+        self.pick_mode_combo.addItem("Polys", "polygon")
+        self.pick_mode_combo.setToolTip(
+            "Viewport left-click selects vertices by default. Select Polys "
+            "to click polygon faces and jump to their .3D source row.")
+        self.pick_mode_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
+        distance_row.addWidget(self.pick_mode_combo)
+        self.vertex_labels_toggle = QCheckBox("Vertex labels")
+        self.vertex_labels_toggle.setObjectName("showAllVertexLabels")
+        self.vertex_labels_toggle.setToolTip(
+            "Show a small blue dot and N3 pointer name at every on-screen "
+            "root-model vertex. Selected vertices keep their larger yellow "
+            "marker. Off by default for large track models.")
+        self.vertex_labels_toggle.toggled.connect(
+            self.viewer.set_all_vertex_labels)
+        distance_row.addWidget(self.vertex_labels_toggle)
+        self.vertex_label_mode_combo = QComboBox()
+        self.vertex_label_mode_combo.setObjectName("vertexLabelDisplayMode")
+        self.vertex_label_mode_combo.addItem("All", "all")
+        self.vertex_label_mode_combo.addItem("Visible only", "visible")
+        self.vertex_label_mode_combo.addItem("Selected poly", "selected")
+        self.vertex_label_mode_combo.setToolTip(
+            "All: every on-screen root-model vertex, including hidden ones. "
+            "Visible only: labels on the frontmost rendered polygon surfaces, "
+            "excluding geometry hidden behind the model. "
+            "Selected poly: only vertices belonging to the POLY currently "
+            "highlighted in .3D Source or picked in Polys mode. "
+            "Requires Vertex labels to be enabled.")
+        self.vertex_label_mode_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_vertex_label_mode(
+                self.vertex_label_mode_combo.currentData()))
+        distance_row.addWidget(self.vertex_label_mode_combo)
+        self.split_button = QPushButton("Split polygon…")
+        self.split_button.setCheckable(True)
+        self.split_button.setObjectName("openPolygonSplitPanel")
+        self.split_button.setToolTip(
+            "Open the polygon split controls beneath the viewport; click "
+            "a face in Polys pick mode to select the target.")
+        self.split_button.toggled.connect(self._toggle_split_tool)
+        distance_row.addWidget(self.split_button)
+        distance_label = QLabel("SWITCH DISTANCE")
+        distance_label.setToolTip(
+            "Controls RES/SWITCH DISTANCE in the currently opened model.")
+        distance_row.addWidget(distance_label)
+        self.lod_mode_combo = QComboBox()
+        self.lod_mode_combo.addItem("Auto", "auto")
+        self.lod_mode_combo.addItem("Manual", "manual")
+        self.lod_mode_combo.addItem("All levels", "all")
+        self.lod_mode_combo.setToolTip(
+            "Auto: camera-relative to each RES anchor. Manual: exact "
+            "distance on the slider. All levels: ignore RES thresholds.")
+        self.lod_mode_combo.currentIndexChanged.connect(self._lod_changed)
+        distance_row.addWidget(self.lod_mode_combo)
+        self.lod_slider = QSlider(Qt.Orientation.Horizontal)
+        self.lod_slider.setRange(0, 0)
+        self.lod_slider.setEnabled(False)
+        self.lod_slider.setToolTip(
+            "Manual SWITCH DISTANCE in raw Papyrus model units. "
+            "Drag or use the arrows to enable Manual mode.")
+        self.lod_slider.sliderPressed.connect(self._activate_manual_distance)
+        self.lod_slider.valueChanged.connect(self._slider_distance_changed)
+        distance_row.addWidget(self.lod_slider, 1)
+        self.lod_spin = QSpinBox()
+        self.lod_spin.setRange(0, 0)
+        self.lod_spin.setKeyboardTracking(False)
+        self.lod_spin.setToolTip(
+            "Exact SWITCH DISTANCE; editing selects Manual mode.")
+        self.lod_spin.valueChanged.connect(self._spin_distance_changed)
+        self.lod_spin.setEnabled(False)
+        distance_row.addWidget(self.lod_spin)
+        self.lod_max_label = QLabel("No RES")
+        self.lod_max_label.setToolTip(
+            "The slider's maximum is the highest SWITCH DISTANCE threshold "
+            "in the loaded scene.")
+        distance_row.addWidget(self.lod_max_label)
+        display_layout.addWidget(QLabel(
+            "SWITCH DISTANCE / RES is adjusted above the viewport."))
+
+        advanced_layout.addWidget(QLabel("Polygon body offset"))
+        self.polygon_edit = QLineEdit()
+        self.polygon_edit.setPlaceholderText("decimal or 0x...")
+        self.polygon_edit.textChanged.connect(self._update_polygon_status)
+        advanced_layout.addWidget(self.polygon_edit)
+
+        assetsbar = QVBoxLayout()
+        palette_button = QPushButton("Open PCX palette…")
+        palette_button.clicked.connect(self.open_palette_dialog)
+        assetsbar.addWidget(palette_button)
+        default_button = QPushButton("Default palette")
+        default_button.clicked.connect(self.restore_palette)
+        assetsbar.addWidget(default_button)
+        folder_button = QPushButton("MIP folder…")
+        folder_button.clicked.connect(self.choose_mip_folder)
+        assetsbar.addWidget(folder_button)
+        reload_button = QPushButton("Reload MIPs (R)")
+        reload_button.clicked.connect(self.reload_mips)
+        assetsbar.addWidget(reload_button)
+        self.show_textures = QCheckBox("Textures")
+        self.show_textures.setChecked(True)
+        self.show_textures.toggled.connect(self._textures_toggled)
+        display_layout.addWidget(self.show_textures)
+        self.show_sprites = QCheckBox("PMP sprites (PMP/PMP2)")
+        self.show_sprites.setToolTip(
+            "Render viewpoint-selected billboards from this 3DO and nested "
+            "referenced objects. Requires Textures enabled.")
+        self.show_sprites.setChecked(True)
+        self.show_sprites.toggled.connect(self._sprites_toggled)
+        display_layout.addWidget(self.show_sprites)
+        self.repeat_uv = QCheckBox("Repeat UV (tile MIPs)")
+        self.repeat_uv.setChecked(self.viewer.texture_repeat)
+        self.repeat_uv.setToolTip(
+            "Repeat MIP pixels in U and V when coordinates extend beyond the "
+            "individual image's dimensions. Applies to .3D and .3DO alike; "
+            "uncheck only to diagnose clamp-to-edge rendering.")
+        self.repeat_uv.toggled.connect(self._repeat_toggled)
+        display_layout.addWidget(self.repeat_uv)
+        assets_layout.addLayout(assetsbar)
+        objects_button = QPushButton("External 3DO folder…")
+        objects_button.clicked.connect(self.choose_objects_folder)
+        assets_layout.addWidget(objects_button)
+        self.fallback_controls = QWidget()
+        fallback_layout = QVBoxLayout(self.fallback_controls)
+        fallback_layout.setContentsMargins(0, 0, 0, 0)
+        fallback_button = QPushButton("Fallback MIP…")
+        fallback_button.clicked.connect(self.choose_fallback_mip)
+        fallback_layout.addWidget(fallback_button)
+        clear_fallback = QPushButton("Clear fallback MIP")
+        clear_fallback.clicked.connect(self.clear_fallback_mip)
+        fallback_layout.addWidget(clear_fallback)
+        assets_layout.addWidget(self.fallback_controls)
+
+        # Mode tabs configure the current scene; the GPU viewport and N3
+        # editor below remain a single shared document across all three.
+        self.workspace_tabs = QTabWidget()
+        self.workspace_tabs.setDocumentMode(True)
+        car_page = QWidget()
+        car_layout = QVBoxLayout(car_page)
+        car_layout.setContentsMargins(6, 4, 6, 4)
+        carbar = QVBoxLayout()
+        carbar.addWidget(QLabel("Car geometry:"))
+        self.car_ref_combo = QComboBox()
+        self.car_ref_combo.setMinimumWidth(90)
+        carbar.addWidget(self.car_ref_combo)
+        shape_button = QPushButton("Assign carshape 3DO…")
+        shape_button.clicked.connect(self.choose_car_shape)
+        carbar.addWidget(shape_button)
+        clear_shape = QPushButton("Clear shape override")
+        clear_shape.clicked.connect(self.clear_car_shape)
+        carbar.addWidget(clear_shape)
+        carbar.addWidget(QLabel("Texture target:"))
+        self.material_combo = QComboBox()
+        self.material_combo.setMinimumWidth(100)
+        carbar.addWidget(self.material_combo)
+        livery_button = QPushButton("Assign livery MIP…")
+        livery_button.clicked.connect(self.choose_livery_mip)
+        carbar.addWidget(livery_button)
+        clear_livery = QPushButton("Clear livery override")
+        clear_livery.clicked.connect(self.clear_livery_mip)
+        carbar.addWidget(clear_livery)
+        car_layout.addLayout(carbar)
+        car_layout.addWidget(self.car_status)
+        self.workspace_tabs.addTab(car_page, "Car")
+
+        track_page = QWidget()
+        track_layout = QVBoxLayout(track_page)
+        track_layout.setContentsMargins(6, 4, 6, 4)
+        self.track_status = QLabel("Track scene: open a track .3D or .3DO")
+        track_layout.addWidget(self.track_status)
+        track_layout.addWidget(QLabel("Track section detail"))
+        self.track_detail_combo = QComboBox()
+        self.track_detail_combo.addItem("Camera window (HI / MED / LO)", "window")
+        self.track_detail_combo.addItem("HI (4 geometry slots)", "hi")
+        self.track_detail_combo.addItem("MED (2 geometry slots)", "med")
+        self.track_detail_combo.addItem("LO (1 geometry slot)", "lo")
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData('hi'))
+        self.track_detail_combo.model().item(0).setEnabled(False)
+        self.track_detail_combo.setEnabled(False)
+        self.track_detail_combo.setToolTip(
+            "Camera window uses section DATA DLONG positions and the TRK "
+            "camera (8 HI, 5 MED, 3 LO ahead and behind). Other sections "
+            "are omitted. Global HI/MED/LO remain available for overview.")
+        self.track_detail_combo.currentIndexChanged.connect(self._track_detail_changed)
+        track_layout.addWidget(self.track_detail_combo)
+        self.track_detail_status = QLabel(
+            "No eight-entry Papyrus track section index detected")
+        self.track_detail_status.setWordWrap(True)
+        track_layout.addWidget(self.track_detail_status)
+        track_layout.addWidget(QLabel(
+            "Camera window sections each way (current section always HI)"))
+        window_counts = QHBoxLayout()
+        self.track_window_spins = []
+        for label, count in zip(('HI', 'MED', 'LO'), DEFAULT_WINDOW_COUNTS):
+            window_counts.addWidget(QLabel(label))
+            spin = QSpinBox()
+            spin.setRange(0, 250)
+            spin.setValue(count)
+            spin.setEnabled(False)
+            spin.setToolTip(
+                f"Number of {label} sections in each direction from the "
+                "camera. Zero disables this tier; overlaps use closer detail.")
+            spin.valueChanged.connect(self._track_window_changed)
+            window_counts.addWidget(spin)
+            self.track_window_spins.append(spin)
+        track_layout.addLayout(window_counts)
+        self.track_drive_checkbox = QCheckBox("TRK camera — follow racing direction")
+        self.track_drive_checkbox.setEnabled(False)
+        self.track_drive_checkbox.setToolTip(
+            "Find a same-named .TRK beside this track. Follow its physics "
+            "centerline from DLONG=0 at 10,000 Papyrus units (about 1.67 feet) "
+            "above the surface. Click the "
+            "3D viewport, then W/Up forward, S/Down back, A/Left left "
+            "(+DLAT), D/Right right (-DLAT); hold Shift for 5x movement.")
+        self.track_drive_checkbox.toggled.connect(self._track_drive_toggled)
+        track_layout.addWidget(self.track_drive_checkbox)
+        self.trk_drive_status = QLabel("No matching .TRK loaded")
+        self.trk_drive_status.setWordWrap(True)
+        track_layout.addWidget(self.trk_drive_status)
+        track_steps = QHBoxLayout()
+        track_steps.addWidget(QLabel("Forward ft/key"))
+        self.trk_forward_step = QSpinBox()
+        self.trk_forward_step.setRange(1, 1000)
+        self.trk_forward_step.setValue(int(DEFAULT_LONG_STEP_FT))
+        self.trk_forward_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_forward_step)
+        track_steps.addWidget(QLabel("Lateral ft/key"))
+        self.trk_lateral_step = QSpinBox()
+        self.trk_lateral_step.setRange(1, 100)
+        self.trk_lateral_step.setValue(int(DEFAULT_LAT_STEP_FT))
+        self.trk_lateral_step.valueChanged.connect(self._trk_steps_changed)
+        track_steps.addWidget(self.trk_lateral_step)
+        track_layout.addLayout(track_steps)
+        self.trk_reset_button = QPushButton("Go to DLONG = 0 / DLAT = 0")
+        self.trk_reset_button.setEnabled(False)
+        self.trk_reset_button.clicked.connect(self._reset_trk_camera)
+        track_layout.addWidget(self.trk_reset_button)
+        self.show_skybox = QCheckBox("Skybox (horiz.3do / horiz.3d)")
+        self.show_skybox.setChecked(True)
+        self.show_skybox.setEnabled(False)
+        self.show_skybox.setToolTip(
+            "Display HORIZ.3DO or HORIZ.3D as a camera-following background at "
+            "its default local eye (0, 0, 100). Only available on indexed tracks.")
+        self.show_skybox.toggled.connect(self._skybox_toggled)
+        track_layout.addWidget(self.show_skybox)
+        sky_eye_row = QHBoxLayout()
+        sky_eye_row.addWidget(QLabel("HORIZ eye (raw XYZ)"))
+        self.sky_eye_spins = []
+        for axis, coordinate in zip(("X", "Y", "Z"), SKY_EYE):
+            sky_eye_row.addWidget(QLabel(axis))
+            spin = QSpinBox()
+            spin.setRange(-10_000_000, 10_000_000)
+            spin.setSingleStep(100)
+            spin.setValue(int(coordinate))
+            spin.setEnabled(False)
+            spin.setToolTip(
+                f"Camera {axis} position inside HORIZ (raw Papyrus units). "
+                "Affects skybox only, not track camera or 3DO data.")
+            spin.valueChanged.connect(self._sky_eye_changed)
+            sky_eye_row.addWidget(spin)
+            self.sky_eye_spins.append(spin)
+        track_layout.addLayout(sky_eye_row)
+        self.sky_eye_reset_button = QPushButton("Reset HORIZ eye (0, 0, 100)")
+        self.sky_eye_reset_button.setEnabled(False)
+        self.sky_eye_reset_button.clicked.connect(self._reset_sky_eye)
+        track_layout.addWidget(self.sky_eye_reset_button)
+        self.skybox_status = QLabel("No track skybox loaded")
+        self.skybox_status.setWordWrap(True)
+        track_layout.addWidget(self.skybox_status)
+        self.workspace_tabs.addTab(track_page, "Track")
+
+        object_page = QWidget()
+        object_layout = QVBoxLayout(object_page)
+        object_layout.setContentsMargins(6, 4, 6, 4)
+        self.object_status = QLabel("Object scene: open a standalone .3D or .3DO")
+        object_layout.addWidget(self.object_status)
+        self.workspace_tabs.addTab(object_page, "Object")
+
+        # Ambiguous filenames should not be guessed to be cars or tracks.
+        # A strongly identified file selects a tab after its first load.
+        self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index("object"))
+        self.workspace_tabs.currentChanged.connect(self._workspace_changed)
+        model_layout.addWidget(self.workspace_tabs)
+        self.load_label.setWordWrap(True)
+        model_layout.addWidget(self.load_label)
+        self.viewport_panel = QWidget()
+        self.viewport_layout = QVBoxLayout(self.viewport_panel)
+        self.viewport_layout.setContentsMargins(0, 0, 0, 0)
+        self.viewport_layout.setSpacing(0)
+        self.viewport_layout.addWidget(self.distance_bar)
+        # Always visible above the viewport during a load, even when the
+        # collapsible settings panel is closed. Stage markers are coarse,
+        # not predictions of time remaining.
+        self.load_progress = QProgressBar()
+        self.load_progress.setRange(0, 100)
+        self.load_progress.setValue(0)
+        self.load_progress.setTextVisible(True)
+        self.load_progress.setFormat("0% — Preparing load")
+        self.load_progress.hide()
+        self.viewport_layout.addWidget(self.load_progress)
+        self.viewport_layout.addWidget(self.viewer, stretch=1)
+        # Contextual split controls sit BELOW the GPU viewport rather than
+        # consuming the N3 source editor's horizontal space.
+        self.split_panel = QGroupBox("Polygon split")
+        self.split_panel.setObjectName("polygonSplitPanel")
+        split_layout = QVBoxLayout(self.split_panel)
+        split_layout.setContentsMargins(8, 5, 8, 6)
+        split_layout.setSpacing(4)
+        split_top = QHBoxLayout()
+        self.split_target_label = QLabel("Select a polygon in the viewport")
+        self.split_target_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        split_top.addWidget(self.split_target_label, 1)
+        self.split_mode_combo = QComboBox()
+        self.split_mode_combo.addItem("Cut between edges (new vertices)", "edges")
+        self.split_mode_combo.addItem("Diagonal between existing vertices", "vertices")
+        self.split_mode_combo.currentIndexChanged.connect(
+            self._split_controls_changed)
+        split_top.addWidget(self.split_mode_combo)
+        split_layout.addLayout(split_top)
+
+        self.split_edge_row = QWidget()
+        edge_row = QHBoxLayout(self.split_edge_row)
+        edge_row.setContentsMargins(0, 0, 0, 0)
+        self.split_edge_a = QComboBox()
+        self.split_edge_b = QComboBox()
+        self.split_fraction_a = QDoubleSpinBox()
+        self.split_fraction_b = QDoubleSpinBox()
+        for label, choice, fraction in (
+                ("Edge A", self.split_edge_a, self.split_fraction_a),
+                ("Edge B", self.split_edge_b, self.split_fraction_b)):
+            edge_row.addWidget(QLabel(label))
+            choice.setMinimumWidth(130)
+            choice.currentIndexChanged.connect(self._split_controls_changed)
+            edge_row.addWidget(choice, 1)
+            edge_row.addWidget(QLabel("Fraction"))
+            fraction.setDecimals(3)
+            fraction.setRange(0.001, 0.999)
+            fraction.setSingleStep(0.05)
+            fraction.setValue(0.5)
+            fraction.valueChanged.connect(self._split_controls_changed)
+            edge_row.addWidget(fraction)
+        split_layout.addWidget(self.split_edge_row)
+
+        self.split_vertex_row = QWidget()
+        vertex_row = QHBoxLayout(self.split_vertex_row)
+        vertex_row.setContentsMargins(0, 0, 0, 0)
+        self.split_vertex_a = QComboBox()
+        self.split_vertex_b = QComboBox()
+        for label, choice in (("Vertex A", self.split_vertex_a),
+                              ("Vertex B", self.split_vertex_b)):
+            vertex_row.addWidget(QLabel(label))
+            choice.currentIndexChanged.connect(self._split_controls_changed)
+            vertex_row.addWidget(choice, 1)
+        split_layout.addWidget(self.split_vertex_row)
+
+        split_bottom = QHBoxLayout()
+        self.split_preview_check = QCheckBox("Preview proposed cut")
+        self.split_preview_check.setChecked(True)
+        self.split_preview_check.toggled.connect(self._split_controls_changed)
+        split_bottom.addWidget(self.split_preview_check)
+        split_bottom.addStretch(1)
+        self.split_apply_button = QPushButton("Split polygon")
+        self.split_apply_button.clicked.connect(self._commit_polygon_split)
+        split_bottom.addWidget(self.split_apply_button)
+        split_cancel = QPushButton("Close")
+        split_cancel.clicked.connect(lambda: self.split_button.setChecked(False))
+        split_bottom.addWidget(split_cancel)
+        split_layout.addLayout(split_bottom)
+        self.split_hint_label = QLabel(
+            "Select a root-model POLY. Edge fractions run from 0 to 1.")
+        self.split_hint_label.setWordWrap(True)
+        split_layout.addWidget(self.split_hint_label)
+        self.viewport_layout.addWidget(self.split_panel)
+        self.split_panel.hide()
+        self.editor_splitter = QSplitter(Qt.Orientation.Horizontal)
+        self.editor_splitter.addWidget(self.viewport_panel)
+        self.source_pane = SourcePane()
+        self.source_pane.set_appearance_colors(self.appearance_colors)
+        self.editor_splitter.addWidget(self.source_pane)
+        self.editor_splitter.setStretchFactor(0, 2)
+        self.editor_splitter.setStretchFactor(1, 1)
+        self.source_pane.hide()
+        layout.addWidget(self.editor_splitter, stretch=1)
+        for label in (self.stats_label, self.visibility_label,
+                      self.polygon_status, self.palette_status,
+                      self.texture_status, self.sprite_status,
+                      self.car_status,
+                      self.track_status, self.object_status):
+            label.setWordWrap(True)
+        advanced_layout.addWidget(self.stats_label)
+        advanced_layout.addWidget(self.visibility_label)
+        advanced_layout.addWidget(self.polygon_status)
+        assets_layout.addWidget(self.palette_status)
+        assets_layout.addWidget(self.texture_status)
+        assets_layout.addWidget(self.sprite_status)
+        self.setCentralWidget(root)
+        self._init_load_activity_dock()
+        # Source is the only secondary pane, shown alongside the viewport.
+        self.source_toggle.setChecked(True)
+        install_menus(self)
+        self._workspace_changed(self.workspace_tabs.currentIndex())
+        self._sync_projection_controls()
+        self.source_pane.editor.textChanged.connect(self._update_window_title)
+        self.source_pane.editor.textChanged.connect(self._split_controls_changed)
+        # Single-letter viewport shortcuts must NOT intercept N3 typing in
+        # QPlainTextEdit (e.g. FACE, MATERIAL, RECOLOR).
+        frame_shortcut = QShortcut(QKeySequence("F"), self.viewer,
+                                  activated=self.viewer.frame_all)
+        frame_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        reload_shortcut = QShortcut(QKeySequence("R"), self.viewer,
+                                   activated=self.reload_mips)
+        reload_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.viewer.statsChanged.connect(self.statusBar().showMessage)
+        self.viewer.visibilityChanged.connect(self._visibility_updated)
+        self.viewer.fixedCameraModeChanged.connect(self._fixed_camera_mode_changed)
+        self.viewer.trackDriveModeChanged.connect(self._track_drive_mode_changed)
+        self.viewer.trackDrivePositionChanged.connect(self._track_drive_position_changed)
+        self.source_pane.compileRequested.connect(self._source_requested)
+        self.source_pane.saveRequested.connect(self._save_source)
+        self.source_pane.exportRequested.connect(self._export_compiled_source)
+        self.source_pane.cursorTargetChanged.connect(self._source_target_changed)
+        self.viewer.vertexPicked.connect(self._viewport_vertex_picked)
+        self.viewer.polygonPicked.connect(self._viewport_polygon_picked)
+        self._timer = QTimer(self)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self._benchmark_tick)
+        self.benchmark_toggle.toggled.connect(self._toggle_benchmark)
+        if benchmark:
+            self._timer.start()
+        if path:
+            # Opening after the window is visible avoids blocking Qt setup.
+            QTimer.singleShot(0, lambda: self.load(path))
+
+    def _set_appearance_colors(self, colors):
+        """Apply a consistent source/viewport palette and persist it per user."""
+        self.appearance_colors = validated_colors(colors)
+        self.source_pane.set_appearance_colors(self.appearance_colors)
+        self.viewer.set_appearance_colors(self.appearance_colors)
+        save_colors(QSettings("ICR2Tools", "3DOCAD"), self.appearance_colors)
+
+    def customize_colors(self):
+        AppearanceDialog(
+            self.appearance_colors, self._set_appearance_colors, self).exec()
+
+    def _init_load_error_dialog(self):
+        """One nonmodal window for the latest model-load diagnostics."""
+        dialog = QDialog(self)
+        dialog.setObjectName("loadErrorLogDialog")
+        dialog.setWindowTitle("Load Error Log — ICR2 3DO CAD")
+        dialog.setModal(False)
+        dialog.resize(720, 480)
+        layout = QVBoxLayout(dialog)
+        self.load_error_summary = QLabel("No model loaded")
+        self.load_error_summary.setWordWrap(True)
+        layout.addWidget(self.load_error_summary)
+        self.load_error_text = QPlainTextEdit(dialog)
+        self.load_error_text.setObjectName("loadErrorLogText")
+        self.load_error_text.setReadOnly(True)
+        self.load_error_text.setPlainText(
+            "No model has been loaded yet.\n")
+        layout.addWidget(self.load_error_text, stretch=1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        copy_button = buttons.addButton(
+            "Copy Log", QDialogButtonBox.ButtonRole.ActionRole)
+        copy_button.clicked.connect(
+            lambda: QApplication.clipboard().setText(
+                self.load_error_text.toPlainText()))
+        buttons.rejected.connect(dialog.close)
+        layout.addWidget(buttons)
+        self.load_error_dialog = dialog
+
+    def _update_load_error_log(self, filename, issues, *, auto_show=False):
+        """Replace stale diagnostics; auto-popup only after user model loads."""
+        self._load_log_file = str(filename)
+        self._load_issues = tuple(issues)
+        count = len(self._load_issues)
+        basename = Path(filename).name
+        self.load_error_summary.setText(
+            f"{basename}: {count} load issue{'s' if count != 1 else ''}"
+            if count else f"{basename}: no reported load issues")
+        self.load_error_text.setPlainText(
+            format_load_log(filename, self._load_issues))
+        self.load_error_text.moveCursor(
+            self.load_error_text.textCursor().MoveOperation.Start)
+        if auto_show:
+            if count:
+                self.open_load_error_log()
+            else:
+                # Don't leave a previous model's automatic issue popup open
+                # after a fresh, clean model load.
+                self.load_error_dialog.hide()
+
+    def open_load_error_log(self):
+        """View the latest log even after dismissing its automatic popup."""
+        dialog = self.load_error_dialog
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def open_mip_browser(self):
+        """Open one independent MIP UV reference window beside the editor."""
+        if self.viewer._model is None:
+            QMessageBox.information(self, "No model", "Open a model first.")
+            return
+        if self.mip_browser is None:
+            # QDialog with a QMainWindow parent is kept above its owner by
+            # native window managers (notably Windows), even when non-modal.
+            # Keep an explicit Python reference and make this an independent
+            # top-level window so either editor or MIP browser can be raised.
+            self.mip_browser = MipUVBrowser()
+        # Refresh even when reopening a previously closed dialog, or after
+        # palette / texture overrides changed while it was hidden.
+        self._refresh_mip_browser(force=True)
+        self.mip_browser.show()
+        self.mip_browser.raise_()
+        self.mip_browser.activateWindow()
+
+    def _refresh_mip_browser(self, *, force=False):
+        """Refresh only committed, successfully loaded texture data."""
+        dialog = self.mip_browser
+        if (dialog is None or (dialog.isHidden() and not force)
+                or self.viewer._atlas is None
+                or self.viewer._palette is None):
+            return
+        model_name = (self._info.get("file")
+                      or (self._loaded_file_path.name
+                          if self._loaded_file_path is not None else "Model"))
+        dialog.set_model_textures(
+            self.viewer._atlas, self.viewer._palette, model_name)
+
+    def _make_settings_dialog(self, key, title):
+        """Create an optional settings window without occupying viewport space."""
+        dialog = QDialog(self)
+        dialog.setObjectName(f"{key}SettingsDialog")
+        dialog.setWindowTitle(f"{title} — ICR2 3DO CAD")
+        dialog.setModal(False)
+        dialog.resize(520, 640)
+        outer = QVBoxLayout(dialog)
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        controls = QVBoxLayout(content)
+        controls.setContentsMargins(12, 12, 12, 12)
+        controls.setSpacing(8)
+        scroll.setWidget(content)
+        outer.addWidget(scroll)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, dialog)
+        buttons.rejected.connect(dialog.close)
+        outer.addWidget(buttons)
+        self.settings_dialogs[key] = dialog
+        return controls
+
+    def open_settings_dialog(self, key, *, workspace=None):
+        """Open a dialog on demand; never transfer/recreate control state."""
+        if workspace is not None:
+            self.workspace_tabs.setCurrentIndex(workspace)
+        dialog = self.settings_dialogs[key]
+        dialog.show()
+        dialog.raise_()
+        dialog.activateWindow()
+
+    def _workspace_changed(self, index):
+        if 0 <= index < self.workspace_tabs.count():
+            self.fallback_controls.setVisible(
+                self.workspace_tabs.tabText(index) != "Car")
+        self._update_window_title()
+
+    def _update_window_title(self):
+        """Show the last successfully loaded file and unsaved source edits."""
+        workspace = self.workspace_tabs.tabText(
+            self.workspace_tabs.currentIndex())
+        title = f"ICR2 3DO CAD — {workspace} workspace"
+        if self._loaded_file_path is not None:
+            changed = " *" if self.source_pane.dirty else ""
+            title = f"{self._loaded_file_path.name}{changed} — {title}"
+        self.setWindowTitle(title)
+
+    def _edit_source_command(self, command):
+        """Standard text operations target the focused editor or N3 source."""
+        widget = QApplication.focusWidget()
+        while widget is not None and not isinstance(
+                widget, (QPlainTextEdit, QLineEdit)):
+            widget = widget.parentWidget()
+        if widget is None:
+            if not self.source_pane.ready:
+                self._source_toolbar_action(lambda: None)
+                return
+            if self.source_pane.source_stack.currentWidget() != self.source_pane.editor:
+                self.source_pane._show_all_filters()
+            widget = self.source_pane.editor
+        if command not in ("copy", "selectAll") and widget.isReadOnly():
+            return
+        getattr(widget, command)()
+
+    def _scale_model(self):
+        """Ask for a uniform multiply/divide factor and edit canonical N3.
+
+        If source is lazy-loaded, request it without silently scaling an old
+        model. The edit stays in the source document until Save/Export.
+        """
+        if not self.source_pane.ready:
+            self._source_toolbar_action(lambda: None)
+            return
+        dialog = ScaleModelDialog(self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+        try:
+            result = self.source_pane.scale_model(
+                dialog.factor_text, divide=dialog.divide)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot scale .3D model", str(exc))
+            return
+        self.statusBar().showMessage(
+            result.summary() + ". Recompiling; changes are not saved.")
+
+    def _find_source(self, *, next_match=False):
+        """Find across the complete N3 text, including hidden filter rows."""
+        if not self.source_pane.ready:
+            self._source_toolbar_action(lambda: None)
+            return
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.source_stack.currentWidget() != self.source_pane.editor:
+            self.source_pane._show_all_filters()
+        if not next_match:
+            query, accepted = QInputDialog.getText(
+                self, "Find in .3D Source", "Find text:",
+                QLineEdit.EchoMode.Normal, self._find_text)
+            if not accepted or not query:
+                return
+            self._find_text = query
+        if not self._find_text:
+            return
+        editor = self.source_pane.editor
+        if not editor.find(self._find_text):
+            cursor = editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            editor.setTextCursor(cursor)
+            if not editor.find(self._find_text):
+                self.statusBar().showMessage(
+                    f"Not found in .3D Source: {self._find_text}")
+                return
+        editor.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _source_toolbar_action(self, callback):
+        """Expose Save/Export without bypassing lazy source preparation."""
+        if not self.source_pane.ready:
+            if self.viewer._model is None:
+                QMessageBox.information(self, "No model", "Open a model first.")
+                return
+            self.source_toggle.setChecked(True)
+            self._ensure_source_loaded()
+            self.statusBar().showMessage(
+                "Preparing editable source; use Save Source or Export 3DO when ready.")
+            return
+        callback()
+
+    def _textures_toggled(self, checked):
+        self.viewer.textures_enabled = checked
+        self.viewer.update()
+
+    def _sprites_toggled(self, checked):
+        self.viewer.sprites_enabled = checked
+        self.viewer.update()
+
+    def _repeat_toggled(self, checked):
+        self.viewer.texture_repeat = checked
+        self.viewer.update()
+
+    def _trk_steps_changed(self, *_):
+        self.viewer.track_forward_step_ft = float(self.trk_forward_step.value())
+        self.viewer.track_lateral_step_ft = float(self.trk_lateral_step.value())
+
+    def _track_drive_toggled(self, enabled):
+        self.viewer.set_track_drive_enabled(enabled)
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _reset_trk_camera(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        nav.set_coordinates(0.0, 0.0)
+        if not self.viewer.track_drive_enabled:
+            self.viewer.set_track_drive_enabled(True)
+        else:
+            self.viewer._update_track_drive_pose()
+        self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+
+    def _track_drive_mode_changed(self, enabled):
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        self._sync_projection_controls()
+        if enabled:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+        self._update_trk_status()
+
+    def _track_drive_position_changed(self, pose):
+        self._update_trk_status()
+
+    def _update_trk_status(self):
+        nav = self.viewer.track_navigation
+        if nav is None:
+            return
+        pose = nav.pose()
+        state = "Driving" if self.viewer.track_drive_enabled else "Available, off"
+        self.trk_drive_status.setText(
+            f"{nav.path.name}: {state} | section {pose.section} | "
+            f"DLONG {pose.dlong/UNITS_PER_FOOT:,.1f} ft "
+            f"({pose.dlong:,.0f} units) | "
+            f"DLAT {pose.dlat/UNITS_PER_FOOT:+,.1f} ft "
+            f"({pose.dlat:+,.0f} units) | "
+            f"camera XYZ ({pose.eye[0]:,.0f}, {pose.eye[1]:,.0f}, "
+            f"{pose.eye[2]:,.0f}) | bank {math.degrees(pose.roll):+.1f}° | "
+            f"Click viewport, use WASD/arrows; "
+            f"Shift = 5x")
+
+    def _toggle_split_tool(self, enabled):
+        self.split_panel.setVisible(enabled)
+        if enabled:
+            self.pick_mode_combo.setCurrentIndex(
+                self.pick_mode_combo.findData("polygon"))
+            target = self.source_pane.current_target()
+            if target and target[0] == "polygon":
+                offset = target_offset(self.viewer._model, *target)
+                if offset is not None:
+                    self._set_split_target(offset)
+            self._split_controls_changed()
+        else:
+            self.viewer.set_split_preview()
+
+    def _set_split_target(self, offset):
+        """Populate cut choices from the exact selected root POLY order."""
+        model = self.viewer._model
+        if model is None or offset not in model.polygons:
+            offset = None
+        # A recompilation can reuse the same binary offset for different
+        # source declarations. Rebuild on model identity changes, not just
+        # when the selected numeric offset changes.
+        if (offset == self._split_polygon_offset
+                and model is self._split_target_model):
+            self._split_controls_changed()
+            return
+        self._split_polygon_offset = offset
+        self._split_target_model = model
+        polygon = model.polygons[offset] if offset is not None else None
+        for combo in (self.split_edge_a, self.split_edge_b,
+                      self.split_vertex_a, self.split_vertex_b):
+            combo.blockSignals(True)
+            combo.clear()
+        try:
+            if polygon is not None:
+                refs = polygon_boundary_refs(polygon)
+                # Match the exact N3 declaration labels used by the project
+                # (including renamed pointers). The CPU topology algorithms
+                # still receive the same zero-based polygon vertex indices.
+                pointer_names = vertex_pointer_names(model)
+                for i, ref in enumerate(refs):
+                    name = pointer_names.get(ref, f"_{ref}")
+                    next_ref = refs[(i + 1) % len(refs)]
+                    next_name = pointer_names.get(next_ref, f"_{next_ref}")
+                    vertex_option = f"#{i+1}  {name}"
+                    edge_option = f"#{i+1}  {name} → {next_name}"
+                    vertex_tooltip = f"{name} · 3DO body offset @{ref}"
+                    edge_tooltip = (f"{name} (@{ref}) → "
+                                    f"{next_name} (@{next_ref})")
+                    for combo in (self.split_vertex_a, self.split_vertex_b):
+                        combo.addItem(vertex_option, i)
+                        combo.setItemData(
+                            i, vertex_tooltip, Qt.ItemDataRole.ToolTipRole)
+                    for combo in (self.split_edge_a, self.split_edge_b):
+                        combo.addItem(edge_option, i)
+                        combo.setItemData(
+                            i, edge_tooltip, Qt.ItemDataRole.ToolTipRole)
+                opposite = len(refs) // 2
+                self.split_edge_b.setCurrentIndex(opposite)
+                self.split_vertex_b.setCurrentIndex(opposite)
+        finally:
+            for combo in (self.split_edge_a, self.split_edge_b,
+                          self.split_vertex_a, self.split_vertex_b):
+                combo.blockSignals(False)
+        if polygon is None:
+            self.split_target_label.setText("Select a root-model polygon")
+        else:
+            self.split_target_label.setText(
+                f"Selected POLY @{offset} · {len(polygon_boundary_refs(polygon))} vertices · "
+                f"palette {polygon.color}")
+        self._split_controls_changed()
+
+    def _split_controls_changed(self, *_):
+        if not hasattr(self, "split_preview_check"):
+            return  # Fraction spin boxes emit during panel construction.
+        mode = self.split_mode_combo.currentData()
+        self.split_edge_row.setVisible(mode == "edges")
+        self.split_vertex_row.setVisible(mode == "vertices")
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        valid = (model is not None and offset in model.polygons
+                 and self.source_pane.ready and not self.source_pane.pending
+                 and not self._source_invalid and self._source_queued is None
+                 and self._source_busy_revision is None)
+        points = None
+        hint = "Choose a root-model POLY by clicking its face."
+        if valid:
+            polygon = model.polygons[offset]
+            refs = polygon_boundary_refs(polygon)
+            n = len(refs)
+            if mode == "edges":
+                a = self.split_edge_a.currentData()
+                b = self.split_edge_b.currentData()
+                valid = a is not None and b is not None and a != b
+                if valid:
+                    def edge_point(i, t):
+                        start = model.vertices[refs[i]].xyz
+                        end = model.vertices[refs[(i+1) % n]].xyz
+                        return tuple(start[j] + (end[j]-start[j])*t
+                                     for j in range(3))
+                    points = (edge_point(a, self.split_fraction_a.value()),
+                              edge_point(b, self.split_fraction_b.value()))
+                hint = ("Choose two different edges; fraction 0.5 is the "
+                        "midpoint. Matching adjacent faces are updated.")
+            else:
+                a = self.split_vertex_a.currentData()
+                b = self.split_vertex_b.currentData()
+                valid = (n >= 4 and a is not None and b is not None
+                         and a != b and (a-b) % n not in (1, n-1))
+                if valid:
+                    points = (model.vertices[refs[a]].xyz,
+                              model.vertices[refs[b]].xyz)
+                hint = ("Choose two nonadjacent vertices to make an internal "
+                        "diagonal; no new vertices will be created.")
+        elif model is not None and offset in model.polygons:
+            hint = ("Prepare or validate the editable .3D Source first. "
+                    "A pending or invalid source cannot be split.")
+        self.split_apply_button.setEnabled(bool(valid))
+        self.split_hint_label.setText(hint)
+        self.viewer.set_split_preview(
+            points if (self.split_panel.isVisible()
+                       and self.split_preview_check.isChecked()
+                       and valid) else None)
+
+    def _commit_polygon_split(self):
+        if not self.split_apply_button.isEnabled():
+            return
+        model = self.viewer._model
+        offset = self._split_polygon_offset
+        mode = self.split_mode_combo.currentData()
+        a, b = ((self.split_edge_a.currentData(),
+                 self.split_edge_b.currentData()) if mode == "edges" else
+                (self.split_vertex_a.currentData(),
+                 self.split_vertex_b.currentData()))
+        try:
+            candidate = split_n3_polygon(
+                model, self.source_pane.get_source(), offset, mode=mode,
+                index_a=a, index_b=b,
+                fraction_a=self.split_fraction_a.value(),
+                fraction_b=self.split_fraction_b.value())
+        except (ValueError, OverflowError, KeyError) as exc:
+            QMessageBox.warning(self, "Cannot split polygon", str(exc))
+            return
+        action = ("two new edge vertices" if mode == "edges"
+                  else "an existing-vertex diagonal")
+        details = (
+            f"Split POLY @{offset} using {action}?\n\n"
+            "The parent will refer to a LIST of two polygons. "
+            f"New vertices: {candidate.new_vertices}. "
+            f"Updated adjacent polygons: {candidate.updated_neighbors}.\n\n"
+            "Original .3D declarations and comments outside the affected "
+            "POLYs remain intact. Undo in the Source editor reverses the cut; "
+            "Save .3D Source or Export compiled 3DO to persist it.")
+        if candidate.warnings:
+            details += ("\n\nWarnings:\n" +
+                        "\n".join(candidate.warnings[:4]))
+        reply = QMessageBox.question(
+            self, "Split selected polygon", details,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            self.source_pane.apply_source_replacement(
+                candidate.source, f"Split POLY @{offset} ({mode})")
+        except ValueError as exc:
+            QMessageBox.warning(self, "Cannot apply polygon split", str(exc))
+            return
+        self._pending_split_label = candidate.first_polygon_label
+        self.viewer.set_split_preview()
+        self.split_apply_button.setEnabled(False)
+        self.source_pane.apply_now()
+        self.statusBar().showMessage(
+            f"Splitting POLY @{offset}; validating N3 and rebuilding preview…")
+
+    def _toggle_source(self, checked):
+        self.source_pane.setVisible(checked)
+        if checked:
+            self.editor_splitter.setSizes([780, 480])
+            self._ensure_source_loaded()
+            self._source_target_changed(self.source_pane.current_target())
+        else:
+            self.viewer.set_source_inspection()
+            self.source_pane.set_polygon_visibility(None)
+
+    def _viewport_vertex_picked(self, offset):
+        """Reveal and jump to the picked root-model vertex declaration."""
+        model = self.viewer._model
+        if model is None or offset not in model.vertices:
+            return
+        if self.source_pane.ready and (
+                self.source_pane.pending or self._source_invalid):
+            self.statusBar().showMessage(
+                "Apply or fix the edited .3D Source before selecting vertices.")
+            return
+        self._pending_polygon_pick = None
+        self._pending_vertex_pick = (model, offset)
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.ready:
+            self._finish_pending_vertex_pick()
+        else:
+            self._ensure_source_loaded()
+
+    def _finish_pending_vertex_pick(self):
+        pending = self._pending_vertex_pick
+        if pending is None or not self.source_pane.ready:
+            return
+        self._pending_vertex_pick = None
+        model, offset = pending
+        if model is not self.viewer._model:
+            return
+        if self.source_pane.goto_model_vertex(model, offset):
+            self.statusBar().showMessage(
+                f"Selected vertex @{offset} in .3D Source")
+        else:
+            self.statusBar().showMessage(
+                f"Vertex @{offset} has no matching declaration in .3D Source")
+
+    def _viewport_polygon_picked(self, offset):
+        """Reveal the clicked POLY in the source editor or filtered row list."""
+        model = self.viewer._model
+        if model is None or offset not in model.polygons:
+            return
+        if self.source_pane.ready and (
+                self.source_pane.pending or self._source_invalid):
+            self.statusBar().showMessage(
+                "Apply or fix the edited .3D Source before selecting polygons.")
+            return
+        self._pending_vertex_pick = None
+        self._set_split_target(offset)
+        self._pending_polygon_pick = (model, offset)
+        if not self.source_toggle.isChecked():
+            self.source_toggle.setChecked(True)
+        if self.source_pane.ready:
+            self._finish_pending_polygon_pick()
+        else:
+            self._ensure_source_loaded()
+
+    def _finish_pending_polygon_pick(self):
+        pending = self._pending_polygon_pick
+        if pending is None or not self.source_pane.ready:
+            return
+        self._pending_polygon_pick = None
+        model, offset = pending
+        if model is not self.viewer._model:
+            return
+        if self.source_pane.goto_model_polygon(model, offset):
+            self.statusBar().showMessage(
+                f"Selected POLY @{offset} in .3D Source")
+        else:
+            self.statusBar().showMessage(
+                f"POLY @{offset} has no matching declaration in .3D Source")
+
+    def _source_target_changed(self, target):
+        if (not self.source_toggle.isChecked() or
+                self.source_pane.pending or self._source_invalid or
+                target is None):
+            self.viewer.set_source_inspection()
+            self.source_pane.set_polygon_visibility(None)
+            return
+        kind, label = target
+        if kind == "bsp":
+            points = self.source_pane.current_bsp_points(self.viewer._model)
+            self.viewer.set_source_inspection("bsp", plane_points=points)
+            self.source_pane.set_polygon_visibility(None)
+            return
+        offset = target_offset(self.viewer._model, kind, label)
+        self.viewer.set_source_inspection(kind, offset)
+        self._refresh_source_polygon_visibility()
+        if kind == 'polygon' and self.split_panel.isVisible():
+            self._set_split_target(offset)
+
+    def _refresh_source_polygon_visibility(self):
+        target = self.source_pane.current_target()
+        if (not self.source_toggle.isChecked() or
+                self._source_invalid or target is None or
+                target[0] != "polygon" or
+                self.viewer._model is None or
+                (self.viewer._visibility_dirty and
+                 (self.viewer.render_mode != "all" or
+                  self.viewer._track_lod_active()))):
+            self.source_pane.set_polygon_visibility(None)
+            return
+        offset = target_offset(self.viewer._model, "polygon", target[1])
+        span = polygon_mesh_range(self.viewer._scene,
+                                  self.viewer._mesh, offset)
+        if span is None or not span[1]:
+            self.source_pane.set_polygon_visibility(False)
+        else:
+            self.source_pane.set_polygon_visibility(
+                (self.viewer.render_mode == "all" and
+                 not self.viewer._track_lod_active()) or
+                offset in self.viewer._visible_set)
+
+    def _ensure_source_loaded(self):
+        if self.source_pane.ready or self.viewer._model is None:
+            return
+        if self._source_export_worker and self._source_export_worker.isRunning():
+            return
+        model = self.viewer._model
+        self._source_export_model = model
+        self.source_pane.status.setText('Preparing editable .3D source on worker…')
+        worker = SourceExportWorker(
+            model, (self.model_path or model.path), activity_trace=self._load_trace)
+        self._source_export_worker = worker
+        worker.ready.connect(
+            lambda text, path, candidate=model:
+                self._source_exported(candidate, text, path))
+        worker.failed.connect(
+            lambda err, candidate=model: self._source_export_failed(candidate, err))
+        worker.activity.connect(
+            lambda line, origin=self._load_activity_worker:
+                self._append_load_activity(origin, line))
+        worker.start()
+
+    def _source_exported(self, candidate, text, path):
+        if candidate is not self.viewer._model:
+            if self.source_toggle.isChecked():
+                QTimer.singleShot(80, self._ensure_source_loaded)
+            return
+        if self.source_pane.ready:
+            return
+        self._record_load_activity(
+            f"GUI editable-source insertion BEGIN: {len(text):,} characters")
+        self.source_pane.set_source(
+            text, path,
+            status=(f'Editable source for {candidate.path.name}. '
+                    'Valid changes update the viewport without saving.'))
+        self.viewer.set_vertex_label_source(self.source_pane._source_index)
+        self._source_invalid = False
+        self._record_load_activity("GUI editable-source insertion DONE")
+        self._finish_pending_vertex_pick()
+        self._finish_pending_polygon_pick()
+        self._split_controls_changed()
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
+
+    def _source_export_failed(self, candidate, error):
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
+        if candidate is self.viewer._model:
+            self.source_pane.status.setText(
+                f'Cannot generate editable source: {error}')
+            self._source_invalid = True
+
+    def _source_requested(self, revision, source):
+        # Keep only the latest revision while the previous worker runs.
+        self._source_queued = (revision, source)
+        self._split_controls_changed()
+        self._pump_source()
+
+    def _pump_source(self):
+        if self._source_queued is None:
+            return
+        if self.worker is not None and self.worker.isRunning():
+            QTimer.singleShot(80, self._pump_source)
+            return
+        if not self.source_pane.ready or self.viewer._model is None:
+            return
+        revision, source = self._source_queued
+        if revision != self.source_pane.revision:
+            self._source_queued = None
+            return
+        self._source_queued = None
+        self._source_busy_revision = revision
+        self.worker = LoadWorker(
+            self.model_path, self.palette_path, self.texture_folder,
+            self.fallback_mip, objects_folder=self.objects_folder,
+            mip_overrides=self.mip_overrides, object_overrides=self.object_overrides,
+            body_mip=self.body_mip, source_text=source,
+            source_path=self.source_pane.source_path,
+            appearance_override=self.viewer._scene.appearance)
+        self.worker.ready.connect(
+            lambda mesh, stats, model, atlas, palette, scene, rev=revision:
+                self._source_compiled(rev, source, mesh, stats, model, atlas, palette, scene))
+        self.worker.failed.connect(
+            lambda error, rev=revision: self._source_compile_failed(rev, error))
+        self.worker.start()
+
+    def _source_compiled(self, rev, source, mesh, stats, model, atlas, palette, scene):
+        self._source_busy_revision = None
+        if rev == self.source_pane.revision:
+            # Commit one complete candidate, never a partially parsed tree.
+            self._preserve_view = True
+            self._loaded(mesh, stats, model, atlas, palette, scene,
+                         from_source=True)
+            self._source_applied = True
+            self._last_valid_source_text = source
+            self._source_invalid = False
+            self.source_pane.mark_valid(rev, model)
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
+            if self._pending_split_label is not None:
+                target = model.n3_label_offsets.get(self._pending_split_label)
+                self._pending_split_label = None
+                self._set_split_target(target)
+                if target is not None:
+                    self.source_pane.goto_model_polygon(model, target)
+            self._split_controls_changed()
+        if self._source_queued is not None:
+            QTimer.singleShot(40, self._pump_source)
+
+    def _source_compile_failed(self, rev, error):
+        self._source_busy_revision = None
+        if rev == self.source_pane.revision:
+            self._source_invalid = True
+            self.source_pane.mark_error(rev, error)
+            self._pending_split_label = None
+            self._split_controls_changed()
+        if self._source_queued is not None:
+            QTimer.singleShot(40, self._pump_source)
+
+    def _save_source(self, *, save_as=False):
+        """Save editable N3 text; Save As always chooses a destination.
+
+        The first regular Save also asks for a path so the original input
+        file is never overwritten without an explicit user decision.
+        """
+        if not self.source_pane.ready:
+            return False
+        target = None if save_as else self._source_save_target
+        if target is None:
+            suggested = self._source_save_target
+            if suggested is None:
+                suggested = self.source_pane.source_path.with_name(
+                    self.source_pane.source_path.stem + '_edited.3d')
+            path, _ = QFileDialog.getSaveFileName(
+                self, 'Save editable N3 source', str(suggested),
+                'Papyrus N3 (*.3d);;All files (*)')
+            if not path:
+                return False
+            target = Path(path)
+        if target.suffix.lower() != '.3d':
+            QMessageBox.warning(self, 'Invalid source extension',
+                                'Save N3 source with a .3D extension.')
+            return False
+        if target.resolve() == self.source_pane.source_path.resolve():
+            if not confirm_destructive_action(
+                    self, 'Overwrite original .3D source?',
+                    f'Saving here will overwrite the original source file '
+                    f'"{target.name}". Existing file contents will be lost.',
+                    'Overwrite original'):
                 return False
         try:
-            if is_n3:
-                # Read bytes, not read_text(): universal newline conversion would
-                # discard the source's original CRLF line endings.
-                with CAD_PROFILE.measure("load.read_n3"):
-                    text=Path(path).read_bytes().decode('utf-8-sig')
-                with CAD_PROFILE.measure("load.compile_n3"):
-                    obj,doc=compile_n3_text(text,Path(path))
-            else:
-                with CAD_PROFILE.measure("load.parse_3do"):
-                    obj=Model(path)
-                doc=None
-        except (OSError,UnicodeError,FormatError,ValueError,OverflowError) as e:
-            messagebox.showerror('Unable to open Papyrus model',str(e))
+            target.parent.mkdir(parents=True, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(
+                prefix='.' + target.name + '.', suffix='.tmp', dir=target.parent)
+            try:
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(self.source_pane.get_source().encode('utf-8'))
+                os.replace(temporary, target)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        except (OSError, UnicodeError) as error:
+            QMessageBox.warning(self, 'Save failed', str(error))
             return False
-        _load_ui_started=perf_counter()
-        self.model=obj
-        self.text_document=doc
-        self._original_n3_source=is_n3
-        self._refresh_vertex_pointer_names()
-        self.standalone_n3_binary=bytes(obj.raw) if is_n3 else None
-        self.imported_pending=is_n3
-        self.draft_vertices=[]
-        self.geometry_drafts.set('No draft vertices (not stored in 3DO until used)')
-        self.external_model_cache.clear()
-        self.external_resolver.missing.clear()
-        self.selected_dynamic=None
-        self.dynamic_order=sorted(obj.dynamics)
-        self.appearance=None
-        self.appearance_info.set('Car appearance: base polygon colors (no RECOLOR file)')
-        self.texture_manual.clear()
-        self.texture_cache.clear()
-        self._mip_path_cache.clear()
-        self._texture_photos.clear()
-        self._texture_tile_cache.clear()
-        self._texture_tile_cache_bytes=0
-        self.title(f'ICR2 3DO CAD v1.9 — {Path(path).name}')
-        self.selected=None;self.selected_poly=None
-        self.undo_stack=[]; self.redo_stack=[]
-        self.poly_order=sorted(obj.polygons)
-        self.poly_detail.set('Select a polygon to inspect')
-        self._refresh_polygon_inspector()
-        self.header.set(Path(path).name)
-        self.stats.set(obj.summary().replace('\n','  |  '))
-        self.vertex_order=sorted(obj.vertices)
-        if obj.switches:
-            max_threshold=max((threshold for sw in obj.switches.values()
-                               for threshold,_ in sw.branches),default=1)
-            self.lod_slider.configure(to=max(1,int(max_threshold*1.30)))
-            self.lod_mode.set('SWITCH DISTANCE')
-            self.lod_distance.set(0)
-            self.lod_distance_text.set('0')
-        else:
-            self.lod_mode.set('All branches')
-            self.lod_slider.configure(to=1)
-            self.lod_distance.set(0)
-            self.lod_distance_text.set('0')
-        with CAD_PROFILE.measure("ui.vertex_list"):
-            self._populate_vertex_list()
-        self.refresh_dynamic_list()
-        self.frame_model()
-        self.update_edit_panel()
-        self.refresh_raw()
-        self.geometry_anchor.set(str(8484 if 8484 in self.model.polygons else next(iter(self.model.polygons),0)))
-        self.refresh_geometry_targets()
-        self.refresh_polygon_list()
-        warning=' | '.join(obj.warnings)
-        if is_n3:
-            self.status.set(f'Opened standalone {Path(path).name} (compiled in memory; '
-                            f'XYZ scale ×{obj.n3_coordinate_scale}). '
-                            'Use Save Copy for .3DO; keep .3D for labels/comments.')
-        else:
-            self.status.set(warning or 'Select POLY [T] and assign MIP for texture preview • Right-drag orbit • Scroll zoom')
-        self._load_source_editor()
-        CAD_PROFILE.record("load.populate_ui",perf_counter()-_load_ui_started)
-        if CAD_PROFILE.enabled:
-            CAD_PROFILE.write(os.environ.get("ICR2_CAD_PROFILE_OUTPUT","cad_performance.json"))
+        self._source_save_target = target
+        self.source_pane.mark_saved()
+        self._update_window_title()
+        self.source_pane.status.setText(
+            f'Saved {target.name}.' +
+            (' Source is not currently valid; the viewport still shows the last valid model.'
+             if self._source_invalid or self.source_pane.pending else ''))
         return True
 
-    def open_car_appearance(self):
-        initial=(self.appearance.path.parent if self.appearance else
-                 self.model.path.parent if self.model else Path.cwd())
-        path=filedialog.askopenfilename(title='Load individual car RECOLOR 3DO',
-             initialdir=str(initial),filetypes=[('Papyrus 3DO','*.3do'),('All files','*.*')])
-        if path:self.load_car_appearance(path)
-
-    def load_car_appearance(self,path,*,appearance=None):
-        """Apply appearance to matching model; load referenced geometry if needed.
-
-        Never merges the wrapper into the geometry file. Plain geometry Save As
-        remains byte-identical unless user edited XYZ/UV/planes separately.
-        """
+    def _export_compiled_source(self):
+        if not self.source_pane.ready or self.viewer._model is None:
+            return
+        if self.source_pane.pending or self._source_invalid or self._source_queued is not None:
+            QMessageBox.warning(
+                self, 'Cannot export an unvalidated model',
+                'Resolve the N3 source error or Apply now successfully before '
+                'exporting a compiled binary. Save .3D as… can retain unfinished text.')
+            return
+        target, _ = QFileDialog.getSaveFileName(
+            self, 'Export compiled 3DO',
+            str(self.source_pane.source_path.with_name(
+                self.source_pane.source_path.stem + '_edited.3do')),
+            'Papyrus 3DO (*.3do);;All files (*)')
+        if not target:
+            return
+        dest = Path(target)
+        if dest.suffix.lower() != '.3do':
+            QMessageBox.warning(self, 'Invalid binary extension', 'Choose a .3DO file.')
+            return
+        if dest.resolve() == self.viewer._model.path.resolve() or (
+                self.model_path is not None and
+                dest.resolve() == self.model_path.resolve()):
+            QMessageBox.warning(
+                self, 'Original binary protected',
+                'Choose another filename. Original geometry and appearance '
+                '3DOs must remain untouched.')
+            return
         try:
-            app=appearance or read_car_appearance(path)
-        except (OSError,AppearanceError) as exc:
-            messagebox.showerror('Invalid car appearance 3DO',str(exc))
-            return False
-        matching=(self.model is not None and self.model.path.stem.casefold()==app.geometry_name.casefold())
-        if self.model is not None and not matching:
-            choice=messagebox.askyesnocancel('Different base geometry',
-                f'{app.path.name} references {app.geometry_name}.3do, but the open model is '
-                f'{self.model.path.name}.\n\nYes: open the referenced base geometry\n'
-                'No: apply these colors to the existing geometry anyway (preview only)\n'
-                'Cancel: make no change')
-            if choice is None:return False
-            if choice:
-                matching=False
-            else:
-                matching=True  # deliberate preview mismatch, preserve edits
-        if not matching:
-            base=locate_base_geometry(app,extra_dirs=[Path(__file__).resolve().parent/'fixtures'])
-            if base is None:
-                selected=filedialog.askopenfilename(
-                    title=f'Locate base geometry {app.geometry_name}.3do',
-                    initialdir=str(app.path.parent),
-                    filetypes=[('Papyrus 3DO','*.3do'),('All files','*.*')])
-                if not selected:return False
-                base=Path(selected)
-                if base.stem.casefold()!=app.geometry_name.casefold():
-                    if not messagebox.askyesno('Unexpected geometry',
-                        f'Expected {app.geometry_name}.3do, selected {base.name}.\n'
-                        'Use this geometry for preview anyway?'):
-                        return False
-            if not self.load_file(base):return False
-        self.appearance=app
-        self._texture_tile_cache.clear()
-        self._texture_tile_cache_bytes=0
-        self._texture_photos=[]
-        self._mip_path_cache.clear()
-        self._texture_errors=set()
-        self.appearance_info.set('Individual car: '+app.description)
-        self.title(f'ICR2 3DO CAD v1.9 — {self.model.path.name} + {app.path.name}')
-        self.refresh_polygon_list()
-        self._refresh_polygon_inspector()
-        self.redraw()
-        tex=self._find_named_texture(app.texture_name,app.path.parent) if app.texture_name else None
-        warning=(' • MIP missing: choose texture folder or place '+app.texture_name+'.mip alongside the wrapper' if not tex else '')
-        self.status.set(f'Loaded {app.path.name}: {len(app.mapping)} RECOLOR entries for {self.model.path.name}' + warning)
-        return True
-
-    def clear_car_appearance(self):
-        if self.appearance is None:return
-        self.appearance=None
-        self._mip_path_cache.clear()
-        self.appearance_info.set('Car appearance: base polygon colors (no RECOLOR file)')
-        if self.model:self.title(f'ICR2 3DO CAD v1.9 — {self.model.path.name}')
-        self._texture_tile_cache.clear()
-        self._texture_tile_cache_bytes=0
-        self._texture_photos=[]
-        self.refresh_polygon_list()
-        self._refresh_polygon_inspector()
-        self.redraw()
-        self.status.set('Car RECOLOR/MIP preview cleared; geometry and edits unchanged')
-
-    def _refresh_vertex_pointer_names(self):
-        """Associate N3 names by declaration offsets, never by coordinates."""
-        self.vertex_pointer_names=names_for_vertices(
-            self.model,self.text_document,original_n3=self._original_n3_source)
-
-    def apply_vertex_pointer_name(self):
-        """Rename a vertex symbol and its references in editable N3 source."""
-        if not self.model or self.selected not in self.model.vertices:
-            return
-        if not self._ensure_live_source_current():
-            return
-        source=self.source_editor.get_source()
-        try:
-            doc=self.text_document or parse_document(source)
-            old=declaration_label(self.model,doc,self.selected)
-            proposed=self.pointer_name_var.get().strip()
-            changed=rename_vertex_in_source(source,doc,old,proposed)
-            if changed==source:
-                return
-            new_model,new_doc=compile_n3_text(changed,self.source_editor.source_path)
-        except (FormatError,ValueError,OverflowError,UnicodeError) as exc:
-            messagebox.showerror('Invalid pointer name',str(exc))
-            return
-        self.source_editor.set_source(changed,path=self.source_editor.source_path,
-                          status='Pointer renamed; source and preview synchronized.')
-        self._accept_live_source(new_model,new_doc,changed)
-        new_offset=next((stmt.offset for stmt in new_doc.statements
-                          if stmt.label==proposed and stmt.offset in new_model.vertices),None)
-        if new_offset is not None:
-            self.choose(new_offset)
-        self.status.set(f'Vertex pointer renamed {old} → {proposed}. '
-                        'Store your name in .3D, not binary .3DO.')
-
-    def _populate_vertex_list(self):
-        """Batch Tk insertion instead of one Tcl call per track vertex."""
-        self.listbox.delete(0,'end')
-        for start in range(0,len(self.vertex_order),512):
-            batch=(self._vertex_list_text(ref)
-                   for ref in self.vertex_order[start:start+512])
-            self.listbox.insert('end',*batch)
-
-    def _vertex_list_text(self,ref):
-        v=self.model.vertices[ref]
-        star='*' if v.modified or v.uv_modified else ' '
-        uvtag=' UV' if v.textured else ''
-        name=self.vertex_pointer_names.get(ref)
-        return (f'{star} {ref:>6}  {name:<18.18}  {v.xyz[0]:>8} {v.xyz[1]:>8} {v.xyz[2]:>8}{uvtag}'
-                if name else f'{star} {ref:>6}  {v.xyz[0]:>8} {v.xyz[1]:>8} {v.xyz[2]:>8}{uvtag}')
-
-    def update_edit_panel(self):
-        if not self.model:
-            self.selection_label.set('No model loaded');return
-        n=len(self.model.modified_vertices)+len(self.model.modified_uvs)
-        self.modified_label.configure(text=f'{n} edits',fg='#ffb862' if n else '#8fa3bb')
-        if self.selected is None:
-            self.pointer_name_var.set('')
-            self.pointer_apply.configure(state='disabled')
-            self.selection_label.set('Click a vertex or select from list')
-            for v in self.posvars+self.uvvars:v.set('')
-            self.uv_apply.configure(state='disabled')
-        else:
-            v=self.model.vertices[self.selected]
-            self.pointer_name_var.set(self.vertex_pointer_names.get(self.selected,''))
-            self.pointer_apply.configure(state='normal')
-            self.selection_label.set(f'Vertex at body offset {v.offset}' +
-                                     (f' • {self.vertex_pointer_names[self.selected]}'
-                                      if self.selected in self.vertex_pointer_names else '') +
-                                     ('  •  UV mapped' if v.textured else '  •  no UV') +
-                                     ('  •  modified' if (v.modified or v.uv_modified) else '') +
-                                     ('  •  LOD anchor' if v.offset in self.model.lod_anchors else ''))
-            for field,value in zip(self.posvars,v.xyz):field.set(str(value))
-            for field,value in zip(self.uvvars,(v.uv if v.uv is not None else ('',''))):
-                field.set(str(value))
-            self.uv_apply.configure(state='normal' if v.textured else 'disabled')
-            index=self.vertex_order.index(self.selected)
-            self.listbox.delete(index)
-            self.listbox.insert(index,self._vertex_list_text(self.selected))
-            self.listbox.selection_clear(0,'end')
-            self.listbox.selection_set(index)
-            self.listbox.see(index)
-
-    def choose(self,ref):
-        if not self.model or ref not in self.model.vertices:return
-        self.selected=ref
-        self.update_edit_panel()
-        self.redraw()
-
-    def select_from_list(self,event=None):
-        sels=self.listbox.curselection()
-        if sels:
-            ref=self.vertex_order[sels[0]]
-            if ref!=self.selected:
-                self.selected=ref;self.update_edit_panel();self.redraw()
-
-    def find_offset(self):
-        if not self.model:return
-        try:
-            text=self.offset_entry.get().strip().lower()
-            ref=int(text,16) if text.startswith('0x') else int(text)
-            if ref not in self.model.vertices:
-                messagebox.showinfo('Vertex not found',f'No vertex at body offset {ref}.')
-                return
-            self.choose(ref)
-        except ValueError:
-            messagebox.showwarning('Invalid offset','Enter an integer body offset (decimal or 0x hexadecimal).')
-
-    def apply_uv(self):
-        if self.model is None or self.selected is None:return
-        v=self.model.vertices[self.selected]
-        if not v.textured:return
-        try:
-            before=v.uv
-            values=tuple(int(x.get()) for x in self.uvvars)
-            self.model.set_uv(self.selected,values)
-            after=v.uv
-            if before!=after:
-                self.undo_stack.append(('uv',self.selected,before,after))
-                self.redo_stack=[]
-            self.update_edit_panel();self.redraw()
-            if before!=after:self._notify_visual_model_edited()
-        except (ValueError,FormatError) as e:
-            messagebox.showerror('Invalid UV coordinates',str(e))
-
-    def _slider_distance(self,value):
-        self.lod_distance_text.set(str(round(float(value))))
-        if hasattr(self,'canvas'):
-            self.redraw()
-
-    def _apply_distance_entry(self,event=None):
-        try:
-            value=int(self.lod_distance_text.get().strip())
-            if value<0:raise ValueError()
-            self.lod_slider.configure(to=max(value, float(self.lod_slider.cget('to'))))
-            self.lod_distance.set(value)
-            self.redraw()
-        except ValueError:
-            self.lod_distance_text.set(str(round(self.lod_distance.get())))
-
-    def commit_vertex(self,new_xyz):
-        if self.model is None or self.selected is None:return
-        try:
-            before=self.model.get_vertex(self.selected).xyz
-            self.model.set_vertex(self.selected,new_xyz)
-            after=self.model.get_vertex(self.selected).xyz
-            if before!=after:
-                self.undo_stack.append((self.selected,before,after))
-                self.redo_stack=[]
-            self.update_edit_panel();self.redraw()
-            if before!=after:self._notify_visual_model_edited()
-        except (ValueError,FormatError) as e:
-            messagebox.showerror('Invalid coordinate',str(e))
-
-    def apply_coordinates(self):
-        if not self.model or self.selected is None:return
-        try:
-            new_xyz=tuple(int(v.get()) for v in self.posvars)
-        except ValueError:
-            messagebox.showwarning('Invalid coordinates','X, Y, and Z must be whole numbers.')
-            return
-        self.commit_vertex(new_xyz)
-
-    def _step(self):
-        try:
-            n=int(self.nudge_step.get())
-            if n<=0:raise ValueError()
-            return n
-        except ValueError:
-            messagebox.showwarning('Invalid step','Step must be a positive whole number.')
-            return None
-
-    def nudge(self,direction):
-        if not self.model or self.selected is None:return
-        step=self._step()
-        if step is None:return
-        coords=list(self.model.vertices[self.selected].xyz)
-        coords['XYZ'.index(self.axis.get())] += direction*step
-        self.commit_vertex(coords)
-
-    def _after_color_history(self):
-        self._texture_tile_cache.clear();self._texture_tile_cache_bytes=0
-        self._texture_photos.clear()
-        self.refresh_polygon_list();self._refresh_polygon_inspector()
-        self.refresh_raw();self.redraw()
-        self._notify_visual_model_edited()
-
-    def undo(self):
-        if not self.model or not self.undo_stack:return
-        record=self.undo_stack.pop()
-        if record[0]=='colors':
-            _,edits=record
-            for off,before,after in edits:self.model.set_polygon_color(off,before)
-            self.redo_stack.append(record)
-            self._after_color_history()
-            return
-        if record[0]=='topology':
-            _,before,after=record
-            self.redo_stack.append(record)
-            self._sync_topology_model(before)
-            self.refresh_raw()
-            return
-        if len(record)==4 and record[0]=='plane':
-            _,ref,before,after=record
-            self.model.restore_plane_edit(ref,before)
-            self.redo_stack.append(record)
-            self._refresh_polygon_inspector();self.redraw()
-            self._notify_visual_model_edited()
-            return
-        if len(record)==4 and record[0]=='dynamic':
-            _,ref,before,after=record
-            self.model.set_dynamic(ref,*before)
-            self.redo_stack.append(record)
-            self.choose_dynamic(ref)
-            self._notify_visual_model_edited()
-            return
-        if len(record)==4:
-            _,ref,before,after=record
-            self.model.set_uv(ref,before)
-        else:
-            ref,before,after=record
-            self.model.set_vertex(ref,before)
-        self.redo_stack.append(record);self.choose(ref)
-        self._notify_visual_model_edited()
-
-    def redo(self):
-        if not self.model or not self.redo_stack:return
-        record=self.redo_stack.pop()
-        if record[0]=='colors':
-            _,edits=record
-            for off,before,after in edits:self.model.set_polygon_color(off,after)
-            self.undo_stack.append(record)
-            self._after_color_history()
-            return
-        if record[0]=='topology':
-            _,before,after=record
-            self.undo_stack.append(record)
-            self._sync_topology_model(after)
-            self.refresh_raw()
-            return
-        if len(record)==4 and record[0]=='plane':
-            _,ref,before,after=record
-            self.model.restore_plane_edit(ref,after)
-            self.undo_stack.append(record)
-            self._refresh_polygon_inspector();self.redraw()
-            self._notify_visual_model_edited()
-            return
-        if len(record)==4 and record[0]=='dynamic':
-            _,ref,before,after=record
-            self.model.set_dynamic(ref,*after)
-            self.undo_stack.append(record)
-            self.choose_dynamic(ref)
-            self._notify_visual_model_edited()
-            return
-        if len(record)==4:
-            _,ref,before,after=record
-            self.model.set_uv(ref,after)
-        else:
-            ref,before,after=record
-            self.model.set_vertex(ref,after)
-        self.undo_stack.append(record);self.choose(ref)
-        self._notify_visual_model_edited()
-
-    def reset_edits(self):
-        if self.model and self.model.dirty:
-            if not messagebox.askyesno('Reset edits?', 'Reset XYZ, UV, explicit FACE/BSP and DYNAMIC placement edits?'):
-                return
-            if self.model.topology_history:
-                source_path=self.model.path
-                self.model=(Model(source_path,raw_data=self.standalone_n3_binary)
-                            if source_path.suffix.lower()=='.3d' and self.standalone_n3_binary is not None
-                            else Model(source_path))
-                self._refresh_vertex_pointer_names()
-                self.poly_order=sorted(self.model.polygons)
-                self.vertex_order=sorted(self.model.vertices)
-                self.selected=None;self.selected_poly=None
-                self.texture_manual={k:v for k,v in self.texture_manual.items()
-                                      if k[0]!='polygon' or k[1] in self.model.polygons}
-                self.refresh_polygon_list()
-            self.model.reset();self.undo_stack=[];self.redo_stack=[]
-            self.listbox.delete(0,'end')
-            for ref in self.vertex_order:self.listbox.insert('end',self._vertex_list_text(ref))
-            self.update_edit_panel()
-            self._refresh_polygon_inspector()
-            self.redraw()
-        self._notify_visual_model_edited()
-
-    def _basis(self):
-        # Display transform reflects Y, so +Y now points in the opposite
-        # screen direction from v0.4. Raw 3DO coordinates, drag edits and
-        # saved data are NOT reflected or rewritten.
-        return _view_basis(self.azimuth,self.elevation)
-
-    def _camera_distance(self):
-        # In perspective view, mouse-wheel zoom is a camera dolly, not a
-        # change to the model's stored position or SWITCH DISTANCE threshold.
-        return max(1.0, 1.65*(self.extent or 1.0)/max(self.zoom,0.0001))
-
-    def _camera_position(self):
-        toward=self._basis()[2]
-        distance=(self._camera_distance() if self.projection.get()=='Perspective (depth)'
-                  else max(1.0,self.extent*4))
-        return tuple(self.center[i]+toward[i]*distance for i in range(3))
-
-    def _near_plane(self):
-        return max(1.,self._camera_distance()*0.002)
-
-    def _view_coordinates(self,point):
-        right,up,toward=self._basis()
-        delta=sub(point,self.center)
-        return (dot(delta,right),dot(delta,up),
-                self._camera_distance()-dot(delta,toward),dot(delta,toward))
-
-    def _screen_from_view(self,x,y,z,depth):
-        w=self.canvas.winfo_width();h=self.canvas.winfo_height()
-        if self.projection.get()=='Perspective (depth)':
-            # Focal length from a physical field-of-view. Objects farther
-            # from the camera shrink; there is no perspective in ortho mode.
-            if z<self._near_plane():
-                return (-1000000.,-1000000.,depth)
-            focal=min(w,h)/(2*math.tan(math.radians(self.fov_degrees)/2))
-            factor=focal/z
-        else:
-            factor=self.scale
-        return (w/2+self.pan[0]+x*factor,
-                h/2+self.pan[1]-y*factor,depth)
-
-    def _project(self,point):
-        return self._screen_from_view(*self._view_coordinates(point))
-
-    def _project_polygon(self, points):
-        """Project polygon/line and clip it against the perspective near plane."""
-        if self.projection.get()!='Perspective (depth)':
-            return [self._project(p) for p in points]
-        verts=[self._view_coordinates(p) for p in points]
-        near=self._near_plane()
-        if not verts:
-            return []
-        if len(verts)==1:
-            return [self._screen_from_view(*verts[0])] if verts[0][2]>=near else []
-        if len(verts)==2:
-            a,b=verts
-            if a[2]<near and b[2]<near:return []
-            if (a[2]<near)!=(b[2]<near):
-                t=(near-a[2])/(b[2]-a[2])
-                cut=tuple(a[i]+t*(b[i]-a[i]) for i in range(4))
-                if a[2]<near:a=cut
-                else:b=cut
-            verts=[a,b]
-        else:
-            # Sutherland-Hodgman clipping preserves original vertex order.
-            clipped=[]
-            previous=verts[-1]
-            for cur in verts:
-                pi=previous[2]>=near
-                ci=cur[2]>=near
-                if pi!=ci:
-                    t=(near-previous[2])/(cur[2]-previous[2])
-                    clipped.append(tuple(previous[i]+t*(cur[i]-previous[i]) for i in range(4)))
-                if ci:clipped.append(cur)
-                previous=cur
-            verts=clipped
-        return [self._screen_from_view(*v) for v in verts]
-
-    def set_camera_view(self, view):
-        """Change viewing direction without changing model geometry."""
-        presets={'Three-quarter':(35,25),'Top':(0,89),'Front':(0,0),'Side':(90,0)}
-        if view not in presets:
-            raise ValueError(f'Unknown camera view: {view}')
-        azimuth,elevation=presets[view]
-        self.azimuth=math.radians(azimuth)
-        self.elevation=math.radians(elevation)
-        self.redraw()
-        self.status.set(f'{view} camera view • Right-drag to orbit')
-
-    def frame_selection(self):
-        """Center and zoom the current selection without changing model data."""
-        if not self.model:return
-        page=self.notebook.select()
-        points=[]
-        if page in (str(self.poly_page),str(self.geometry_page)) and self.selected_poly in self.model.polygons:
-            poly=self.model.polygons[self.selected_poly]
-            points=[self.model.vertices[ref].xyz for ref in poly.unique_refs]
-        elif page==str(self.vertex_page) and self.selected in self.model.vertices:
-            points=[self.model.vertices[self.selected].xyz]
-        elif page==str(self.component_page) and self.selected_dynamic in self.model.dynamics:
-            placement=self.model.dynamics[self.selected_dynamic]
-            points=[placement.xyz]
+            fd, temporary = tempfile.mkstemp(
+                prefix='.' + dest.name + '.', suffix='.tmp', dir=dest.parent)
             try:
-                faces,_=gather_faces(self.model,None,(0.,0.,1e9),'off',
-                                     self.external_resolver,cache=self.external_model_cache)
-                for face in faces:
-                    if face.placement!=self.selected_dynamic:
-                        continue
-                    if isinstance(face,RenderSprite):
-                        sprite=face.source.pmp_sprites[face.offset]
-                        points.append(face.transform.apply(face.source.vertices[sprite.vertex_ref].xyz))
-                    else:
-                        polygon=face.source.polygons[face.offset]
-                        points.extend(face.transform.apply(face.source.vertices[ref].xyz)
-                                      for ref in polygon.unique_refs)
-            except (FormatError,ValueError,OverflowError,OSError):
-                pass
-        if not points:
-            self.status.set('Select a visible vertex, polygon or part before framing it.')
+                with os.fdopen(fd, 'wb') as stream:
+                    stream.write(self.viewer._model.raw)
+                os.replace(temporary, dest)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        except OSError as error:
+            QMessageBox.warning(self, 'Export failed', str(error))
             return
-        lo=[min(p[i] for p in points) for i in range(3)]
-        hi=[max(p[i] for p in points) for i in range(3)]
-        self.center=tuple((a+b)/2 for a,b in zip(lo,hi))
-        span=max(hi[i]-lo[i] for i in range(3))
-        self.extent=max(1.0,span*1.5,self._model_extent*0.08)
-        self.zoom=1.0
-        self.pan=(0.0,0.0)
-        self.redraw()
-        self.status.set('Framed current selection • F frames the entire model.')
+        self.source_pane.status.setText(f'Exported last valid model as {dest.name}.')
 
-    def frame_model(self):
-        if not self.model:
-            self.center=(0,0,0); self.extent=1;self.redraw();return
-        points=[v.xyz for v in self.model.vertices.values()]
-        if self.model.dynamics:
-            try:
-                faces,_=gather_faces(self.model,None,(0.,0.,1e9),'off',
-                    self.external_resolver,cache=self.external_model_cache)
-                for face in faces:
-                    if face.placement is None:continue
-                    if isinstance(face,RenderSprite):
-                        sprite=face.source.pmp_sprites[face.offset]
-                        points.append(face.transform.apply(face.source.vertices[sprite.vertex_ref].xyz))
-                        continue
-                    poly=face.source.polygons[face.offset]
-                    points.extend(face.transform.apply(face.source.vertices[ref].xyz)
-                                  for ref in poly.unique_refs)
-            except (FormatError,ValueError,OverflowError):
-                pass
-        if not points:
-            self.center=(0,0,0);self.extent=1;self.redraw();return
-        lo=[min(p[i] for p in points) for i in range(3)]
-        hi=[max(p[i] for p in points) for i in range(3)]
-        self.center=tuple((a+b)/2 for a,b in zip(lo,hi))
-        self.extent=max(hi[i]-lo[i] for i in range(3)) or 1
-        self._model_extent=self.extent
-        self.zoom=1;self.pan=(0.0,0.0)
-        self.redraw()
+    def _busy(self):
+        if self.worker and self.worker.isRunning():
+            QMessageBox.information(self, "Loading", "Finish the current load first.")
+            return True
+        return False
 
-    def effective_color(self,poly,source_model=None):
-        if source_model is not None and source_model is not self.model:
-            return poly.color
-        return self.appearance.map_color(poly.color) if self.appearance else poly.color
-
-    def _color_label(self,poly):
-        changed=self.effective_color(poly)
-        return str(poly.color) if changed==poly.color else f'{poly.color} → {changed}'
-
-    def _color(self,poly,source_model=None):
-        color=self.effective_color(poly,source_model)
-        if self.palette and 0<=color<256:
-            return self.palette[color]
-        # Neutral CAD preview hues; these are NOT ICR2 palette colors.
-        h=((color*37)%360)/360.0
-        sat=0.20 if poly.kind==1 else 0.37
-        r,g,b=colorsys.hsv_to_rgb(h,sat,0.72)
-        return tuple(int(255*x) for x in (r,g,b))
-
-    def _polygon_shade(self,poly,source_model=None,transform=None):
-        if not self.lighting.get():return 1.0
-        source=source_model or self.model
-        transform=transform or Transform()
-        points=[transform.apply(source.vertices[r].xyz) for r in poly.unique_refs]
-        if len(points)<3:return 0.73
-        normal=None
-        for j in range(1,len(points)-1):
-            c=cross(sub(points[j],points[0]),sub(points[j+1],points[0]))
-            length=math.sqrt(dot(c,c))
-            if length>0:normal=[a/length for a in c];break
-        toward=self._basis()[2]
-        return 0.73 if normal is None else (0.42+0.50*abs(dot(normal,toward)))
-
-    def _polygon_fill(self,poly,source_model=None,transform=None):
-        base=self._color(poly,source_model)
-        shade=self._polygon_shade(poly,source_model,transform)
-        if shade==1.0:return rgbhex(base)
-        return rgbhex(tuple(max(22,int(v*shade)) for v in base))
-
-    def _texture_sampling_scale(self):
-        static={'Fast (50%)':0.50,'Balanced (75%)':0.75,'Full (100%)':1.0}
-        quality=static.get(self.texture_quality.get(),0.75)
-        # Preserve high precision for idle inspection; coarser sampling
-        # reduces CPU cost by roughly the square of the scale during motion.
-        if self._interactive_view:
-            return min(quality,0.40 if quality<1.0 else 0.55)
-        return quality
-
-    def request_view_redraw(self):
-        if CAD_PROFILE.enabled:
-            CAD_PROFILE.record("viewport.redraw_requests",0)
-
-        # Coalesce motion events; schedule a high-quality idle pass.
-        self._interactive_view=True
-        if self._pending_view_redraw is None:
-            self._pending_view_redraw=self.after(16,self._flush_view_redraw)
-        if self._pending_refine is not None:
-            self.after_cancel(self._pending_refine)
-        self._pending_refine=self.after(180,self._refine_view)
-
-    def _flush_view_redraw(self):
-        self._pending_view_redraw=None
-        if self.winfo_exists():self.redraw()
-
-    def _refine_view(self):
-        self._pending_refine=None
-        self._interactive_view=False
-        if self._pending_view_redraw is not None:
-            self.after_cancel(self._pending_view_redraw)
-            self._pending_view_redraw=None
-        if self.winfo_exists():self.redraw()
-
-    def finish_view_motion(self,event=None):
-        # Restore stationary preview quality after releasing a drag.
-        if self._pending_refine is not None:
-            self.after_cancel(self._pending_refine)
-            self._pending_refine=None
-        if self._pending_view_redraw is not None:
-            self.after_cancel(self._pending_view_redraw)
-            self._pending_view_redraw=None
-        if self._interactive_view:
-            self._interactive_view=False
-            self.redraw()
-
-    def _draw_vertex_points(self,w,h):
-        """Large vertex sets become one transparent layer, not thousands of Tk ovals.
-
-        This changes display primitives only. Mouse picking still considers
-        every active vertex, and the selected vertex is drawn separately.
-        """
-        if not self.show_points.get():
+    def _apply_palette(self, path):
+        if self._busy():
             return
-        many=(TEXTURE_AVAILABLE and
-              len(self.active_vertices)>=self._point_raster_threshold)
-        if many:
-            layer=Image.new('RGBA',(w,h),(0,0,0,0))
-            brush=ImageDraw.Draw(layer)
-        nverts=len(self.model.vertices)
-        for ref in self.active_vertices:
-            if ref==self.selected:continue
-            v=self.model.vertices[ref]
-            x,y,_=self._project(v.xyz)
-            if not -10<x<w+10 or not -10<y<h+10:continue
-            rad=2.3 if nverts<2500 else 1.7
-            if many:
-                color=(255,174,98,255) if v.modified else (184,204,237,255)
-                brush.ellipse((x-rad,y-rad,x+rad,y+rad),fill=color)
-            else:
-                color='#ffae62' if v.modified else '#b8cced'
-                self.canvas.create_oval(x-rad,y-rad,x+rad,y+rad,
-                                        fill=color,outline='',tags='dot')
-        if many:
-            photo=ImageTk.PhotoImage(layer,master=self)
-            self._texture_photos.append(photo)
-            self.canvas.create_image(0,0,image=photo,anchor='nw',tags='dot')
-
-    def _vertex_preview_label(self,ref):
-        if self.vertex_label_mode.get()=='Names':
-            return self.vertex_pointer_names.get(ref,str(ref))
-        return str(ref)
-
-    def _draw_vertex_labels(self,w,h):
-        """Draw legible active-vertex labels without a pathological Tk slowdown."""
-        mode=self.vertex_label_mode.get()
-        if mode=='Off' or not self.model:return
-        occupied=set()
-        shown=0
-        # The selected marker receives its own label and is never culled.
-        for ref in sorted(self.active_vertices):
-            if ref==self.selected:continue
-            v=self.model.vertices.get(ref)
-            if v is None:continue
-            x,y,_=self._project(v.xyz)
-            if not (4<x<w-4 and 20<y<h-20):continue
-            # One label per small screen region avoids stacks at UV seams.
-            cell=(int(x//54),int(y//17))
-            if cell in occupied:continue
-            occupied.add(cell)
-            self.canvas.create_text(x+6,y-7,text=self._vertex_preview_label(ref),
-                      fill='#d6e4fc',anchor='sw',font=('Consolas',9),
-                      tags=('vertex_label',f'vertex_label_{ref}'))
-            shown+=1
-            if shown>=650:break
-        if len(self.active_vertices)>shown:
-            self.preview_stats.set(self.preview_stats.get()+
-                     f'  •  vertex labels: {shown}/{len(self.active_vertices)} (screen-space limited)')
-
-    def redraw(self):
-        if not hasattr(self,'canvas'):return
-        _redraw_start=perf_counter()
-        c=self.canvas
-        self._update_selection_summary()
-        c.delete('all')
-        w=max(c.winfo_width(),20);h=max(c.winfo_height(),20)
-        self.scale=min(w,h)*0.76/(self.extent or 1)*self.zoom
-        if not self.model:
-            self._screen_polygons=[]
-            c.create_text(w/2,h/2,text='Open a .3DO file to begin',fill='#a0aec0',
-                          font=('Segoe UI',18))
-            return
-        if not self.model.vertices:
-            c.create_text(w/2,h/2,text='No local geometry in this 3DO.\nIt may reference external models.',
-                          fill='#b3c3d8',font=('Segoe UI',14),justify='center')
-            return
-        if self.show_axes.get():
-            self.draw_axes()
-        use_switch=self.lod_mode.get()=='SWITCH DISTANCE'
-        switch_distance=self.lod_distance.get() if use_switch else None
-        plane_choice=self.bsp_mode.get()
-        bsp_mode={'Off (show all)':'off', 'Original 3DO planes':'original',
-                  'Rebuilt planes':'rebuilt'}[plane_choice]
-        # Orthographic projection uses a representative distant camera;
-        # perspective uses the camera's actual 3D position for BSP tests.
-        camera=self._camera_position()
-        preview_error=None
         try:
-            offsets,preview,lods=self.model.switched_polygons(switch_distance,camera,bsp_mode)
-        except (FormatError,ValueError,OverflowError) as exc:
-            # During a vertex drag, an explicit manual plane may temporarily
-            # become nonplanar. Keep the CAD view usable but block saving.
-            preview_error=str(exc)
-            offsets,preview,lods=self.model.switched_polygons(switch_distance,camera,'original')
-        self.visible_polygon_offsets=set(offsets)
-        active_polys=[self.model.polygons[i] for i in offsets]
-        self.active_vertices={r for poly in active_polys for r in poly.unique_refs}
-        info=f'{preview["visible"]}/{len(self.model.polygons)} polygons  •  BSP planes checked: {preview["tested_planes"]}'
-        if preview_error:
-            info+='  •  INVALID EDIT (original BSP preview): '+preview_error[:95]
-        if lods:
-            info+='  •  LOD: '+', '.join(f'@{off} ≥{threshold:,} → {ptr}' for off,threshold,ptr in lods[:3])
-        elif use_switch and not self.model.switches:
-            info+='  •  No SWITCH DISTANCE node'
-        self.preview_stats.set(info)
-        if hasattr(self,'poly_tree') and self.poly_only_visible.get():
-            old=getattr(self,'_listed_preview_set',None)
-            if old!=self.visible_polygon_offsets:
-                self._listed_preview_set=set(self.visible_polygon_offsets)
-                self.refresh_polygon_list()
-        if self.selected_poly is not None:
-            selected_flag=('VISIBLE' if self.selected_poly in self.visible_polygon_offsets
-                           else ('HIDDEN (ghost outline)' if self.show_hidden_polygon_outline.get() else 'HIDDEN'))
-            poly=self.model.polygons[self.selected_poly]
-            self.poly_detail.set(f'POLY @{poly.offset}  •  {len(poly.unique_refs)} unique vertices  •  '
-                                 f'Color {self._color_label(poly)}  •  Group {poly.group}  •  {selected_flag}')
-        items=[]
-        self._screen_dynamics=[]
-        # Render each nested model precisely where its DYNAMIC record occurs
-        # within the original LIST / BSP traversal. External sources are
-        # immutable; selected components only edit placement transforms.
-        if self.model.dynamics:
-            faces,failures=gather_faces(self.model,switch_distance,camera,bsp_mode,
-                              self.external_resolver,cache=self.external_model_cache)
-            self._dynamic_failures=failures
-            for face in faces:
-                if isinstance(face,RenderSprite):
-                    items.append(('pmp',face))
-                    continue
-                source=face.source
-                poly=source.polygons[face.offset]
-                pts=self._project_polygon([
-                    face.transform.apply(source.vertices[v].xyz) for v in poly.unique_refs])
-                if len(pts)<2:continue
-                items.append((poly,pts,source,face.transform,face.placement,face.texture_override))
-        else:
-            self._dynamic_failures={}
-            identity=Transform()
-            for poly in active_polys:
-                refs=poly.unique_refs
-                if len(refs)<2:continue
-                pts=self._project_polygon([self.model.vertices[v].xyz for v in refs])
-                if len(pts)<2:continue
-                items.append((poly,pts,self.model,identity,None,None))
-        self._screen_polygons=[]
-        self._texture_photos=[]  # Keep Tk PhotoImage objects alive per redraw
-        texture_count=0
-        texture_unassigned=0
-        # No global depth sort in EITHER mode. In particular, LIST children
-        # are authored back-to-front, so a depth sort here would corrupt
-        # intentional overlap even in the no-BSP preview. BSP traversal
-        # may reorder BSP branches, but must not reorder LIST siblings.
-        pmp_count=0
-        for entry in items:
-            if len(entry)==2 and entry[0]=='pmp':
-                if self.show_faces.get() and self.show_textures.get():
-                    self.draw_pmp_sprite(entry[1])
-                    pmp_count+=1
-                continue
-            p,pts,source,transform,placement,texture_override=entry
-            if placement is None:
-                self._screen_polygons.append((p.offset,[(t[0],t[1]) for t in pts]))
-            else:
-                self._screen_dynamics.append((placement,[(t[0],t[1]) for t in pts]))
-            xy=[a for point in pts for a in point[:2]]
-            if len(pts)>=3 and self.show_faces.get():
-                image_made=False
-                if p.kind==2 and self.show_textures.get():
-                    tex=self.get_polygon_texture(p,source,texture_override)
-                    if tex is not None and self.palette and TEXTURE_AVAILABLE:
-                        mapped=self._project_textured_polygon(p,source,transform)
-                        if len(mapped)>=3:
-                            brightness=self._polygon_shade(p,source,transform)
-                            sample_scale=self._texture_sampling_scale()
-                            # Projected XYZ/UV is part of the key, so edits
-                            # cannot reuse old pixels. Palette and texture
-                            # identity account for reloads and reassignment.
-                            key=(str(source.path),p.offset,id(tex),id(self.palette),tuple(mapped),
-                                 self.projection.get(),self.texture_repeat.get(),
-                                 brightness,sample_scale,w,h)
-                            cached=self._texture_tile_cache.get(key)
-                            if cached is not None:
-                                self._texture_tile_cache.move_to_end(key)
-                                photo,ox,oy,allocated=cached
-                                self._texture_photos.append(photo)
-                                c.create_image(ox,oy,image=photo,anchor='nw',tags='poly')
-                                image_made=True; texture_count+=1
-                            else:
-                                tile=rasterize_polygon(tex,self.palette,mapped,(w,h),
-                                    perspective=self.projection.get()=='Perspective (depth)',
-                                    repeat=self.texture_repeat.get(),
-                                    brightness=brightness,sample_scale=sample_scale)
-                                if tile is not None:
-                                    image,ox,oy=tile
-                                    try:
-                                        photo=ImageTk.PhotoImage(image,master=self)
-                                        self._texture_photos.append(photo)
-                                        c.create_image(ox,oy,image=photo,anchor='nw',tags='poly')
-                                        image_made=True; texture_count+=1
-                                        if not self._interactive_view:
-                                            allocated=image.width*image.height*4
-                                            self._texture_tile_cache[key]=(photo,ox,oy,allocated)
-                                            self._texture_tile_cache_bytes+=allocated
-                                            # 16 MiB / 96 entries bounds cache
-                                            # memory even on large car models.
-                                            while (self._texture_tile_cache_bytes>16*1024*1024 or
-                                                   len(self._texture_tile_cache)>96):
-                                                _,old=self._texture_tile_cache.popitem(last=False)
-                                                self._texture_tile_cache_bytes-=old[3]
-                                    except (tk.TclError,ValueError):
-                                        pass
-                    elif tex is None:
-                        texture_unassigned+=1
-                if not image_made:
-                    c.create_polygon(*xy,fill=self._polygon_fill(p,source,transform),outline='',tags='poly')
-            if self.show_edges.get():
-                if len(pts)>=3:
-                    c.create_line(*xy,pts[0][0],pts[0][1],fill='#596a82',width=0.8,tags='edge')
-                else:
-                    c.create_line(*xy,fill='#71829b',tags='edge')
-        if self.model.dynamics:
-            shown={ref for ref,_ in self._screen_dynamics}
-            info+=f'  •  {len(shown)}/{len(self.model.dynamics)} external placements'
-            if self._dynamic_failures:
-                info+=f'  •  {len(self._dynamic_failures)} unresolved'
-            self.preview_stats.set(info)
-        if pmp_count:
-            info+=f'  •  {pmp_count} PMP sprites'
-        if self.show_textures.get() and texture_count:
-            self.preview_stats.set(info+f'  •  {texture_count} textured')
-        elif self.show_textures.get() and texture_unassigned:
-            self.preview_stats.set(info+f'  •  {texture_unassigned} textured polys need MIPs')
-        if (self.notebook.select()==str(self.component_page) and
-                self.selected_dynamic is not None):
-            for ref,coords in self._screen_dynamics:
-                if ref!=self.selected_dynamic or len(coords)<2:continue
-                xy=[val for point in coords for val in point]
-                if len(coords)>=3:
-                    c.create_line(*xy,coords[0][0],coords[0][1],
-                                   fill='#ffdf68',width=2.1,tags='selected_dynamic')
-                else:
-                    c.create_line(*xy,fill='#ffdf68',width=2.1,tags='selected_dynamic')
-        selected_displayable=(self.selected_poly is not None and
-                              self.selected_poly in self.model.polygons and
-                              (self.selected_poly in self.visible_polygon_offsets or
-                               self.show_hidden_polygon_outline.get()))
-        if selected_displayable:
-            sel=self.model.polygons[self.selected_poly]
-            projected=self._project_polygon([self.model.vertices[r].xyz for r in sel.unique_refs])
-            pts=[n for triple in projected for n in triple[:2]]
-            if len(projected)>=3:
-                self.canvas.create_polygon(*pts,fill='',outline='#ffdf68',width=3,
-                                           dash=() if sel.offset in self.visible_polygon_offsets else (5,5),
-                                           tags='selected_poly')
-            elif len(projected)==2:
-                self.canvas.create_line(*pts,fill='#ffdf68',width=4,tags='selected_poly')
-            # The inspector already names this polygon. Suppress its
-            # centroid label while drawing per-vertex numbers, so it does
-            # not obscure the numbered markers on narrow polygons.
-            numbering=(self.notebook.select()==str(self.poly_page)
-                       and self.poly_vertex_labels.get())
-            if projected and not numbering:
-                mx=sum(v[0] for v in projected)/len(projected)
-                my=sum(v[1] for v in projected)/len(projected)
-                self.canvas.create_text(mx,my-14,text=f'POLY {sel.offset}',
-                                        fill='#ffdf68',font=('Consolas',10,'bold'))
-        # Overlay ordered polygon vertex labels after fills/edges, so each
-        # label remains readable even if selected vertices share other faces.
-        # These are 1-based *polygon list* indices, not 3DO body offsets.
-        if (self.notebook.select()==str(self.poly_page) and
-                self.poly_vertex_labels.get() and selected_displayable):
-            sel=self.model.polygons[self.selected_poly]
-            self.draw_selected_polygon_numbers(sel)
-        self.draw_polygon_split_preview()
-        self.draw_existing_vertex_split_preview()
-        if (self.notebook.select()==str(self.poly_page) and
-                self.selected_poly is not None):
-            self.draw_selected_plane_direction(camera, bsp_mode)
-        if self.notebook.select()==str(self.geometry_page):
-            for j, v in enumerate(self.draft_vertices,1):
-                sx,sy,_=self._project(v[:3])
-                c.create_oval(sx-5,sy-5,sx+5,sy+5,fill='#47dfbd',outline='#004e40',width=2)
-                c.create_text(sx+9,sy-10,text=f'V{j}',fill='#83ffe1',anchor='sw',
-                              font=('Consolas',10,'bold'))
-        with CAD_PROFILE.measure("viewport.vertex_points"):
-            self._draw_vertex_points(w,h)
-        self._draw_vertex_labels(w,h)
-        if self.selected is not None and self.selected in self.model.vertices:
-            x,y,_=self._project(self.model.vertices[self.selected].xyz)
-            c.create_oval(x-8,y-8,x+8,y+8,outline='#fff0a0',width=2)
-            c.create_line(x-13,y,x+13,y,fill='#fff0a0',width=1)
-            c.create_line(x,y-13,x,y+13,fill='#fff0a0',width=1)
-            c.create_text(x+12,y-16,text=self._vertex_preview_label(self.selected)
-                           if self.vertex_label_mode.get()!='Off' else str(self.selected),
-                           fill='#fff0a0',anchor='sw',
-                          font=('Consolas',10,'bold'))
-        c.create_text(16,12,text=f'{self.projection.get().upper()}  •  Z UP  •  +Y REVERSED IN VIEW  •  RAW 3DO COORDINATES',
-                      fill='#95a9c4',font=('Consolas',9),anchor='nw')
-        c.create_text(16,h-16,text=f'AZ {math.degrees(self.azimuth):.0f}°   EL {math.degrees(self.elevation):.0f}°   ZOOM {self.zoom:.2f}×  •  {"LIT" if self.lighting.get() else "UNLIT"}  •  {self.palette_source}',
-                      fill='#8194aa',font=('Consolas',9),anchor='sw')
-        self.last_render_seconds=perf_counter()-_redraw_start
-        CAD_PROFILE.record("viewport.redraw",self.last_render_seconds)
-        if self.show_textures.get() and texture_count:
-            self.preview_stats.set(self.preview_stats.get()+
-                f'  •  draw {self.last_render_seconds*1000:.0f} ms'
-                f' ({int(self._texture_sampling_scale()*100)}% texture)')
-
-    def draw_pmp_sprite(self, placement):
-        """Draw one viewpoint-selected PMP/PMP2 as a screen-facing bitmap.
-
-        The sprite's 3DO size is interpreted as the width/height of the
-        nontransparent picture. This is a viewport approximation; Papyrus's
-        exact sprite scaling and horizon conventions remain unverified.
-        """
-        if (not self.show_faces.get() or not self.show_textures.get() or
-                not TEXTURE_AVAILABLE or not self.palette):
+            palette = load_palette(path)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Invalid PCX palette", str(exc))
             return
-        source=placement.source
-        sprite=source.pmp_sprites[placement.offset]
-        location=self.external_resolver.find(sprite.name,source.path,
-                       extension='.pmp')
-        if location is None:
-            self._dynamic_failures[(source.path,placement.offset)]=f'{sprite.name}.pmp not found'
+        self.palette_path = Path(path)
+        self.palette_status.setText(f"Palette: {self.palette_path.name} (256 colors)")
+        self.viewer.set_palette(palette)
+        self._refresh_mip_browser()
+
+    def open_palette_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open 256-color PCX palette",
+            str(self.palette_path.parent),
+            "PCX palette (*.pcx *.PCX);;All files (*)")
+        if path:
+            self._apply_palette(path)
+
+    def restore_palette(self):
+        self._apply_palette(CAD_ROOT / "gamepal.pcx")
+
+    def choose_mip_folder(self):
+        if self._busy():
             return
-        key=(location.resolve(),id(self.palette))
-        try:
-            if key not in self._pmp_cache:
-                self._pmp_cache[key]=load_pmp(location,self.palette)
-            img=self._pmp_cache[key]
-        except (OSError,PMPError,ValueError) as exc:
-            self._dynamic_failures[(source.path,placement.offset)]=f'{sprite.name}.pmp: {exc}'
-            return
-        point=placement.transform.apply(source.vertices[sprite.vertex_ref].xyz)
-        center=self._project(point)
-        if abs(center[0])>100000 or abs(center[1])>100000:
-            return
-        right=self._basis()[0]
-        endpoint=tuple(point[i]+right[i]*abs(sprite.size) for i in range(3))
-        ext=self._project(endpoint)
-        scale=abs(ext[0]-center[0]) / max(1,img.rgba.width,img.rgba.height)
-        # A minimum size prevents disappearing in distant LODs, while a
-        # maximum bounds pathological zoom and raster allocations.
-        if scale<=0:
-            return
-        dstw=max(1,min(2048,int(round(img.rgba.width*scale))))
-        dsth=max(1,min(2048,int(round(img.rgba.height*scale))))
-        if dstw<2 or dsth<2:
-            return
-        sx=dstw/img.rgba.width
-        sy=dsth/img.rgba.height
-        x=center[0]+(img.bounds[0]-128)*sx
-        y=center[1]+(img.bounds[1]-128)*sy
-        rendered=img.rgba.resize((dstw,dsth),Image.Resampling.NEAREST)
-        try:
-            photo=ImageTk.PhotoImage(rendered,master=self)
-            self._texture_photos.append(photo)
-            self.canvas.create_image(x,y,image=photo,anchor='nw',tags='pmp')
-            if placement.placement is not None:
-                self._screen_dynamics.append((placement.placement,[(x,y),(x+dstw,y),
-                    (x+dstw,y+dsth),(x,y+dsth)]))
-        except (tk.TclError,ValueError):
-            return
-
-    def draw_selected_plane_direction(self, camera, bsp_mode):
-        """Diagnostic of the *currently previewed* FACE/BSP plane.
-
-        Anchors the normal at the selected polygon's centroid for visibility.
-        This is an orientation indicator, not the actual plane location.
-        """
-        po=self.current_plane_offset()
-        if po is None or po not in self.model.planes:
-            return
-        stored=self.model.planes[po]
-        try:
-            eq=(stored.equation if bsp_mode=='original'
-                else self.model.effective_plane(po))
-        except (FormatError, ValueError, OverflowError):
-            return
-        n=eq[:3]
-        magnitude=math.sqrt(dot(n,n))
-        if magnitude==0:
-            return
-        normal=tuple(float(k)/magnitude for k in n)
-        poly=self.model.polygons[self.selected_poly]
-        verts=[self.model.vertices[r].xyz for r in poly.unique_refs]
-        if not verts:
-            return
-        center=tuple(sum(v[i] for v in verts)/len(verts) for i in range(3))
-        tip=tuple(center[i]+normal[i]*self.extent*0.20 for i in range(3))
-        x1,y1,_=self._project(center)
-        x2,y2,_=self._project(tip)
-        side=dot(n,camera)+eq[3]
-        front='front (+)' if side>=0 else 'back (-)'
-        source=('BSP OFF (reference only)' if bsp_mode=='off' else
-                'stored' if bsp_mode=='original' else
-                ('edited' if po in self.model.plane_edits else 'effective'))
-        label=f'{NAMES[stored.kind]} @{po}  •  {source} plane  •  camera: {front}'
-        # The side and normal labels provide a visible confirmation even for
-        # pure draw-order nodes that do not change the number of polygons.
-        self.canvas.create_text(16,30,text=label,fill='#ffdd87',anchor='nw',
-                                font=('Consolas',10,'bold'),tags='plane_normal')
-        distance=math.hypot(x2-x1,y2-y1)
-        if distance>=12:
-            self.canvas.create_line(x1,y1,x2,y2,fill='#ff8deb',width=3,
-                                    arrow='last',arrowshape=(12,14,5),tags='plane_normal')
-            self.canvas.create_text(x2+7,y2-7,text='N+',anchor='sw',
-                                    fill='#ffd0f4',font=('Consolas',11,'bold'),
-                                    tags='plane_normal')
-        else:
-            # Normal is nearly end-on: indicate its direction along view.
-            viewer=dot(n,self._basis()[2])
-            mark='⊙ N+ toward viewer' if viewer>0 else '⊗ N+ away from viewer'
-            self.canvas.create_oval(x1-5,y1-5,x1+5,y1+5,outline='#ff8deb',width=2,
-                                    tags='plane_normal')
-            self.canvas.create_text(x1+12,y1-11,text=mark,anchor='sw',
-                                    fill='#ffd0f4',font=('Consolas',10,'bold'),
-                                    tags='plane_normal')
-
-    @staticmethod
-    def polygon_vertex_label_groups(poly):
-        """Group positions by vertex record to handle repeated closing refs.
-
-        Return ordered (ref, '#1' or '#1/#5') labels matching list indices.
-        """
-        by_ref={}
-        for i,ref in enumerate(poly.refs,1):
-            by_ref.setdefault(ref,[]).append(i)
-        return [(ref, '/'.join(f'#{number}' for number in numbers))
-                for ref,numbers in by_ref.items()]
-
-    def draw_selected_polygon_numbers(self,poly):
-        # Keep labels adjacent to their vertices rather than placing them at
-        # the vertices themselves, which would obscure handles and outlines.
-        # Basic proximity staggering prevents labels disappearing when
-        # multiple *different* vertex records share a screen position.
-        taken=[]
-        for ref,label in self.polygon_vertex_label_groups(poly):
-            if ref not in self.model.vertices:
-                continue
-            x,y,_=self._project(self.model.vertices[ref].xyz)
-            used=0
-            tx,ty=x+11,y-12
-            while any(abs(tx-px)<25 and abs(ty-py)<15 for px,py in taken) and used<12:
-                used+=1
-                tx=x+11+(used//4)*38
-                ty=y-12+(used%4)*19
-            taken.append((tx,ty))
-            self.canvas.create_oval(x-5,y-5,x+5,y+5,fill='#ffdc68',
-                                    outline='#1b2030',width=1.1,tags='poly_number')
-            self.canvas.create_line(x+4,y-4,tx,ty,fill='#ffdc68',
-                                    width=1,tags='poly_number')
-            # Two text passes create a dark halo usable over shaded faces.
-            self.canvas.create_text(tx+1,ty+1,text=label,anchor='sw',
-                                    fill='#09101c',font=('Consolas',11,'bold'),
-                                    tags='poly_number')
-            self.canvas.create_text(tx,ty,text=label,anchor='sw',
-                                    fill='#fff0ac',font=('Consolas',11,'bold'),
-                                    tags='poly_number')
-
-    def draw_axes(self):
-        origin=self._project(self.center)
-        radius=self.extent*0.28
-        for axis,v,color in [('X',(radius,0,0),'#f08377'),('Y',(0,radius,0),'#7cdaa3'),('Z',(0,0,radius),'#7caafb')]:
-            p=(self.center[0]+v[0],self.center[1]+v[1],self.center[2]+v[2])
-            dest=self._project(p)
-            self.canvas.create_line(origin[0],origin[1],dest[0],dest[1],fill=color,
-                                    width=2,arrow='last')
-            self.canvas.create_text(dest[0]+7,dest[1],text=axis,fill=color,anchor='w',
-                                    font=('Consolas',10,'bold'))
-
-    def start_pick(self,event):
-        if not self.model:return
-        if self.notebook.select()==str(self.source_page):
-            return
-        if self.notebook.select() in (str(self.poly_page),str(self.geometry_page)):
-            self.pick_polygon(event)
-            if self.notebook.select()==str(self.geometry_page) and self.selected_poly is not None:
-                self.geometry_anchor.set(str(self.selected_poly))
-                self.refresh_geometry_targets()
-            self._drag=None
-            return
-        if self.notebook.select()==str(self.component_page):
-            self.pick_dynamic(event)
-            self._drag=None
-            return
-        closest=None
-        best=11**2
-        near_depth=-math.inf
-        for ref in self.active_vertices:
-            v=self.model.vertices[ref]
-            sx,sy,depth=self._project(v.xyz)
-            d2=(sx-event.x)**2+(sy-event.y)**2
-            if d2<best-0.5 or (abs(d2-best)<0.5 and depth>near_depth):
-                closest=ref;best=d2;near_depth=depth
-        if closest is not None:
-            self.choose(closest)
-            self._drag=(closest,event.x,event.y,self.model.vertices[closest].xyz,False)
-        else:
-            self._drag=None
-
-    def move_vertex_drag(self,event):
-        if not self._drag:return
-        ref,x0,y0,xyz,wasdrag=self._drag
-        step=self._step_if_valid()
-        axisindex='XYZ'.index(self.axis.get())
-        basis=self._basis()
-        unit=[0,0,0];unit[axisindex]=1
-        dx_axis=dot(unit,basis[0])*self.scale
-        dy_axis=-dot(unit,basis[1])*self.scale
-        size=dx_axis**2+dy_axis**2
-        if size<0.01:
-            self.status.set('Chosen axis is edge-on in this view; orbit camera to edit it.')
-            return
-        dx=event.x-x0;dy=event.y-y0
-        if not wasdrag and (dx*dx+dy*dy)<16:
-            return
-        delta=(dx*dx_axis+dy*dy_axis)/size
-        if step:delta=round(delta/step)*step
-        moved=list(xyz);moved[axisindex]=xyz[axisindex]+round(delta)
-        try:self.model.set_vertex(ref,moved)
-        except ValueError:return
-        self._drag=(ref,x0,y0,xyz,True)
-        self.update_edit_panel();self.request_view_redraw()
-        self.status.set(f'Dragging {self.axis.get()}: {moved[axisindex]}  (commit on mouse release)')
-
-    def _step_if_valid(self):
-        try:
-            step=int(self.nudge_step.get())
-            return step if step>0 else None
-        except ValueError:return None
-
-    def finish_vertex_drag(self,event):
-        if not self._drag:return
-        ref,x0,y0,before,wasdrag=self._drag
-        after=self.model.vertices[ref].xyz
-        if before!=after:
-            self.undo_stack.append((ref,before,after));self.redo_stack=[]
-            self.status.set(f'Vertex {ref}: {before} → {after}')
-        self._drag=None
-        self.update_edit_panel()
-        self.finish_view_motion()
-        if before!=after:self._notify_visual_model_edited()
-
-    def start_orbit(self,event):
-        self._orb=(event.x,event.y,self.azimuth,self.elevation)
-
-    def orbit(self,event):
-        if not hasattr(self,'_orb'):return
-        x,y,az,el=self._orb
-        self.azimuth=az+(event.x-x)*0.008
-        self.elevation=max(math.radians(-89),min(math.radians(89),el+(event.y-y)*0.006))
-        self.request_view_redraw()
-
-    def start_pan(self,event):
-        self._pan=(event.x,event.y,self.pan)
-
-    def pan_view(self,event):
-        if not hasattr(self,'_pan'):return
-        x,y,pan0=self._pan
-        self.pan=(pan0[0]+event.x-x,pan0[1]+event.y-y)
-        self.request_view_redraw()
-
-    def wheel_zoom(self,event,delta_override=None):
-        delta=event.delta if delta_override is None else delta_override
-        factor=1.15 if delta>0 else 1/1.15
-        self.zoom=max(0.03,min(200,self.zoom*factor))
-        self.request_view_redraw()
-
-    def choose_texture_folder(self):
-        directory=filedialog.askdirectory(title='Choose directory containing .MIP files')
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with .MIP textures",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
         if directory:
-            self.texture_folder=Path(directory)
-            self.texture_cache.clear()
-            self._mip_path_cache.clear()
-            self._refresh_texture_info()
-            self.redraw()
-            self.status.set(f'MIP search directory: {directory}')
+            self.texture_folder = Path(directory)
+            self._reload_texture_assets()
 
-    def _choose_mip(self):
-        initial=str(self.texture_folder or (self.model.path.parent if self.model else Path.cwd()))
-        name=filedialog.askopenfilename(title='Select an ICR2 MIP texture',initialdir=initial,
-                            filetypes=[('Papyrus textures','*.mip'),('All files','*.*')])
-        if not name:return None
-        try:
-            self._read_texture(Path(name))
-        except (OSError,ValueError,TextureError) as exc:
-            messagebox.showerror('Invalid MIP',str(exc))
-            return None
-        return Path(name)
-
-    def assign_polygon_texture(self):
-        if not self.model or self.selected_poly not in self.model.polygons:return
-        p=self.model.polygons[self.selected_poly]
-        if p.kind!=2:
-            messagebox.showwarning('No UV coordinates','This is a plain POLY, not POLY [T].')
+    def choose_objects_folder(self):
+        if self._busy():
             return
-        path=self._choose_mip()
-        if path:
-            self.texture_manual[('polygon',p.offset)]=path
-            self._refresh_texture_info();self.redraw()
+        directory = QFileDialog.getExistingDirectory(
+            self, "Choose folder with external .3DO objects",
+            str(self.objects_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)))
+        if directory:
+            self.objects_folder = Path(directory)
+            self._reload_texture_assets()
 
-    def assign_group_texture(self):
-        if not self.model or self.selected_poly not in self.model.polygons:return
-        p=self.model.polygons[self.selected_poly]
-        if p.kind!=2:
-            messagebox.showwarning('No UV coordinates','This is a plain POLY, not POLY [T].')
+    def choose_fallback_mip(self):
+        if self._busy():
             return
-        path=self._choose_mip()
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Choose MIP for unassigned POLY [T] faces",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus MIP (*.mip *.MIP);;All files (*)")
         if path:
-            self.texture_manual[('group',p.group)]=path
-            self._refresh_texture_info();self.redraw()
+            self.fallback_mip = Path(path)
+            self._reload_texture_assets()
 
-    def clear_texture_assignment(self):
-        if not self.model or self.selected_poly not in self.model.polygons:return
-        p=self.model.polygons[self.selected_poly]
-        self.texture_manual.pop(('polygon',p.offset),None)
-        self.texture_manual.pop(('group',p.group),None)
-        self._refresh_texture_info();self.redraw()
+    def clear_fallback_mip(self):
+        if self._busy():
+            return
+        self.fallback_mip = None
+        self._reload_texture_assets()
 
-    def _find_named_texture(self,name,*preferred_dirs):
-        if not name:return None
-        parents=(self.texture_folder, *preferred_dirs,
-                 self.model.path.parent if self.model else None,
-                 Path(__file__).resolve().parent/'fixtures')
-        folders=tuple(dict.fromkeys(Path(folder) for folder in parents if folder is not None))
-        key=(name.casefold(),folders)
-        if key in self._mip_path_cache:
-            return self._mip_path_cache[key]
-        wanted=name.casefold()
-        names={wanted, wanted+'.mip'}
-        match=None
-        for folder in folders:
-            if not folder.is_dir():continue
-            for candidate in folder.iterdir():
-                if candidate.is_file() and candidate.name.casefold() in names:
-                    match=candidate
-                    break
-            if match is not None:break
-        self._mip_path_cache[key]=match
-        return match
+    def _reload_texture_assets(self):
+        if self.model_path is not None and self.viewer._model is not None:
+            self.load(self.model_path, reuse_model=True)
 
-    def _texture_path_for(self,p,source_model=None):
-        if source_model is not None and source_model is not self.model:
-            name=source_model.polygon_materials.get(p.offset)
-            return self._find_named_texture(name,source_model.path.parent) if name else None
-        if ('polygon',p.offset) in self.texture_manual:
-            return self.texture_manual[('polygon',p.offset)]
-        if ('group',p.group) in self.texture_manual:
-            return self.texture_manual[('group',p.group)]
-        if self.appearance and p.kind==2 and self.appearance.texture_name:
-            return self._find_named_texture(self.appearance.texture_name,self.appearance.path.parent)
-        name=self.model.polygon_materials.get(p.offset) if self.model else None
-        if not name:return None
-        for parent in (self.texture_folder,self.model.path.parent,
-                       self.model.path.parent/'textures',self.model.path.parent/'mip'):
-            if parent is None or not parent.is_dir():continue
-            for trial in (name,name+'.mip',name+'.MIP'):
-                target=parent/trial
-                if target.is_file():return target
-                if not target.suffix or target.suffix.lower()=='.mip':
-                    # DOS texture names may differ only by filename case.
-                    matches=list(parent.glob('*'))
-                    for file in matches:
-                        if file.is_file() and file.name.casefold()==trial.casefold():
-                            return file
-        return None
+    def choose_car_shape(self):
+        if self._busy():
+            return
+        name = self.car_ref_combo.currentData()
+        if not name:
+            QMessageBox.information(
+                self, "No referenced carshape",
+                "Open an individual-car appearance wrapper to assign its shared carshape.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Use a 3DO for {name}",
+            str(self.objects_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus 3DO (*.3do *.3DO);;All files (*)")
+        if path:
+            self.object_overrides[name.casefold()] = Path(path)
+            self._reload_texture_assets()
 
-    def _read_texture(self,path):
-        path=Path(path)
-        cached=self.texture_cache.get(path)
-        if cached is not None:return cached
-        levels=load_mip(path)
-        self.texture_cache[path]=levels
-        return levels
+    def clear_car_shape(self):
+        if self._busy():
+            return
+        name = self.car_ref_combo.currentData()
+        if name and name.casefold() in self.object_overrides:
+            self.object_overrides.pop(name.casefold())
+            self._reload_texture_assets()
 
-    def get_polygon_texture(self,p,source_model=None,texture_override=None):
-        if not TEXTURE_AVAILABLE or not self.model:return None
-        if texture_override:
-            path=self._find_named_texture(texture_override,
-                              (source_model.path.parent if source_model else None))
+    def choose_livery_mip(self):
+        if self._busy():
+            return
+        name = self.material_combo.currentData()
+        if not name:
+            QMessageBox.information(
+                self, "No texture target",
+                "Load a model containing POLY [T] faces first.")
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, f"Choose MIP for material {name}",
+            str(self.texture_folder or
+                (self.model_path.parent if self.model_path else CAD_ROOT)),
+            "Papyrus livery MIP (*.mip *.MIP);;All files (*)")
+        if path:
+            if name == BODY_MATERIAL:
+                self.body_mip = Path(path)
+            else:
+                self.mip_overrides[name.casefold()] = Path(path)
+            self.reload_mips()
+
+    def clear_livery_mip(self):
+        if self._busy():
+            return
+        name = self.material_combo.currentData()
+        if name == BODY_MATERIAL:
+            if self.body_mip is not None:
+                self.body_mip = None
+                self.reload_mips()
+        elif name and name.casefold() in self.mip_overrides:
+            self.mip_overrides.pop(name.casefold())
+            self.reload_mips()
+
+    def reload_mips(self):
+        """Re-read main and skybox MIPs while preserving camera and edits."""
+        if self._busy() or self.model_path is None:
+            return
+        scene = self.viewer._scene
+        if scene is None or self.viewer._mesh is None:
+            return
+        if scene.skybox is not None:
+            # The sky has an independent atlas; the normal texture worker
+            # only covers the main scene. Rebuild both atlas buffers here.
+            self.statusBar().showMessage("Reloading track and HORIZ sky MIPs…")
+            self.load(self.model_path, reuse_model=True)
+            return
+        self.statusBar().showMessage("Reloading indexed MIP pixels…")
+        self.worker = TextureReloadWorker(
+            scene, self.viewer._mesh, self.viewer._palette,
+            self.model_path, self.texture_folder, self.fallback_mip,
+            self.mip_overrides, self.body_mip, self.viewer._atlas)
+        self.worker.ready.connect(self._mips_reloaded)
+        self.worker.failed.connect(self._mip_reload_failed)
+        self.worker.start()
+
+    def _show_mip_stats(self, stats):
+        self.texture_status.setText(
+            f"MIPs: {stats['texture_count']} loaded | "
+            f"{stats['textured_faces']}/{stats['textured_candidates']} "
+            f"POLY [T] faces mapped | atlas "
+            f"{stats['atlas_shape'][1]}x{stats['atlas_shape'][0]} | "
+            f"{len(stats['missing_textures'])} missing | "
+            f"{len(stats['texture_errors'])} errors")
+
+    def _mips_reloaded(self, atlas, mesh, stats):
+        self._info.update(stats)
+        if mesh is None:
+            self.viewer.set_atlas(atlas)
+            self.statusBar().showMessage(
+                "Livery MIPs reloaded; original VBO, BSP and camera preserved")
         else:
-            path=self._texture_path_for(p,source_model)
-        if not path:return None
-        try:
-            return self._read_texture(path)[0]
-        except (OSError,ValueError,TextureError) as error:
-            # Show the problem in the inspector rather than hiding the model.
-            if not hasattr(self,'_texture_errors'):self._texture_errors=set()
-            if str(path) not in self._texture_errors:
-                self._texture_errors.add(str(path))
-                self.status.set(f'MIP preview error: {path.name}: {error}')
-            return None
+            self.viewer.set_mesh(
+                mesh, self.viewer._model, atlas,
+                self.viewer._palette, self.viewer._scene, preserve_view=True)
+            self._source_target_changed(self.source_pane.current_target())
+            self.statusBar().showMessage(
+                "Livery MIPs reloaded; UV atlas layout changed, rebuilt VBO")
+        self._show_mip_stats(stats)
+        self.car_status.setText(
+            f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
+            f" | base: {self._info.get('geometry_file','')}"
+            f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        # MIP reload may repair or introduce errors. Refresh the menu log
+        # without interrupting interactive texture iteration with popups.
+        self._update_load_error_log(
+            self.model_path or stats.get("file", "(no model)"),
+            collect_load_issues(self._info))
+        if stats['missing_textures'] or stats['texture_errors']:
+            self.statusBar().showMessage(
+                "MIP issues: " + "; ".join(
+                    list(stats['missing_textures'][:5]) +
+                    list(stats['texture_errors'][:3])))
 
-    def _refresh_texture_info(self):
-        if not self.model or self.selected_poly not in self.model.polygons:
-            self.texture_info.set('Texture: select a polygon');return
-        p=self.model.polygons[self.selected_poly]
-        if p.kind!=2:
-            self.texture_info.set('Plain POLY: no UV coordinates');return
-        path=self._texture_path_for(p)
-        named=(self.appearance.texture_name if self.appearance else
-               self.model.polygon_materials.get(p.offset))
-        if path:
-            try:
-                img=self._read_texture(path)[0]
-                self.texture_info.set(f'{path.name}  •  {img.width}×{img.height} pixels  •  group {p.group}')
-            except (OSError,ValueError,TextureError) as exc:
-                self.texture_info.set(f'Invalid {path.name}: {exc}')
-        elif named:
-            self.texture_info.set(f'Missing {named}.mip  •  set MIP folder or assign manually')
+    def _mip_reload_failed(self, message):
+        self.statusBar().showMessage("MIP reload failed; previous livery retained")
+        QMessageBox.warning(self, "MIP reload failed", message)
+
+    def _skybox_toggled(self, checked):
+        self.viewer.sky_enabled = bool(checked)
+        self.viewer.update()
+
+    def _sky_eye_changed(self, *_):
+        # Only the background view changes; never recompile track/HORIZ data.
+        self.viewer.sky_eye = tuple(float(spin.value())
+                                    for spin in self.sky_eye_spins)
+        self.viewer.update()
+
+    def _reset_sky_eye(self):
+        for spin, coordinate in zip(self.sky_eye_spins, SKY_EYE):
+            spin.setValue(int(coordinate))
+        self._sky_eye_changed()
+
+    def _track_window_changed(self, *_):
+        self.viewer.track_window_counts = tuple(
+            spin.value() for spin in self.track_window_spins)
+        if self.viewer.track_detail == 'window':
+            hi, med, lo = self.viewer.track_window_counts
+            self.track_detail_status.setText(
+                f"Camera window: current section HI, {hi} HI / {med} MED / "
+                f"{lo} LO sections in each direction; all others omitted")
+            self.viewer.invalidate_visibility()
+
+    def _track_detail_changed(self, *args):
+        self.viewer.track_detail = self.track_detail_combo.currentData()
+        self.viewer.invalidate_visibility()
+        self._refresh_source_polygon_visibility()
+        self._update_polygon_status()
+
+    def _mode_changed(self, index):
+        self.viewer.set_render_mode(self.mode_combo.currentData())
+        self._refresh_source_polygon_visibility()
+        self._update_polygon_status()
+
+    def _activate_manual_distance(self):
+        if self.lod_mode_combo.currentData() != "manual":
+            self.lod_mode_combo.setCurrentIndex(
+                self.lod_mode_combo.findData("manual"))
         else:
-            self.texture_info.set(f'No MATERIAL reference  •  group {p.group}; assign MIP manually')
+            self._lod_changed()
 
-    def _project_textured_polygon(self,p,source_model=None,transform=None):
-        """Clip UV attributes together with geometry at the perspective near plane."""
-        verts=[]
-        source=source_model or self.model
-        transform=transform or Transform()
-        for ref in p.unique_refs:
-            v=source.vertices[ref]
-            if v.uv is None:return []
-            x,y,z,depth=self._view_coordinates(transform.apply(v.xyz))
-            verts.append((x,y,z,depth,float(v.uv[0]),float(v.uv[1])))
-        if self.projection.get()=='Perspective (depth)':
-            near=self._near_plane();out=[];prev=verts[-1]
-            for cur in verts:
-                before=prev[2]>=near;inside=cur[2]>=near
-                if before!=inside:
-                    t=(near-prev[2])/(cur[2]-prev[2])
-                    out.append(tuple(prev[i]+t*(cur[i]-prev[i]) for i in range(6)))
-                if inside:out.append(cur)
-                prev=cur
-            verts=out
-        mapped=[]
-        for x,y,z,d,u,v in verts:
-            sx,sy,_=self._screen_from_view(x,y,z,d)
-            mapped.append((sx,sy,z if self.projection.get()=='Perspective (depth)' else 1.,u,v))
-        return mapped
+    def _slider_distance_changed(self, value):
+        self.lod_spin.blockSignals(True)
+        self.lod_spin.setValue(value)
+        self.lod_spin.blockSignals(False)
+        self._activate_manual_distance()
 
-    def open_palette(self):
-        path=filedialog.askopenfilename(title='Open sunny.pcx or 256-color PCX palette',
-                                        filetypes=[('PCX palette','*.pcx'),('All files','*.*')])
-        if not path:return
-        try:
-            self.palette=read_pcx_palette(Path(path))
-            self.palette_source=f'Loaded: {Path(path).name}'
-            self.status.set(f'Loaded palette from {Path(path).name}; MIPs use its RGB colors')
-            self.redraw()
-        except (OSError,ValueError) as e:
-            messagebox.showerror('Palette error',str(e))
+    def _spin_distance_changed(self, value):
+        self.lod_slider.blockSignals(True)
+        self.lod_slider.setValue(value)
+        self.lod_slider.blockSignals(False)
+        self._activate_manual_distance()
 
-    def use_default_palette(self):
-        """Restore the palette bundled with the editor after a custom import."""
-        path=Path(__file__).with_name('gamepal.pcx')
-        try:
-            self.palette=read_pcx_palette(path)
-            self.palette_source=f'Default: {path.name}'
-            self.status.set('Using bundled 256-color game palette')
-            self.redraw()
-        except (OSError,ValueError) as e:
-            messagebox.showerror('Default palette unavailable',str(e))
+    def _configure_switch_distance(self, scene):
+        """Clamp the slider to the loaded scene's highest actual RES threshold."""
+        maximum = max_switch_distance(scene)
+        value = min(self.lod_spin.value(), maximum)
+        for control in (self.lod_slider, self.lod_spin):
+            control.blockSignals(True)
+            control.setRange(0, maximum)
+            control.setValue(value)
+            control.setEnabled(maximum > 0)
+            control.blockSignals(False)
+        self.lod_slider.setSingleStep(max(1, maximum // 500))
+        self.lod_slider.setPageStep(max(1, maximum // 20))
+        self.lod_max_label.setText(
+            f"Max {maximum:,}" if maximum else "No RES")
+        self.lod_max_label.setToolTip(
+            f"Range: 0 to {maximum:,} raw model units (highest RES threshold)"
+            if maximum else "No SWITCH DISTANCE thresholds found")
+        self._lod_changed()
 
-    def remove_palette(self):
-        self.palette=None;self.palette_source='No palette (CAD colors)';self.redraw()
-
-    def show_report(self):
-        if not self.model:return
-        try:
-            _,report=self.model.build_modified_bytes()
-        except FormatError as exc:
-            messagebox.showerror('Plane computation failed',str(exc))
+    def _sync_source_distance_filter(self):
+        """Mirror the renderer's validated model, RES setting and camera."""
+        if not hasattr(self, "source_pane"):
             return
-        text=self.model.summary()+'\n\n'+report.describe()
-        dialog=tk.Toplevel(self);dialog.title('FACE / BSP plane rebuild report')
-        dialog.geometry('720x520')
-        widget=tk.Text(dialog,wrap='word',font=('Consolas',10),padx=10,pady=10)
-        widget.pack(fill='both',expand=True)
-        widget.insert('1.0',text);widget.configure(state='disabled')
-        ttk.Button(dialog,text='Close',command=dialog.destroy).pack(pady=8)
+        model = self.viewer._model
+        eye = (self.viewer._camera_eye_model()
+               if model is not None and self.viewer._mesh is not None
+               else None)
+        self.source_pane.set_distance_filter_context(
+            model, self.viewer.lod_distance, eye)
 
-    def save_as(self):
-        if not self.model:return
-        if not self._ensure_live_source_current():return
-        if not (self.model.dirty or self.imported_pending):
-            if not messagebox.askyesno('No changes','No XYZ, UV, color, BSP or DYNAMIC edits. Save an identical copy?'):
-                return
-        try:
-            data,report=self.model.build_modified_bytes()
-        except (FormatError,ValueError,OverflowError) as e:
-            messagebox.showerror('Cannot save invalid BSP plane',str(e))
+    def _lod_changed(self, *args):
+        self.viewer.lod_distance = resolve_lod_distance(
+            self.lod_mode_combo.currentData(), self.lod_spin.value())
+        self.viewer.invalidate_visibility()
+        self._sync_source_distance_filter()
+        self._refresh_source_polygon_visibility()
+
+    def _visibility_updated(self, message):
+        self.visibility_label.setText(message)
+        self._update_polygon_status()
+        self._sync_source_distance_filter()
+        self._refresh_source_polygon_visibility()
+
+    def _update_polygon_status(self, *args):
+        text = self.polygon_edit.text().strip()
+        model = self.viewer._model
+        if not text:
+            self.polygon_status.setText("Enter a polygon body offset to inspect")
             return
-        if report.warnings:
-            preview='\n'.join(report.warnings[:9])
-            if len(report.warnings)>9:
-                preview+=f'\n... {len(report.warnings)-9} more (see View → Plane rebuild report)'
-            if not messagebox.askyesno('Unresolved FACE/BSP planes',
-                                       f'{report.describe().split(chr(10)+chr(10))[0]}\n\n'
-                                       f'{preview}\n\nSave the partially rebuilt copy anyway?'):
-                return
-        source=self.model.path
-        out=filedialog.asksaveasfilename(title='Save modified 3DO copy',defaultextension='.3do',
-                    initialdir=str(source.parent),initialfile=source.stem+'_edited.3do',
-                    filetypes=[('Papyrus 3DO','*.3do')])
-        if not out:return
-        target=Path(out)
-        if target.suffix.lower()!='.3do':
-            messagebox.showerror('Choose a .3DO output',
-                'Save Copy writes binary .3DO files only. It must not overwrite your editable .3D text.')
-            return
-        if target.resolve()==source.resolve():
-            if not messagebox.askyesno('Overwrite original?',
-                  'This is the source 3DO. Overwrite it? A .bak copy will be created first.'):
-                return
-            backup=target.with_suffix(target.suffix+'.bak')
-            if backup.exists():
-                if not messagebox.askyesno('Overwrite existing backup?',
-                    f'A previous backup already exists:\n\n{backup}\n\n'
-                    'Replace it with the current original 3DO before saving?',
-                    default='no'):
-                    self.status.set('Save canceled; existing backup was preserved.')
-                    return
         try:
-            checked=write_validated_3do(target,data,
-                            expected_vertices=len(self.model.vertices),
-                            expected_polygons=len(self.model.polygons),
-                            backup=(target.resolve()==source.resolve()))
-        except (OSError,FormatError) as e:
-            messagebox.showerror('Unable to save / validate',str(e));return
-        self.status.set(f'Saved {target.name}: {report.updated_vertices} vertices, {report.updated_planes} planes rebuilt; '
-                        f'{report.updated_dynamics} placements; {report.updated_polygon_colors} colors; {len(report.warnings)} warning(s).')
-        self.model=checked
-        self.imported_pending=False
-        # Keep source text/baseline across binary saves so future exports
-        # retain human labels and comments. Reset now reads the saved .3DO.
-        self.undo_stack=[];self.redo_stack=[]
-        self.header.set(target.name)
-        self.stats.set(checked.summary().replace('\n','  |  '))
-        if self.appearance:self.title(f'ICR2 3DO CAD v1.9 — {target.name} + {self.appearance.path.name}')
-        self.poly_order=sorted(checked.polygons)
-        self.dynamic_order=sorted(checked.dynamics)
-        self.external_model_cache.clear()
-        self.refresh_dynamic_list()
-        self.refresh_polygon_list()
-        self._refresh_polygon_inspector()
-        self.update_edit_panel();self.refresh_raw();self.refresh_geometry_targets();self.redraw()
-        messagebox.showinfo('Saved',f'Saved {target}\n\n{report.describe()[:2600]}')
+            offset = int(text, 16 if text.lower().startswith('0x') else 10)
+        except ValueError:
+            self.polygon_status.setText("Enter a decimal or 0x hexadecimal offset")
+            return
+        if model is None:
+            self.polygon_status.setText("Load a model first")
+        elif offset not in model.polygons:
+            self.polygon_status.setText(f"@{offset}: not a parsed POLY record")
+        elif (self.viewer.render_mode == 'all' and
+              not self.viewer._track_lod_active()):
+            self.polygon_status.setText(f"@{offset}: all-polygon mode (BSP ignored)")
+        elif (self.viewer.render_mode == 'wire' and
+              self.viewer.lod_distance is None and
+              not self.viewer._track_lod_active()):
+            self.polygon_status.setText(
+                f"@{offset}: wireframe (all RES branches; BSP ignored)")
+        elif self.viewer._visibility_dirty:
+            self.polygon_status.setText(f"@{offset}: recalculating BSP selection")
+        elif offset not in self.viewer._visible_set:
+            self.polygon_status.setText(
+                f"@{offset}: EXCLUDED by BSP or selected LOD"
+                if self.viewer.render_mode != 'wire' else
+                f"@{offset}: EXCLUDED by SWITCH DISTANCE or track detail")
+        elif (self.viewer._scene is None or
+              self.viewer._scene.polygon_lookup.get((0, offset))
+              not in self.viewer._mesh.polygon_ranges):
+            self.polygon_status.setText(f"@{offset}: selected by BSP, but degenerate / not meshed")
+        else:
+            self.polygon_status.setText(
+                f"@{offset}: SELECTED by BSP (may still be covered by another polygon)")
 
-    def destroy(self):
-        # Cancel outstanding Tk timers before deleting their Tcl callbacks.
-        # This matters when GUI regression tests open and close many windows.
-        if hasattr(self,'source_editor'):
-            self.source_editor.close()
-        for job in (getattr(self,'_initial_panes_job',None),
-                    self._pending_view_redraw,self._pending_refine,self._source_sync_job):
-            if job is not None:
-                try:
-                    self.after_cancel(job)
-                except tk.TclError:
-                    pass
-        self._pending_view_redraw=None
-        self._pending_refine=None
-        super().destroy()
+    def _fixed_camera_coords_changed(self, *_):
+        self.viewer.set_fixed_camera_eye(
+            *(spin.value() for spin in self.fixed_camera_coords))
+        if self.viewer.fixed_camera_mode:
+            self.statusBar().showMessage(
+                "Fixed Camera | raw XYZ "
+                + str(tuple(spin.value() for spin in self.fixed_camera_coords))
+                + " | Drag to look | Wheel adjusts FOV | Pan disabled")
 
-    def on_close(self):
-        if self.model and (self.model.dirty or self.imported_pending or
-                           (hasattr(self,'source_editor') and self.source_editor.pending)):
-            if not messagebox.askyesno('Unsaved 3DO edits',
-                'Close without saving your XYZ/UV/BSP changes?'):
-                return
-        if CAD_PROFILE.enabled:
+    def _fixed_camera_mode_changed(self, enabled):
+        # Frame All exits Fixed Camera; keep toolbar, coordinate controls
+        # and Qt perspective state synchronized without recursive signals.
+        self.fixed_camera_button.blockSignals(True)
+        self.fixed_camera_button.setChecked(enabled)
+        self.fixed_camera_button.blockSignals(False)
+        self.fixed_camera_controls.setVisible(enabled)
+        self._sync_projection_controls()
+        self.statusBar().showMessage(
+            "Fixed Camera | raw XYZ "
+            + str(tuple(spin.value() for spin in self.fixed_camera_coords))
+            + " | Drag to look | Wheel adjusts FOV | Pan disabled | "
+              "Frame All exits preview"
+            if enabled else
+            "Exterior camera restored | Left-drag orbit | Shift-left/middle pan")
+
+    def _projection_changed(self, *_):
+        if self.projection_combo.isEnabled():
+            self.perspective_toggle.setChecked(
+                bool(self.projection_combo.currentData()))
+
+    def _sync_projection_controls(self):
+        """Keep menu, legacy checkbox and viewport selector in lockstep."""
+        enabled = not (self.viewer.fixed_camera_mode or
+                       self.viewer.track_drive_enabled)
+        self.perspective_toggle.blockSignals(True)
+        self.perspective_toggle.setChecked(self.viewer.perspective)
+        self.perspective_toggle.setEnabled(enabled)
+        self.perspective_toggle.blockSignals(False)
+        self.projection_combo.blockSignals(True)
+        self.projection_combo.setCurrentIndex(
+            self.projection_combo.findData(bool(self.viewer.perspective)))
+        self.projection_combo.setEnabled(enabled)
+        self.projection_combo.blockSignals(False)
+        if hasattr(self, "perspective_menu_action"):
+            self.perspective_menu_action.setChecked(self.viewer.perspective)
+
+    def _set_perspective(self, checked):
+        if (self.viewer.fixed_camera_mode or self.viewer.track_drive_enabled):
+            self._sync_projection_controls()
+            return
+        self.viewer.perspective = bool(checked)
+        self._sync_projection_controls()
+        # Orthographic BSP must use parallel-ray direction rather than the
+        # finite perspective camera position. Reevaluate on every toggle.
+        self.viewer.invalidate_visibility()
+
+    def _toggle_benchmark(self, checked):
+        if checked:
+            self.viewer._frametimes.clear()
+            self._timer.start()
+        else:
+            self._timer.stop()
+
+    def _benchmark_tick(self):
+        self.viewer.update()
+        if self._info:
+            mesh = self.viewer._mesh
+            upload = self.viewer.upload_ms
+            self.stats_label.setText(
+                f"Parse {self._info['parse_ms']:.0f} ms  |  "
+                f"Mesh {self._info['mesh_ms']:.0f} ms  |  "
+                f"Upload {upload:.1f} ms  |  "
+                f"{mesh.polygon_count:,} polygons / {mesh.triangle_count:,} triangles  |  "
+                f"FPS {self.viewer.fps:.1f} (continuous redraw)"
+                if upload is not None else "Waiting for OpenGL upload…"
+            )
+
+    def open_dialog(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open a Papyrus model", "",
+            "Papyrus models (*.3d *.3D *.3do *.3DO);;All files (*)")
+        if path:
+            self.load(Path(path))
+
+    def _init_load_activity_dock(self):
+        """Nonmodal diagnostic log; the full trace also survives on disk."""
+        dock = QDockWidget("Live Load Activity", self)
+        dock.setObjectName("liveLoadActivityDock")
+        dock.setAllowedAreas(Qt.DockWidgetArea.BottomDockWidgetArea)
+        content = QWidget(dock)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(5, 4, 5, 4)
+        controls = QHBoxLayout()
+        self.load_activity_path_label = QLabel(str(DEFAULT_LOAD_LOG))
+        self.load_activity_path_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.load_activity_path_label.setWordWrap(True)
+        self.load_activity_path_label.setMinimumWidth(0)
+        self.load_activity_path_label.setToolTip(
+            "The full log is written to disk immediately. "
+            "Use it if the 3DO CAD stops responding.")
+        controls.addWidget(self.load_activity_path_label, stretch=1)
+        copy_button = QPushButton("Copy full log")
+        copy_button.clicked.connect(self._copy_load_activity)
+        controls.addWidget(copy_button)
+        save_button = QPushButton("Save as…")
+        save_button.clicked.connect(self._save_load_activity)
+        controls.addWidget(save_button)
+        layout.addLayout(controls)
+        self.load_activity_text = QPlainTextEdit(content)
+        self.load_activity_text.setObjectName("liveLoadActivityText")
+        self.load_activity_text.setReadOnly(True)
+        self.load_activity_text.setLineWrapMode(
+            QPlainTextEdit.LineWrapMode.NoWrap)
+        self.load_activity_text.document().setMaximumBlockCount(4000)
+        self.load_activity_text.setMinimumHeight(100)
+        layout.addWidget(self.load_activity_text)
+        if DEFAULT_LOAD_LOG.is_file():
             try:
-                report=CAD_PROFILE.write(os.environ.get(
-                    "ICR2_CAD_PROFILE_OUTPUT","cad_performance.json"))
-                print(f"CAD profiling report: {report}")
+                last = DEFAULT_LOAD_LOG.read_bytes()[-256000:].decode(
+                    "utf-8", errors="replace")
+                self.load_activity_text.setPlainText(last)
+            except OSError:
+                pass
+        dock.setWidget(content)
+        self.addDockWidget(Qt.DockWidgetArea.BottomDockWidgetArea, dock)
+        dock.hide()
+        self.load_activity_dock = dock
+
+    def _full_load_activity_text(self):
+        path = (self._load_trace.path if self._load_trace is not None
+                else DEFAULT_LOAD_LOG)
+        try:
+            return path.read_text(encoding="utf-8")
+        except OSError:
+            return self.load_activity_text.toPlainText()
+
+    def _copy_load_activity(self):
+        QApplication.clipboard().setText(self._full_load_activity_text())
+
+    def _save_load_activity(self):
+        default = ((self.model_path.stem if self.model_path else "icr2_3do_cad")
+                   + "_load.log")
+        destination, _ = QFileDialog.getSaveFileName(
+            self, "Save full load activity", str(Path.home() / default),
+            "Log files (*.log *.txt);;All files (*)")
+        if destination:
+            try:
+                Path(destination).write_text(self._full_load_activity_text(),
+                                             encoding="utf-8")
             except OSError as exc:
-                print(f"Could not write CAD profiling report: {exc}")
-        self.destroy()
+                QMessageBox.warning(self, "Unable to save load log", str(exc))
 
-    def show_help(self):
-        messagebox.showinfo('ICR2 3DO CAD v1.9 — Controls',
-            'Individual car 3DO files (such as ind96.3do) are wrappers:\n'
-            'the MATERIAL node references a MIP and a RECOLOR table.\n'
-            'Open one directly to resolve its referenced base geometry, or\n'
-            'use File > Load individual car RECOLOR 3DO. The palette slots\n'
-            'used by solid polys are remapped for preview; textures use MIPs.\n'
-            'This does not change base geometry or save into the wrapper.\n\n'
-            'Choose Vertices, Polygons / BSP, Add Geometry, or Raw 3DO tabs.\n'
-            'Add Geometry can stage free vertices, create FACE/FACE2 surfaces\n'
-            'and choose a specific LIST parent link to preserve existing BSP.\n'
-            'Raw 3DO shows read-only record offsets and structural disassembly.\n'
-            'LIST insertion does not guarantee camera-dependent occlusion.\n'
-            'Existing and newly added polygons can be recolored from the\n'
-            'Polygon color control, with optional paired FACE2 recoloring.\n'
-            'This edits the base 3DO palette index, not an ind96 RECOLOR file.\n'
-            'In polygon mode, left-click a visible polygon or select it in the\n'
-            'list. Yellow outline = visible; a dashed hidden outline can be\n'
-            'enabled explicitly from the Polygons tab or View menu.\n'
-            'Plane list includes the polygon’s ancestor FACE/BSP records.\n'
-            'Auto calculate: choose best noncollinear polygon vertices while\n'
-            'preserving the source plane orientation. Manual: choose ordered\n'
-            'P1,P2,P3 vertices; ordering sets the normal’s direction.\n'
-            'Flip orientation: negate all four stored A,B,C,D coefficients.\n'
-            'A polygon may have zero or multiple related BSP planes.\n'
-            'Edits change only the selected plane, not BSP references/tree.\n\n'
-            'Left-click in vertex mode: select an active LOD vertex.\n'
-            'Left-drag selected vertex: move along X/Y/Z axis.\n'
-            'Right-drag: orbit. Middle-drag: pan. Scroll: zoom.\n'
-            '+Y is reversed visually compared with v0.4; raw file coordinates\n'
-            'and saved X/Y/Z values are unchanged.\n'
-            'Enter XYZ or raw U,V and Apply to edit. UV fields are available only\n'
-            'for vertices used by POLY [T]. U,V are unsigned 16-bit integers.\n'
-            'Undo/redo works for coordinate and texture UV edits.\n\n'
-            'LOD: SWITCH DISTANCE chooses one child subtree using the entered\n'
-            'distance in RAW 3DO units. All branches shows overlapping LODs.\n'
-            'Projection: Orthographic or Perspective (depth); perspective zoom\n'
-            'moves the virtual camera closer/farther; it also affects BSP side.\n'
-            'SWITCH DISTANCE threshold remains a separate manual control.\n'
-            'LIST entries are painted exactly in their stored back-to-front\n'
-            'sequence; depth sorting never changes that order.\n'
-            'Lighting is OFF by default; the bundled gamepal.pcx palette is\n'
-            'loaded automatically. MIP textures render when supplied.\n'
-            'Choose a MIP folder or assign a polygon/group texture in the\n'
-            'Polygons tab. Install Pillow and NumPy to enable texture preview.\n\n'
-            'BSP: Off shows every polygon in the chosen LOD. Original uses\n'
-            'the planes stored in the 3DO. Rebuilt uses safely recomputed planes\n'
-            'for edited vertices and retains original coefficients otherwise.\n'
-            'FACE and the face branch of BSPF are hidden from the back side.\n'
-            'FACE2 selects its front (+) or back (-) child, not both.\n'
-            'BSPA/BSPN reorder rather than cull geometry; BSP2 is approximate.\n'
-            'BSP mode uses approximate tree order; LIST order is preserved.\n'
-            'Selected plane displays its current normal and camera side.\n'
-            'A virtual camera on the orbit direction evaluates plane side.\n\n'
-            'This is a diagnostic preview, not a pixel-accurate ICR2 renderer.\n'
-            'Texture image sampling, arbitrary nested DYNAMIC geometry and\n'
-            'complete Papyrus BSP draw order are not implemented. Test in game.\n'
-            'When overwriting source 3DO, an existing .bak may also be replaced\n'
-            'with confirmation. The new output is validated before replacing.')
+    def _append_load_activity(self, worker, line):
+        if worker is not self._load_activity_worker:
+            return
+        scrollbar = self.load_activity_text.verticalScrollBar()
+        at_end = scrollbar.value() >= scrollbar.maximum() - 2
+        self.load_activity_text.appendPlainText(line)
+        if at_end:
+            scrollbar.setValue(scrollbar.maximum())
+
+    def _record_load_activity(self, message):
+        """GUI-thread trace, used before potentially blocking OpenGL calls."""
+        if self.worker is not self._load_activity_worker:
+            return
+        if self._load_trace is not None:
+            try:
+                line = self._load_trace.write(message)
+            except OSError as exc:
+                line = f"[Disk log error: {exc}] {message}"
+        else:
+            line = str(message)
+        self._append_load_activity(self.worker, line)
+
+    def _begin_load_activity(self, worker):
+        # A previous model's lazy N3 export may still be running. Keep its
+        # queued events from contaminating this newly reset "last load" file.
+        if (self._source_export_worker is not None and
+                self._source_export_worker.isRunning()):
+            self._source_export_worker.activity_trace = None
+        if self._load_trace is not None:
+            self._load_trace.stop_watchdog()
+        self._load_activity_worker = worker
+        self.load_activity_text.clear()
+        try:
+            trace = LoadActivityTrace()
+        except OSError:
+            # Preserve diagnostics on systems with a read-only home folder.
+            try:
+                trace = LoadActivityTrace(
+                    Path(tempfile.gettempdir()) / "icr2_icr2_3do_cad_last_load.log")
+            except OSError:
+                trace = None
+        self._load_trace = trace
+        worker.activity_trace = trace
+        location = str(trace.path) if trace is not None else "(memory only)"
+        self.load_activity_path_label.setText(f"Full log: {location}")
+        self.load_activity_dock.show()
+        self.load_activity_dock.raise_()
+        self._record_load_activity(f"LOAD REQUEST: {self.model_path}")
+        if trace is not None:
+            trace.start_watchdog()
+
+    def _begin_load_progress(self, worker):
+        self._load_progress_worker = worker
+        self.load_progress.setValue(0)
+        self.load_progress.setFormat("0% — Preparing load")
+        self.load_progress.show()
+
+    def _load_progress_stage(self, worker, percent, description, *, repaint=False):
+        if worker is not self._load_progress_worker:
+            return  # Ignore queued updates from an older load.
+        percent = max(0, min(int(percent), 99))
+        self.load_progress.setValue(percent)
+        self.load_progress.setFormat(f"{percent}% — {description}")
+        if repaint:
+            # The GPU upload runs synchronously on the GUI thread. Paint its
+            # stage now so Qt does not leave a stale 89% label until it ends.
+            self.load_progress.repaint()
+
+    def _end_load_progress(self, worker, *, success):
+        if worker is not self._load_progress_worker:
+            return
+        if worker is self._load_activity_worker and self._load_trace is not None:
+            exporting = (success and self._source_export_worker is not None
+                         and self._source_export_worker.activity_trace is self._load_trace
+                         and self._source_export_model is self.viewer._model
+                         and not self.source_pane.ready)
+            if not exporting:
+                self._load_trace.stop_watchdog()
+        if not success:
+            self.load_progress.hide()
+            self._load_progress_worker = None
+            return
+        self.load_progress.setValue(100)
+        self.load_progress.setFormat("100% — Model ready")
+        # Briefly show completion, without an old timer hiding a newer load.
+        QTimer.singleShot(900, lambda current=worker:
+            self._hide_completed_load_progress(current))
+
+    def _hide_completed_load_progress(self, worker):
+        if worker is self._load_progress_worker:
+            self.load_progress.hide()
+            self._load_progress_worker = None
+
+    def load(self, path, *, reuse_model=False):
+        if self._busy():
+            return
+        next_path = Path(path)
+        if not reuse_model and self.source_pane.dirty:
+            if not confirm_destructive_action(
+                    self, 'Unsaved .3D source changes',
+                    f'Opening "{next_path.name}" will discard unsaved .3D '
+                    'source edits. Save the source first if you want '
+                    'to keep these changes.',
+                    'Discard changes'):
+                return
+        if not reuse_model:
+            self._source_invalid = False
+            self._source_applied = False
+            self._last_valid_source_text = None
+            self._source_save_target = None
+            self._source_queued = None
+            self._pending_vertex_pick = None
+            self._pending_polygon_pick = None
+            self._pending_split_label = None
+            self._set_split_target(None)
+            self.split_button.setChecked(False)
+            self.source_pane.reset()
+        if not reuse_model and self.model_path is not None and (
+                self.model_path.resolve() != next_path.resolve()):
+            # Assignments belong to the open asset, not a previous car.
+            self.mip_overrides.clear()
+            self.object_overrides.clear()
+            self.body_mip = None
+            self.fallback_mip = None
+        self.model_path = next_path
+        self._preserve_view = reuse_model
+        self.load_label.setText(f"Loading {Path(path).name}… (background worker)")
+        self.stats_label.setText("Loading geometry and MIP atlas…")
+        self.worker = LoadWorker(
+            path, self.palette_path, self.texture_folder, self.fallback_mip,
+            objects_folder=self.objects_folder,
+            mip_overrides=self.mip_overrides,
+            object_overrides=self.object_overrides,
+            body_mip=self.body_mip,
+            existing_model=(self.viewer._model if reuse_model else None),
+            source_text=(self._last_valid_source_text
+                         if reuse_model and self._source_applied else None),
+            source_path=(self.source_pane.source_path
+                         if reuse_model and self._source_applied else None),
+            appearance_override=(self.viewer._scene.appearance
+                                 if reuse_model and self._source_applied else None),
+            auto_local_palette=not reuse_model)
+        self.worker.ready.connect(self._loaded)
+        self.worker.failed.connect(self._load_failed)
+        self._begin_load_activity(self.worker)
+        self._begin_load_progress(self.worker)
+        self.worker.activity.connect(
+            lambda line, current=self.worker:
+                self._append_load_activity(current, line))
+        self.worker.progress.connect(
+            lambda percent, stage, current=self.worker:
+                self._load_progress_stage(current, percent, stage))
+        self.worker.start()
+
+    def _loaded(self, mesh, stats, model, atlas, palette, scene,
+                *, from_source=False):
+        if not from_source:
+            self._record_load_activity(
+                f"Worker finished. Starting GUI/GL setup for {stats['file']}")
+        self._load_progress_stage(
+            self.worker, 92, "Uploading geometry, textures and skybox to GPU",
+            repaint=True)
+        self._info = stats
+        # Commit the auto-selected palette only after the whole model has
+        # loaded successfully. Failed loads leave the prior palette intact.
+        self.palette_path = Path(stats.get("palette_path", self.palette_path))
+        was_reloading = self._preserve_view
+        try:
+            self.viewer.set_mesh(mesh, model, atlas, palette, scene,
+                                 preserve_view=was_reloading,
+                                 on_activity=(self._record_load_activity
+                                              if not from_source else None))
+        except Exception as exc:
+            if not from_source:
+                self._record_load_activity(
+                    f"GUI/GL ERROR: {type(exc).__name__}: {exc}")
+                for line in traceback.format_exc().splitlines():
+                    self._record_load_activity(f"TRACEBACK: {line}")
+            self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
+                              previous_preserved=False)
+            return
+        self._load_progress_stage(
+            self.worker, 97, "Finishing controls and track setup",
+            repaint=True)
+        if not from_source:
+            self._record_load_activity(
+                "GUI setup: updating MIP browser, camera, workspace and controls")
+        self._refresh_mip_browser()
+        if (self.source_pane.ready and not self.source_pane.pending
+                and not self._source_invalid):
+            self.viewer.set_vertex_label_source(self.source_pane._source_index)
+        # Indexed tracks default to BSP-selected polygons with GPU depth;
+        # car/object modes keep their original painter default. Preserve an
+        # explicitly chosen method across recompiles and asset reloads.
+        if not was_reloading and not from_source:
+            requested = 'depth' if scene.track_section_lods else 'painter'
+            self.mode_combo.setCurrentIndex(self.mode_combo.findData(requested))
+        self.viewer.set_track_navigation(
+            scene.track_navigation, preserve=was_reloading or from_source)
+        if not was_reloading and not from_source:
+            # Every newly opened asset uses perspective, independent of the
+            # previous file's selected projection.
+            if not self.viewer.perspective:
+                self.viewer.perspective = True
+                self.viewer.invalidate_visibility()
+        self._sync_projection_controls()
+        if not from_source and self.model_path is not None:
+            self._loaded_file_path = self.model_path
+        self._update_window_title()
+        nav = self.viewer.track_navigation
+        self.track_drive_checkbox.setEnabled(nav is not None)
+        self.trk_reset_button.setEnabled(nav is not None)
+        self.track_drive_checkbox.blockSignals(True)
+        self.track_drive_checkbox.setChecked(self.viewer.track_drive_enabled)
+        self.track_drive_checkbox.blockSignals(False)
+        if nav is not None:
+            self._update_trk_status()
+        elif scene.track_navigation_error:
+            self.trk_drive_status.setText(
+                f"TRK could not be loaded: {scene.track_navigation_error}")
+        else:
+            self.trk_drive_status.setText(
+                f"No {self.model_path.stem}.trk found beside this model"
+                if scene.track_section_lods else
+                "TRK navigation is available for recognized tracks only")
+        self._configure_switch_distance(scene)
+        self._preserve_view = False
+        self._sync_source_distance_filter()
+        self._source_target_changed(self.source_pane.current_target())
+        self._split_controls_changed()
+        # Keep manual mode selection for ambiguous files and all background
+        # rebuilds. Only clearly recognized newly opened files select a tab.
+        if not was_reloading and not from_source:
+            suggested = suggest_workspace(self.model_path, stats)
+            if suggested is not None:
+                self.workspace_tabs.setCurrentIndex(WORKSPACE_MODES.index(suggested))
+        palette_note = (" · model folder"
+                        if stats.get("palette_auto") else "")
+        self.palette_status.setText(
+            f"Palette: {self.palette_path.name} (256 colors){palette_note}")
+        self._show_mip_stats(stats)
+        self.sprite_status.setText(
+            f"PMP sprites: {stats['pmp_placements']} placements / "
+            f"{stats['pmp_images']} images loaded | "
+            f"{len(stats['pmp_warnings'])} missing or invalid"
+            + (": " + "; ".join(stats['pmp_warnings'][:3])
+               if stats['pmp_warnings'] else ""))
+        self.car_status.setText(
+            f"Individual-car RECOLOR: {stats['recolor_pairs']} mappings"
+            f" | referenced carshape(s): {len(model.external_names)}"
+            f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        self.track_status.setText(workspace_scene_summary("track", stats))
+        skybox = scene.skybox
+        # Reopening a different asset defaults the detected skybox to ON;
+        # recompile and texture/asset reloads retain the user's choice.
+        if not was_reloading and not from_source:
+            self.show_skybox.blockSignals(True)
+            self.show_skybox.setChecked(skybox is not None)
+            self.show_skybox.blockSignals(False)
+        self.show_skybox.setEnabled(skybox is not None)
+        for spin in self.sky_eye_spins:
+            spin.setEnabled(skybox is not None)
+        self.sky_eye_reset_button.setEnabled(skybox is not None)
+        self.viewer.sky_enabled = self.show_skybox.isChecked() and skybox is not None
+        if skybox is not None:
+            self.skybox_status.setText(
+                f"{skybox.path.name}: {len(skybox.atlas.loaded_names)} sky MIPs loaded"
+                f" | {len(skybox.atlas.missing_names)} missing"
+                + (" (" + ", ".join(skybox.atlas.missing_names[:4]) + ")"
+                   if skybox.atlas.missing_names else ""))
+        elif scene.skybox_error:
+            self.skybox_status.setText(f"Skybox could not be loaded: {scene.skybox_error}")
+        else:
+            self.skybox_status.setText(
+                "No horiz.3do found beside track or in external objects folder"
+                if scene.track_section_lods else
+                "Skybox only available for recognized indexed tracks")
+        section_count = stats.get('track_section_lists', 0)
+        metadata_count = len(scene.track_section_dlongs or {})
+        can_window = (section_count > 0 and metadata_count == section_count
+                      and self.viewer.track_navigation is not None)
+        self.track_detail_combo.model().item(
+            self.track_detail_combo.findData('window')).setEnabled(can_window)
+        self.track_detail_combo.setEnabled(bool(section_count))
+        for spin in self.track_window_spins:
+            spin.setEnabled(can_window)
+        # New matching track defaults to adaptive DLONG selection; retaining
+        # another mode on source compile/reload is intentional.
+        current_detail = self.track_detail_combo.currentData()
+        if not was_reloading and not from_source:
+            current_detail = 'window' if can_window else 'hi'
+        elif current_detail == 'window' and not can_window:
+            current_detail = 'hi'
+        self.track_detail_combo.setCurrentIndex(
+            self.track_detail_combo.findData(current_detail))
+        self.viewer.track_detail = current_detail
+        self.viewer.invalidate_visibility()
+        if section_count:
+            self.track_detail_status.setText(
+                f"{section_count} indexed sections | DLONG DATA recovered: "
+                f"{metadata_count}/{section_count} | "
+                + (f"Camera window enabled ({self.viewer.track_window_counts[0]} HI / "
+                   f"{self.viewer.track_window_counts[1]} MED / "
+                   f"{self.viewer.track_window_counts[2]} LO each way). "
+                   "Current section is HI; everything outside is omitted."
+                   if can_window else
+                   "Camera-local LOD requires matching TRK and valid DATA; "
+                   "global HI/MED/LO remains available."))
+        else:
+            self.track_detail_status.setText(
+                "No Papyrus track section index detected")
+        self.object_status.setText(workspace_scene_summary("object", stats))
+        previous_ref = self.car_ref_combo.currentData()
+        self.car_ref_combo.blockSignals(True)
+        self.car_ref_combo.clear()
+        if stats['appearance_geometry']:
+            name = stats['appearance_geometry']
+            self.car_ref_combo.addItem(name, name)
+        else:
+            self.car_ref_combo.addItem("(opened geometry)", "")
+        if previous_ref:
+            selected = self.car_ref_combo.findData(previous_ref)
+            if selected >= 0:
+                self.car_ref_combo.setCurrentIndex(selected)
+        self.car_ref_combo.blockSignals(False)
+        previous_material = self.material_combo.currentData()
+        self.material_combo.blockSignals(True)
+        self.material_combo.clear()
+        if stats['body_textured_faces']:
+            label = ("Car body" +
+                     (f" ({stats['appearance_mip']})" if stats['appearance_mip']
+                      else " (POLY [T])"))
+            self.material_combo.addItem(label, BODY_MATERIAL)
+        for name in stats['material_names']:
+            if name == stats['appearance_mip'] and stats['appearance_mip']:
+                continue
+            self.material_combo.addItem(f"External/material: {name}", name)
+        if previous_material:
+            selected = self.material_combo.findData(previous_material)
+            if selected >= 0:
+                self.material_combo.setCurrentIndex(selected)
+        self.material_combo.blockSignals(False)
+        if stats['missing_textures'] or stats['texture_errors']:
+            details = (list(stats['missing_textures'][:5]) +
+                       list(stats['texture_errors'][:3]))
+            self.statusBar().showMessage(
+                "MIP diagnostics: " + "; ".join(details))
+
+        self.load_label.setText(
+            f"{stats['file']} → {stats['geometry_file']}  |  vertices {stats['model_vertices']:,}  |  "
+            f"planes {stats['model_planes']:,}  |  "
+            f"external instances {stats['dynamic_instances']:,} loaded | "
+            f"RES switches {stats['switches']:,} | "
+            f"{len(stats['external_warnings'])} missing/problematic objects")
+        self.stats_label.setText(
+            f"Parse {stats['parse_ms']:.0f} ms  |  "
+            f"Mesh {stats['mesh_ms']:.0f} ms  |  "
+            f"Upload {(self.viewer.upload_ms or 0):.1f} ms  |  "
+            f"{mesh.polygon_count:,} polygons / {mesh.triangle_count:,} triangles  |  "
+            f"skipped {mesh.skipped_polygons:,}  |  "
+            f"fallback fans {mesh.fan_fallbacks:,}  |  "
+            f"buffer {mesh.size_bytes / 1048576:.1f} MiB | "
+            f"PMP {stats['pmp_images']} images")
+        issues = collect_load_issues(stats)
+        self._update_load_error_log(
+            self.model_path or stats['file'], issues,
+            auto_show=not from_source and not was_reloading)
+        problem_count = len(issues)
+        self.statusBar().showMessage(
+            f"{Path(stats['file']).name} | {mesh.polygon_count:,} polygons | "
+            + ((f"{stats['palette_warning']} — View > Load Error Log")
+               if stats.get("palette_warning") else
+               (f"{problem_count} load issues — View > Load Error Log")
+               if problem_count else "Ready"))
+        if not from_source and not was_reloading and self.model_path is not None:
+            remember_recent_model(self, self.model_path)
+        update_model_actions(self)
+        if not from_source and self.source_toggle.isChecked():
+            self._ensure_source_loaded()
+        if self.viewer.track_drive_enabled and not was_reloading and not from_source:
+            self.viewer.setFocus(Qt.FocusReason.OtherFocusReason)
+        if not from_source:
+            self._record_load_activity(
+                f"LOAD COMPLETE: {stats['file']}, "
+                f"{mesh.polygon_count:,} polygons, "
+                f"{len(collect_load_issues(stats))} reported issues")
+            self._end_load_progress(self.worker, success=True)
+
+    def _load_failed(self, message, *, previous_preserved=True):
+        self._record_load_activity(f"LOAD FAILED: {message}")
+        self._end_load_progress(self.worker, success=False)
+        self.load_label.setText(
+            "Load failed; previous model preserved" if previous_preserved
+            else "Renderer setup failed; viewport may need reloading")
+        self.stats_label.setText(message)
+        self._update_load_error_log(
+            self.model_path or "(no model)",
+            (LoadIssue("Model load", message),), auto_show=True)
+        self.statusBar().showMessage(
+            "Model load failed — View > Load Error Log")
+
+    def closeEvent(self, event):
+        if self.source_pane.dirty:
+            if not confirm_destructive_action(
+                    self, 'Unsaved .3D source changes',
+                    'Closing the viewer will discard unsaved .3D source edits. '
+                    'Save the source first if you want to keep these changes.',
+                    'Discard changes'):
+                event.ignore()
+                return
+        self._timer.stop()
+        if self.mip_browser is not None:
+            self.mip_browser.close()
+        if self._source_export_worker is not None and self._source_export_worker.isRunning():
+            self._source_export_worker.wait()
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.wait()
+        self.viewer.shutdown_gl()
+        if self.report_path and self._info and self.viewer._mesh is not None:
+            mesh = self.viewer._mesh
+            payload = {
+                "schema": 1,
+                "renderer": "Qt/OpenGL 3.3 rendering with depth testing",
+                "source_basename": self._info["file"],
+                "parse_ms": round(self._info["parse_ms"], 3),
+                "mesh_build_ms": round(mesh.build_ms, 3),
+                "gpu_upload_ms": (round(self.viewer.upload_ms, 3)
+                                  if self.viewer.upload_ms is not None else None),
+                "presented_fps": round(self.viewer.fps, 3),
+                "model_vertices": self._info["model_vertices"],
+                "polygons_drawn": mesh.polygon_count,
+                "triangles_drawn": mesh.triangle_count,
+                "skipped_polygons": mesh.skipped_polygons,
+                "fan_fallbacks": mesh.fan_fallbacks,
+                "vertex_buffer_bytes": mesh.size_bytes,
+                "mip_atlas_bytes": (self.viewer._atlas.size_bytes
+                                    if self.viewer._atlas else 0),
+                "mip_textures_loaded": self._info.get("texture_count", 0),
+                "mip_textured_polygons": self._info.get("textured_faces", 0),
+                "mip_textures_missing": list(self._info.get("missing_textures", ())),
+                "mip_load_errors": list(self._info.get("texture_errors", ())),
+                "palette_basename": self.palette_path.name,
+                "recolor_pairs": self._info.get("recolor_pairs", 0),
+                "appearance_geometry": self._info.get("appearance_geometry", ""),
+                "appearance_mip": self._info.get("appearance_mip", ""),
+                "body_livery_override": bool(self.body_mip),
+                "material_names": list(self._info.get("material_names", ())),
+                "dynamic_instances": self._info.get("dynamic_instances", 0),
+                "external_warnings": list(self._info.get("external_warnings", ())),
+                "switches_in_models": self._info.get("switches", 0),
+                "render_mode": self.viewer.render_mode,
+                "lod_distance": self.viewer.lod_distance,
+                "bsp_selected_polygons": len(self.viewer._visible_set),
+                "bsp_draw_indices": self.viewer._index_count,
+            }
+            try:
+                target = Path(self.report_path)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(json.dumps(payload, indent=2) + "\n",
+                                  encoding="utf-8")
+                print(f"3DO CAD benchmark report: {target}")
+            except OSError as exc:
+                print(f"Could not write 3DO CAD benchmark report: {exc}",file=sys.stderr)
+        super().closeEvent(event)
 
 
-# Instrument expensive UI operations without modifying their implementations.
-# Timers are inert unless ICR2_CAD_PROFILE=1.
-for _method,_stage in (
-    ("_load_source_editor","load.source_tab"),
-    ("refresh_polygon_list","ui.polygon_list"),
-    ("refresh_geometry_targets","ui.geometry_targets"),
-    ("refresh_raw","ui.raw_inspector"),
-    ("refresh_dynamic_list","ui.dynamic_list"),
-    ("_accept_live_source","source.apply_compiled"),
-    ("_synchronize_model_to_source","source.sync_model"),
-    ("_draw_vertex_labels","viewport.vertex_labels"),
-    ("draw_pmp_sprite","viewport.pmp_sprite"),
-):
-    if hasattr(Editor,_method):
-        setattr(Editor,_method,profiled(CAD_PROFILE,_stage)(getattr(Editor,_method)))
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("path", nargs="?", help="RENO.3D, a car .3DO, etc.")
+    parser.add_argument("--benchmark", action="store_true",
+                        help="Continuously redraw at 60 Hz and display FPS")
+    parser.add_argument("--report", metavar="FILE",
+                        help="Save load/upload/FPS measurements to JSON on close")
+    args = parser.parse_args(argv)
+    fmt = QSurfaceFormat()
+    fmt.setVersion(3, 3)
+    fmt.setProfile(QSurfaceFormat.OpenGLContextProfile.CoreProfile)
+    fmt.setDepthBufferSize(24)
+    fmt.setSwapInterval(1)
+    QSurfaceFormat.setDefaultFormat(fmt)
+    app = QApplication(sys.argv[:1])
+    window = Window(args.path, benchmark=args.benchmark,
+                    report_path=args.report)
+    window.show()
+    return app.exec()
 
 
-def main():
-    parser=argparse.ArgumentParser(description='Lightweight editor for existing ICR2 3DO models')
-    parser.add_argument('filename',nargs='?',help='Optional input 3DO')
-    args=parser.parse_args()
-    app=Editor(args.filename)
-    app.mainloop()
-
-if __name__=='__main__':
-    main()
+if __name__ == "__main__":
+    raise SystemExit(main())

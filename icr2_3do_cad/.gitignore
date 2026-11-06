@@ -1,11 +1,8 @@
-# Local editor screenshots and temporary backups
+# Local editor previews, reports, and temporary backups
 ui_preview_*.png
 screenshots/
 *.3do.bak
-
-# Local profiling measurements (may describe machine-specific timings)
+cad_*.json
 cad_performance*.json
-
-# Local GPU viewer benchmarks and optional rendered screenshots
-gpu_*.json
-gpu_viewer_smoke.png
+icr2_3do_cad_smoke.png
+cad_visibility_warning.png

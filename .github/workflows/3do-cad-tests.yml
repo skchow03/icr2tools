@@ -13,19 +13,28 @@ on:
 jobs:
   unittest:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install Tk, virtual display, and preview dependencies
+      - name: Install Mesa, virtual display, Qt dependencies and renderer requirements
         run: |
           sudo apt-get update
-          sudo apt-get install -y python3-tk xvfb
-          python -m pip install Pillow numpy
-      - name: Compile source and tests
+          sudo apt-get install -y xvfb xauth libgl1-mesa-dri libegl1 libxcb-cursor0 libxkbcommon-x11-0 libxcb-xinerama0 libxcb-xinput0 libxcb-icccm4 libxcb-keysyms1 libxcb-randr0 libxcb-shape0 libxcb-xfixes0 libxcb-render0 libxcb-shm0 libxcb-sync1 libx11-xcb1
+          python -m pip install -r icr2_3do_cad/requirements.txt
+      - name: Compile application source and tests
         working-directory: icr2_3do_cad
         run: python -m compileall -q .
-      - name: Run regression tests
+      - name: Run CAD regressions
         working-directory: icr2_3do_cad
-        run: xvfb-run -a python -m unittest discover -s tests -p 'test_*.py'
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          # Keep each Qt/OpenGL test module in its own Python process.
+          # Shared QOpenGLWidget lifetimes across all suites can crash Mesa.
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            bash -e -c 'for f in tests/test_*.py; do echo "::group::$(basename "$f")"; python -m unittest discover -s tests -p "$(basename "$f")"; echo "::endgroup::"; done'

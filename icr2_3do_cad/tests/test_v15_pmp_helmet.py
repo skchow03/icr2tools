@@ -8,12 +8,12 @@ sys.path.insert(0,str(ROOT))
 from three_do import Model
 from dynamic_scene import ExternalResolver,RenderSprite,gather_faces
 from pmp_preview import load_pmp, PMPError
-from icr2_3do_cad import read_pcx_palette
+from textures import load_palette
 
 class PMPSpriteTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.palette=read_pcx_palette(ROOT/'gamepal.pcx')
+        cls.palette=[tuple(map(int, rgb)) for rgb in load_palette(ROOT/'gamepal.pcx')]
         cls.resolver=ExternalResolver(ROOT/'fixtures')
 
     def test_all_16_supplied_helmets_decode_and_have_alpha(self):
@@ -74,24 +74,5 @@ class PMPSpriteTests(unittest.TestCase):
             p=Path(td)/'malformed.pmp'
             p.write_bytes(b'not a pmp')
             with self.assertRaises(PMPError):load_pmp(p,self.palette)
-
-class PMPDesktopTest(unittest.TestCase):
-    def test_real_helmet_shows_as_canvas_sprite(self):
-        from icr2_3do_cad import Editor
-        try:app=Editor()
-        except Exception as e:
-            self.skipTest('Tk desktop unavailable: '+str(e))
-        try:
-            app.geometry('1400x950+0+0')
-            app.update()
-            self.assertTrue(app.load_file(ROOT/'fixtures'/'indycar.3do'))
-            app.external_resolver.choose_directory(ROOT/'fixtures')
-            app.redraw()
-            self.assertTrue(app.canvas.find_withtag('pmp'))
-            self.assertFalse(app._dynamic_failures)
-            app.show_textures.set(False)
-            app.redraw()
-            self.assertFalse(app.canvas.find_withtag('pmp'))
-        finally:app.destroy()
 
 if __name__=='__main__':unittest.main()

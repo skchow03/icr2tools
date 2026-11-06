@@ -1,0 +1,348 @@
+"""Regression checks for the 3DO CAD's standard desktop menus.
+
+Requires the 3DO CAD dependencies and a Qt desktop (or xvfb-run).
+No OpenGL model is loaded, so these tests do not exercise rendering.
+"""
+import os
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+HAS_DISPLAY = bool(os.environ.get("DISPLAY") or
+                   os.environ.get("WAYLAND_DISPLAY") or
+                   sys.platform in ("win32", "darwin"))
+
+
+@unittest.skipUnless(HAS_DISPLAY, "Requires a desktop or xvfb-run")
+class CADViewerMenuTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from PySide6.QtCore import QSettings
+            from PySide6.QtWidgets import QApplication, QFileDialog
+            from PySide6.QtGui import QCloseEvent
+            from icr2_3do_cad import Window
+            import menus as menus
+        except (ImportError, SystemExit) as error:
+            raise unittest.SkipTest(f"3DO CAD requirements unavailable: {error}")
+        cls.app = QApplication.instance() or QApplication([])
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.menus = menus
+        cls.QFileDialog = QFileDialog
+        cls.QCloseEvent = QCloseEvent
+        settings_path = str(Path(cls.tmp.name) / "recent.ini")
+        cls.settings_patch = patch.object(
+            menus, "_settings",
+            side_effect=lambda: QSettings(
+                settings_path, QSettings.Format.IniFormat))
+        cls.settings_patch.start()
+        cls.window = Window()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.window.source_pane.reset()
+        cls.window.close()
+        cls.settings_patch.stop()
+        cls.tmp.cleanup()
+
+    def setUp(self):
+        self.window.source_pane.reset()
+        self.window._source_save_target = None
+        self.menus.clear_recent_files(self.window)
+
+    def tearDown(self):
+        self.window.source_pane.reset()
+
+    def _menu(self, title):
+        for action in self.window.menuBar().actions():
+            if action.text().replace("&", "") == title:
+                return action.menu()
+        self.fail(f"Missing menu {title}")
+
+    def _action(self, menu, title):
+        for action in menu.actions():
+            if action.text().replace("&", "") == title:
+                return action
+        self.fail(f"Missing action {title}")
+
+    def test_standard_commands_and_shortcuts(self):
+        self.assertEqual(
+            [a.text().replace("&", "") for a in
+             self.window.menuBar().actions()],
+            ["File", "Edit", "View", "Model", "Assets", "Help"])
+        file_menu = self._menu("File")
+        for title in ("Open Model…", "Save .3D Source",
+                      "Save .3D Source As…", "Export Compiled 3DO…", "Exit"):
+            self._action(file_menu, title)
+        self.assertEqual(
+            self._action(file_menu, "Open Model…").shortcut().toString(),
+            "Ctrl+O")
+        self.assertEqual(
+            self._action(file_menu, "Save .3D Source").shortcut().toString(),
+            "Ctrl+S")
+        self.assertEqual(
+            self._action(file_menu, "Save .3D Source As…").shortcut().toString(),
+            "Ctrl+Shift+S")
+        for key in ("save", "save_as", "export", "reload"):
+            self.assertFalse(self.window.menu_actions[key].isEnabled())
+
+    def test_edit_menu_supports_undo_redo_cut_copy_paste_find_and_rename(self):
+        from PySide6.QtWidgets import QInputDialog
+        from PySide6.QtGui import QTextCursor
+
+        editor = self.window.source_pane.editor
+        source = ("3D VERSION 3.0;\n"
+                  "a: [<0,0,0>];\n"
+                  "b: [<100,0,0>];\n"
+                  "p: POLY <44> {a,b,a};\n"
+                  "root: LIST {p};\n")
+        self.window.source_pane.set_source(source, Path(self.tmp.name) / "test.3d")
+        edit = self._menu("Edit")
+        for title in ("Undo", "Redo", "Cut", "Copy", "Paste", "Select All",
+                      "Find in .3D Source…", "Find Next",
+                      "Rename Selected Pointer…", "Apply .3D Source Now"):
+            self._action(edit, title)
+        self.assertEqual(self._action(edit, "Undo").shortcut().toString(), "Ctrl+Z")
+        self.assertIn(
+            self._action(edit, "Redo").shortcut().toString(),
+            ("Ctrl+Y", "Ctrl+Shift+Z"))
+
+        cursor = editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.End)
+        editor.setTextCursor(cursor)
+        editor.insertPlainText("% added\n")
+        self.assertIn("% added", editor.toPlainText())
+        self._action(edit, "Undo").trigger()
+        self.assertEqual(editor.toPlainText(), source)
+        self._action(edit, "Redo").trigger()
+        self.assertIn("% added", editor.toPlainText())
+        self._action(edit, "Undo").trigger()
+
+        with patch.object(QInputDialog, "getText", return_value=("LIST", True)):
+            self._action(edit, "Find in .3D Source…").trigger()
+        self.assertEqual(editor.textCursor().selectedText(), "LIST")
+        self._action(edit, "Find Next").trigger()
+        self.assertEqual(editor.textCursor().selectedText(), "LIST")
+        self._action(edit, "Select All").trigger()
+        self.assertEqual(editor.textCursor().selectedText().replace("\u2029", "\n").rstrip(),
+                         source.rstrip())
+        self.window.source_pane.reset()
+
+    def test_title_names_loaded_file_and_tracks_unsaved_edits_and_undo(self):
+        editor = self.window.source_pane.editor
+        original = self.window._loaded_file_path
+        model = Path(self.tmp.name) / "open_model.3do"
+        source_text = "3D VERSION 3.0;\na: [<0,0,0>];\n"
+        try:
+            self.window._loaded_file_path = model
+            self.window._update_window_title()
+            self.assertIn("open_model.3do", self.window.windowTitle())
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            self.window.source_pane.set_source(
+                source_text, model.with_suffix(".3d"))
+            cursor = editor.textCursor()
+            cursor.movePosition(cursor.MoveOperation.End)
+            editor.setTextCursor(cursor)
+            editor.insertPlainText("% unsaved\n")
+            self.assertTrue(self.window.source_pane.dirty)
+            self.assertIn("open_model.3do *", self.window.windowTitle())
+            self._action(self._menu("Edit"), "Undo").trigger()
+            self.assertFalse(self.window.source_pane.dirty)
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            editor.insertPlainText("% again\n")
+            output = Path(self.tmp.name) / "saved_source.3d"
+            with patch.object(self.QFileDialog, "getSaveFileName",
+                              return_value=(str(output), "")):
+                self.assertTrue(self.window._save_source())
+            self.assertFalse(self.window.source_pane.dirty)
+            self.assertNotIn("open_model.3do *", self.window.windowTitle())
+            self.assertEqual(output.read_text(), editor.toPlainText())
+            self.assertIn("open_model.3do", self.window.windowTitle())
+        finally:
+            self.window.source_pane.reset()
+            self.window._loaded_file_path = original
+            self.window._update_window_title()
+
+    def test_view_menu_tracks_existing_widgets(self):
+        view = self._menu("View")
+        source = self._action(view, "Show .3D Source")
+        self.assertTrue(source.isChecked())
+        source.setChecked(False)
+        self.assertFalse(self.window.source_toggle.isChecked())
+        self.window.source_toggle.setChecked(True)
+        self.assertTrue(source.isChecked())
+
+        display = self._action(view, "Display Options").menu()
+        textures = self._action(display, "Textures")
+        textures.setChecked(False)
+        self.assertFalse(self.window.show_textures.isChecked())
+        self.window.show_textures.setChecked(True)
+        self.assertTrue(textures.isChecked())
+
+        model = self._menu("Model")
+        workspace = self._action(model, "Workspace").menu()
+        track = self._action(workspace, "Track")
+        track.trigger()
+        self.assertEqual(self.window.workspace_tabs.currentIndex(), 1)
+        self.assertTrue(track.isChecked())
+        self.window.workspace_tabs.setCurrentIndex(2)
+
+    def test_rendering_mode_menu_and_advanced_combo_stay_in_sync(self):
+        render_menu = self._action(
+            self._menu("View"), "Rendering Mode").menu()
+        wire = self._action(render_menu, "Wireframe (polygon outlines only)")
+        painter = self._action(render_menu, "Papyrus drawing order (no depth)")
+        self.assertTrue(painter.isChecked())
+        self.assertFalse(wire.isChecked())
+        wire.trigger()
+        self.assertTrue(wire.isChecked())
+        self.assertEqual(self.window.mode_combo.currentData(), "wire")
+        self.assertEqual(self.window.viewer.render_mode, "wire")
+        self.window.mode_combo.setCurrentIndex(
+            self.window.mode_combo.findData("depth"))
+        self.assertFalse(wire.isChecked())
+        self.assertTrue(self._action(
+            render_menu, "BSP selection + depth testing").isChecked())
+        self.window.mode_combo.setCurrentIndex(
+            self.window.mode_combo.findData("painter"))
+        self.assertTrue(painter.isChecked())
+
+    def test_settings_actions_open_correct_dialogs(self):
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("View"), "Display Settings…").trigger()
+            show.assert_called_once_with("display")
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("View"), "Advanced Diagnostics…").trigger()
+            show.assert_called_once_with("advanced")
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("Model"), "Track Settings…").trigger()
+            show.assert_called_once_with("model", workspace=1)
+        with patch.object(self.window, "open_settings_dialog") as show:
+            self._action(self._menu("Assets"), "Asset Settings…").trigger()
+            show.assert_called_once_with("assets")
+
+    def test_load_error_log_popup_and_view_menu_reopen(self):
+        from load_diagnostics import LoadIssue
+
+        log = self.window.load_error_dialog
+        self.assertFalse(log.isModal())
+        self.assertTrue(self.window.load_error_text.isReadOnly())
+        issues = (
+            LoadIssue("Referenced objects", "wheel.3do / wheel.3d missing"),
+            LoadIssue("Missing MIP textures", "carbody.mip"),
+        )
+        try:
+            self.window._update_load_error_log(
+                "damaged.3do", issues, auto_show=True)
+            self.assertFalse(log.isHidden())
+            self.assertIn("2 load issues", self.window.load_error_summary.text())
+            report = self.window.load_error_text.toPlainText()
+            self.assertIn("wheel.3do", report)
+            self.assertIn("carbody.mip", report)
+            log.close()
+            self.assertTrue(log.isHidden())
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertFalse(log.isHidden())
+            self.assertEqual(self.window.load_error_text.toPlainText(), report)
+
+            # A successful load must replace the stale errors, not retain
+            # missing assets from the preceding model.
+            log.close()
+            self.window._update_load_error_log(
+                "repaired.3do", (), auto_show=True)
+            self.assertTrue(log.isHidden())
+            self.assertIn("no reported load issues",
+                          self.window.load_error_summary.text())
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertIn("No load errors", self.window.load_error_text.toPlainText())
+        finally:
+            log.close()
+
+    def test_fatal_load_failure_also_enters_reopenable_log(self):
+        log = self.window.load_error_dialog
+        try:
+            self.window.model_path = Path(self.tmp.name) / "bad.3d"
+            self.window._load_failed("FormatError: invalid 3D declaration")
+            self.assertFalse(log.isHidden())
+            self.assertIn("FormatError: invalid 3D declaration",
+                          self.window.load_error_text.toPlainText())
+            log.close()
+            self._action(self._menu("View"), "Load Error Log…").trigger()
+            self.assertFalse(log.isHidden())
+        finally:
+            log.close()
+            self.window.model_path = None
+
+    def test_save_and_save_as_track_clean_source(self):
+        source = self.window.source_pane
+        with tempfile.TemporaryDirectory() as directory:
+            original = Path(directory) / "input.3d"
+            original.write_text("3D VERSION 3.0;\n", encoding="utf-8")
+            source.set_source(original.read_text(encoding="utf-8"), original)
+            source.editor.insertPlainText("% first edit\n")
+            self.assertTrue(source.dirty)
+            destination = Path(directory) / "saved.3d"
+            with patch.object(
+                    self.QFileDialog, "getSaveFileName",
+                    return_value=(str(destination), "")) as dialog:
+                self.assertTrue(self.window._save_source())
+                dialog.assert_called_once()
+            self.assertFalse(source.dirty)
+            self.assertIn("% first edit", destination.read_text(encoding="utf-8"))
+            source.editor.insertPlainText("% second edit\n")
+            self.assertTrue(source.dirty)
+            with patch.object(
+                    self.QFileDialog, "getSaveFileName",
+                    side_effect=AssertionError("Save should reuse chosen path")):
+                self.assertTrue(self.window._save_source())
+            self.assertFalse(source.dirty)
+            self.assertIn("% second edit", destination.read_text(encoding="utf-8"))
+            another = Path(directory) / "saved_as.3d"
+            with patch.object(
+                    self.QFileDialog, "getSaveFileName",
+                    return_value=(str(another), "")):
+                self.assertTrue(self.window._save_source(save_as=True))
+            self.assertEqual(self.window._source_save_target, another)
+            self.assertTrue(another.exists())
+            self.assertEqual(original.read_text(encoding="utf-8"),
+                             "3D VERSION 3.0;\n")
+
+    def test_recent_file_menu_routes_to_loader_and_can_clear(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.3d"
+            second = Path(directory) / "second.3do"
+            first.touch()
+            second.touch()
+            self.menus.remember_recent_model(self.window, first)
+            self.menus.remember_recent_model(self.window, second)
+            menu = self.window.recent_models_menu
+            entries = [action for action in menu.actions()
+                       if action.text().startswith("&")]
+            self.assertEqual(len(entries), 2)
+            self.assertIn("second.3do", entries[0].text())
+            with patch.object(self.window, "load") as load:
+                entries[0].trigger()
+                load.assert_called_once_with(second.resolve())
+            self.menus.clear_recent_files(self.window)
+            self.assertFalse(
+                self._action(menu, "Clear Recent Files").isEnabled())
+
+    def test_exit_does_not_discard_source_without_confirmation(self):
+        pane = self.window.source_pane
+        pane.set_source("3D VERSION 3.0;\n", Path(self.tmp.name) / "model.3d")
+        pane.editor.insertPlainText("% unsaved\n")
+        self.assertTrue(pane.dirty)
+        event = self.QCloseEvent()
+        with patch("icr2_3do_cad.confirm_destructive_action",
+                   return_value=False) as confirm:
+            self.window.closeEvent(event)
+        self.assertFalse(event.isAccepted())
+        confirm.assert_called_once()
+        self.assertEqual(confirm.call_args.args[-1], "Discard changes")
+
+
+if __name__ == "__main__":
+    unittest.main()
