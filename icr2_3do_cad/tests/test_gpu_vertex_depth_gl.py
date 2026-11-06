@@ -73,7 +73,7 @@ class GPUDepthVertexLabelGLTests(unittest.TestCase):
         self.assertTrue(self.view.context().isValid())
         self.view.set_mesh(mesh, self.model, atlas, palette, scene)
         self.view.set_view("Top")
-        self.view.half_height = 0.9
+        self.view.half_height = 1.5  # Keep outer/front square corners inside the frustum
 
     def tearDown(self):
         self.view.shutdown_gl()
