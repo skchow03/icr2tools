@@ -39,7 +39,7 @@ class CADViewerLayoutTests(unittest.TestCase):
         self.assertIs(self.window.editor_splitter.widget(1), self.window.source_pane)
         self.assertIs(self.window.viewport_layout.itemAt(0).widget(),
                       self.window.distance_bar)
-        self.assertIs(self.window.viewport_layout.itemAt(1).widget(),
+        self.assertIs(self.window.viewport_layout.itemAt(2).widget(),
                       self.window.viewer)
         self.assertIs(self.window.projection_combo.parentWidget(),
                       self.window.distance_bar)
