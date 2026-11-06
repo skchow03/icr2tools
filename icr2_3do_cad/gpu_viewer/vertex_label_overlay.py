@@ -27,7 +27,7 @@ class VertexLabelOverlay(QWidget):
 
     def paintEvent(self, event):
         viewport = self.viewport
-        picker = viewport._vertex_picker
+        picker = viewport._label_vertex_picker
         if picker is None or not len(picker.offsets):
             return
         projection, view = viewport._projection_and_view()
