@@ -2510,7 +2510,11 @@ class Window(QMainWindow):
             QMessageBox.information(self, "No model", "Open a model first.")
             return
         if self.mip_browser is None:
-            self.mip_browser = MipUVBrowser(self)
+            # QDialog with a QMainWindow parent is kept above its owner by
+            # native window managers (notably Windows), even when non-modal.
+            # Keep an explicit Python reference and make this an independent
+            # top-level window so either editor or MIP browser can be raised.
+            self.mip_browser = MipUVBrowser()
         # Refresh even when reopening a previously closed dialog, or after
         # palette / texture overrides changed while it was hidden.
         self._refresh_mip_browser(force=True)
