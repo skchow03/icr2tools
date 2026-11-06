@@ -291,6 +291,9 @@ class LoadWorker(QThread):
             from three_do import Model
             from n3_compile import compile_n3_text
             t0 = perf_counter()
+            # Live N3 recompile runs frequently without a durable trace.
+            # Avoid per-object Qt signal traffic in that workflow.
+            detail = self._activity if self.activity_trace is not None else None
             self._activity(f"START model load: {self.path}")
             self._stage(5, "Parsing model and referenced 3DOs")
             if self.source_text is not None:
@@ -303,14 +306,14 @@ class LoadWorker(QThread):
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides,
                                     appearance=appearance,
-                                    on_activity=self._activity)
+                                    on_activity=detail)
             elif self.path.suffix.lower() == ".3do":
                 model, scene, appearance = load_car_or_model(
                     self.path, existing_model=self.existing_model,
                     objects_folder=self.objects_folder,
                     object_overrides=self.object_overrides,
                     fixtures_folder=CAD_ROOT / 'fixtures',
-                    on_activity=self._activity)
+                    on_activity=detail)
             elif self.path.suffix.lower() == ".3d":
                 if self.existing_model is not None:
                     model = self.existing_model
@@ -322,7 +325,7 @@ class LoadWorker(QThread):
                         text, self.path, associate_planes=False)
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides,
-                                    on_activity=self._activity)
+                                    on_activity=detail)
                 appearance = None
             else:
                 raise ValueError("Open a .3D or .3DO file")
@@ -361,7 +364,7 @@ class LoadWorker(QThread):
                     self.path, palette.astype(np.float32) / 255.0,
                     objects_folder=self.objects_folder,
                     texture_folder=self.texture_folder,
-                    on_activity=self._activity)
+                    on_activity=detail)
                 if scene.skybox is None:
                     scene.skybox_error = sky_notes
                 elif sky_notes:
@@ -388,7 +391,7 @@ class LoadWorker(QThread):
             scene.sprite_resources = prepare_scene_sprites(
                 scene, objects_folder=self.objects_folder,
                 texture_folder=self.texture_folder,
-                on_activity=self._activity)
+                on_activity=detail)
             scene.geometry.sprite_bounds = scene.sprite_resources.bounds_points
             self._stage(74, "Loading MIP textures and building atlas")
             atlas = build_atlas(scene.geometry, self.path,
@@ -396,11 +399,11 @@ class LoadWorker(QThread):
                                 fallback_mip=self.fallback_mip,
                                 mip_overrides=self.mip_overrides,
                                 body_mip=self.body_mip,
-                                on_activity=self._activity)
+                                on_activity=detail)
             self._stage(85, "Triangulating track geometry")
             mesh = make_mesh(scene.geometry,
                              palette.astype(np.float32) / 255.0, atlas,
-                             on_activity=self._activity)
+                             on_activity=detail)
             self._activity(f"Mesh ready: {mesh.polygon_count:,} polygons, "
                            f"{mesh.triangle_count:,} triangles, "
                            f"{mesh.size_bytes / 1048576:.1f} MiB")
@@ -4005,6 +4008,9 @@ class Window(QMainWindow):
         self._load_progress_stage(
             self.worker, 97, "Finishing controls and track setup",
             repaint=True)
+        if not from_source:
+            self._record_load_activity(
+                "GUI setup: updating MIP browser, camera, workspace and controls")
         self._refresh_mip_browser()
         if (self.source_pane.ready and not self.source_pane.pending
                 and not self._source_invalid):
