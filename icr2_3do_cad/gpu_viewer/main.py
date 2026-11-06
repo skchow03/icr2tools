@@ -467,27 +467,44 @@ class SourceExportWorker(QThread):
     """Generate editable source without blocking Qt/OpenGL for large models."""
     ready = Signal(str, object)
     failed = Signal(str)
+    activity = Signal(str)
 
-    def __init__(self, model, opened_path):
+    def __init__(self, model, opened_path, *, activity_trace=None):
         super().__init__()
         self.model = model
         self.opened_path = Path(opened_path)
+        self.activity_trace = activity_trace
+
+    def _activity(self, message):
+        if self.activity_trace is None:
+            return
+        try:
+            line = self.activity_trace.write(message)
+        except OSError as exc:
+            line = f"[Log write failure: {exc}] {message}"
+        self.activity.emit(line)
 
     def run(self):
         try:
             from text_3d import export_compilable_text
+            self._activity(f"Editable source BEGIN: {self.model.path.name}")
             if self.opened_path.suffix.lower() == '.3d':
-                # Preserve authored N3 source, including user comments/names.
+                self._activity(f"Reading authored N3 source: {self.opened_path}")
                 source = self.opened_path.read_text(encoding='utf-8-sig')
                 target = self.opened_path
             else:
-                # For individual-car wrappers, export BASE geometry, not the
-                # zero-polygon MATERIAL->RECOLOR wrapper. Standalone source
-                # does not need original 3DO offsets to recompile.
-                source = export_compilable_text(self.model)
+                # Only source text is created; no referenced file is rewritten.
+                source = export_compilable_text(
+                    self.model, on_activity=(self._activity
+                                             if self.activity_trace is not None
+                                             else None))
                 target = self.model.path.with_suffix('.3d')
+            self._activity(f"Editable source DONE: {len(source):,} characters")
             self.ready.emit(source, target)
         except Exception as exc:
+            self._activity(f"Editable source FAILED: {type(exc).__name__}: {exc}")
+            for line in traceback.format_exc().splitlines():
+                self._activity(f"TRACEBACK: {line}")
             self.failed.emit(f'{type(exc).__name__}: {exc}')
 
 
