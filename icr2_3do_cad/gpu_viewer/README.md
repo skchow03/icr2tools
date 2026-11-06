@@ -203,6 +203,36 @@ Perspective is required and all three projection controls are disabled.
 Single-letter **F** (Frame All) and **R** (Reload MIPs) remain scoped to
 the viewport so those letters can be typed normally in the N3 editor.
 
+## Split a polygon
+
+Use **Split polygon…** above the GPU viewport (or **Edit → Split selected
+Polygon…**). The tool switches picking to **Polys**. Click a visible polygon
+in the *root model*; the contextual controls open **below the viewport**,
+leaving the N3 editor visible alongside it.
+
+- **Cut between edges:** pick two different numbered edges and a fractional
+  position (0.5 = midpoint) on each. The cyan dashed overlay previews the
+  cut. This adds two vertices, generates two polygons in a LIST, and repairs
+  adjacent polygons that share the exact original edge pointers.
+- **Diagonal between existing vertices:** choose two nonadjacent numbered
+  vertices; no vertices are added. The CPU editor's diagonal safety checks
+  also reject cuts outside concave polygons.
+- **Split polygon** shows a confirmation with the vertex and neighbor counts
+  and any seam warnings. **Close** hides the panel.
+
+The operation edits the canonical **.3D Source** document as one undoable
+change and recompiles the preview; it does not save anything automatically.
+Use **Edit → Undo** or source-editor Ctrl+Z to undo; **Save .3D Source**
+preserves the textual edit, and **Export compiled 3DO** writes a separate
+validated binary. Existing unrelated declarations, pointer names and comments
+are retained. For a split inside a MATERIAL wrapper, the wrapper continues
+to surround the two new POLYs. A polygon must have its own named POLY
+declaration or an individual MATERIAL wrapper; anonymous polygons embedded
+in larger LIST/BSP expressions are rejected rather than rewritten blindly.
+Duplicated coordinate edges that do not share original vertex pointers (for
+example UV seams) are reported for manual inspection. BSP planes are not
+rebuilt. Back up and validate any edited model in ICR2.
+
 ## Controls
 
 - **Pick selector (above viewport):** **Vertices** is the default; choose
