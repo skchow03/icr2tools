@@ -287,7 +287,14 @@ class Compiler:
         return _i32(match.group(1) or match.group(3),"Polygon color")
 
     def _angle(self,n):
+        # Papyrus stores a full rotation in a signed 32-bit angle field:
+        # 1800 N3 tenths-of-a-degree maps to the *bit pattern* 0x80000000.
+        # As a signed integer that is -2147483648 (equivalent to -1800),
+        # not an overflowing positive 2147483648. Do not wrap other invalid
+        # values silently; preserve the existing range validation.
         value=int(round(float(n)*2147483648/1800))
+        if value == (1 << 31):
+            value = INT32_LO
         return _i32(value,"DYNAMIC rotation")
 
     def _node(self,expression):
