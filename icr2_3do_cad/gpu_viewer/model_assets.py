@@ -71,7 +71,7 @@ def load_model_candidate(path):
     raise ValueError(f"Unsupported referenced model: {path.name}")
 
 
-def choose_reference(name, folders, cache, *, override=None):
+def choose_reference(name, folders, cache, *, override=None, on_activity=None):
     """Return (path, model, warnings), trying bad candidates non-fatally.
 
     The caller owns the cache so repeated instances of the same wheel/helmet
@@ -94,15 +94,23 @@ def choose_reference(name, folders, cache, *, override=None):
             continue
         checked.add(resolved)
         if resolved not in cache:
+            if on_activity:
+                on_activity(f"Parsing referenced model: {path.name} [{path}]")
             try:
                 cache[resolved] = load_model_candidate(path)
             except (OSError, ValueError, UnicodeError, OverflowError) as exc:
                 cache[resolved] = exc
         result = cache[resolved]
         if isinstance(result, Exception):
+            if on_activity:
+                on_activity(f"Referenced model rejected: {path.name}: {result}")
             warnings.append(f"{path.name}: invalid model ({result})")
             continue
+        if on_activity:
+            on_activity(f"Resolved {name} -> {path.name} (cached={resolved in cache})")
         return path, result, warnings
     if not paths:
+        if on_activity:
+            on_activity(f"Referenced object missing: {name}.3do / {name}.3d")
         warnings.append(f"Referenced object {name}.3do / {name}.3d not found")
     return None, None, warnings
