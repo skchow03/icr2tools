@@ -100,35 +100,59 @@ def _base_point(equation):
             f"No exact integer-coordinate N3 plane exists for {equation}: "
             f"gcd(A,B,C)={g} does not divide -D. "
             "Choose/edit a valid three-point BSP plane explicitly.")
-    # Prefer a compact solution with one coordinate fixed to zero.
+
+    # Search exact solutions using two coordinates plus a small third one.
+    # The old two-coordinate search always fixed the third coordinate to
+    # zero. Stock track planes (including Vancouver) may have no solution
+    # with ANY coordinate zero, despite having small int32 solutions.
+    #
+    # For i,j and remaining axis k, solve:
+    #   A[k]*p[k] == -D (mod gcd(A[i], A[j]))
+    # then solve the resulting two-variable Bezout equation. Keep all
+    # arithmetic integer-exact: coefficients and D can exceed float53.
     choices=[]
     abc=(a,b,c)
     target=-d
     for i,j in ((0,1),(0,2),(1,2)):
-        gg,xx,yy=_egcd(abc[i],abc[j])
-        if not gg or target%gg:continue
-        scale=target//gg
-        x,y=xx*scale,yy*scale
-        dx=abc[j]//gg
-        dy=-abc[i]//gg
-        values=set((0,))
-        if dx:
-            k=round(-x/dx)
-            values.update((k-1,k,k+1))
-        if dy:
-            k=round(-y/dy)
-            values.update((k-1,k,k+1))
-        for k in values:
-            v=[0,0,0]
-            v[i],v[j]=x+k*dx,y+k*dy
-            if all(INT32_LO<=q<=INT32_HI for q in v):
-                choices.append(tuple(v))
+        k=3-i-j
+        pair_g,xcoef,ycoef=_egcd(abc[i],abc[j])
+        if not pair_g:
+            continue
+        common,thirdcoef,_=_egcd(abc[k],pair_g)
+        if target%common:
+            continue
+        period=pair_g//common
+        residue=(thirdcoef*(target//common))%period
+        for third in {residue,residue-period}:
+            if not INT32_LO<=third<=INT32_HI:
+                continue
+            rhs=target-abc[k]*third
+            if rhs%pair_g:
+                continue
+            x=xcoef*(rhs//pair_g)
+            y=ycoef*(rhs//pair_g)
+            dx=abc[j]//pair_g
+            dy=-abc[i]//pair_g
+            shifts={0}
+            for coordinate,step in ((x,dx),(y,dy)):
+                if step:
+                    # The nearest family members keep coordinates bounded.
+                    # Integer division avoids rounding a huge Bezout result.
+                    center=(-coordinate)//step
+                    shifts.update(center+delta for delta in (-2,-1,0,1,2))
+            for shift in shifts:
+                p=[0,0,0]
+                p[i],p[j],p[k]=x+shift*dx,y+shift*dy,third
+                if all(INT32_LO<=v<=INT32_HI for v in p):
+                    choices.append(tuple(p))
     if choices:
         return min(choices,key=lambda p:(max(map(abs,p)),sum(map(abs,p))))
-    # General 3-variable Bezout construction, from 3do23d/plane.py.
+
+    # Fallback for unusual planes requiring a larger third coordinate:
+    # retain the original general three-variable Bezout candidate.
     gg,xa,ya=_egcd(a,b)
     whole,pair,zc=_egcd(gg,c)
-    scale=-d//whole
+    scale=target//whole
     p=(xa*pair*scale,ya*pair*scale,zc*scale)
     if all(INT32_LO<=v<=INT32_HI for v in p):
         return p

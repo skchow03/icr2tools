@@ -33,21 +33,25 @@ class Transform:
 
 
 def placement_transform(placement):
-    """Rotation order matches DYNAMIC z, y, x encoding; applied Z then Y then X.
+    """Apply Papyrus DYNAMIC Z/Y/X angles as local X, then Y, then Z.
 
-    On stock wheels only Z=0/180 is used; Y/X are available for edited objects.
+    The binary stores +0x10 Z (heading/steering), +0x14 Y (wheel spin),
+    +0x18 X. A column-vector transform therefore uses Rz * Ry * Rx:
+    local pitch/roll is rotated before the world-space heading. The
+    previous Rx * Ry * Rz applied heading first and tipped stock track
+    bridges/grandstands out of their intended orientations.
     """
     z,y,x=[v*ANGLE_SCALE for v in placement.angles]
     cz,sz=math.cos(z),math.sin(z)
     cy,sy=math.cos(y),math.sin(y)
     cx,sx=math.cos(x),math.sin(x)
-    # R = Rx * Ry * Rz: first Z, then Y, then X
+    # R = Rz * Ry * Rx: first local X, then Y, then heading about Z.
     rz=((cz,-sz,0.),(sz,cz,0.),(0.,0.,1.))
     ry=((cy,0.,sy),(0.,1.,0.),(-sy,0.,cy))
     rx=((1.,0.,0.),(0.,cx,-sx),(0.,sx,cx))
     def mul(a,b):
         return tuple(tuple(sum(a[i][k]*b[k][j] for k in range(3)) for j in range(3)) for i in range(3))
-    return Transform(mul(rx,mul(ry,rz)),tuple(float(v) for v in placement.xyz))
+    return Transform(mul(rz,mul(ry,rx)),tuple(float(v) for v in placement.xyz))
 
 
 def degrees_to_papyrus(degrees):
