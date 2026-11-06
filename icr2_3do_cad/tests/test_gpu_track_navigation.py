@@ -67,6 +67,10 @@ class TrackCameraGeometryTests(unittest.TestCase):
         self.assertAlmostEqual(pose.azimuth, -math.pi/2, places=7)
         self.assertAlmostEqual(pose.elevation, 0.0, places=7)
 
+    def test_explicit_eye_height_in_feet_is_still_supported(self):
+        nav = TrackNavigation('course.trk', flat_trk(), eye_height_ft=6.0)
+        pose = nav.pose()
+        self.assertEqual(pose.eye[2] - pose.ground[2], 36000.0)
     def test_wasd_forward_backward_and_signed_lateral_motion(self):
         nav = TrackNavigation("course.trk", flat_trk())
         pose = nav.move(forward_feet=10)
