@@ -98,9 +98,9 @@ class DynamicParserTests(unittest.TestCase):
                                   angles=(degrees_to_papyrus(90),
                                           degrees_to_papyrus(90),0))
         transform=placement_transform(placement)
-        # Local X tips down about Y, unaffected by the later Z heading.
+        # Local X tips upward about negative Y, unaffected by Z heading.
         point=transform.apply((100.,0.,0.))
-        for got,want in zip(point,(200.,300.,300.)):
+        for got,want in zip(point,(200.,300.,500.)):
             self.assertAlmostEqual(got,want,places=6)
         # The local Y axis turns into -X when Z heading is +90.
         point=transform.apply((0.,100.,0.))
@@ -110,6 +110,39 @@ class DynamicParserTests(unittest.TestCase):
         original=(40.,-30.,8.)
         transformed=transform.apply(original)
         for got,want in zip(transform.inverse_point(transformed),original):
+            self.assertAlmostEqual(got,want,places=6)
+
+    def test_vancouver_pitsuite_stock_angles_put_local_positive_x_up(self):
+        """Actual stock Vancouver placement + pitsuite model dimensions.
+
+        pitsuite.3do has height on local +X (0 to 372000). Vancouver's
+        DYNAMIC at body offset 448 stores Z=1041529344 (+87.3 deg),
+        Y=1073741824 (+90 deg), X=0. The height must increase world Z.
+        """
+        placement=SimpleNamespace(
+            xyz=(17245.,-2277620.,5000.),
+            angles=(1041529344,1073741824,0))
+        transform=placement_transform(placement)
+        low=transform.apply((0.,0.,0.))
+        high=transform.apply((372000.,0.,0.))
+        self.assertAlmostEqual(high[2]-low[2],372000.,places=6)
+        self.assertAlmostEqual(low[2],5000.,places=6)
+        self.assertAlmostEqual(high[2],377000.,places=6)
+        # Source Y extends along the 3-million-unit-long pit suite.
+        span=transform.apply((0.,1500000.,0.))
+        self.assertAlmostEqual(span[2],low[2],places=6)
+
+    def test_first_and_third_axes_remain_unchanged(self):
+        """A plain-Z heading stays intact; an X-only roll keeps its sign."""
+        heading=SimpleNamespace(xyz=(0.,0.,0.),
+                                angles=(degrees_to_papyrus(90),0,0))
+        t=placement_transform(heading)
+        for got,want in zip(t.apply((100.,0.,0.)),(0.,100.,0.)):
+            self.assertAlmostEqual(got,want,places=6)
+        roll=SimpleNamespace(xyz=(0.,0.,0.),
+                             angles=(0,0,degrees_to_papyrus(90)))
+        t=placement_transform(roll)
+        for got,want in zip(t.apply((0.,100.,0.)),(0.,0.,100.)):
             self.assertAlmostEqual(got,want,places=6)
 
     def test_stock_vancouver_style_y_rotation_preserves_local_y_height(self):
