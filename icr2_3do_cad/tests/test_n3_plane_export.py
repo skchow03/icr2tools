@@ -23,6 +23,23 @@ class N3PlaneExpressionTests(unittest.TestCase):
                 self.assertTrue(all(-2147483648<=v<=2147483647
                                     for p in points for v in p))
 
+    def test_stock_vancouver_plane_with_no_zero_coordinate_solution(self):
+        """Real stock Vancouver BSP equation requires all three XYZ terms.
+
+        Each pairwise gcd fails to divide -D, but the full normal has
+        gcd 1. Earlier export failed because it held one axis at zero.
+        """
+        equation=(208750227,-1494646350,-1755250,-8808636277960369)
+        points=get_points_on_plane(equation)
+        self.assertTrue(oriented_plane_matches(equation,points))
+        self.assertEqual(len(set(points)),3)
+        self.assertTrue(all(-2147483648<=v<=2147483647
+                            for point in points for v in point))
+        # Normalization in the standalone N3 compiler must preserve the
+        # exact oriented plane (not just an approximate visual fit).
+        from n3_compile import _equation
+        self.assertEqual(_equation(points),equation)
+
     def test_impossible_exact_integer_plane_rejected(self):
         for eq in ((2,4,6,-3),(0,0,0,0)):
             with self.subTest(eq=eq):
