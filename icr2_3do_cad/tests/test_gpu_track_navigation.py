@@ -71,6 +71,7 @@ class TrackCameraGeometryTests(unittest.TestCase):
         nav = TrackNavigation('course.trk', flat_trk(), eye_height_ft=6.0)
         pose = nav.pose()
         self.assertEqual(pose.eye[2] - pose.ground[2], 36000.0)
+
     def test_flat_track_has_zero_camera_roll(self):
         nav = TrackNavigation('flat.trk', flat_trk())
         self.assertAlmostEqual(nav.pose().roll, 0.0, places=9)
