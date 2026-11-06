@@ -547,8 +547,11 @@ referenced 3DO, HORIZ, PMP and MIP currently being read, progress through
 instance flattening and polygon triangulation, and BEGIN/DONE markers for
 each OpenGL geometry/texture/skybox/sprite upload. The most recent 4,000
 lines remain visible in the panel, with **Copy full log** and **Save as…**
-buttons for the complete on-disk trace. An unrelated **Load Error Log**
-still lists finished-load warnings and failures.
+buttons for the complete on-disk trace. The log also follows automatic
+**editable N3 source generation** after model loading, including record
+conversion progress and insertion of the resulting text into the editor.
+An unrelated **Load Error Log** still lists finished-load warnings
+and failures.
 
 The trace is appended **synchronously to disk before each expensive
 operation**, so its last BEGIN line remains inspectable even if the Qt GUI
