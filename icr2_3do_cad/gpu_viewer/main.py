@@ -97,6 +97,8 @@ from gpu_viewer.workspaces import (
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
+from gpu_viewer.vertex_label_data import vertex_pointer_names
+from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
 
 
 VERTEX_SHADER = """
@@ -522,6 +524,7 @@ class GLViewport(QOpenGLWidget):
         self._vao = None
         self._mesh = None
         self._vertex_picker = None
+        self.vertex_pointer_names = {}
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
@@ -581,10 +584,33 @@ class GLViewport(QOpenGLWidget):
             " padding: 10px 14px;"
             " font-size: 13px; font-weight: bold; }")
         self.visibility_banner.hide()
+        # Qt-composited child widget avoids GL/QPainter glyph corruption.
+        # The overlay is mouse transparent; picking/orbiting remain unchanged.
+        self.vertex_label_overlay = VertexLabelOverlay(self)
+
+    def update(self, *args):
+        """Keep optional labels aligned whenever camera/selection redraws."""
+        super().update(*args)
+        overlay = getattr(self, "vertex_label_overlay", None)
+        if overlay is not None and overlay.isVisible():
+            overlay.update()
+
+    def set_all_vertex_labels(self, enabled):
+        overlay = self.vertex_label_overlay
+        if overlay.isVisible() == bool(enabled):
+            return
+        overlay.setVisible(bool(enabled))
+        if enabled:
+            overlay.setGeometry(self.rect())
+            overlay.raise_()
+            if self.visibility_banner.isVisible():
+                self.visibility_banner.raise_()
+            overlay.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self._size_visibility_banner()
+        self.vertex_label_overlay.setGeometry(self.rect())
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
@@ -696,6 +722,7 @@ class GLViewport(QOpenGLWidget):
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
+        self.vertex_pointer_names = vertex_pointer_names(model)
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
         self._sprite_events = ()
@@ -1886,6 +1913,15 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.vertex_labels_toggle = QCheckBox("Vertex labels")
+        self.vertex_labels_toggle.setObjectName("showAllVertexLabels")
+        self.vertex_labels_toggle.setToolTip(
+            "Show a small blue dot and N3 pointer name at every on-screen "
+            "root-model vertex. Selected vertices keep their larger yellow "
+            "marker. Off by default for large track models.")
+        self.vertex_labels_toggle.toggled.connect(
+            self.viewer.set_all_vertex_labels)
+        distance_row.addWidget(self.vertex_labels_toggle)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")
