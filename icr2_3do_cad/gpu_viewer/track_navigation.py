@@ -160,9 +160,15 @@ class TrackNavigation:
                    horizontal / tangent_length)
         sideways = -sum(lateral[i] * right_axis[i] for i in range(3))
         rise = sum(lateral[i] * up_axis[i] for i in range(3))
-        # atan(rise/sideways) handles both possible lateral-vector signs
-        # without generating an erroneous 180-degree camera inversion.
-        roll = math.atan(rise / sideways) if abs(sideways) > 1e-6 else 0.0
+        span = math.hypot(lateral[0], lateral[1])
+        # Bank magnitude must use the *physical* cross-track width. On
+        # original Michigan, some stock straight centerline tangents are
+        # inconsistent with their section heading: projecting the full
+        # width on the derived camera-left axis would falsely make its
+        # modest banking appear nearly vertical. Use the projected side
+        # only for direction and the real horizontal span for magnitude.
+        roll = (math.copysign(math.atan2(rise, span), sideways)
+                if span > 1e-6 and abs(sideways) > 1e-6 else 0.0)
         eye = (float(x), float(y), float(z + self.eye_height))
         return TrackPose(dlong, self.dlat, section,
                          (float(x), float(y), float(z)),
