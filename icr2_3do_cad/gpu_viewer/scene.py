@@ -60,7 +60,8 @@ class GPUScene:
 
 
 def build_scene(root, *, objects_folder=None, object_overrides=None,
-                appearance=None, max_depth=4, max_instances=2000):
+                appearance=None, max_depth=4, max_instances=2000,
+                on_activity=None):
     """Resolve instances including inactive LOD/BSP branches (no GL calls).
 
     Reusing a child 3DO/N3 file is cheap: the parsed Model is cached, while each
@@ -77,7 +78,12 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                           recolor_layers=((root_recolor,) if root_recolor else ()))]
     links = {}
     warnings = []
+    if on_activity:
+        on_activity(f"Walking referenced scene graph: {root.path.name}")
     for parent_id, instance in enumerate(instances):
+        if on_activity and parent_id % 25 == 0:
+            on_activity(f"Scene graph instance {parent_id + 1}/{len(instances)}: "
+                        f"{instance.model.path.name}")
         events = []
         instance.model.switched_polygons(None, (0, 0, 0), 'off', events=events)
         for event in events:
@@ -108,7 +114,8 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             location, child, issues = choose_reference(
                 name, reference_directories(
                     instance.model.path, objects_folder),
-                cache, override=overrides.get(name.casefold()))
+                cache, override=overrides.get(name.casefold()),
+                on_activity=on_activity)
             warnings.extend(issues)
             if location is None:
                 continue
@@ -143,7 +150,13 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
     body_polygons = set()
     next_vertex = 1
     next_polygon = 1
+    if on_activity:
+        on_activity(f"Flattening geometry: {len(instances)} placed 3DO instances")
     for instance_id, instance in enumerate(instances):
+        if on_activity and instance_id % 25 == 0:
+            on_activity(f"Flattening instance {instance_id + 1}/{len(instances)}: "
+                        f"{instance.model.path.name} "
+                        f"({len(instance.model.polygons):,} polygons)")
         remap = {}
         for old, vertex in instance.model.vertices.items():
             remap[old] = next_vertex
@@ -181,7 +194,12 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
         polygon_materials=polygon_materials,
         polygon_sources=polygon_sources,
         body_polygons=frozenset(body_polygons))
+    if on_activity:
+        on_activity(f"Geometry flattened: {len(vertices):,} vertices, "
+                    f"{len(polygons):,} polygons; detecting track indices")
     sections = detect_track_section_lods(root)
+    if on_activity:
+        on_activity(f"Track section detection completed: {len(sections or {}):,} sections")
     return GPUScene(root, instances, links, polygon_lookup,
                     geometry, tuple(dict.fromkeys(warnings)),
                     len(root_recolor), appearance,
@@ -293,7 +311,8 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
 
 
 def load_car_or_model(path, *, existing_model=None, objects_folder=None,
-                      object_overrides=None, fixtures_folder=None):
+                      object_overrides=None, fixtures_folder=None,
+                      on_activity=None):
     """Mirror CPU editor's read_car_appearance + locate_base_geometry flow.
 
     Individual car wrappers point their MATERIAL to a RECOLOR at offset 0;
@@ -305,6 +324,8 @@ def load_car_or_model(path, *, existing_model=None, objects_folder=None,
     path = Path(path)
     if path.suffix.casefold() != '.3do':
         raise ValueError('Expected a 3DO model')
+    if on_activity:
+        on_activity(f"Inspecting model/wrapper: {path.name}")
     try:
         appearance = read_car_appearance(path)
     except AppearanceError:
@@ -313,9 +334,15 @@ def load_car_or_model(path, *, existing_model=None, objects_folder=None,
         if existing_model is not None and existing_model.path.resolve() == path.resolve():
             model = existing_model
         else:
+            if on_activity:
+                on_activity(f"Parsing primary 3DO: {path.name}")
             model = Model(path, associate_planes=False)
+        if on_activity:
+            on_activity(f"Primary model parsed: {len(model.polygons):,} polygons, "
+                        f"{len(model.dynamics):,} placements")
         return model, build_scene(model, objects_folder=objects_folder,
-                                  object_overrides=object_overrides), None
+                                  object_overrides=object_overrides,
+                                  on_activity=on_activity), None
 
     overrides = {str(k).casefold(): Path(v) for k,v in (object_overrides or {}).items()}
     wanted = appearance.geometry_name
@@ -330,17 +357,23 @@ def load_car_or_model(path, *, existing_model=None, objects_folder=None,
         if chosen is None and wanted:
             chosen = ExternalResolver(objects_folder).find(wanted, appearance.path)
     if chosen is not None:
+        if on_activity:
+            on_activity(f"Opening carshape/base geometry: {chosen.name}")
         if existing_model is not None and existing_model.path.resolve() == chosen.resolve():
             model = existing_model
         else:
             model = Model(chosen, associate_planes=False)
         scene = build_scene(model, objects_folder=objects_folder,
                             object_overrides=object_overrides,
-                            appearance=appearance)
+                            appearance=appearance,
+                            on_activity=on_activity)
     else:
+        if on_activity:
+            on_activity(f"Parsing wrapper without available carshape: {path.name}")
         model = Model(path, associate_planes=False)
         scene = build_scene(model, objects_folder=objects_folder,
-                            object_overrides=object_overrides)
+                            object_overrides=object_overrides,
+                            on_activity=on_activity)
         scene.appearance = appearance
         scene.recolor_pairs = len(appearance.mapping)
         warnings.append(
