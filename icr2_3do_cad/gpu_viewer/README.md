@@ -557,9 +557,13 @@ stops repainting. The default path on Windows is
 actual path and uses a temporary-folder fallback if needed). It records
 local file paths and full exception tracebacks, so review it before sharing.
 The last log remains available after a crash/restart until a new model load
-begins; it is not sent anywhere. A stage entry is diagnostic rather than a
-deadline: if one operation runs for a long time, the log cannot update from
-inside that single blocking library/driver call.
+begins; it is not sent anywhere. If the load reports nothing for **12 seconds**,
+a watchdog writes an **INACTIVITY SNAPSHOT** with the last attempted operation
+and current Python stack traces to the same file; it repeats at most every
+20 seconds (20 snapshots maximum), even when the Qt GUI cannot repaint.
+A stage entry or silence is diagnostic rather than proof of a deadlock.
+A blocking native driver call can also prevent Python's watchdog thread
+from running if it holds the Python interpreter lock.
 
 ## N3 context-sensitive syntax help
 
