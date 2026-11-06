@@ -101,6 +101,67 @@ class PMPVariantsTests(unittest.TestCase):
         self.assertEqual(sprite.rgba.getpixel((59, 53)),
                          (47, 47, 47, 255))
 
+    def test_stock_cleveland_offic_footer_matches_extent_byte(self):
+        """Match headers, span bounds and distinct footers in original OFFIC1-3.
+
+        These are two-record synthetic images; actual stock PMP bytes are
+        not bundled. The stock files contain respectively 381, 357 and
+        255 valid span records and terminate in header byte four.
+        """
+        samples = (
+            ('offic1', '243e90b7', (116, 78, 139, 132)),
+            ('offic2', '2f3c97b6', (116, 80, 147, 132)),
+            ('offic3', '273895b4', (119, 81, 140, 131)),
+        )
+        for name, encoded_header, bounds in samples:
+            with self.subTest(name=name):
+                header = bytes.fromhex(encoded_header)
+                x0, y0, x1, y1 = bounds
+                spans = ((y0, x0, x0+1, 42),
+                         (y1-1, x1-1, x1, 128))
+                payload = b''.join(bytes(span) for span in spans) + header[3:]
+                raw = header + struct.pack('<II', len(payload), 30) + payload
+                self.assertEqual(raw[-1], header[3])
+                sprite = self.load_bytes(raw)
+                self.assertEqual(sprite.bounds, bounds)
+                self.assertEqual(sprite.auxiliary, 30)
+                self.assertEqual(sprite.rgba.getpixel((0, 0)),
+                                 (42, 42, 42, 255))
+                self.assertEqual(sprite.rgba.getpixel((x1-x0-1, y1-y0-1)),
+                                 (128, 128, 128, 255))
+                # Footer bytes not matching the nominal header or legacy
+                # helmet terminator must still be rejected.
+                damaged = raw[:-1] + bytes(((header[3]+1) & 0xff,))
+                with self.assertRaisesRegex(PMPError, 'malformed'):
+                    self.load_bytes(damaged)
+
+    def test_cleveland_style_root_sprite_resolves_without_warning(self):
+        """Exercise the same 60-byte root-sprite wrappers as stock OFFIC."""
+        header = bytes.fromhex('243e90b7')
+        spans = bytes((78, 124, 129, 43, 131, 123, 128, 47))
+        payload = spans + bytes((header[3],))
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            (folder / 'offic1.pmp').write_bytes(
+                header + struct.pack('<II', len(payload), 30) + payload)
+            wrapper = (
+                struct.pack('<5i', 32, 16, 0, 1, 0)
+                + b'offic1\0\0'
+                + struct.pack('<8i', 0, 0, 0, 0, -(1 << 31) + 3,
+                              0, 36000, 0)
+            )
+            self.assertEqual(len(wrapper), 60)
+            (folder / 'OFFIC1.3DO').write_bytes(wrapper)
+            model = Model(folder / 'OFFIC1.3DO', associate_planes=False)
+            self.assertEqual(len(model.pmp_sprites), 1)
+            scene = build_scene(model)
+            resources = prepare_scene_sprites(scene)
+            self.assertFalse(resources.warnings, resources.warnings)
+            self.assertEqual(len(resources.images), 1)
+            self.assertEqual(len(resources.placements), 1)
+            bitmap = next(iter(resources.images.values()))
+            self.assertEqual(bitmap.shape[2], 2)
+
     def test_scenery_may_also_have_footer_based_on_record_alignment(self):
         sprite = self.load_bytes(pmp_bytes(terminated=True))
         self.assertEqual(sprite.bounds, (81, 5, 172, 128))
