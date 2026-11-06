@@ -4,7 +4,7 @@ The standalone N3 compiler retains the source layout:
     index: LIST { DATA hash, sec0_l0, ... }
     secN_lM: LIST { HI x4, MED x2, LO x1, DATA metadata }
 
-Original track .3DO compilers instead expand the index into the root:
+Original track .3DO compilers instead expand the index into a root LIST:
     root: LIST { expanded LIST, section-pointer-per-hash-bin, ... }
     section LIST: { HI x4, MED x2, LO x1 } (seven pointers)
 
@@ -36,6 +36,24 @@ def _list_slots(model, offset):
     return struct.unpack_from(f"<{count}i", model.body, offset + 8)
 
 
+def _track_index_root(model):
+    """Return the indexed track LIST, beneath any stock SUPEROBJ wrappers.
+
+    Papyrus stock tracks such as Vancouver use SUPEROBJ { previous-index,
+    DYNAMIC scenery... } as the real .3DO root. The previous pointer
+    leads to the ordinary compiled track index. Never replace the SUPEROBJ
+    itself: its other children are legitimate trackside objects.
+
+    A non-track SUPEROBJ is still rejected by section-index validation.
+    """
+    offset = model.root_offset
+    visited = set()
+    while model.records.get(offset) == 16 and offset not in visited:
+        visited.add(offset)
+        # The preceding-object pointer at +4 is parsed by Model already.
+        offset = struct.unpack_from('<i', model.body, offset + 4)[0]
+    return offset
+
 def _section_geometry_slots(model, offset, *, source_layout):
     """Validate the full positional LOD table, returning seven slots."""
     slots = _list_slots(model, offset)
@@ -60,7 +78,7 @@ def detect_track_section_lods(model):
     to their first representative to avoid drawing identical polygons twice.
     A binary NIL may be a nonzero pointer to a flavor-zero record.
     """
-    root_items = _list_slots(model, model.root_offset)
+    root_items = _list_slots(model, _track_index_root(model))
     if not root_items or len(root_items) < 2:
         return {}
 
@@ -121,7 +139,7 @@ def selected_track_section_lists(sections, detail, *, model=None):
                             if p and model_kind(model, p) != 0)
               for offset, slots in sections.items()}
     if model is not None and sections:
-        root_items = _list_slots(model, model.root_offset)
+        root_items = _list_slots(model, _track_index_root(model))
         if root_items:
             first_kind = model.records.get(root_items[0])
             if first_kind == 17:
@@ -132,7 +150,7 @@ def selected_track_section_lists(sections, detail, *, model=None):
             else:
                 ordered = ()
             if len(ordered) == len(sections) and set(ordered) == set(sections):
-                result[model.root_offset] = ordered
+                result[_track_index_root(model)] = ordered
     return result
 
 
@@ -176,7 +194,7 @@ def track_section_dlongs(model, sections):
     """
     if not sections:
         return {}
-    root = _list_slots(model, model.root_offset)
+    root = _list_slots(model, _track_index_root(model))
     if not root:
         return {}
     source = model.records.get(root[0]) == 17
@@ -262,6 +280,6 @@ def selected_track_section_window_lists(
             if p and model_kind(model, p) != 0)
     # Use the track's original painter order for the selected sections,
     # not DLONG-sorted order, so polygons preserve their authored ordering.
-    overrides[model.root_offset] = tuple(
+    overrides[_track_index_root(model)] = tuple(
         offset for offset in sections if offset in ranks)
     return overrides
