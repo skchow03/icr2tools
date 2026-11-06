@@ -148,7 +148,7 @@ def _pack(images, max_side):
 
 def build_atlas(model, model_path, *, texture_folder=None,
                 fallback_mip=None, mip_overrides=None, body_mip=None,
-                max_side=4096):
+                max_side=4096, on_activity=None):
     """Build the atlas for reachable POLY [T] records, with diagnostic counts.
 
     Referenced MATERIAL filenames take priority. The optional explicit
@@ -166,7 +166,11 @@ def build_atlas(model, model_path, *, texture_folder=None,
     body_polygons = getattr(model, 'body_polygons', frozenset())
     overrides = {str(name).casefold(): Path(path)
                  for name, path in (mip_overrides or {}).items()}
-    for off, polygon in model.polygons.items():
+    if on_activity:
+        on_activity(f"Resolving MIP assignments for {len(model.polygons):,} polygons")
+    for ix, (off, polygon) in enumerate(model.polygons.items()):
+        if on_activity and ix % 2000 == 0:
+            on_activity(f"MIP material scan: polygon {ix + 1:,}/{len(model.polygons):,}")
         if polygon.kind != 2:
             continue
         textured_count += 1
@@ -202,16 +206,29 @@ def build_atlas(model, model_path, *, texture_folder=None,
         assignments[off] = key
 
     images = {}
-    for key, path in paths.items():
+    if on_activity:
+        on_activity(f"Decoding {len(paths):,} unique MIP files")
+    for number, (key, path) in enumerate(paths.items(), 1):
+        if on_activity:
+            on_activity(f"Reading MIP {number}/{len(paths)}: {path.name} [{path}]")
         try:
             first = load_mip(path)[0]
             image = np.ascontiguousarray(np.asarray(first, dtype=np.uint8))
             if image.ndim != 2:
                 raise TextureError("Expected one 8-bit indexed image")
             images[key] = image
+            if on_activity:
+                on_activity(f"MIP decoded: {path.name} {image.shape[1]}x{image.shape[0]}")
         except (OSError, ValueError, TextureError) as exc:
+            if on_activity:
+                on_activity(f"MIP failed: {path.name}: {exc}")
             errors.append(f"{path.name}: {exc}")
+    if on_activity:
+        on_activity(f"Packing {len(images)} MIPs into atlas (max {max_side}x{max_side})")
     rects, pixels, overflow = _pack(images, max_side)
+    if on_activity:
+        on_activity(f"Atlas packed: {pixels.shape[1]}x{pixels.shape[0]}, "
+                    f"{len(rects)} images, {len(overflow)} overflow")
     if overflow:
         errors.append(f"{len(overflow)} MIPs exceed {max_side}x{max_side} atlas capacity")
     polygon_rects = {off:rects[key] for off, key in assignments.items()
