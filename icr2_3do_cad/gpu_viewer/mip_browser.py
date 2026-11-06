@@ -244,6 +244,7 @@ class MipUVBrowser(QDialog):
         self.details = QLabel("Choose a MIP from the list")
         self.details.setObjectName("mipBrowserImageDetails")
         controls.addWidget(self.details, 1)
+        self.canvas = MipCanvas()
         for label, action in (
                 ("−", lambda: self.canvas.zoom_by(0.8)),
                 ("+", lambda: self.canvas.zoom_by(1.25)),
@@ -258,7 +259,6 @@ class MipUVBrowser(QDialog):
             button.clicked.connect(action)
             controls.addWidget(button)
         right_layout.addLayout(controls)
-        self.canvas = MipCanvas()
         right_layout.addWidget(self.canvas, 1)
         coords = QHBoxLayout()
         self.coordinates = QLineEdit()
