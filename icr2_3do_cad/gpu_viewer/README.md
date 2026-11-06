@@ -100,8 +100,14 @@ reload the model, reset the camera, compile source, or discard unsaved edits.
   **A / Left** = left (positive DLAT), and **D / Right** = right (negative
   DLAT). Hold Shift for 5x movement; configurable defaults are 10 feet
   longitudinal and 2 feet lateral per keypress. DLONG wraps around the lap;
-  continuous bends change the heading automatically. The Track tab reports
-  the section, DLONG/DLAT in raw units and feet, and camera XYZ, and has a
+  continuous bends change the heading automatically. The onboard camera
+  also rolls with the TRK's local banking, sampled from ground elevations
+  one foot to either side of the current DLAT. This follows banked turns,
+  flatter straights and transitions without modifying the 3DO mesh, and
+  rotates the HORIZ skybox together with the camera. Orbit and fixed
+  camera modes remain level. The Track tab reports the current signed
+  bank angle, section, DLONG/DLAT in raw units and feet, and camera XYZ;
+  it has a
   reset-to-zero button. Uncheck TRK camera to restore the prior orbit view.
   Missing or malformed matching TRK files never stop geometry from opening.
   Recompiles preserve the TRK position and on/off state; loading another
