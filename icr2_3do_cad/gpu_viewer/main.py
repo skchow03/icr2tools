@@ -50,7 +50,7 @@ try:
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-        QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
+        QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
         QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
         QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
@@ -96,6 +96,7 @@ from gpu_viewer.workspaces import (
 )
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
+from gpu_viewer.polygon_split import split_n3_polygon
 
 
 VERTEX_SHADER = """
@@ -528,6 +529,7 @@ class GLViewport(QOpenGLWidget):
         self.inspection_kind = None
         self.inspection_offset = None
         self.inspection_points = None
+        self.split_preview_points = None
         self.render_mode = 'painter'  # painter | depth | all | wire
         self.lod_distance = 'auto'  # auto=per-RES anchor, None=all, number=manual
         self.track_detail = 'hi'  # 'window' is DLONG-local when TRK is available
@@ -764,6 +766,34 @@ class GLViewport(QOpenGLWidget):
             self.inspection_offset = offset
             self.inspection_points = points
             self.update()
+
+    def set_split_preview(self, points=None):
+        """Two proposed cut points in raw Papyrus XYZ, or None."""
+        normalized = (tuple(tuple(float(v) for v in p) for p in points)
+                      if points is not None else None)
+        if self.split_preview_points != normalized:
+            self.split_preview_points = normalized
+            self.update()
+
+    def _paint_split_preview(self, projection, view):
+        if self.split_preview_points is None or self._mesh is None:
+            return
+        matrix = projection @ view
+        points = [raw_point_screen_position(
+            self._mesh, xyz, matrix, self.width(), self.height())
+            for xyz in self.split_preview_points]
+        if len(points) != 2 or any(point is None for point in points):
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        color = QColor("#40e6e2")
+        painter.setPen(QPen(color, 3, Qt.PenStyle.DashLine))
+        painter.drawLine(QPointF(*points[0]), QPointF(*points[1]))
+        painter.setPen(QPen(QColor("#12313b"), 2))
+        painter.setBrush(QBrush(color))
+        for point in points:
+            painter.drawEllipse(QPointF(*point), 5, 5)
+        painter.end()
 
     def _paint_source_inspection_markers(self, projection, view):
         """Draw source cursor markers over either GL render mode.
@@ -1380,6 +1410,7 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
             self._paint_wireframe(projection, view)
+            self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
         glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
@@ -1460,6 +1491,7 @@ class GLViewport(QOpenGLWidget):
         glUseProgram(0)
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
+        self._paint_split_preview(projection, view)
 
     def _draw_pmp(self, placement, projection, view):
         """Draw one palette-indexed transparent billboard at its BSP site."""
@@ -1740,6 +1772,8 @@ class Window(QMainWindow):
         self._source_save_target = None
         self._pending_vertex_pick = None
         self._pending_polygon_pick = None
+        self._split_polygon_offset = None
+        self._pending_split_label = None
         self.appearance_colors = load_colors(QSettings("ICR2Tools", "GPUViewer"))
         self.viewer = GLViewport()
         self.viewer.set_appearance_colors(self.appearance_colors)
@@ -1852,6 +1886,14 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.split_button = QPushButton("Split polygon…")
+        self.split_button.setCheckable(True)
+        self.split_button.setObjectName("openPolygonSplitPanel")
+        self.split_button.setToolTip(
+            "Open the polygon split controls beneath the viewport; click "
+            "a face in Polys pick mode to select the target.")
+        self.split_button.toggled.connect(self._toggle_split_tool)
+        distance_row.addWidget(self.split_button)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
