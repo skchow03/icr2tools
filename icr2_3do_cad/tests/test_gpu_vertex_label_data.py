@@ -9,8 +9,9 @@ from n3_compile import compile_n3_text
 from three_do import Model
 from gpu_viewer.appearance import DARK_COLORS, LIGHT_COLORS
 from gpu_viewer.vertex_label_data import (
-    project_vertex_labels, vertex_pointer_names,
+    include_source_vertex_declarations, project_vertex_labels, vertex_pointer_names,
 )
+from gpu_viewer.source_inspection import VertexPicker, index_source_targets
 
 SOURCE = """3D VERSION 3.0;
 front_left: [<0,0,0>];
@@ -39,6 +40,31 @@ class VertexLabelDataTests(unittest.TestCase):
         self.assertEqual(set(fallback), set(binary.vertices))
         self.assertTrue(all(name == f"_{offset}"
                             for offset, name in fallback.items()))
+
+    def test_plane_only_source_vertex_is_labeled_even_without_polygon_ref(self):
+        source = """3D VERSION 3.0;
+a: [<0,0,0>];
+b: [<100,0,0>];
+c: [<0,100,0>];
+plane_point: [<0,0,100>];
+panel: POLY <30> {a,b,c};
+face: FACE (a,b,plane_point), panel;
+root: LIST {face};
+"""
+        model, _ = compile_n3_text(source, Path("plane_vertex.3d"),
+                                   associate_planes=False)
+        offset = model.n3_label_offsets["plane_point"]
+        self.assertNotIn(offset, model.vertices)
+        mesh = SimpleNamespace(center=(0, 0, 0), scale=100)
+        picker = VertexPicker.from_model(model, mesh)
+        names = vertex_pointer_names(model)
+        expanded, renamed = include_source_vertex_declarations(
+            model, mesh, picker, names, index_source_targets(source))
+        self.assertEqual(len(expanded.offsets), len(picker.offsets) + 1)
+        self.assertEqual(renamed[offset], "plane_point")
+        entry = list(zip(expanded.offsets, expanded.normalized))
+        self.assertTrue(any(int(off) == offset and np.allclose(pos, [0, 0, 1])
+                            for off, pos in entry))
 
     def test_all_visible_vertices_including_overlaps_are_projected(self):
         picker = SimpleNamespace(
