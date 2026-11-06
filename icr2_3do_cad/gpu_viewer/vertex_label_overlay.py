@@ -10,7 +10,9 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPolygonF
 from PySide6.QtWidgets import QWidget
 
-from gpu_viewer.vertex_label_data import project_vertex_labels
+from gpu_viewer.vertex_label_data import (
+    filter_vertex_labels, polygon_vertex_refs, project_vertex_labels,
+)
 
 
 class VertexLabelOverlay(QWidget):
@@ -30,10 +32,23 @@ class VertexLabelOverlay(QWidget):
         picker = viewport._label_vertex_picker
         if picker is None or not len(picker.offsets):
             return
-        projection, view = viewport._projection_and_view()
-        points = project_vertex_labels(
-            picker, viewport.vertex_pointer_names, projection @ view,
-            self.width(), self.height())
+        mode = viewport.vertex_label_mode
+        if mode == "visible":
+            # The GPU framebuffer determines which side of a car is actually
+            # in front. Depth is captured after the GL scene is rendered.
+            points = viewport._depth_visible_vertex_labels
+        else:
+            projection, view = viewport._projection_and_view()
+            points = project_vertex_labels(
+                picker, viewport.vertex_pointer_names, projection @ view,
+                self.width(), self.height())
+            if mode == "selected":
+                refs = polygon_vertex_refs(
+                    viewport._model, (viewport.inspection_offset,))
+                if viewport.inspection_kind != "polygon":
+                    refs = frozenset()
+                points = filter_vertex_labels(
+                    points, mode, vertex_offsets=refs)
         if not points:
             return
         painter = QPainter(self)
