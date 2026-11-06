@@ -3188,16 +3188,24 @@ class Window(QMainWindow):
         model = self.viewer._model
         self._source_export_model = model
         self.source_pane.status.setText('Preparing editable .3D source on worker…')
-        worker = SourceExportWorker(model, self.model_path)
+        worker = SourceExportWorker(
+            model, self.model_path, activity_trace=self._load_trace)
         self._source_export_worker = worker
         worker.ready.connect(
             lambda text, path, candidate=model:
                 self._source_exported(candidate, text, path))
         worker.failed.connect(
             lambda err, candidate=model: self._source_export_failed(candidate, err))
+        worker.activity.connect(
+            lambda line, origin=self._load_activity_worker:
+                self._append_load_activity(origin, line))
         worker.start()
 
     def _source_exported(self, candidate, text, path):
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
         if candidate is not self.viewer._model:
             if self.source_toggle.isChecked():
                 QTimer.singleShot(80, self._ensure_source_loaded)
@@ -3215,6 +3223,10 @@ class Window(QMainWindow):
         self._split_controls_changed()
 
     def _source_export_failed(self, candidate, error):
+        if (self._source_export_worker is not None and
+                self._source_export_worker.activity_trace is self._load_trace and
+                self._load_trace is not None):
+            self._load_trace.stop_watchdog()
         if candidate is self.viewer._model:
             self.source_pane.status.setText(
                 f'Cannot generate editable source: {error}')
@@ -3934,7 +3946,11 @@ class Window(QMainWindow):
         if worker is not self._load_progress_worker:
             return
         if worker is self._load_activity_worker and self._load_trace is not None:
-            self._load_trace.stop_watchdog()
+            exporting = (success and self._source_export_worker is not None
+                         and self._source_export_worker.isRunning()
+                         and self._source_export_worker.activity_trace is self._load_trace)
+            if not exporting:
+                self._load_trace.stop_watchdog()
         if not success:
             self.load_progress.hide()
             self._load_progress_worker = None
