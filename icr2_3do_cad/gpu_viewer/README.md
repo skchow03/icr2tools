@@ -541,6 +541,26 @@ being processed. The bar briefly shows 100% on success, disappears after
 completion, and hides on failure while the existing error log remains
 available. Preparing editable N3 source has its own separate worker/status.
 
+**View → Live Load Activity** opens a nonmodal, timestamped trace panel that
+also opens automatically when a file starts loading. It reports the exact
+referenced 3DO, HORIZ, PMP and MIP currently being read, progress through
+instance flattening and polygon triangulation, and BEGIN/DONE markers for
+each OpenGL geometry/texture/skybox/sprite upload. The most recent 4,000
+lines remain visible in the panel, with **Copy full log** and **Save as…**
+buttons for the complete on-disk trace. An unrelated **Load Error Log**
+still lists finished-load warnings and failures.
+
+The trace is appended **synchronously to disk before each expensive
+operation**, so its last BEGIN line remains inspectable even if the Qt GUI
+stops repainting. The default path on Windows is
+`%USERPROFILE%\\ICR2Tools\\gpu_viewer_last_load.log` (the panel shows the
+actual path and uses a temporary-folder fallback if needed). It records
+local file paths and full exception tracebacks, so review it before sharing.
+The last log remains available after a crash/restart until a new model load
+begins; it is not sent anywhere. A stage entry is diagnostic rather than a
+deadline: if one operation runs for a long time, the log cannot update from
+inside that single blocking library/driver call.
+
 ## N3 context-sensitive syntax help
 
 While editing **.3D Source**, a compact **N3 help** line below the text box
