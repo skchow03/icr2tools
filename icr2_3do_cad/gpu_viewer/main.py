@@ -26,14 +26,14 @@ if str(CAD_ROOT) not in sys.path:
 try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
-        GL_DEPTH_TEST, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_DEPTH_TEST, GL_DEPTH_COMPONENT, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
         GL_STATIC_DRAW, GL_TRIANGLES, GL_LINES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
         GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
-        glClear, glClearColor, glCompileShader, glCreateProgram, glCreateShader,
+        glClear, glClearColor, glColorMask, glDepthMask, glReadPixels, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
         glDisable, glDrawArrays, glDrawElements, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
@@ -97,8 +97,10 @@ from gpu_viewer.workspaces import (
 from gpu_viewer.menus import install_menus, remember_recent_model, update_model_actions
 from gpu_viewer.load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from gpu_viewer.polygon_split import split_n3_polygon, polygon_boundary_refs
-from gpu_viewer.vertex_label_data import (vertex_pointer_names,
-                                          include_source_vertex_declarations)
+from gpu_viewer.vertex_label_data import (
+    filter_vertex_labels, polygon_vertex_refs, project_vertex_labels,
+    vertex_pointer_names, include_source_vertex_declarations,
+)
 from gpu_viewer.vertex_label_overlay import VertexLabelOverlay
 
 
@@ -527,6 +529,9 @@ class GLViewport(QOpenGLWidget):
         self._vertex_picker = None
         self._label_vertex_picker = None
         self.vertex_pointer_names = {}
+        self.vertex_label_mode = "all"
+        self._depth_visible_vertex_labels = []
+        self._vertex_depth_error = None
         self._polygon_picker = None
         self.pick_mode = 'vertex'  # explicit polygon mode; vertices by default
         self._model = None
@@ -607,7 +612,17 @@ class GLViewport(QOpenGLWidget):
             overlay.raise_()
             if self.visibility_banner.isVisible():
                 self.visibility_banner.raise_()
-            overlay.update()
+        else:
+            self._depth_visible_vertex_labels = []
+        self.update()
+
+    def set_vertex_label_mode(self, mode):
+        if mode not in ("all", "visible", "selected"):
+            raise ValueError(f"Unknown vertex label mode: {mode}")
+        if mode != self.vertex_label_mode:
+            self.vertex_label_mode = mode
+            self._depth_visible_vertex_labels = []
+            self.update()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -728,6 +743,7 @@ class GLViewport(QOpenGLWidget):
         self._vertex_picker = VertexPicker.from_model(model, mesh)
         self._label_vertex_picker = self._vertex_picker
         self.vertex_pointer_names = vertex_pointer_names(model)
+        self._depth_visible_vertex_labels = []
         self._polygon_picker = PolygonPicker.from_scene(scene, mesh)
         self._scene = scene
         self._sprite_events = ()
@@ -772,7 +788,7 @@ class GLViewport(QOpenGLWidget):
                 self._model, self._mesh, self._vertex_picker,
                 vertex_pointer_names(self._model), source_index))
         if not self.vertex_label_overlay.isHidden():
-            self.vertex_label_overlay.update()
+            self.update()
 
     def set_appearance_colors(self, colors):
         """Change viewport drawing colors without rebuilding buffers or meshes."""
@@ -1417,6 +1433,97 @@ class GLViewport(QOpenGLWidget):
             projection @ view, x, y, self.width(), self.height(),
             eligible_offsets=selected)
 
+    def _capture_depth_visible_labels(self, projection, view, width, height):
+        """Read a geometry-only depth pass for frontmost vertex labels.
+
+        Painter's LIST order and wireframe intentionally disable depth tests.
+        Draw a temporary, color-masked filled pass into the Qt-owned depth
+        buffer *after* the visible image is complete. This does not alter
+        color pixels, model geometry, source, or the editor's render mode.
+        One contiguous readback is considerably cheaper than one GPU read
+        per vertex, especially for large track models.
+        """
+        if (self.vertex_label_mode != "visible"
+                or self.vertex_label_overlay.isHidden()
+                or self._label_vertex_picker is None
+                or self._model is None or self._vao is None):
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Restrict labels to vertices belonging to the active root polygons,
+        # not unused source points, unselected RES branches, or plane-only
+        # declarations that do not belong to a surface.
+        if self.render_mode == "all" and not self._track_lod_active():
+            active = self._model.polygons
+        else:
+            active = self._visible_set
+        eligible = polygon_vertex_refs(self._model, active)
+        if not eligible:
+            self._depth_visible_vertex_labels = []
+            return
+        projected = project_vertex_labels(
+            self._label_vertex_picker, self.vertex_pointer_names,
+            projection @ view, self.width(), self.height(),
+            include_depth=True)
+        if not projected:
+            self._depth_visible_vertex_labels = []
+            return
+
+        # Use the same depth shader and triangles as the viewport, without
+        # textures or color writes. GL_DEPTH_TEST is intentionally enabled
+        # even in Painter/Wireframe so back-side car vertices are excluded.
+        try:
+            glViewport(0, 0, width, height)
+            glColorMask(False, False, False, False)
+            glDepthMask(True)
+            glEnable(GL_DEPTH_TEST)
+            glClear(GL_DEPTH_BUFFER_BIT)
+            glUseProgram(self._program)
+            matrix = np.ascontiguousarray(
+                (projection @ view).T, dtype=np.float32)
+            glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
+            glUniform1i(self._wire_uniform, 0)
+            glUniform1i(self._inspection_uniform, 0)
+            glUniform1i(self._texture_uniform, 0)
+            glBindVertexArray(self._vao)
+            if self.render_mode == "wire" or (
+                    self.render_mode == "all" and not self._track_lod_active()):
+                # Wireframe has no triangle EBO. Its filled occlusion test
+                # includes all faces; label membership still respects wire
+                # detail/RES selection.
+                glDrawArrays(GL_TRIANGLES, 0, len(self._mesh.vertices))
+            elif self._index_count:
+                glDrawElements(
+                    GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+            glBindVertexArray(0)
+            raw_depth = glReadPixels(
+                0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT)
+            if isinstance(raw_depth, (bytes, bytearray, memoryview)):
+                depth = np.frombuffer(raw_depth, dtype=np.float32)
+            else:
+                depth = np.asarray(raw_depth, dtype=np.float32)
+            depth = depth.reshape((height, width))
+            self._depth_visible_vertex_labels = filter_vertex_labels(
+                projected, "visible", vertex_offsets=eligible,
+                depth=depth, device_pixel_ratio=self.devicePixelRatioF())
+            self._vertex_depth_error = None
+        except Exception as error:
+            # An unsupported depth readback (e.g. platform-specific
+            # multisampled FBO) must not break rendering or expose hidden
+            # vertices under the "Visible only" setting.
+            self._vertex_depth_error = str(error)
+            self._depth_visible_vertex_labels = []
+        finally:
+            glBindVertexArray(0)
+            glColorMask(True, True, True, True)
+            glUniform1i(self._texture_uniform, int(self.textures_enabled))
+            glUseProgram(0)
+            if self.render_mode in ("painter", "wire"):
+                glDisable(GL_DEPTH_TEST)
+            else:
+                glEnable(GL_DEPTH_TEST)
+        self.vertex_label_overlay.update()
+
     def paintGL(self):
         if self._program is None:
             return
@@ -1457,6 +1564,7 @@ class GLViewport(QOpenGLWidget):
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
             self._paint_wireframe(projection, view)
+            self._capture_depth_visible_labels(projection, view, w, h)
             self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
@@ -1536,6 +1644,7 @@ class GLViewport(QOpenGLWidget):
 
         glBindVertexArray(0)
         glUseProgram(0)
+        self._capture_depth_visible_labels(projection, view, w, h)
         self._set_visibility_warning(notice)
         self._paint_source_inspection_markers(projection, view)
         self._paint_split_preview(projection, view)
@@ -1943,6 +2052,22 @@ class Window(QMainWindow):
         self.vertex_labels_toggle.toggled.connect(
             self.viewer.set_all_vertex_labels)
         distance_row.addWidget(self.vertex_labels_toggle)
+        self.vertex_label_mode_combo = QComboBox()
+        self.vertex_label_mode_combo.setObjectName("vertexLabelDisplayMode")
+        self.vertex_label_mode_combo.addItem("All", "all")
+        self.vertex_label_mode_combo.addItem("Visible only", "visible")
+        self.vertex_label_mode_combo.addItem("Selected poly", "selected")
+        self.vertex_label_mode_combo.setToolTip(
+            "All: every on-screen root-model vertex, including hidden ones. "
+            "Visible only: labels on the frontmost rendered polygon surfaces, "
+            "excluding geometry hidden behind the model. "
+            "Selected poly: only vertices belonging to the POLY currently "
+            "highlighted in .3D Source or picked in Polys mode. "
+            "Requires Vertex labels to be enabled.")
+        self.vertex_label_mode_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_vertex_label_mode(
+                self.vertex_label_mode_combo.currentData()))
+        distance_row.addWidget(self.vertex_label_mode_combo)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")

@@ -9,7 +9,8 @@ from n3_compile import compile_n3_text
 from three_do import Model
 from gpu_viewer.appearance import DARK_COLORS, LIGHT_COLORS
 from gpu_viewer.vertex_label_data import (
-    include_source_vertex_declarations, project_vertex_labels, vertex_pointer_names,
+    filter_vertex_labels, include_source_vertex_declarations,
+    polygon_vertex_refs, project_vertex_labels, vertex_pointer_names,
 )
 from gpu_viewer.source_inspection import VertexPicker, index_source_targets
 
@@ -103,6 +104,69 @@ root: LIST {face};
             picker, {}, np.eye(4), 640, 480), [])
         self.assertEqual(project_vertex_labels(
             picker, {}, np.eye(4), 0, 480), [])
+
+    def test_selected_poly_contains_exact_pointer_references(self):
+        face = self.model.n3_label_offsets["panel"]
+        refs = polygon_vertex_refs(self.model, (face,))
+        self.assertEqual(refs, {
+            self.model.n3_label_offsets[label]
+            for label in ("front_left", "nose_tip", "rear_right")
+        })
+        self.assertEqual(polygon_vertex_refs(self.model, ()), frozenset())
+        self.assertEqual(polygon_vertex_refs(self.model, (999999,)), frozenset())
+
+    def test_selected_mode_excludes_unrelated_or_plane_only_vertices(self):
+        points = [(11, 10.0, 20.0, "front"),
+                  (12, 20.0, 20.0, "rear"),
+                  (13, 30.0, 20.0, "unused")]
+        self.assertEqual(
+            filter_vertex_labels(points, "selected", vertex_offsets={11, 12}),
+            points[:2])
+        self.assertEqual(
+            filter_vertex_labels(points, "selected", vertex_offsets=set()), [])
+        self.assertEqual(filter_vertex_labels(points, "all"), points)
+
+    def test_depth_mode_hides_back_side_on_overlapping_vertices(self):
+        # OpenGL readbacks have bottom-origin rows; label coordinates
+        # are logical, top-origin pixels. The front point wins.
+        picker = SimpleNamespace(
+            offsets=np.array([1, 2, 3], dtype=np.int64),
+            normalized=np.array([[0, 0, -0.8], [0, 0, 0.8],
+                                 [0.5, 0.5, 0]], dtype=np.float64))
+        points = project_vertex_labels(
+            picker, {1: "front", 2: "behind", 3: "other"},
+            np.eye(4), 8, 8, include_depth=True)
+        self.assertEqual(points[0][1:3], points[1][1:3])
+        self.assertAlmostEqual(points[0][4], 0.1)
+        self.assertAlmostEqual(points[1][4], 0.9)
+        zbuffer = np.ones((8, 8), dtype=np.float32)
+        # (4,4) in logical coords -> (4,3) in OpenGL depth coords.
+        zbuffer[3, 4] = 0.1
+        visible = filter_vertex_labels(
+            points, "visible", vertex_offsets={1, 2, 3},
+            depth=zbuffer)
+        self.assertEqual([item[3] for item in visible], ["front", "other"])
+        # A scene selection can exclude an otherwise frontmost vertex.
+        restricted = filter_vertex_labels(
+            points, "visible", vertex_offsets={2}, depth=zbuffer)
+        self.assertEqual(restricted, [])
+
+    def test_depth_mode_uses_device_pixel_ratio_and_handles_readback_gaps(self):
+        points = [(1, 5.0, 5.0, "front", 0.2),
+                  (2, 5.0, 5.0, "back", 0.8)]
+        zbuffer = np.ones((20, 20), dtype=np.float32)
+        zbuffer[20 - 1 - 10, 10] = 0.2
+        self.assertEqual(
+            [p[0] for p in filter_vertex_labels(
+                points, "visible", vertex_offsets={1, 2},
+                depth=zbuffer, device_pixel_ratio=2)], [1])
+        self.assertEqual(filter_vertex_labels(
+            points, "visible", vertex_offsets={1}, depth=None), [])
+        self.assertEqual(filter_vertex_labels(
+            points, "visible", vertex_offsets={1},
+            depth=np.zeros((0, 0))), [])
+        with self.assertRaises(ValueError):
+            filter_vertex_labels(points, "not-a-mode")
 
     def test_regular_vertex_colors_differ_from_selected_marker(self):
         for colors in (DARK_COLORS, LIGHT_COLORS):

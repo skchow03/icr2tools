@@ -18,6 +18,7 @@ on:
       - "icr2_3do_cad/tests/test_gpu_source_scale_ui.py"
       - "icr2_3do_cad/tests/test_gpu_source_scale.py"
       - "icr2_3do_cad/tests/test_gpu_vertex_label_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_depth_gl.py"
       - "icr2_3do_cad/tests/test_gpu_polygon_split_ui.py"
       - "icr2_3do_cad/tests/test_gpu_n3_source_help.py"
       - "icr2_3do_cad/tests/test_gpu_confirmations_ui.py"
@@ -43,6 +44,7 @@ on:
       - "icr2_3do_cad/tests/test_gpu_source_scale_ui.py"
       - "icr2_3do_cad/tests/test_gpu_source_scale.py"
       - "icr2_3do_cad/tests/test_gpu_vertex_label_ui.py"
+      - "icr2_3do_cad/tests/test_gpu_vertex_depth_gl.py"
       - "icr2_3do_cad/tests/test_gpu_polygon_split_ui.py"
       - "icr2_3do_cad/tests/test_gpu_n3_source_help.py"
       - "icr2_3do_cad/tests/test_gpu_confirmations_ui.py"
@@ -166,6 +168,15 @@ jobs:
         run: |
           xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
             python -m unittest discover -s tests -p 'test_gpu_vertex_label_ui.py'
+      - name: Verify occlusion-aware vertex labels against real OpenGL depth
+        working-directory: icr2_3do_cad
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          QT_QPA_PLATFORM: xcb
+          QT_OPENGL: desktop
+        run: |
+          xvfb-run -a -s "-screen 0 1280x960x24 +extension GLX" \
+            python -m unittest discover -s tests -p 'test_gpu_vertex_depth_gl.py'
       - name: Test VS Code-style N3 contextual help and filtered editing
         working-directory: icr2_3do_cad
         env:
