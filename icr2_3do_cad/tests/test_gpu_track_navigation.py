@@ -99,6 +99,25 @@ class TrackCameraGeometryTests(unittest.TestCase):
         nav.set_coordinates(650000, 0)
         self.assertAlmostEqual(nav.pose().roll, pose.roll, places=7)
 
+    def test_michigan_style_inconsistent_tangent_cannot_overbank(self):
+        """A stock straight can have a nominal +X heading but a +Y tangent.
+
+        Never divide its elevation difference by a nearly zero projected
+        left span: the physical cross-section is still 120,000 units wide.
+        """
+        trk = flat_trk()
+        trk.sects[1].pos2 = [20_000_000, 20_000_000]
+        trk.xsect_data = [
+            [0, 0, 0, 24000, 0, 0, 0, 0],
+            [0, 0, 0, 0, 0, 0, 0, 0],
+        ] * 2
+        nav = TrackNavigation('michigan_like.trk', trk)
+        pose = nav.pose()
+        self.assertAlmostEqual(math.degrees(pose.roll),
+                               -math.degrees(math.atan2(24000, 120000)),
+                               delta=0.2)
+        self.assertLess(abs(math.degrees(pose.roll)), 20)
+
     def test_banking_direction_and_longitudinal_grade(self):
         trk = flat_trk()
         trk.xsect_data = [
