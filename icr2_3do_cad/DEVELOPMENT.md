@@ -7,6 +7,8 @@ The sole application entry point is `icr2_3do_cad.py` in this directory. It runs
 - `icr2_3do_cad.py`: Qt main window, OpenGL viewport, load/save/export commands and model workspaces.
 - `mesh.py`, `scene.py`, `textures.py`, `sprites.py`, `sprite_gl.py`, `skybox.py`, `track_lod.py`, `track_navigation.py`: scene construction, rendering and navigation.
 - `source_tab.py`, `source_*.py`, `active_source.py`, `polygon_split.py`: live N3 source editing, validation, inspections and source transformations.
+- source_symmetry.py: pure source-only Decimal XYZ matching with previous-validated-source pairing, ambiguity and missing-match diagnostics, plus numeric-token-only edits that preserve U/V. source_tab.py: opt-in per-model X/Y/Z plane controls and Qt Undo grouping before compile/save, with no binary or mesh mutation. Vertex source selection uses the existing green visible-polygon highlight; symmetry resets OFF on model loads.
+
 - `three_do.py`, `n3_compile.py`, `text_3d.py`, `n3_plane_points.py`: binary 3DO and N3 source compiler/interchange.
 - `dynamic_scene.py`, `car_appearance.py`, `texture_preview.py`, `pmp_preview.py`: model/asset decoding reused by the renderer.
 - `tracing_reference.py`, `tracing_reference_dialog.py`, `tracing_reference_gl.py`: pure 2D point-to-model-plane calibration, local photo UI and a separate GL_RGBA8 background pass. The pass must never enter scene polygons, binary output, depth picking or source compilation.
