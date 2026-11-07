@@ -18,6 +18,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QHBoxLayout, QInputDialog, QLabel,
     QLineEdit, QListView, QMenu, QMessageBox, QPlainTextEdit, QPushButton,
+    QComboBox, QDoubleSpinBox,
     QStackedWidget, QStyledItemDelegate, QToolButton, QToolTip, QTextEdit,
     QVBoxLayout, QWidget, QWidgetAction,
 )
@@ -26,6 +27,9 @@ from appearance import DARK_COLORS, validated_colors
 from source_help import help_for_lines, help_for_statement
 from source_change_log import format_rename_event
 from source_scale import scale_n3_source
+from source_symmetry import (
+    named_vertices, plan_mirrored_vertices, coordinate_replacements,
+)
 from source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
 from source_filters import CATEGORIES, index_source_entries
@@ -156,12 +160,13 @@ class FilteredStatementsModel(QAbstractListModel):
         # A MATERIAL containing an inline POLY is still categorized as
         # MATERIAL for filtering, but is an inspectable polygon row.
         target = self.owner._source_index.at_line(entry.first_line)
-        active = (target is not None and target[0] == "polygon" and
+        active = (target is not None and target[0] in ("polygon", "vertex") and
                   self._row_at_line(self.active_line) == index.row() and
                   self.active_visibility is not None)
         if role == Qt.ItemDataRole.DisplayRole:
-            status = ("  [VISIBLE]" if self.active_visibility else
-                      "  [NOT DRAWN]") if active else ""
+            status = (("  [VISIBLE]" if self.active_visibility else
+                       "  [NOT DRAWN]") if active and target[0] == "polygon"
+                      else "")
             return (f"{entry.first_line + 1:>6}  "
                     f"[{entry.category}]  {entry.preview}{status}")
         if active and role == Qt.ItemDataRole.BackgroundRole:
@@ -280,6 +285,11 @@ class SourcePane(QWidget):
         self._distance_labels = set()
         self._active_edit_line = None
         self._inline_help_editor = None
+        # Mirror mode is intentionally session/model-local and OFF by default.
+        # Last validated geometry is the only safe pairing reference.
+        self._symmetry_baseline = ""
+        self._symmetry_skip_once = False
+        self._applying_symmetry = False
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
@@ -303,6 +313,50 @@ class SourcePane(QWidget):
         self.auto_rename.toggled.connect(self._auto_rename_toggled)
         controls.addWidget(self.auto_rename)
         layout.addLayout(controls)
+
+        symmetry_row = QHBoxLayout()
+        self.symmetry_enabled = QCheckBox("Symmetrical vertex editing")
+        self.symmetry_enabled.setObjectName("symmetryEditingEnabled")
+        self.symmetry_enabled.setChecked(False)
+        self.symmetry_enabled.setToolTip(
+            "OFF by default. Mirror source XYZ vertex edits across the "
+            "chosen world plane; matching uses the last valid coordinates. "
+            "Texture U/V values are never edited.")
+        symmetry_row.addWidget(self.symmetry_enabled)
+        symmetry_row.addWidget(QLabel("Plane"))
+        self.symmetry_plane = QComboBox()
+        self.symmetry_plane.setObjectName("symmetryPlane")
+        for label in ("X", "Y", "Z"):
+            self.symmetry_plane.addItem(label + "=constant", label)
+        self.symmetry_plane.setToolTip(
+            "X mirrors across YZ; Y across XZ; Z across XY.")
+        symmetry_row.addWidget(self.symmetry_plane)
+        symmetry_row.addWidget(QLabel("At"))
+        self.symmetry_plane_at = QDoubleSpinBox()
+        self.symmetry_plane_at.setObjectName("symmetryPlaneAt")
+        self.symmetry_plane_at.setRange(-2_000_000_000, 2_000_000_000)
+        self.symmetry_plane_at.setDecimals(3)
+        self.symmetry_plane_at.setValue(0)
+        self.symmetry_plane_at.setToolTip(
+            "Raw Papyrus coordinate of the symmetry plane; usually 0.")
+        self.symmetry_plane_at.setMaximumWidth(110)
+        symmetry_row.addWidget(self.symmetry_plane_at)
+        symmetry_row.addWidget(QLabel("Tolerance"))
+        self.symmetry_tolerance = QDoubleSpinBox()
+        self.symmetry_tolerance.setObjectName("symmetryTolerance")
+        self.symmetry_tolerance.setRange(0, 1_000_000)
+        self.symmetry_tolerance.setDecimals(3)
+        self.symmetry_tolerance.setValue(0)
+        self.symmetry_tolerance.setToolTip(
+            "Maximum raw-coordinate difference for finding mirror points; "
+            "0 requires exact matches. Multiple matches require a choice.")
+        self.symmetry_tolerance.setMaximumWidth(94)
+        symmetry_row.addWidget(self.symmetry_tolerance)
+        layout.addLayout(symmetry_row)
+        self.symmetry_enabled.toggled.connect(self._symmetry_toggled)
+        for widget in (self.symmetry_plane, self.symmetry_plane_at,
+                       self.symmetry_tolerance):
+            widget.setEnabled(False)
 
         # The popup filters editable, independently bounded statements.
         # Never hide or delete QTextBlocks in the canonical document: doing
@@ -731,6 +785,7 @@ class SourcePane(QWidget):
         finally:
             self._applying_rename = False
         self._rename_snapshot = source
+        self._symmetry_skip_once = True
         self._edited()
         self.change_log.appendPlainText(
             f"[{QTime.currentTime().toString('HH:mm:ss')}] {description}")
@@ -774,6 +829,7 @@ class SourcePane(QWidget):
         # Avoid the auto-reference-rename engine interpreting bulk text
         # replacement as an edit to a declaration label.
         self._rename_snapshot = result.source
+        self._symmetry_skip_once = True
         old_position = self.editor.document().findBlockByNumber(original_line)
         if old_position.isValid():
             self.editor.setTextCursor(QTextCursor(old_position))
@@ -808,6 +864,8 @@ class SourcePane(QWidget):
         self._rename_pending = None
         self._polygon_visible = None
         self._active_edit_line = None
+        self.symmetry_enabled.setChecked(False)
+        self._symmetry_skip_once = False
         self._setting = True
         try:
             self.line_ending = '\r\n' if '\r\n' in text else '\n'
@@ -826,6 +884,7 @@ class SourcePane(QWidget):
         finally:
             self._setting = False
         self._rename_snapshot = normalized
+        self._symmetry_baseline = normalized
         self._source_index = index_source_targets(normalized)
         self._filter_cache_revision = -1
         self._distance_dependencies_key = None
@@ -848,6 +907,9 @@ class SourcePane(QWidget):
         self._rename_pending = None
         self._polygon_visible = None
         self._active_edit_line = None
+        self.symmetry_enabled.setChecked(False)
+        self._symmetry_baseline = ""
+        self._symmetry_skip_once = False
         self._setting = True
         try:
             self.editor.clear()
@@ -874,7 +936,7 @@ class SourcePane(QWidget):
     def _edited(self):
         if self._setting or not self._ready:
             return
-        if self._applying_rename:
+        if self._applying_rename or self._applying_symmetry:
             return
         self._track_symbol_edit()
         self.revision += 1
@@ -897,6 +959,8 @@ class SourcePane(QWidget):
         self._debounce.stop()
         if not self.pending:
             return
+        self.apply_symmetry_before_use()
+        self._debounce.stop()
         self.status.setText('Compiling N3 and rebuilding GPU preview…')
         self.compileRequested.emit(self.revision, self.get_source())
 
@@ -908,6 +972,8 @@ class SourcePane(QWidget):
         self._polygon_visible = None
         self._active_edit_line = None
         self._refresh_extra_selections()
+        self._symmetry_baseline = self.editor.toPlainText()
+        self._symmetry_skip_once = False
         self._source_index = index_source_targets(self.editor.toPlainText())
         self._distance_dependencies_key = None
         self._distance_labels_key = None
@@ -1043,7 +1109,11 @@ class SourcePane(QWidget):
             self._source_index, model, self.editor.textCursor().blockNumber())
 
     def set_polygon_visibility(self, visible):
-        """Color the selected POLY declaration green/salmon, including continuations."""
+        """Highlight the selected polygon or vertex across all source lines.
+
+        Polygons use green for visible and salmon for hidden. A selected
+        vertex always uses green; it has no BSP polygon visibility state.
+        """
         visible = bool(visible) if visible is not None else None
         if self._polygon_visible == visible:
             return
@@ -1065,8 +1135,11 @@ class SourcePane(QWidget):
         if self._polygon_visible is not None and self.current_target() is not None:
             target = self._source_index.target_at_line(
                 self.editor.textCursor().blockNumber())
-            if target is not None and target.kind == "polygon":
-                color = self.colors['source_visible_background' if self._polygon_visible else 'source_hidden_background']
+            if target is not None and target.kind in ("polygon", "vertex"):
+                color = self.colors['source_visible_background'
+                                    if target.kind == "vertex" or
+                                    self._polygon_visible
+                                    else 'source_hidden_background']
                 for line in range(target.first_line, target.last_line + 1):
                     block = self.editor.document().findBlockByNumber(line)
                     if not block.isValid():
