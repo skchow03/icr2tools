@@ -27,9 +27,11 @@ To measure viewport performance, use `--benchmark` and optionally `--report cad_
 - Edit N3 source with live diagnostics, reference navigation, polygon splitting, vertex inspection, pointer renaming and scaling.
 - Save source or export a newly compiled `.3do` explicitly; failed compilation does not overwrite game assets.
 
-## Offline Help
+## Built-in Help
 
-Choose **Help → User Manual (Contents and Index)…** or press **F1** to open [the HTML user manual](USER_MANUAL.html) in your default web browser. It is styled like a Windows 95-era help file, but covers the current CAD editor and works completely offline. Keep `USER_MANUAL.html` beside `icr2_3do_cad.py` when distributing the source; frozen/PyInstaller distributions must bundle the file into their data directory or place it beside the executable.
+Choose **Help → Help Topics…** or press **F1** to open a fast, native, nonmodal **Qt Help window inside ICR2 3DO CAD**. It provides real desktop buttons for Back, Forward, Home, Search, Print and Close, plus Contents, an A–Z Index, and live full-text Search. Topic links, history, and printing stay inside the application: no web browser or WebEngine process is launched. Closing and reopening Help reuses the same window.
+
+Help reads the self-contained [HTML user manual](USER_MANUAL.html) locally as documentation, not as a webpage. Keep `USER_MANUAL.html` beside `icr2_3do_cad.py` when distributing source; frozen/PyInstaller builds must bundle the file in their data directory or beside the executable. The HTML can also be read on its own if necessary, but F1 opens the native Qt window.
 
 ## World-axis guides and orientation gizmo
 
