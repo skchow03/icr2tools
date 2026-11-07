@@ -76,6 +76,7 @@ class CarAppearanceOverlayUITests(unittest.TestCase):
     def test_dialog_accepts_mismatched_carshape_without_opening_it(self):
         window = self.window
         from PySide6.QtWidgets import QFileDialog
+        original = window.viewer._model
         with patch.object(QFileDialog, "getOpenFileName",
                           return_value=(str(self.wrapper.path), "")), \
              patch.object(window, "load") as reload:
@@ -83,7 +84,7 @@ class CarAppearanceOverlayUITests(unittest.TestCase):
             reload.assert_called_once_with(window.model_path, reuse_model=True)
         self.assertEqual(window.model_path.name, "roadcar.3do")
         self.assertEqual(window._appearance_candidate.geometry_name, "indycar")
-        self.assertIs(window.viewer._model.path, window.viewer._model.path)
+        self.assertIs(window.viewer._model, original)
 
     def test_invalid_wrapper_does_not_replace_current_preview(self):
         window = self.window
@@ -127,6 +128,56 @@ class CarAppearanceOverlayUITests(unittest.TestCase):
         notice.assert_called_once()
         reload.assert_not_called()
         self.assertFalse(window._appearance_change_pending)
+
+    def test_background_loader_previews_without_substituting_geometry(self):
+        from icr2_3do_cad import LoadWorker
+        window = self.window
+        model_before = window.viewer._model
+        binary_before = model_before.raw
+        worker = LoadWorker(
+            window.model_path, ROOT / "gamepal.pcx",
+            existing_model=model_before, appearance_override=self.wrapper)
+        ready = []
+        failures = []
+        worker.ready.connect(lambda *args: ready.append(args))
+        worker.failed.connect(failures.append)
+        # Run the same QThread work synchronously to inspect the signal data.
+        worker.run()
+        self.assertFalse(failures, failures)
+        self.assertEqual(len(ready), 1)
+        mesh, stats, model, atlas, palette, scene = ready[0]
+        self.assertIs(model, model_before)
+        self.assertEqual(model.raw, binary_before)
+        self.assertIs(scene.appearance, self.wrapper)
+        self.assertEqual(stats["appearance_file"], "cit74.3do")
+        self.assertTrue(stats["appearance_reference_mismatch"])
+        self.assertEqual(stats["geometry_file"], "roadcar.3do")
+        self.assertGreater(mesh.triangle_count, 0)
+
+    def test_source_recompile_worker_retains_appearance(self):
+        from icr2_3do_cad import LoadWorker
+        source = ("3D VERSION 3.0;\\n"
+                  "a: [<0,0,0>];\\n"
+                  "b: [<100,0,0>];\\n"
+                  "c: [<0,100,0>];\\n"
+                  "surface: POLY <44> {a,b,c};\\n"
+                  "root: LIST {surface};\\n")
+        worker = LoadWorker(
+            Path("source_preview.3d"), ROOT / "gamepal.pcx",
+            source_text=source, source_path=Path("source_preview.3d"),
+            appearance_override=self.wrapper)
+        ready, failures = [], []
+        worker.ready.connect(lambda *args: ready.append(args))
+        worker.failed.connect(failures.append)
+        worker.run()
+        self.assertFalse(failures, failures)
+        self.assertEqual(len(ready), 1)
+        _, stats, model, _, _, scene = ready[0]
+        self.assertEqual(stats["appearance_file"], "cit74.3do")
+        self.assertIs(scene.appearance, self.wrapper)
+        root_color = scene.geometry.polygons[
+            scene.polygon_lookup[0, next(iter(model.polygons))]].color
+        self.assertEqual(root_color, self.wrapper.map_color(44))
 
     def test_worker_receives_existing_geometry_and_requested_preview(self):
         window = self.window
