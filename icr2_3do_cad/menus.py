@@ -6,8 +6,8 @@ They do not introduce a second file-writing or model-loading code path.
 from pathlib import Path
 import sys
 
-from PySide6.QtCore import QSettings, QUrl
-from PySide6.QtGui import QActionGroup, QDesktopServices, QKeySequence
+from PySide6.QtCore import QSettings
+from PySide6.QtGui import QActionGroup, QKeySequence
 from PySide6.QtWidgets import QMessageBox
 
 
@@ -127,36 +127,45 @@ def _user_manual_path():
     if getattr(sys, "frozen", False):
         locations.append(Path(sys.executable).resolve().parent)
     for directory in locations:
-        candidate = directory / "USER_MANUAL.html"
-        if candidate.is_file():
-            return candidate
+        for candidate in (directory / "USER_MANUAL.html",
+                          directory / "icr2_3do_cad" / "USER_MANUAL.html"):
+            if candidate.is_file():
+                return candidate
     return None
-
-
-def _open_manual_url(path):
-    """Ask the operating system to open the local file in its web browser."""
-    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
 def _manual_warning(window, title, message):
     QMessageBox.warning(window, title, message)
 
 
+def _create_help_window(manual_path, parent):
+    from help_viewer import HelpWindow
+    return HelpWindow(manual_path, parent)
+
+
 def _show_user_manual(window):
-    manual = _user_manual_path()
-    if manual is None:
-        _manual_warning(
-            window, "Help File Not Found",
-            "ICR2 3DO CAD could not find USER_MANUAL.html.\n\n"
-            "Place the help file beside icr2_3do_cad.py (or include it "
-            "in the packaged application) and try again.")
-        return False
-    if not _open_manual_url(manual):
-        _manual_warning(
-            window, "Unable to Open Help",
-            f"Windows could not open the local help file:\n{manual}\n\n"
-            "Try opening it directly in a web browser.")
-        return False
+    """Show a reusable native Qt Help window, never the external browser."""
+    dialog = getattr(window, "_user_manual_dialog", None)
+    if dialog is None:
+        manual = _user_manual_path()
+        if manual is None:
+            _manual_warning(
+                window, "Help File Not Found",
+                "ICR2 3DO CAD could not find USER_MANUAL.html.\n\n"
+                "Place the help file beside icr2_3do_cad.py (or include it "
+                "in the packaged application) and try again.")
+            return False
+        try:
+            dialog = _create_help_window(manual, window)
+        except (OSError, ValueError) as error:
+            _manual_warning(
+                window, "Unable to Read Help",
+                f"The local Help file could not be read:\n{manual}\n\n{error}")
+            return False
+        window._user_manual_dialog = dialog
+    dialog.show()
+    dialog.raise_()
+    dialog.activateWindow()
     return True
 
 
@@ -333,7 +342,7 @@ def install_menus(window):
         assets, "&Reload MIPs (R)", window.reload_mips)
 
     help_menu = bar.addMenu("&Help")
-    _add_action(help_menu, "&User Manual (Contents and Index)…",
+    _add_action(help_menu, "&Help Topics…",
                 lambda: _show_user_manual(window), "F1")
     help_menu.addSeparator()
     _add_action(help_menu, "&Keyboard and Mouse Controls",

@@ -3,123 +3,56 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ICR2 3DO CAD Help — Contents and Index</title>
+<title>ICR2 3DO CAD User Manual</title>
 <style>
-  :root { color-scheme: light; }
-  * { box-sizing: border-box; }
-  html { scroll-behavior: smooth; }
-  body { margin: 0; color: #000; background: #c0c0c0; font: 14px/1.46 "MS Sans Serif", Tahoma, Verdana, Arial, sans-serif; }
-  a { color: #000080; text-decoration: underline; }
-  a:visited { color: #800080; }
-  a:focus-visible, button:focus-visible { outline: 2px dotted #000; outline-offset: 2px; }
-  .window { max-width: 1240px; min-height: calc(100vh - 28px); margin: 14px auto; border: 2px solid; border-color: #fff #404040 #404040 #fff; background: #c0c0c0; box-shadow: 1px 1px 0 #000; }
-  .titlebar { background: #000080; color: white; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
-  .titlebar .buttons { display: flex; gap: 3px; color: #000; }
-  .titlebar .buttons span { display: inline-block; min-width: 19px; background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; text-align: center; font-size: 11px; line-height: 15px; }
-  .menustrip { padding: 5px 10px; border-bottom: 1px solid #808080; background: #c0c0c0; }
-  .menustrip a { color: #000; margin-right: 21px; text-decoration: none; }
-  .menustrip a::first-letter { text-decoration: underline; }
-  .toolbar { padding: 6px 8px; display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 2px solid; border-color: #fff; }
-  .btn { background: #c0c0c0; border: 2px solid; border-color: #fff #555 #555 #fff; padding: 3px 11px; color: #000 !important; text-decoration: none; display: inline-block; white-space: nowrap; }
-  .btn:active { border-color: #555 #fff #fff #555; padding-top: 4px; padding-bottom: 2px; }
-  .body { display: grid; grid-template-columns: minmax(215px, 263px) minmax(0, 1fr); gap: 5px; padding: 5px; }
-  .contents { background: #fff; border: 2px solid; border-color: #666 #fff #fff #666; padding: 10px 9px 20px; max-height: calc(100vh - 125px); position: sticky; top: 8px; overflow-y: auto; }
-  .contents .tabrow { background: #c0c0c0; padding: 3px 5px; border: 1px solid #666; font-weight: bold; }
-  .contents ul { list-style: none; margin: 6px 0 13px; padding: 0 0 0 8px; }
-  .contents li { margin: 5px 0; }
-  .contents a { text-decoration: none; }
-  .contents a:hover { text-decoration: underline; }
-  .book { color: #8b5a00; font-weight: bold; margin-right: 4px; }
-  main { min-width: 0; padding: 18px 24px 36px; background: #fff; border: 2px solid; border-color: #666 #fff #fff #666; }
-  h1 { font: bold 29px/1.2 Georgia, "Times New Roman", serif; margin: 5px 0 8px; }
-  h2 { font: bold 21px Georgia, "Times New Roman", serif; margin: 28px 0 8px; padding: 5px 9px; background: #000080; color: #fff; }
-  h3 { font-size: 16px; margin: 19px 0 6px; }
-  p { margin: 8px 0 11px; }
-  ol, ul { padding-left: 25px; }
-  li { padding-bottom: 4px; }
-  .lede { color: #404040; font-size: 16px; }
-  .manual-head { padding: 11px; border: 2px solid #000080; background: #e7e7ff; }
-  .manual-head p { margin-bottom: 0; }
-  .ribbon { font: bold 12px Tahoma, Arial, sans-serif; color: #000080; letter-spacing: .09em; text-transform: uppercase; }
-  .note { border: 1px solid #808080; padding: 9px 12px; background: #ffffdf; margin: 12px 0; }
-  .note b { color: #000080; }
-  .warning { background: #fff1e5; border-color: #a04d00; }
-  kbd { display: inline-block; min-width: 22px; padding: 0px 5px 1px; margin: 1px; border: 2px solid; border-color: #fff #666 #666 #fff; background: #dfdfdf; font: bold 12px Tahoma, Arial, sans-serif; text-align: center; white-space: nowrap; }
-  code, pre { font-family: "Courier New", Courier, monospace; font-size: 13px; }
-  pre { overflow-x: auto; padding: 10px; background: #f4f4f4; border: 1px inset #aaa; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 18px; }
-  th, td { border: 1px solid #777; padding: 7px 8px; text-align: left; vertical-align: top; }
-  th { background: #c0c0c0; }
-  tr:nth-child(even) td { background: #f5f5f5; }
-  .seealso { border-top: 1px solid #aaa; border-bottom: 1px solid #aaa; padding: 8px 0; margin: 16px 0; }
-  .small, .foot { font-size: 12px; color: #444; }
-  .footer { border-top: 2px solid #fff; padding: 7px 11px; font-size: 12px; }
-  section { scroll-margin-top: 10px; }
-  .index { columns: 2; column-gap: 28px; }
-  .index p { break-inside: avoid; margin: 4px 0; }
-  @media (max-width: 760px) {
-    .window { margin: 0; }
-    .body { grid-template-columns: minmax(0, 1fr); }
-    .contents { position: static; max-height: none; }
-    main { padding: 14px; }
-    .index { columns: 1; }
-  }
-  @media print {
-    body, .window, main { background: #fff; border: 0; box-shadow: none; margin: 0; }
-    .window { max-width: none; }
-    .titlebar, .menustrip, .toolbar, .contents, .footer { display: none; }
-    .body { display: block; padding: 0; }
-    main { padding: 0; }
-    h2 { color: #000; background: #eee; page-break-after: avoid; }
-    section { break-inside: auto; }
-    a { color: #000; }
-  }
+  body { max-width: 920px; margin: 2em auto; padding: 0 1.5em; color: #171717;
+         font: 15px/1.5 Tahoma, Verdana, Arial, sans-serif; background: white; }
+  h1, h2, h3 { color: #000080; }
+  h2 { margin-top: 2em; padding-top: .4em; border-top: 2px solid #000080; }
+  a { color: #000080; }
+  nav { padding: 1em 1.5em; background: #f0f0fa; border: 1px solid #999; }
+  nav ul { columns: 2; }
+  .manual-head { padding: 1em 1.5em; background: #f3f3fc; border: 1px solid #aaa; }
+  .ribbon, .small { color: #555; font-size: .85em; }
+  .lede { font-size: 1.15em; }
+  .note { background: #ffffdf; border: 1px solid #aaa; padding: .6em 1em; }
+  .warning { background: #fff0df; }
+  .seealso { padding: .6em 0; border-top: 1px solid #aaa; }
+  kbd { padding: 1px 4px; border: 1px solid #aaa; font: bold .9em Consolas, monospace; }
+  code, pre { font-family: Consolas, "Courier New", monospace; }
+  pre { overflow: auto; padding: 1em; background: #f4f4f4; border: 1px solid #ddd; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border: 1px solid #aaa; padding: 6px; text-align: left; vertical-align: top; }
+  th { background: #e0e0e0; }
+  .index { columns: 2; }
+  @media (max-width: 680px) { nav ul, .index { columns: 1; } }
 </style>
 </head>
 <body>
-<div class="window">
-  <header class="titlebar">
-    <span>▣&nbsp; ICR2 3DO CAD Help</span>
-    <span class="buttons" aria-hidden="true"><span>_</span><span>□</span><span>×</span></span>
-  </header>
-  <nav class="menustrip" aria-label="Help menu">
-    <a href="#welcome">File</a><a href="#contents">Contents</a><a href="#index">Index</a><a href="#troubleshooting">Troubleshooting</a>
-  </nav>
-  <div class="toolbar" aria-label="Help toolbar">
-    <a class="btn" href="#welcome">⌂ Home</a>
-    <a class="btn" href="#contents">☷ Contents</a>
-    <a class="btn" href="#index">A–Z Index</a>
-    <a class="btn" href="#shortcuts">⌨ Keys</a>
-    <button class="btn" type="button" onclick="window.print()">▤ Print</button>
-  </div>
-  <div class="body">
-    <aside class="contents" id="contents" aria-label="Table of contents">
-      <div class="tabrow">Contents | <a href="#index">Index</a></div>
-      <p class="small">Click a topic to display it in the right pane.</p>
-      <ul>
-        <li><span class="book">▣</span><a href="#welcome">Welcome to 3DO CAD</a></li>
-        <li><span class="book">▣</span><a href="#quickstart">A five-minute tour</a></li>
-        <li><span class="book">▣</span><a href="#files">Opening and saving files</a></li>
-        <li><span class="book">▣</span><a href="#layout">The main window and menus</a></li>
-        <li><span class="book">▣</span><a href="#navigation">Viewing your model</a></li>
-        <li><span class="book">▣</span><a href="#source">Working with .3D Source</a></li>
-        <li><span class="book">▣</span><a href="#picking">Selecting and inspecting</a></li>
-        <li><span class="book">▣</span><a href="#editing">Geometry editing</a></li>
-        <li><span class="book">▣</span><a href="#tracing">Tracing a photograph</a></li>
-        <li><span class="book">▣</span><a href="#textures">Textures and palettes</a></li>
-        <li><span class="book">▣</span><a href="#cars">Car models and liveries</a></li>
-        <li><span class="book">▣</span><a href="#tracks">Track models and cameras</a></li>
-        <li><span class="book">▣</span><a href="#rendering">BSP, rendering, and LOD</a></li>
-        <li><span class="book">▣</span><a href="#troubleshooting">Troubleshooting</a></li>
-        <li><span class="book">▣</span><a href="#shortcuts">Keyboard quick reference</a></li>
-        <li><span class="book">▣</span><a href="#glossary">Glossary</a></li>
-        <li><span class="book">▣</span><a href="#index">Index</a></li>
-      </ul>
-      <div class="tabrow">Did You Know?</div>
-      <p class="small">In the 1990s, 3D modeling required patience, a good graphics card, and occasionally a second mortgage for RAM. One of these is still useful.</p>
-    </aside>
-    <main>
-      <section id="welcome">
+<nav id="contents" aria-label="Table of contents">
+  <strong>Contents</strong>
+  <ul>
+    <li><a href="#welcome">Welcome to 3DO CAD</a></li>
+    <li><a href="#quickstart">1. A Five-Minute Tour</a></li>
+    <li><a href="#files">2. Opening, Saving, and Exporting</a></li>
+    <li><a href="#layout">3. The Main Window</a></li>
+    <li><a href="#navigation">4. Viewing and Navigating</a></li>
+    <li><a href="#source">5. Working with .3D Source</a></li>
+    <li><a href="#picking">6. Selecting and Inspecting Geometry</a></li>
+    <li><a href="#editing">7. Editing Geometry</a></li>
+    <li><a href="#tracing">8. Tracing a Photograph or Blueprint</a></li>
+    <li><a href="#textures">9. Textures, Palettes, and MIP Coordinates</a></li>
+    <li><a href="#cars">10. Cars, Drivers, and Appearance Wrappers</a></li>
+    <li><a href="#tracks">11. Tracks, Track Sections, and Onboard Cameras</a></li>
+    <li><a href="#rendering">12. Rendering Modes, BSP, and Detail Switches</a></li>
+    <li><a href="#troubleshooting">13. When Things Go Wrong</a></li>
+    <li><a href="#shortcuts">14. Keyboard and Mouse Quick Reference</a></li>
+    <li><a href="#glossary">15. Glossary</a></li>
+    <li><a href="#index">Index — A to Z</a></li>
+  </ul>
+</nav>
+<main>
+<section id="welcome">
         <div class="manual-head">
           <div class="ribbon">The User's Guide • Contents and Index • 1995 Edition*</div>
           <h1>ICR2 3DO CAD</h1>
@@ -132,7 +65,7 @@
         <p class="seealso"><b>See also:</b> <a href="#quickstart">A five-minute tour</a> · <a href="#files">Saving versus exporting</a> · <a href="#troubleshooting">Troubleshooting</a></p>
       </section>
 
-      <section id="quickstart">
+<section id="quickstart">
         <h2>1. A Five-Minute Tour</h2>
         <ol>
           <li><b>Start the program.</b> On Windows, run <code>RUN_ME_WINDOWS.bat</code>, or start <code>python icr2_3do_cad.py</code> from the tool's folder. Python 3.10+, installed requirements, and an OpenGL 3.3-capable driver are needed when running from source.</li>
@@ -145,7 +78,7 @@
         <div class="note"><b>Tip:</b> For a car, start with a side view and a tracing reference. For a track, start with the Track workspace and inspect the section-detail settings.</div>
       </section>
 
-      <section id="files">
+<section id="files">
         <h2>2. Opening, Saving, and Exporting</h2>
         <h3>Opening a file</h3>
         <p>Choose <b>File → Open Model…</b> to open either a standalone text <code>.3D</code> file or a compiled <code>.3DO</code>. Opening a binary creates editable N3 source for the root geometry. Original text labels and comments cannot be recovered from a compiled file; generated pointer names are used instead. <b>Open Recent</b> remembers successfully opened files, and <b>Reload Model from Disk</b> reopens the current model after confirmation if source has unsaved edits.</p>
@@ -161,7 +94,7 @@
         <p class="seealso"><b>See also:</b> <a href="#source">Editing .3D Source</a> · <a href="#rendering">Render diagnostics</a></p>
       </section>
 
-      <section id="layout">
+<section id="layout">
         <h2>3. The Main Window</h2>
         <p>The left portion of the application displays the 3D model. The adjacent <b>.3D Source</b> pane contains the editable file. Model-specific controls live in the <b>Model Settings</b> dialog; other detailed options live under <b>View</b> and <b>Assets</b>. There is no permanent everything-and-the-kitchen-sink inspector.</p>
         <table>
@@ -176,7 +109,7 @@
         <p>Select a different workspace with <b>Model → Workspace</b>. Changing workspace changes the available diagnostic controls; it does not rewrite the model. An automatic workspace hint can be based on a recognized model type, but the file name alone is not proof of what the geometry represents.</p>
       </section>
 
-      <section id="navigation">
+<section id="navigation">
         <h2>4. Viewing and Navigating</h2>
         <h3>Camera controls</h3>
         <table>
@@ -195,7 +128,7 @@
         <div class="note"><b>Hint:</b> The side orthographic view uses Y horizontally and Z vertically. Excellent for tracing a race car. Less useful for determining which end of an oval is Turn One.</div>
       </section>
 
-      <section id="source">
+<section id="source">
         <h2>5. Working with .3D Source</h2>
         <p>Use <b>View → Show .3D Source</b> to open the editor. A source file consists of named vertex, polygon, material, object, and drawing-order declarations. As you type, the editor validates and recompiles after a brief idle delay. <b>Edit → Apply .3D Source Now</b> requests immediate compilation. Invalid source reports an error without replacing the last valid viewport.</p>
         <h3>A small N3 example</h3>
@@ -213,7 +146,7 @@ root: LIST {face};</pre>
         <p>Choose <b>Edit → Rename Selected Pointer…</b> or press <kbd>F2</kbd> on a declaration to rename its label. The default automatic reference update also adjusts references to that label. Comments and original declaration names belong in your editable <code>.3D</code> file; they do not survive inside a compiled <code>.3DO</code>.</p>
       </section>
 
-      <section id="picking">
+<section id="picking">
         <h2>6. Selecting and Inspecting Geometry</h2>
         <p>The <b>Pick</b> selector above the viewport offers <b>Vertices</b> and <b>Polys</b>. Click a root-model vertex to select its yellow marker and navigate to its named declaration. Click a polygon in Polys mode to select its source row. Referenced external DYNAMIC children cannot be edited through the root source panel.</p>
         <p>Move the source cursor into a polygon declaration to see that polygon highlighted in the viewport. A row shaded <b>green</b> is included by current BSP/LOD selection; a <b>salmon</b> row is excluded. Inclusion is not the same as actual on-screen visibility—another surface may still cover it.</p>
@@ -221,7 +154,7 @@ root: LIST {face};</pre>
         <div class="note"><b>Did You Know?</b> When a polygon is missing, it may be hiding behind a BSP branch, a distance switch, or another polygon. Blaming the video card is traditionally the fourth step.</div>
       </section>
 
-      <section id="editing">
+<section id="editing">
         <h2>7. Editing Geometry</h2>
         <h3>Move a vertex with the mouse</h3>
         <ol>
@@ -245,7 +178,7 @@ root: LIST {face};</pre>
         <p>Choose <b>Edit → Scale Model…</b>, enter a positive multiplier or divisor, and apply a uniform XYZ scale about raw origin (0,0,0). Relevant placements, sprite sizes, and SWITCH DISTANCE values are adjusted where supported; UVs, palette colors, and external child geometry are not stretched. Undo reverses the source change.</p>
       </section>
 
-      <section id="tracing">
+<section id="tracing">
         <h2>8. Tracing a Photograph or Blueprint</h2>
         <p>Reference images make it easier to model a car profile, building elevation, or object whose proportions are known. The image is a preview behind the 3D model, <b>not a texture or exported polygon</b>.</p>
         <ol>
@@ -259,7 +192,7 @@ root: LIST {face};</pre>
         <div class="note"><b>Pro Tip:</b> Two wheel centers of known separation are more dependable than measuring a race car using its sponsor decals. The marketing department has never been a recognized standards body.</div>
       </section>
 
-      <section id="textures">
+<section id="textures">
         <h2>9. Textures, Palettes, and MIP Coordinates</h2>
         <p>Models can reference <b>MIP</b> texture images, <b>PMP</b> sprites, and PCX palettes. Under <b>Assets</b> choose a MIP folder, an external 3DO folder, a fallback MIP, or a palette. Choose <b>Reload MIPs</b> after changing an asset on disk. A missing file may be reported in the load error log even if the geometry still opens.</p>
         <h3>Find a texture coordinate</h3>
@@ -273,14 +206,14 @@ root: LIST {face};</pre>
         <div class="note"><b>Tip:</b> In the 256-color era, the correct palette is as important as the correct polygon. A wrong palette can turn a carefully modeled sponsor into something resembling a breakfast cereal.</div>
       </section>
 
-      <section id="cars">
+<section id="cars">
         <h2>10. Cars, Drivers, and Appearance Wrappers</h2>
         <p>Use <b>Model → Workspace → Car</b> for carshape materials, body MIPs, driver appearance, and external wheel/helmet references. A driver-specific car file may primarily carry a <b>RECOLOR</b> table and MIP assignment rather than its own editable car geometry.</p>
         <p>To inspect a driver's paint on your current carshape, open <code>roadcar.3do</code>, <code>indycar.3do</code>, or another editable car component and choose <b>Assets → Apply Individual-Car RECOLOR / MIP…</b>. Select a driver wrapper such as <code>cit74.3do</code>. The overlay affects the <b>preview only</b>. Clearing or replacing it does not change the source, and exporting compiled geometry does not embed the wrapper's livery or RECOLOR records.</p>
         <p>Car models may depend on other <code>.3do</code> files and MIPs. If wheels or helmets are missing, confirm the external 3DO and MIP folders and review <b>View → Load Error Log…</b>.</p>
       </section>
 
-      <section id="tracks">
+<section id="tracks">
         <h2>11. Tracks, Track Sections, and Onboard Cameras</h2>
         <p>Use <b>Model → Workspace → Track</b> and open <b>Model → Track Settings…</b> for track-specific options. Recognized track models may have indexed section tables with <b>HI / MED / LO</b> detail slots. Fixed detail modes let you inspect one tier; <b>Camera window (HI / MED / LO)</b> follows the camera position if suitable DLONG section metadata exists. If metadata is absent or ambiguous, choose a global tier instead.</p>
         <p>The Track settings include per-direction windows for high, medium, and low-detail sections. The default adaptive preview uses 8 nearby HI sections in each direction, then 5 MED each way, then 3 LO each way. These are <b>CAD preview choices</b>, not a promise about the original game engine's rendering limits.</p>
@@ -299,7 +232,7 @@ root: LIST {face};</pre>
         <p>If a valid <code>horiz.3do</code> or <code>horiz.3d</code> is discovered, a <b>Skybox</b> preview may be enabled in Track settings. Its horizon eye position is adjustable without editing the file. Recognized track surface detail markings are handled by the viewport's depth-biased preview pass to reduce z-fighting; this also does not modify source or compiled track data.</p>
       </section>
 
-      <section id="rendering">
+<section id="rendering">
         <h2>12. Rendering Modes, BSP, and Detail Switches</h2>
         <p>Select <b>View → Rendering Mode</b> to compare drawing behaviors. The model may look different in each mode; this is precisely why multiple modes are provided.</p>
         <table>
@@ -314,7 +247,7 @@ root: LIST {face};</pre>
         <div class="note warning"><b>Compatibility notice:</b> The preview is reverse-engineered and not game-exact in clipping, transparency, sprite rendering, draw budgets, or all LOD decisions. Saving a recompiled track is not a substitute for validating it in ICR2.</div>
       </section>
 
-      <section id="troubleshooting">
+<section id="troubleshooting">
         <h2>13. When Things Go Wrong</h2>
         <table>
           <tr><th>Problem</th><th>What to try</th></tr>
@@ -331,7 +264,7 @@ root: LIST {face};</pre>
         <div class="note"><b>Technical Support, 1995 Style:</b> Have you tried turning it off and on again? If so, excellent. Now check the error log—we have considerably better information than a telephone hold queue.</div>
       </section>
 
-      <section id="shortcuts">
+<section id="shortcuts">
         <h2>14. Keyboard and Mouse Quick Reference</h2>
         <table>
           <tr><th>Key or gesture</th><th>Command</th></tr>
@@ -352,7 +285,7 @@ root: LIST {face};</pre>
         <p class="small">Single-letter viewport shortcuts apply when the viewport has focus so you can type F and R in your model source without summoning unrelated commands.</p>
       </section>
 
-      <section id="glossary">
+<section id="glossary">
         <h2>15. Glossary</h2>
         <table>
           <tr><th>Term</th><th>Meaning</th></tr>
@@ -369,7 +302,7 @@ root: LIST {face};</pre>
         </table>
       </section>
 
-      <section id="index">
+<section id="index">
         <h2>Index — A to Z</h2>
         <div class="index">
           <p><b>A</b> — <a href="#textures">Assets</a>, <a href="#navigation">Axes</a></p>
@@ -397,9 +330,6 @@ root: LIST {face};</pre>
         <div class="note"><b>About this manual:</b> Inspired by mid-1990s desktop Help systems, with original text and a contemporary description of the CAD editor. It is not affiliated with or endorsed by Microsoft, Papyrus, or Sierra. Floppy disk not included.</div>
         <p class="seealso"><a href="#welcome">Return to Welcome</a> · <a href="#contents">Table of Contents</a></p>
       </section>
-    </main>
-  </div>
-  <footer class="footer">ICR2 3DO CAD Help &nbsp;|&nbsp; Offline HTML edition &nbsp;|&nbsp; Press F1 in the application for Help &nbsp;|&nbsp; <a href="#welcome">Top</a></footer>
-</div>
+</main>
 </body>
 </html>
