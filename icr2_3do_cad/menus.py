@@ -62,11 +62,14 @@ def update_model_actions(window):
     """Avoid advertising Save, Export, or Reload on an empty viewer."""
     loaded = window.viewer._model is not None
     for name in ("save", "save_as", "export", "reload", "reload_mips",
-                 "mip_browser", "appearance_overlay", "tracing_load"):
+                 "mip_browser", "appearance_overlay", "tracing_load",
+                 "tracing_restore"):
         window.menu_actions[name].setEnabled(loaded)
     tracing = loaded and window.viewer.tracing_reference is not None
-    for name in ("tracing_adjust", "tracing_remove"):
+    for name in ("tracing_adjust", "tracing_remove", "tracing_save"):
         window.menu_actions[name].setEnabled(tracing)
+    # Library deletion works without a model loaded and does not affect image files.
+    window.menu_actions["tracing_delete_profile"].setEnabled(True)
     window.menu_actions["clear_appearance_overlay"].setEnabled(
         loaded and window.car_appearance_overlay is not None)
     window.apply_car_appearance_button.setEnabled(loaded)
@@ -255,6 +258,16 @@ def install_menus(window):
     window.menu_actions["tracing_remove"] = _add_action(
         assets, "Remove Tracing Reference",
         window.clear_tracing_reference_image)
+    assets.addSeparator()
+    window.menu_actions["tracing_save"] = _add_action(
+        assets, "Save Tracing Reference &Profile…",
+        window.save_tracing_profile)
+    window.menu_actions["tracing_restore"] = _add_action(
+        assets, "&Restore Saved Tracing Profile…",
+        window.load_saved_tracing_profile)
+    window.menu_actions["tracing_delete_profile"] = _add_action(
+        assets, "Delete Saved Tracing Profile…",
+        window.delete_tracing_profile)
     assets.addSeparator()
     window.menu_actions["mip_browser"] = _add_action(
         assets, "Browse Model &MIPs / U,V…", window.open_mip_browser)

@@ -10,6 +10,7 @@ The sole application entry point is `icr2_3do_cad.py` in this directory. It runs
 - `three_do.py`, `n3_compile.py`, `text_3d.py`, `n3_plane_points.py`: binary 3DO and N3 source compiler/interchange.
 - `dynamic_scene.py`, `car_appearance.py`, `texture_preview.py`, `pmp_preview.py`: model/asset decoding reused by the renderer.
 - `tracing_reference.py`, `tracing_reference_dialog.py`, `tracing_reference_gl.py`: pure 2D point-to-model-plane calibration, local photo UI and a separate GL_RGBA8 background pass. The pass must never enter scene polygons, binary output, depth picking or source compilation.
+- `tracing_profiles.py`: a Qt-independent versioned JSON library with atomic writes. Save original and model-center U/V to allow exact or relative reapplication; never store image bytes, alter model source, or silently overwrite a damaged profile library. The window uses QStandardPaths.GenericConfigLocation / ICR2Tools / 3DOCAD / tracing_profiles.json.
 - `fixtures/`, `gamepal.pcx`: required sample files and default palette.
 
 The application uses flat imports relative to this directory. Direct execution of `python icr2_3do_cad.py` and the Windows batch launcher must work without a separate Python package.
