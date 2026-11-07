@@ -92,7 +92,7 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
         # PMPs are indexed colors just like polygon palette slots. Keep
         # original files and the common palette texture unchanged; prepare
         # a separate GPU index image for each distinct driver appearance.
-        lookup = _recolor_lut(instance.recolor_layers)
+        lookup = _recolor_lut(instance.sprite_recolor_layers)
         suffix = ("#recolor-" + blake2s(lookup.tobytes(), digest_size=12).hexdigest()
                   if lookup is not None else "")
         for offset, sprite in instance.model.pmp_sprites.items():
