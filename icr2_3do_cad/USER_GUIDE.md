@@ -26,6 +26,34 @@ The optional --report path writes aggregate timings on close, omitting
 full paths, geometry coordinates and model source. Run once with RENO and
 once with a building or fixtures/roadcar.3do.
 
+## XYZ orientation and extended axis guides
+
+By default, the viewport displays **X red**, **Y green** and **Z blue**
+with two complementary tools:
+
+1. The **bottom-left XYZ orientation gizmo** is fixed in the viewport,
+   but rotates with the camera. It tells you which way positive XYZ points
+   even if the object origin is off-screen. An axis pointing directly toward
+   or away from the camera appears end-on as a dot instead of vanishing.
+2. The **extended XYZ guides** show axis-aligned lines through your current
+   **camera target**. Positive directions are brighter solid lines and
+   negative directions fainter dashed lines. The guide positions follow
+   the camera's view focus so you are not forced to find an object's actual
+   world origin. These are *orientation guides*, not claims that the camera
+   target equals raw Papyrus (0,0,0).
+
+For exact positioning, open **View → Display Settings** and choose **Axis
+guide anchor**: `View focus` (default), `Model bounding-box center`, or
+`Raw Papyrus XYZ origin (0,0,0)`. The model center and raw origin may
+be outside your current framing; the gizmo continues to indicate direction.
+
+Use **View → Display Options → Extended XYZ axis guides** and **Corner XYZ
+orientation gizmo** to show/hide each one; these switches are also available
+in Display Settings. Visibility and anchoring preferences survive restarts.
+Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
+geometry, selection or texture rendering; toggling them does not recompile
+any model.
+
 ## Calibrated tracing/reference images
 
 Use a scanned plan, building elevation, blueprint or car side-profile

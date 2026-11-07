@@ -20,11 +20,32 @@ To measure viewport performance, use `--benchmark` and optionally `--report cad_
 
 - Open compiled `.3do` files or standalone Papyrus/N3 `.3D` source; the editable source panel recompiles and updates the viewport after validation.
 - Car, Track and Object workspaces; camera orbit, pan, zoom, orthographic and fixed-camera views, track-guided navigation, indexed HI/MED/LO section windows and optional skybox.
+- CAD-style always-visible XYZ orientation triad (bottom-left) and extended, labeled red/green/blue XYZ guides; independent visibility and anchor controls.
 - Inspect vertex and polygon source declarations, BSP/draw-order decisions, external DYNAMIC models, MIP materials, PMP sprites and visibility.
 - Import a photo, blueprint or car profile as a calibrated model-space tracing image behind the geometry (Front/Side/Top planes, opacity and alignment controls).
 - Preview a separate driver `.3do` RECOLOR and body MIP on the currently editable car or car-part geometry without opening the driver's referenced carshape.
 - Edit N3 source with live diagnostics, reference navigation, polygon splitting, vertex inspection, pointer renaming and scaling.
 - Save source or export a newly compiled `.3do` explicitly; failed compilation does not overwrite game assets.
+
+## World-axis guides and orientation gizmo
+
+The viewport now shows two independent CAD-style orientation aids by default:
+
+- **Corner XYZ gizmo**: a mouse-transparent red X, green Y and blue Z
+  direction triad in the bottom-left, rotating with the camera in
+  3D, Front, Side, Top and TRK/fixed-camera views. It stays visible
+  regardless of model position or zoom.
+- **Extended XYZ guides**: colored positive-axis lines, faint dashed
+  negative-axis lines and labels that extend across the visible viewport.
+  By default, guides pass through the **camera's view focus**, not necessarily
+  raw world XYZ (0,0,0), to remain useful while panning and zooming.
+  Choose **Model bounding-box center** or **Raw Papyrus XYZ origin**
+  under View → Display Settings if you need those exact anchor locations.
+
+Toggle either overlay independently under **View → Display Options** or
+**View → Display Settings**. The controls persist after restarting CAD.
+These are transparent, nonselectable UI guides only; they do not alter
+the model, tracing-image calibration, BSP, rendered geometry or exports.
 
 ## Trace geometry over a calibrated reference image
 

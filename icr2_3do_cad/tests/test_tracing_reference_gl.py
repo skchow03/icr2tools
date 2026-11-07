@@ -87,8 +87,15 @@ class TracingReferenceGLTests(unittest.TestCase):
             units_per_pixel=mesh.scale * 4 / 80, opacity=1.0)
 
     def tearDown(self):
+        # Each test builds a fresh QOpenGLWidget. Ensure the previous one
+        # and its Qt-composited child overlays are actually destroyed before
+        # Mesa/Xvfb allocates the next context (close only hides widgets).
+        from PySide6.QtCore import QCoreApplication, QEvent
         self.view.shutdown_gl()
         self.view.close()
+        self.view.deleteLater()
+        QCoreApplication.sendPostedEvents(
+            None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
 
     @staticmethod
