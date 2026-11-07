@@ -83,11 +83,11 @@ class CADViewerMenuTests(unittest.TestCase):
             manual_action.trigger()
             open_url.assert_called_once_with(manual)
         with patch.object(self.menus, "_user_manual_path", return_value=None):
-            with patch.object(self.menus.QMessageBox, "warning") as warning:
+            with patch.object(self.menus, "_manual_warning") as warning:
                 manual_action.trigger()
             self.assertIn("Help File Not Found", warning.call_args.args[1])
         with patch.object(self.menus, "_open_manual_url", return_value=False):
-            with patch.object(self.menus.QMessageBox, "warning") as warning:
+            with patch.object(self.menus, "_manual_warning") as warning:
                 manual_action.trigger()
             self.assertIn("Unable to Open Help", warning.call_args.args[1])
 
