@@ -2456,6 +2456,30 @@ class Window(QMainWindow):
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
         distance_row.addWidget(self.pick_mode_combo)
+        self.move_vertex_button = QPushButton("Move vertex")
+        self.move_vertex_button.setObjectName("enableVertexMoveGizmo")
+        self.move_vertex_button.setCheckable(True)
+        self.move_vertex_button.setChecked(False)
+        self.move_vertex_button.setToolTip(
+            "Select a vertex (Pick: Vertices), then drag its red X, green Y "
+            "or blue Z arrow in the viewport. Release to update .3D Source "
+            "and recompile; Ctrl+Z undoes the move. ESC cancels an active "
+            "drag. Shift while dragging moves one tenth as far.")
+        self.move_vertex_button.toggled.connect(
+            self.viewer.set_vertex_move_enabled)
+        distance_row.addWidget(self.move_vertex_button)
+        self.move_snap_combo = QComboBox()
+        self.move_snap_combo.setObjectName("vertexMoveSnap")
+        for amount in (1, 10, 100, 1000):
+            self.move_snap_combo.addItem(f"{amount:g} raw units", amount)
+        self.move_snap_combo.setToolTip(
+            "Snap vertex movement to increments in raw Papyrus units; "
+            "a coarse step helps large models, and 1 allows finer moves.")
+        self.move_snap_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_vertex_move_snap(
+                self.move_snap_combo.currentData()))
+        display_layout.addWidget(QLabel("Vertex move snap step"))
+        display_layout.addWidget(self.move_snap_combo)
         self.vertex_labels_toggle = QCheckBox("Vertex labels")
         self.vertex_labels_toggle.setObjectName("showAllVertexLabels")
         self.vertex_labels_toggle.setToolTip(
@@ -2886,6 +2910,7 @@ class Window(QMainWindow):
         self.source_pane.exportRequested.connect(self._export_compiled_source)
         self.source_pane.cursorTargetChanged.connect(self._source_target_changed)
         self.viewer.vertexPicked.connect(self._viewport_vertex_picked)
+        self.viewer.vertexMoveRequested.connect(self._viewport_vertex_moved)
         self.viewer.polygonPicked.connect(self._viewport_polygon_picked)
         self._timer = QTimer(self)
         self._timer.setInterval(16)
@@ -3402,6 +3427,27 @@ class Window(QMainWindow):
         else:
             self.statusBar().showMessage(
                 f"Vertex @{offset} has no matching declaration in .3D Source")
+
+    def _viewport_vertex_moved(self, offset, raw_xyz):
+        """Commit a completed XYZ gizmo drag through validated N3 source."""
+        model = self.viewer._model
+        if (not self.viewer.move_vertex_enabled or
+                not self.source_toggle.isChecked() or
+                not self.source_pane.ready or self.source_pane.pending or
+                self._source_invalid or model is None or
+                offset not in model.vertices):
+            self.statusBar().showMessage(
+                "Cannot move: select a vertex with valid .3D Source first.")
+            return
+        try:
+            plan = self.source_pane.move_compiled_vertex(model, offset, raw_xyz)
+        except (ValueError, OverflowError, ArithmeticError) as exc:
+            QMessageBox.warning(self, "Cannot move selected vertex", str(exc))
+            return
+        if plan.changed:
+            self.statusBar().showMessage(
+                f"Moved {plan.label} to {plan.after} raw XYZ; "
+                "validating and recompiling .3D (not yet saved).")
 
     def _viewport_polygon_picked(self, offset):
         """Reveal the clicked POLY in the source editor or filtered row list."""
@@ -4704,6 +4750,8 @@ class Window(QMainWindow):
             self.worker, 97, "Finishing controls and track setup",
             repaint=True)
         if not from_source and not was_reloading:
+            # A different car/building must never inherit an armed edit mode.
+            self.move_vertex_button.setChecked(False)
             # Reference belongs to the old model; source rebuilds/reloads keep it.
             self.clear_tracing_reference_image()
         if not from_source:
