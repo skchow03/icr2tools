@@ -2441,16 +2441,20 @@ class Window(QMainWindow):
         # the optional Display Settings dialog. Reuse the existing widgets and
         # LOD signals; there must be only one authoritative distance value.
         self.distance_bar = QWidget()
-        distance_row = QHBoxLayout(self.distance_bar)
-        distance_row.setContentsMargins(5, 3, 5, 3)
-        distance_row.setSpacing(6)
-        # Editing has its own short row: the full-width SWITCH DISTANCE
-        # slider must not become unusable when the .3D Source pane is open.
-        self.edit_bar = QWidget()
-        edit_row = QHBoxLayout(self.edit_bar)
+        distance_stack = QVBoxLayout(self.distance_bar)
+        distance_stack.setContentsMargins(0, 0, 0, 0)
+        distance_stack.setSpacing(0)
+        # Two compact subrows in the existing toolbar widget preserve
+        # the viewport-first layout and the direct parent of old controls.
+        edit_row = QHBoxLayout()
         edit_row.setContentsMargins(5, 1, 5, 3)
         edit_row.setSpacing(6)
+        distance_stack.addLayout(edit_row)
         edit_row.addWidget(QLabel("Edit"))
+        distance_row = QHBoxLayout()
+        distance_row.setContentsMargins(5, 3, 5, 3)
+        distance_row.setSpacing(6)
+        distance_stack.addLayout(distance_row)
         distance_row.addWidget(QLabel("Projection"))
         self.projection_combo = QComboBox()
         self.projection_combo.setObjectName("projectionCombo")
@@ -2795,7 +2799,6 @@ class Window(QMainWindow):
         self.viewport_layout = QVBoxLayout(self.viewport_panel)
         self.viewport_layout.setContentsMargins(0, 0, 0, 0)
         self.viewport_layout.setSpacing(0)
-        self.viewport_layout.addWidget(self.edit_bar)
         self.viewport_layout.addWidget(self.distance_bar)
         # Always visible above the viewport during a load, even when the
         # collapsible settings panel is closed. Stage markers are coarse,
