@@ -619,14 +619,16 @@ rebuilt. Back up and validate any edited model in ICR2.
   **RECOLOR record at body offset zero**, not a renderable child. The OpenGL
   loader reads it using the existing `car_appearance` decoder and opens
   the referenced base geometry (e.g. `indycar.3do`) separately. It maps
-  only *base car* polygon color indices, preserving independent wheel and
-  helmet colors and textures. The livery's indexed MIP pixels are unchanged.
+  base-car and paintable DYNAMIC bodywork polygon color indices, while wheel
+  and helmet attachments preserve their independent colors and textures.
+  The livery's indexed MIP pixels are unchanged.
 - **Apply Individual-Car RECOLOR / MIP…**: after opening a geometry model
   (for example `roadcar.3do` or `indycar.3do`), choose this command in
   **Assets** or **Model → Car Settings…**. Select an individual-driver wrapper,
-  such as `cit74.3do`. Its RECOLOR mapping applies only to the loaded root
-  geometry; its MIP name is looked up beside `cit74.3do` and assigned only to
-  the root textured body polygons. This intentionally ignores the wrapper's
+  such as `cit74.3do`. Its RECOLOR mapping applies to the root and paintable
+  DYNAMIC bodywork children (for example `flpod.3do`); the wrapper MIP is
+  looked up beside `cit74.3do` and inherited by textured bodywork without a
+  closer named MATERIAL. Wheel, tire and helmet branches are excluded. This intentionally ignores the wrapper's
   own EXTERN geometry reference, so CIT74 (which references INDYCAR) can be
   previewed over ROADCAR without swapping meshes. The model currently in the
   .3D Source pane remains editable; live recompilation, camera position and
@@ -1065,7 +1067,8 @@ assets that exceed available capacity fall back to flat color.
 The single expanded VBO includes the geometry of inactive LOD branches and
 resolved external models. For individual-car RECOLOR wrappers, the
 `car_appearance` decoder loads the shared base model separately; remappings
-affect that model's polygons only, not the external DYNAMIC wheels/helmet.
+affect that model's paintable polygons and attached DYNAMIC bodywork, but not
+external wheel/tire/helmet branches.
 The wrapper's MATERIAL filename is resolved relative to the original
 wrapper directory, even if the shared shape lives elsewhere. The camera-dependent index list includes only
 selected branches and emits child polygons at their parent's insertion site.
