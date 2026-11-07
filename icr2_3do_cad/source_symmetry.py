@@ -129,6 +129,16 @@ def plan_mirrored_vertices(original, current, *, axis, plane_at=0,
                 if label in new and source.xyz != new[label].xyz}
     proposals = []
     issues = []
+    # Newly inserted vertices have no stable last-validated position with
+    # which to establish a mirror partner. Do not silently ignore them.
+    # A plain pointer rename at unchanged XYZ is not a geometry insertion.
+    removed_positions = {
+        entry.xyz for label, entry in old.items() if label not in new}
+    for label in sorted(set(new) - set(old)):
+        if new[label].xyz not in removed_positions:
+            issues.append(MirrorIssue(
+                label, f"{label}: new vertex has no validated mirror pairing. "
+                "Add or identify its opposite vertex manually."))
     idx = _PLANES[axis]
     for label in sorted(modified):
         source, moved = old[label], new[label]
