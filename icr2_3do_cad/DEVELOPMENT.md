@@ -46,8 +46,13 @@ Keep local screenshots in the ignored `screenshots/` directory. Temporary models
 Individual-car MATERIAL → RECOLOR wrappers resolve the base carshape independently
 of its DYNAMIC pieces. On the GPU scene, the driver's RECOLOR context follows
 paintable bodywork references (e.g. `flpod`, `frpod`, wings, tubs) while
-wheel/tire/helmet references terminate that context. For textured child faces,
+wheel/tire references terminate that context. Helmet/helmetp branches
+inherit RECOLOR only, never the body MIP, and use that mapping for their
+PMP/PMP2 palette-index span pixels. For textured child faces,
 a named child MATERIAL overrides the inherited driver MIP; unassigned child
 faces inherit the wrapper MIP and participate in the manual body-MIP preview.
-Do not alter wheel/helmet palette slots or rewrite any referenced assets.
-This is preview-only and is regression-tested by `test_car_dynamic_livery.py`.
+Do not alter wheel palette slots, raw PMP color spans, shared PCX palette,
+or other referenced assets. Sprite image variants are keyed by both PMP path
+and effective recolor mapping so multiple instances can share or distinguish
+textures safely. The driver change is preview-only; see
+`test_car_dynamic_livery.py` and `test_car_helmet_recolor.py`.
