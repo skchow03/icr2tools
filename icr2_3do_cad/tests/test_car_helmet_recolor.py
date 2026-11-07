@@ -100,7 +100,10 @@ class CarHelmetRecolorTests(unittest.TestCase):
                 self.assertIsNone(instance.texture_override)
             elif stem in {"sfront", "srear", "fwheel", "rwheel"}:
                 self.assertFalse(instance.recolor_layers)
-                self.assertIsNone(instance.texture_override)
+                if stem in {"sfront", "srear"}:
+                    self.assertIsNone(instance.texture_override)
+                else:
+                    self.assertEqual(instance.texture_override, "wheel1")
 
     def test_plain_standalone_helmet_keeps_original_pmp_indices(self):
         helmet = Model(FIX / "helmet.3do", associate_planes=False)
