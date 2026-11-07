@@ -11,7 +11,7 @@ from PySide6.QtCore import Qt, QRectF, QPointF, Signal
 from PySide6.QtGui import QColor, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDoubleSpinBox, QFormLayout, QGroupBox,
-    QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget,
+    QHBoxLayout, QLabel, QPushButton, QScrollArea, QSlider, QVBoxLayout, QWidget,
 )
 
 from tracing_reference import PLANES, calibrate_two_points
@@ -131,7 +131,7 @@ class TracingReferenceDialog(QDialog):
         self.setObjectName("tracingReferenceDialog")
         self.setWindowTitle("Tracing Reference Image — 3DO CAD")
         self.setModal(False)
-        self.resize(1000, 610)
+        self.resize(1030, 650)
         self.reference = reference
         self.mesh = mesh
         self._on_change = on_change
@@ -171,8 +171,15 @@ class TracingReferenceDialog(QDialog):
         self.points_label.setWordWrap(True)
         left.addWidget(self.points_label)
 
-        right = QVBoxLayout()
-        body.addLayout(right, stretch=1)
+        # Profile library adds controls; scroll the right-hand settings
+        # independently rather than forcing a tall dialog on laptop screens.
+        right_widget = QWidget()
+        right = QVBoxLayout(right_widget)
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setFrameShape(settings_scroll.Shape.NoFrame)
+        settings_scroll.setWidget(right_widget)
+        body.addWidget(settings_scroll, stretch=1)
         self.path_label = QLabel()
         self.path_label.setWordWrap(True)
         self.path_label.setTextInteractionFlags(
