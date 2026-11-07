@@ -27,6 +27,10 @@ To measure viewport performance, use `--benchmark` and optionally `--report cad_
 - Edit N3 source with live diagnostics, reference navigation, polygon splitting, vertex inspection, pointer renaming and scaling.
 - Save source or export a newly compiled `.3do` explicitly; failed compilation does not overwrite game assets.
 
+## Offline Help
+
+Choose **Help → User Manual (Contents and Index)…** or press **F1** to open [the HTML user manual](USER_MANUAL.html) in your default web browser. It is styled like a Windows 95-era help file, but covers the current CAD editor and works completely offline. Keep `USER_MANUAL.html` beside `icr2_3do_cad.py` when distributing the source; frozen/PyInstaller distributions must bundle the file into their data directory or place it beside the executable.
+
 ## World-axis guides and orientation gizmo
 
 The viewport now shows two independent CAD-style orientation aids by default:

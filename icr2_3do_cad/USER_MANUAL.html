@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ICR2 3DO CAD Help — Contents and Index</title>
+<style>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; color: #000; background: #c0c0c0; font: 14px/1.46 "MS Sans Serif", Tahoma, Verdana, Arial, sans-serif; }
+  a { color: #000080; text-decoration: underline; }
+  a:visited { color: #800080; }
+  a:focus-visible, button:focus-visible { outline: 2px dotted #000; outline-offset: 2px; }
+  .window { max-width: 1240px; min-height: calc(100vh - 28px); margin: 14px auto; border: 2px solid; border-color: #fff #404040 #404040 #fff; background: #c0c0c0; box-shadow: 1px 1px 0 #000; }
+  .titlebar { background: #000080; color: white; padding: 5px 8px; display: flex; justify-content: space-between; align-items: center; font-weight: bold; }
+  .titlebar .buttons { display: flex; gap: 3px; color: #000; }
+  .titlebar .buttons span { display: inline-block; min-width: 19px; background: #c0c0c0; border: 2px solid; border-color: #fff #404040 #404040 #fff; text-align: center; font-size: 11px; line-height: 15px; }
+  .menustrip { padding: 5px 10px; border-bottom: 1px solid #808080; background: #c0c0c0; }
+  .menustrip a { color: #000; margin-right: 21px; text-decoration: none; }
+  .menustrip a::first-letter { text-decoration: underline; }
+  .toolbar { padding: 6px 8px; display: flex; flex-wrap: wrap; gap: 6px; border-bottom: 2px solid; border-color: #fff; }
+  .btn { background: #c0c0c0; border: 2px solid; border-color: #fff #555 #555 #fff; padding: 3px 11px; color: #000 !important; text-decoration: none; display: inline-block; white-space: nowrap; }
+  .btn:active { border-color: #555 #fff #fff #555; padding-top: 4px; padding-bottom: 2px; }
+  .body { display: grid; grid-template-columns: minmax(215px, 263px) minmax(0, 1fr); gap: 5px; padding: 5px; }
+  .contents { background: #fff; border: 2px solid; border-color: #666 #fff #fff #666; padding: 10px 9px 20px; max-height: calc(100vh - 125px); position: sticky; top: 8px; overflow-y: auto; }
+  .contents .tabrow { background: #c0c0c0; padding: 3px 5px; border: 1px solid #666; font-weight: bold; }
+  .contents ul { list-style: none; margin: 6px 0 13px; padding: 0 0 0 8px; }
+  .contents li { margin: 5px 0; }
+  .contents a { text-decoration: none; }
+  .contents a:hover { text-decoration: underline; }
+  .book { color: #8b5a00; font-weight: bold; margin-right: 4px; }
+  main { min-width: 0; padding: 18px 24px 36px; background: #fff; border: 2px solid; border-color: #666 #fff #fff #666; }
+  h1 { font: bold 29px/1.2 Georgia, "Times New Roman", serif; margin: 5px 0 8px; }
+  h2 { font: bold 21px Georgia, "Times New Roman", serif; margin: 28px 0 8px; padding: 5px 9px; background: #000080; color: #fff; }
+  h3 { font-size: 16px; margin: 19px 0 6px; }
+  p { margin: 8px 0 11px; }
+  ol, ul { padding-left: 25px; }
+  li { padding-bottom: 4px; }
+  .lede { color: #404040; font-size: 16px; }
+  .manual-head { padding: 11px; border: 2px solid #000080; background: #e7e7ff; }
+  .manual-head p { margin-bottom: 0; }
+  .ribbon { font: bold 12px Tahoma, Arial, sans-serif; color: #000080; letter-spacing: .09em; text-transform: uppercase; }
+  .note { border: 1px solid #808080; padding: 9px 12px; background: #ffffdf; margin: 12px 0; }
+  .note b { color: #000080; }
+  .warning { background: #fff1e5; border-color: #a04d00; }
+  kbd { display: inline-block; min-width: 22px; padding: 0px 5px 1px; margin: 1px; border: 2px solid; border-color: #fff #666 #666 #fff; background: #dfdfdf; font: bold 12px Tahoma, Arial, sans-serif; text-align: center; white-space: nowrap; }
+  code, pre { font-family: "Courier New", Courier, monospace; font-size: 13px; }
+  pre { overflow-x: auto; padding: 10px; background: #f4f4f4; border: 1px inset #aaa; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 10px 0 18px; }
+  th, td { border: 1px solid #777; padding: 7px 8px; text-align: left; vertical-align: top; }
+  th { background: #c0c0c0; }
+  tr:nth-child(even) td { background: #f5f5f5; }
+  .seealso { border-top: 1px solid #aaa; border-bottom: 1px solid #aaa; padding: 8px 0; margin: 16px 0; }
+  .small, .foot { font-size: 12px; color: #444; }
+  .footer { border-top: 2px solid #fff; padding: 7px 11px; font-size: 12px; }
+  section { scroll-margin-top: 10px; }
+  .index { columns: 2; column-gap: 28px; }
+  .index p { break-inside: avoid; margin: 4px 0; }
+  @media (max-width: 760px) {
+    .window { margin: 0; }
+    .body { grid-template-columns: minmax(0, 1fr); }
+    .contents { position: static; max-height: none; }
+    main { padding: 14px; }
+    .index { columns: 1; }
+  }
+  @media print {
+    body, .window, main { background: #fff; border: 0; box-shadow: none; margin: 0; }
+    .window { max-width: none; }
+    .titlebar, .menustrip, .toolbar, .contents, .footer { display: none; }
+    .body { display: block; padding: 0; }
+    main { padding: 0; }
+    h2 { color: #000; background: #eee; page-break-after: avoid; }
+    section { break-inside: auto; }
+    a { color: #000; }
+  }
+</style>
+</head>
+<body>
+<div class="window">
+  <header class="titlebar">
+    <span>▣&nbsp; ICR2 3DO CAD Help</span>
+    <span class="buttons" aria-hidden="true"><span>_</span><span>□</span><span>×</span></span>
+  </header>
+  <nav class="menustrip" aria-label="Help menu">
+    <a href="#welcome">File</a><a href="#contents">Contents</a><a href="#index">Index</a><a href="#troubleshooting">Troubleshooting</a>
+  </nav>
+  <div class="toolbar" aria-label="Help toolbar">
+    <a class="btn" href="#welcome">⌂ Home</a>
+    <a class="btn" href="#contents">☷ Contents</a>
+    <a class="btn" href="#index">A–Z Index</a>
+    <a class="btn" href="#shortcuts">⌨ Keys</a>
+    <button class="btn" type="button" onclick="window.print()">▤ Print</button>
+  </div>
+  <div class="body">
+    <aside class="contents" id="contents" aria-label="Table of contents">
+      <div class="tabrow">Contents | <a href="#index">Index</a></div>
+      <p class="small">Click a topic to display it in the right pane.</p>
+      <ul>
+        <li><span class="book">▣</span><a href="#welcome">Welcome to 3DO CAD</a></li>
+        <li><span class="book">▣</span><a href="#quickstart">A five-minute tour</a></li>
+        <li><span class="book">▣</span><a href="#files">Opening and saving files</a></li>
+        <li><span class="book">▣</span><a href="#layout">The main window and menus</a></li>
+        <li><span class="book">▣</span><a href="#navigation">Viewing your model</a></li>
+        <li><span class="book">▣</span><a href="#source">Working with .3D Source</a></li>
+        <li><span class="book">▣</span><a href="#picking">Selecting and inspecting</a></li>
+        <li><span class="book">▣</span><a href="#editing">Geometry editing</a></li>
+        <li><span class="book">▣</span><a href="#tracing">Tracing a photograph</a></li>
+        <li><span class="book">▣</span><a href="#textures">Textures and palettes</a></li>
+        <li><span class="book">▣</span><a href="#cars">Car models and liveries</a></li>
+        <li><span class="book">▣</span><a href="#tracks">Track models and cameras</a></li>
+        <li><span class="book">▣</span><a href="#rendering">BSP, rendering, and LOD</a></li>
+        <li><span class="book">▣</span><a href="#troubleshooting">Troubleshooting</a></li>
+        <li><span class="book">▣</span><a href="#shortcuts">Keyboard quick reference</a></li>
+        <li><span class="book">▣</span><a href="#glossary">Glossary</a></li>
+        <li><span class="book">▣</span><a href="#index">Index</a></li>
+      </ul>
+      <div class="tabrow">Did You Know?</div>
+      <p class="small">In the 1990s, 3D modeling required patience, a good graphics card, and occasionally a second mortgage for RAM. One of these is still useful.</p>
+    </aside>
+    <main>
+      <section id="welcome">
+        <div class="manual-head">
+          <div class="ribbon">The User's Guide • Contents and Index • 1995 Edition*</div>
+          <h1>ICR2 3DO CAD</h1>
+          <p class="lede">A complete guide to viewing, inspecting, and editing Papyrus 3D models for <i>IndyCar Racing II</i> and <i>CART Racing</i>.</p>
+          <p class="small">*The look is from 1995. The application is modern, the help is unofficial, and no actual Windows 95 installation is required.</p>
+        </div>
+        <p>Welcome to ICR2 3DO CAD, a visual editor for <b>.3DO</b> binary models and editable Papyrus/N3 <b>.3D</b> source files. Examine a car from any angle, inspect polygon draw order, make changes to source, and export a compiled model for testing in the simulator.</p>
+        <p>This Help file describes the current PySide6/OpenGL application—not the original Papyrus game's menus. It is stored on your computer and works without an Internet connection. Even a 14.4 kbps modem can keep up.</p>
+        <div class="note warning"><b>Important:</b> The CAD preview is not a perfect reproduction of the ICR2 rendering engine. A model that looks right here still needs to be checked <b>in the game</b>. Keep backups of working carsets and tracks.</div>
+        <p class="seealso"><b>See also:</b> <a href="#quickstart">A five-minute tour</a> · <a href="#files">Saving versus exporting</a> · <a href="#troubleshooting">Troubleshooting</a></p>
+      </section>
+
+      <section id="quickstart">
+        <h2>1. A Five-Minute Tour</h2>
+        <ol>
+          <li><b>Start the program.</b> On Windows, run <code>RUN_ME_WINDOWS.bat</code>, or start <code>python icr2_3do_cad.py</code> from the tool's folder. Python 3.10+, installed requirements, and an OpenGL 3.3-capable driver are needed when running from source.</li>
+          <li><b>Open something interesting.</b> Select <b>File → Open Model…</b> (<kbd>Ctrl+O</kbd>) and choose a <code>.3d</code> or <code>.3do</code> file. A car is an excellent beginning. A complete speedway may make your computer reconsider its career.</li>
+          <li><b>Look around.</b> Drag with the left mouse button to orbit, turn the wheel to zoom, or choose <b>View → Side</b> for an exact orthographic side view.</li>
+          <li><b>Examine the source.</b> Choose <b>View → Show .3D Source</b>. Click a vertex or polygon in the viewport to jump to its corresponding declaration.</li>
+          <li><b>Make one small change.</b> Edit a coordinate or color in the source. After a brief pause, valid source recompiles and updates the preview. If it cannot compile, the editor keeps the last valid model visible.</li>
+          <li><b>Keep your work.</b> Use <b>File → Save .3D Source As…</b> to save editable text, then <b>File → Export Compiled 3DO…</b> (<kbd>Ctrl+E</kbd>) to create a separate binary. Try that binary in ICR2 before celebrating.</li>
+        </ol>
+        <div class="note"><b>Tip:</b> For a car, start with a side view and a tracing reference. For a track, start with the Track workspace and inspect the section-detail settings.</div>
+      </section>
+
+      <section id="files">
+        <h2>2. Opening, Saving, and Exporting</h2>
+        <h3>Opening a file</h3>
+        <p>Choose <b>File → Open Model…</b> to open either a standalone text <code>.3D</code> file or a compiled <code>.3DO</code>. Opening a binary creates editable N3 source for the root geometry. Original text labels and comments cannot be recovered from a compiled file; generated pointer names are used instead. <b>Open Recent</b> remembers successfully opened files, and <b>Reload Model from Disk</b> reopens the current model after confirmation if source has unsaved edits.</p>
+        <h3>The two kinds of output</h3>
+        <table>
+          <tr><th>Command</th><th>What it saves</th><th>When to use it</th></tr>
+          <tr><td><b>Save .3D Source</b> (<kbd>Ctrl+S</kbd>)</td><td>Editable N3 text, preserving your authored declarations and comments.</td><td>Keep a master copy or save unfinished work. The first save requests a destination; later saves reuse that chosen path.</td></tr>
+          <tr><td><b>Save .3D Source As…</b> (<kbd>Ctrl+Shift+S</kbd>)</td><td>A new text file at a destination you choose.</td><td>Create another revision without replacing your previous source.</td></tr>
+          <tr><td><b>Export Compiled 3DO…</b> (<kbd>Ctrl+E</kbd>)</td><td>A validated, newly compiled binary <code>.3do</code>.</td><td>Install a model for testing in the simulator. Source errors or unfinished validation prevent export.</td></tr>
+        </table>
+        <p>A <code>*</code> after the filename in the window title means the source has unsaved changes. The editor asks before discarding such changes when opening, reloading, or exiting. It also protects the original model from unintended overwrites.</p>
+        <div class="note warning"><b>Do not confuse Save with Export.</b> Saving a text source does not install it in the game. Exporting recompiles the model and may change binary record offsets, order, and structure. It is not an in-place binary patch. Back up the original.</div>
+        <p class="seealso"><b>See also:</b> <a href="#source">Editing .3D Source</a> · <a href="#rendering">Render diagnostics</a></p>
+      </section>
+
+      <section id="layout">
+        <h2>3. The Main Window</h2>
+        <p>The left portion of the application displays the 3D model. The adjacent <b>.3D Source</b> pane contains the editable file. Model-specific controls live in the <b>Model Settings</b> dialog; other detailed options live under <b>View</b> and <b>Assets</b>. There is no permanent everything-and-the-kitchen-sink inspector.</p>
+        <table>
+          <tr><th>Menu</th><th>You'll find…</th></tr>
+          <tr><td><b>File</b></td><td>Open, recent files, reload, save source, export compiled 3DO, exit.</td></tr>
+          <tr><td><b>Edit</b></td><td>Undo/redo, text editing and Find, rename pointer, scale model, split polygon, apply source now.</td></tr>
+          <tr><td><b>View</b></td><td>Camera presets, perspective, Fixed Camera, rendering modes, source visibility, display options, colors, diagnostics, and Load Error Log.</td></tr>
+          <tr><td><b>Model</b></td><td>Car, Track, or Object workspace; model and workspace settings.</td></tr>
+          <tr><td><b>Assets</b></td><td>Palettes, textures, external objects, appearance overlays, tracing photographs, and MIP/UV browser.</td></tr>
+          <tr><td><b>Help</b></td><td>This manual, a quick keyboard/mouse reminder, and About.</td></tr>
+        </table>
+        <p>Select a different workspace with <b>Model → Workspace</b>. Changing workspace changes the available diagnostic controls; it does not rewrite the model. An automatic workspace hint can be based on a recognized model type, but the file name alone is not proof of what the geometry represents.</p>
+      </section>
+
+      <section id="navigation">
+        <h2>4. Viewing and Navigating</h2>
+        <h3>Camera controls</h3>
+        <table>
+          <tr><th>Action</th><th>Control</th></tr>
+          <tr><td>Orbit the model</td><td>Drag with left mouse button.</td></tr>
+          <tr><td>Pan</td><td>Drag with middle button, or <kbd>Shift</kbd> + left drag.</td></tr>
+          <tr><td>Zoom</td><td>Mouse wheel.</td></tr>
+          <tr><td>Fit everything in the viewport</td><td><b>View → Frame All</b>, or <kbd>F</kbd> with the viewport focused.</td></tr>
+          <tr><td>Choose an orthographic direction</td><td><b>View → Top / Front / Side</b>.</td></tr>
+          <tr><td>Switch 3D perspective/orthographic projection</td><td>Use the Projection selector or <b>View → Perspective</b>.</td></tr>
+          <tr><td>Reload texture assets</td><td><b>Assets → Reload MIPs</b>, or <kbd>R</kbd> with the viewport focused.</td></tr>
+        </table>
+        <p>Use <b>View → Fixed Camera</b> to examine the geometry from a specific raw Papyrus XYZ position. Edit its coordinate fields under Advanced Diagnostics; the initial fixed eye is (0, 0, 5000). Fixed Camera forces perspective and changes the meaning of mouse-wheel zoom to field of view. Turn it off to resume the orbit camera.</p>
+        <h3>The XYZ helpers</h3>
+        <p>A small <b>red X, green Y, blue Z</b> direction indicator appears at the bottom-left of the viewport. Extended axis guides can also cross the camera focus. Enable or disable them independently under <b>View → Display Options</b>. The guides may be anchored to the view focus, bounding-box center, or raw model origin under <b>Display Settings</b>. They are only onscreen guides and never become part of a compiled 3DO.</p>
+        <div class="note"><b>Hint:</b> The side orthographic view uses Y horizontally and Z vertically. Excellent for tracing a race car. Less useful for determining which end of an oval is Turn One.</div>
+      </section>
+
+      <section id="source">
+        <h2>5. Working with .3D Source</h2>
+        <p>Use <b>View → Show .3D Source</b> to open the editor. A source file consists of named vertex, polygon, material, object, and drawing-order declarations. As you type, the editor validates and recompiles after a brief idle delay. <b>Edit → Apply .3D Source Now</b> requests immediate compilation. Invalid source reports an error without replacing the last valid viewport.</p>
+        <h3>A small N3 example</h3>
+<pre>3D VERSION 3.0;
+a: [&lt;0,0,0&gt;];
+b: [&lt;6000,0,0&gt;];
+c: [&lt;0,6000,0&gt;];
+face: POLY &lt;44&gt; {a,b,c};
+root: LIST {face};</pre>
+        <p>In source, vertex XYZ values are <b>raw Papyrus units</b> unless an explicit or inferred coordinate scale applies. Do not interpret every numeric value as feet. In N3 source, a comment such as <code>% ICR2_COORD_SCALE: 6000</code> can specify the authored-unit conversion. UV coordinates use texture texels, not normalized 0–1 coordinates.</p>
+        <h3>Find, filter, and get syntax help</h3>
+        <p><b>Edit → Find in .3D Source…</b> (<kbd>Ctrl+F</kbd>) searches the full document. The <b>Filter statements</b> chooser can show only vertices, POLYs, BSPs, MATERIALs, or other declaration categories; filtering does not delete hidden source lines. Double-click a filtered statement to edit it, <kbd>Ctrl+Enter</kbd> to commit, or <kbd>Esc</kbd> to cancel. Choose <b>Show full source at selected line</b> to return to unrestricted editing.</p>
+        <p>Cursor-sensitive <b>N3 help</b> appears below the editor. Press <kbd>Ctrl+Shift+Space</kbd> or use the source pane's <b>?</b> button for the longer syntax description. This is command help, separate from the manual you are reading.</p>
+        <h3>Keeping source understandable</h3>
+        <p>Choose <b>Edit → Rename Selected Pointer…</b> or press <kbd>F2</kbd> on a declaration to rename its label. The default automatic reference update also adjusts references to that label. Comments and original declaration names belong in your editable <code>.3D</code> file; they do not survive inside a compiled <code>.3DO</code>.</p>
+      </section>
+
+      <section id="picking">
+        <h2>6. Selecting and Inspecting Geometry</h2>
+        <p>The <b>Pick</b> selector above the viewport offers <b>Vertices</b> and <b>Polys</b>. Click a root-model vertex to select its yellow marker and navigate to its named declaration. Click a polygon in Polys mode to select its source row. Referenced external DYNAMIC children cannot be edited through the root source panel.</p>
+        <p>Move the source cursor into a polygon declaration to see that polygon highlighted in the viewport. A row shaded <b>green</b> is included by current BSP/LOD selection; a <b>salmon</b> row is excluded. Inclusion is not the same as actual on-screen visibility—another surface may still cover it.</p>
+        <p><b>Vertex labels</b> above the viewport can display <b>All</b>, <b>Visible only</b>, or <b>Selected poly</b> pointer names. For BSP declarations, the source inspection overlays show three plane points and the source's winding direction. These markers are diagnostic only.</p>
+        <div class="note"><b>Did You Know?</b> When a polygon is missing, it may be hiding behind a BSP branch, a distance switch, or another polygon. Blaming the video card is traditionally the fourth step.</div>
+      </section>
+
+      <section id="editing">
+        <h2>7. Editing Geometry</h2>
+        <h3>Move a vertex with the mouse</h3>
+        <ol>
+          <li>Pick <b>Vertices</b>, then click a named root-model vertex.</li>
+          <li>Enable <b>Move vertex</b> above the viewport.</li>
+          <li>Drag a red X, green Y, or blue Z arrow. Only that coordinate changes. Hold <kbd>Shift</kbd> for ten-times-finer movement; press <kbd>Esc</kbd> before release to cancel.</li>
+          <li>Release to apply the new XYZ to the canonical source and recompile. Use <kbd>Ctrl+Z</kbd> to undo a completed move.</li>
+        </ol>
+        <p>Drag movement snaps in raw Papyrus units. Choose a step of 1, 10, 100, or 1000 under <b>View → Display Settings</b>. An axis pointing straight into the camera cannot be dragged; change your view. Named root vertices only—anonymous inline points and external child vertices are not movable this way.</p>
+        <h3>Symmetrical vertex editing</h3>
+        <p>The optional <b>Symmetrical vertex editing</b> option above source is <b>off by default</b> for each new model. Choose a mirror plane (X, Y, or Z equals a specified value), and the editor can find an existing matching vertex on the opposite side as you edit XYZ. It changes coordinates only, preserving UVs and comments; ambiguous or missing counterpart matches produce prompts or warnings. It does not generate a missing half of a model.</p>
+        <h3>Split a polygon</h3>
+        <ol>
+          <li>Choose <b>Edit → Split selected Polygon…</b>, then pick a root-model polygon.</li>
+          <li>Choose either a <b>cut between two edges</b> at chosen fractions, or a <b>diagonal between existing nonadjacent vertices</b>.</li>
+          <li>Inspect the preview and seam warnings, then confirm <b>Split polygon</b>.</li>
+          <li>Review the source change and compile result. Check adjacent seams and BSP planes manually if necessary.</li>
+        </ol>
+        <p>Splitting makes an undoable source edit; it does not automatically save or export. Some anonymous or complex nested polygons cannot be safely rewritten. The editor refuses those cases rather than guessing.</p>
+        <h3>Scale the model</h3>
+        <p>Choose <b>Edit → Scale Model…</b>, enter a positive multiplier or divisor, and apply a uniform XYZ scale about raw origin (0,0,0). Relevant placements, sprite sizes, and SWITCH DISTANCE values are adjusted where supported; UVs, palette colors, and external child geometry are not stretched. Undo reverses the source change.</p>
+      </section>
+
+      <section id="tracing">
+        <h2>8. Tracing a Photograph or Blueprint</h2>
+        <p>Reference images make it easier to model a car profile, building elevation, or object whose proportions are known. The image is a preview behind the 3D model, <b>not a texture or exported polygon</b>.</p>
+        <ol>
+          <li>Open the model, then choose <b>Assets → Load Tracing Reference Image…</b> and select a locally stored PNG, JPEG, BMP, WebP, or TIFF image.</li>
+          <li>Select <b>Side (Y/Z)</b>, <b>Front (X/Z)</b>, or <b>Top (X/Y)</b>. Click <b>Align viewport to this plane (orthographic)</b>.</li>
+          <li>Use <b>Pick A</b> and <b>Pick B</b> on two known points in the image—for instance, the center of each wheel.</li>
+          <li>Enter the actual distance between those points in <b>raw Papyrus model units</b>. The image scales and rotates to fit that measurement.</li>
+          <li>Adjust the U/V origin, rotation, opacity, or units-per-pixel. Use <b>Assets → Adjust Tracing Reference…</b> to reopen the controls.</li>
+        </ol>
+        <p>Save a calibrated setup with <b>Assets → Save Tracing Reference Profile…</b>; restore it later with <b>Restore Saved Tracing Profile…</b>. Profiles store the absolute path to your image, not a copy of the image. If you move the JPEG, the profile cannot find it. <b>Remove Tracing Reference</b> removes the active overlay only.</p>
+        <div class="note"><b>Pro Tip:</b> Two wheel centers of known separation are more dependable than measuring a race car using its sponsor decals. The marketing department has never been a recognized standards body.</div>
+      </section>
+
+      <section id="textures">
+        <h2>9. Textures, Palettes, and MIP Coordinates</h2>
+        <p>Models can reference <b>MIP</b> texture images, <b>PMP</b> sprites, and PCX palettes. Under <b>Assets</b> choose a MIP folder, an external 3DO folder, a fallback MIP, or a palette. Choose <b>Reload MIPs</b> after changing an asset on disk. A missing file may be reported in the load error log even if the geometry still opens.</p>
+        <h3>Find a texture coordinate</h3>
+        <ol>
+          <li>Choose <b>Assets → Browse Model MIPs / U,V…</b>.</li>
+          <li>Select a successfully resolved texture in the list.</li>
+          <li>Zoom with the mouse wheel or +/−. Choose <b>Fit</b> or <b>100%</b> as needed; middle drag or Shift+left drag pans the texture.</li>
+          <li>Click a pixel, then choose <b>Copy U,V</b>. Paste the raw integer coordinates into the relevant source vertex attributes.</li>
+        </ol>
+        <p>Texture coordinates start at <b>(0,0) in the top-left</b>, with U increasing right and V increasing down. The browser is read-only: it does not repaint or write MIPs. <b>Repeat UV (tile MIPs)</b> under View → Display Options controls preview sampling.</p>
+        <div class="note"><b>Tip:</b> In the 256-color era, the correct palette is as important as the correct polygon. A wrong palette can turn a carefully modeled sponsor into something resembling a breakfast cereal.</div>
+      </section>
+
+      <section id="cars">
+        <h2>10. Cars, Drivers, and Appearance Wrappers</h2>
+        <p>Use <b>Model → Workspace → Car</b> for carshape materials, body MIPs, driver appearance, and external wheel/helmet references. A driver-specific car file may primarily carry a <b>RECOLOR</b> table and MIP assignment rather than its own editable car geometry.</p>
+        <p>To inspect a driver's paint on your current carshape, open <code>roadcar.3do</code>, <code>indycar.3do</code>, or another editable car component and choose <b>Assets → Apply Individual-Car RECOLOR / MIP…</b>. Select a driver wrapper such as <code>cit74.3do</code>. The overlay affects the <b>preview only</b>. Clearing or replacing it does not change the source, and exporting compiled geometry does not embed the wrapper's livery or RECOLOR records.</p>
+        <p>Car models may depend on other <code>.3do</code> files and MIPs. If wheels or helmets are missing, confirm the external 3DO and MIP folders and review <b>View → Load Error Log…</b>.</p>
+      </section>
+
+      <section id="tracks">
+        <h2>11. Tracks, Track Sections, and Onboard Cameras</h2>
+        <p>Use <b>Model → Workspace → Track</b> and open <b>Model → Track Settings…</b> for track-specific options. Recognized track models may have indexed section tables with <b>HI / MED / LO</b> detail slots. Fixed detail modes let you inspect one tier; <b>Camera window (HI / MED / LO)</b> follows the camera position if suitable DLONG section metadata exists. If metadata is absent or ambiguous, choose a global tier instead.</p>
+        <p>The Track settings include per-direction windows for high, medium, and low-detail sections. The default adaptive preview uses 8 nearby HI sections in each direction, then 5 MED each way, then 3 LO each way. These are <b>CAD preview choices</b>, not a promise about the original game engine's rendering limits.</p>
+        <h3>Driving the TRK camera</h3>
+        <p>When the tool finds a matching <code>.trk</code> next to a recognized track model, <b>TRK camera — follow racing direction</b> becomes available. This is a read-only camera guided by the physics course centerline, with local banking. Click the viewport first, then use:</p>
+        <table>
+          <tr><th>Key</th><th>TRK camera movement</th></tr>
+          <tr><td><kbd>W</kbd> / <kbd>↑</kbd></td><td>Forward along DLONG (racing direction)</td></tr>
+          <tr><td><kbd>S</kbd> / <kbd>↓</kbd></td><td>Backward along DLONG</td></tr>
+          <tr><td><kbd>A</kbd> / <kbd>←</kbd></td><td>Left (positive DLAT)</td></tr>
+          <tr><td><kbd>D</kbd> / <kbd>→</kbd></td><td>Right (negative DLAT)</td></tr>
+          <tr><td><kbd>Shift</kbd> + direction</td><td>Move five times faster</td></tr>
+        </table>
+        <p>The Track dialog displays DLONG, DLAT, section and bank information. Disable TRK camera to return to the previous orbit view. A missing or malformed matching TRK does not prevent the model geometry from opening.</p>
+        <h3>Horizon and road markings</h3>
+        <p>If a valid <code>horiz.3do</code> or <code>horiz.3d</code> is discovered, a <b>Skybox</b> preview may be enabled in Track settings. Its horizon eye position is adjustable without editing the file. Recognized track surface detail markings are handled by the viewport's depth-biased preview pass to reduce z-fighting; this also does not modify source or compiled track data.</p>
+      </section>
+
+      <section id="rendering">
+        <h2>12. Rendering Modes, BSP, and Detail Switches</h2>
+        <p>Select <b>View → Rendering Mode</b> to compare drawing behaviors. The model may look different in each mode; this is precisely why multiple modes are provided.</p>
+        <table>
+          <tr><th>Mode</th><th>Purpose</th></tr>
+          <tr><td>Papyrus drawing order (no depth)</td><td>Draw selected surfaces back-to-front using the editor's BSP traversal; helpful for analyzing painter-style ordering.</td></tr>
+          <tr><td>BSP selection + depth testing</td><td>Apply the editor's BSP selection but use OpenGL depth for surface occlusion.</td></tr>
+          <tr><td>All polygons + OpenGL depth</td><td>Inspect geometry regardless of ordinary BSP selection, while retaining relevant track detail-tier handling.</td></tr>
+          <tr><td>Wireframe (polygon outlines only)</td><td>View edges without filled faces or textures. Useful for spotting vertices, topology, and errant polygons.</td></tr>
+        </table>
+        <p><b>SWITCH DISTANCE / RES</b> controls the model's available levels of detail. Automatic mode estimates distance from the camera, Manual uses a chosen distance, and All levels is for diagnostic inspection. The filtered-source pane can limit results to active distance branches, which does not necessarily mean those faces are actually visible.</p>
+        <p>For a polygon that disappears at one camera angle, inspect its <b>FACE/BSP plane</b> and source vertex winding. FACE, BSPF, BSPA and related structures determine which branch the CAD preview traverses. The selected source plane can show its three point markers and directional arrows.</p>
+        <div class="note warning"><b>Compatibility notice:</b> The preview is reverse-engineered and not game-exact in clipping, transparency, sprite rendering, draw budgets, or all LOD decisions. Saving a recompiled track is not a substitute for validating it in ICR2.</div>
+      </section>
+
+      <section id="troubleshooting">
+        <h2>13. When Things Go Wrong</h2>
+        <table>
+          <tr><th>Problem</th><th>What to try</th></tr>
+          <tr><td><b>The model is blank or the program cannot create a viewport.</b></td><td>Check Python requirements and an OpenGL 3.3-capable graphics driver. Use View → Frame All. For a complex track, confirm the correct section tier and rendering mode.</td></tr>
+          <tr><td><b>Textures, wheels, or an external building are missing.</b></td><td>Check Assets → Select MIP Folder / External 3DO Folder. Open <b>View → Load Error Log…</b> for missing filenames and details. Try Reload MIPs.</td></tr>
+          <tr><td><b>My changes are not visible.</b></td><td>Look for source validation errors, use Apply .3D Source Now, and check whether the polygon belongs to an inactive BSP/RES branch. The viewport keeps the last valid geometry after an error.</td></tr>
+          <tr><td><b>I've moved a vertex, but the wrong vertex moved too.</b></td><td>Inspect the optional Symmetrical vertex editing setting; it may intentionally move a matched counterpart. Undo and turn symmetry off if unwanted.</td></tr>
+          <tr><td><b>I cannot drag a particular vertex.</b></td><td>Use Pick → Vertices and Move vertex. Only named, editable root-model vertices work. Rotate the camera if the desired axis points directly at you. Invalid or still-compiling source disables movement.</td></tr>
+          <tr><td><b>A tracing profile cannot find its picture.</b></td><td>Put the image back at the saved absolute path or load it again and save a new profile. The library stores locations, not image bytes.</td></tr>
+          <tr><td><b>Export Compiled 3DO is unavailable or fails.</b></td><td>Wait for source validation, correct the reported source error, and select a separate destination. Saving unfinished text is allowed; compiling invalid text is not.</td></tr>
+          <tr><td><b>The model looks fine in CAD but not in the simulator.</b></td><td>Inspect original BSP/LOD hierarchy, external asset naming and source winding. Test in-game. A successful desktop preview cannot prove engine compatibility.</td></tr>
+        </table>
+        <p>Use <b>View → Load Error Log… → Copy Log</b> to preserve diagnostic details. For issues with source syntax, use the cursor-sensitive N3 help in the source editor.</p>
+        <div class="note"><b>Technical Support, 1995 Style:</b> Have you tried turning it off and on again? If so, excellent. Now check the error log—we have considerably better information than a telephone hold queue.</div>
+      </section>
+
+      <section id="shortcuts">
+        <h2>14. Keyboard and Mouse Quick Reference</h2>
+        <table>
+          <tr><th>Key or gesture</th><th>Command</th></tr>
+          <tr><td><kbd>Ctrl+O</kbd></td><td>Open a model</td></tr>
+          <tr><td><kbd>Ctrl+S</kbd> / <kbd>Ctrl+Shift+S</kbd></td><td>Save source / Save source as</td></tr>
+          <tr><td><kbd>Ctrl+E</kbd></td><td>Export a compiled 3DO</td></tr>
+          <tr><td><kbd>Ctrl+Q</kbd></td><td>Exit (unsaved changes are confirmed)</td></tr>
+          <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo source editing</td></tr>
+          <tr><td><kbd>Ctrl+F</kbd> / <kbd>F3</kbd></td><td>Find in source / Find next</td></tr>
+          <tr><td><kbd>F2</kbd></td><td>Rename selected source pointer</td></tr>
+          <tr><td><kbd>Ctrl+Shift+Space</kbd></td><td>Context help for N3 source command</td></tr>
+          <tr><td><kbd>F</kbd> / <kbd>R</kbd></td><td>Frame All / Reload MIPs (viewport focused)</td></tr>
+          <tr><td>Left drag / middle drag / mouse wheel</td><td>Orbit / pan / zoom</td></tr>
+          <tr><td><kbd>Shift</kbd> + left drag</td><td>Pan (except while dragging a vertex handle)</td></tr>
+          <tr><td><kbd>Esc</kbd> during vertex drag</td><td>Cancel pending move</td></tr>
+          <tr><td><kbd>F1</kbd></td><td>Open this user manual</td></tr>
+        </table>
+        <p class="small">Single-letter viewport shortcuts apply when the viewport has focus so you can type F and R in your model source without summoning unrelated commands.</p>
+      </section>
+
+      <section id="glossary">
+        <h2>15. Glossary</h2>
+        <table>
+          <tr><th>Term</th><th>Meaning</th></tr>
+          <tr><td><b>.3D / N3</b></td><td>Textual Papyrus 3D source, including vertex, polygon, texture, and scene-structure declarations.</td></tr>
+          <tr><td><b>.3DO</b></td><td>Compiled binary scene/model data used by the simulator.</td></tr>
+          <tr><td><b>BSP</b></td><td>Binary space partitioning, used here to select and order surfaces by camera side.</td></tr>
+          <tr><td><b>DLONG / DLAT</b></td><td>Longitudinal distance along a track and lateral offset from its centerline.</td></tr>
+          <tr><td><b>DYNAMIC</b></td><td>Reference or placement for an external model.</td></tr>
+          <tr><td><b>MIP</b></td><td>Paletted texture asset; source U/V coordinates index its texels.</td></tr>
+          <tr><td><b>PCX palette</b></td><td>Color lookup data used to display indexed colors and textures.</td></tr>
+          <tr><td><b>PMP / SRB</b></td><td>Sprite/image constructs that the preview approximates.</td></tr>
+          <tr><td><b>RES / SWITCH DISTANCE</b></td><td>Model distance-based detail selection.</td></tr>
+          <tr><td><b>TRK</b></td><td>Track geometry/course data used to guide the optional onboard preview camera.</td></tr>
+        </table>
+      </section>
+
+      <section id="index">
+        <h2>Index — A to Z</h2>
+        <div class="index">
+          <p><b>A</b> — <a href="#textures">Assets</a>, <a href="#navigation">Axes</a></p>
+          <p><b>B</b> — <a href="#rendering">BSP</a>, <a href="#troubleshooting">Blank screen</a></p>
+          <p><b>C</b> — <a href="#cars">Car workspace</a>, <a href="#navigation">Camera</a>, <a href="#tracing">Calibration</a></p>
+          <p><b>D</b> — <a href="#tracks">DLAT/DLONG</a>, <a href="#rendering">Drawing order</a></p>
+          <p><b>E</b> — <a href="#editing">Edit geometry</a>, <a href="#files">Export 3DO</a></p>
+          <p><b>F</b> — <a href="#source">Find</a>, <a href="#navigation">Fixed Camera</a></p>
+          <p><b>G</b> — <a href="#glossary">Glossary</a></p>
+          <p><b>H</b> — <a href="#welcome">Help</a></p>
+          <p><b>I</b> — <a href="#picking">Inspect faces</a></p>
+          <p><b>L</b> — <a href="#tracks">LOD</a>, <a href="#troubleshooting">Load Error Log</a></p>
+          <p><b>M</b> — <a href="#textures">MIP Browser</a>, <a href="#editing">Move vertex</a></p>
+          <p><b>N</b> — <a href="#source">N3 syntax</a></p>
+          <p><b>O</b> — <a href="#files">Open Model</a>, <a href="#navigation">Orbit</a></p>
+          <p><b>P</b> — <a href="#textures">Palette</a>, <a href="#picking">Picking</a>, <a href="#editing">Polygon split</a></p>
+          <p><b>R</b> — <a href="#cars">RECOLOR</a>, <a href="#rendering">Rendering</a></p>
+          <p><b>S</b> — <a href="#files">Save Source</a>, <a href="#editing">Scale</a>, <a href="#source">Source filtering</a>, <a href="#editing">Symmetry</a></p>
+          <p><b>T</b> — <a href="#textures">Textures</a>, <a href="#tracing">Tracing reference</a>, <a href="#tracks">Track workspace</a></p>
+          <p><b>U</b> — <a href="#textures">U/V coordinates</a>, <a href="#shortcuts">Undo</a></p>
+          <p><b>V</b> — <a href="#editing">Vertices</a>, <a href="#navigation">View controls</a></p>
+          <p><b>W</b> — <a href="#rendering">Wireframe</a>, <a href="#layout">Workspaces</a></p>
+          <p><b>X, Y, Z</b> — <a href="#navigation">Coordinate guides</a>, <a href="#editing">Vertex movement</a></p>
+        </div>
+        <div class="note"><b>About this manual:</b> Inspired by mid-1990s desktop Help systems, with original text and a contemporary description of the CAD editor. It is not affiliated with or endorsed by Microsoft, Papyrus, or Sierra. Floppy disk not included.</div>
+        <p class="seealso"><a href="#welcome">Return to Welcome</a> · <a href="#contents">Table of Contents</a></p>
+      </section>
+    </main>
+  </div>
+  <footer class="footer">ICR2 3DO CAD Help &nbsp;|&nbsp; Offline HTML edition &nbsp;|&nbsp; Press F1 in the application for Help &nbsp;|&nbsp; <a href="#welcome">Top</a></footer>
+</div>
+</body>
+</html>

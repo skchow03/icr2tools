@@ -4,9 +4,10 @@ Menus call the existing guarded operations; dialogs host former sidebar tools.
 They do not introduce a second file-writing or model-loading code path.
 """
 from pathlib import Path
+import sys
 
-from PySide6.QtCore import QSettings
-from PySide6.QtGui import QActionGroup, QKeySequence
+from PySide6.QtCore import QSettings, QUrl
+from PySide6.QtGui import QActionGroup, QDesktopServices, QKeySequence
 from PySide6.QtWidgets import QMessageBox
 
 
@@ -115,6 +116,48 @@ def _show_controls(window):
         "Track camera: W/S forward/back, A/D left/right (or arrow keys); "
         "Shift moves 5x faster.\n"
         "Choose View > .3D Source to edit and validate N3 text.")
+
+
+
+def _user_manual_path():
+    """Locate the offline HTML help in source or a frozen distribution."""
+    locations = [Path(__file__).resolve().parent]
+    if getattr(sys, "_MEIPASS", None):
+        locations.append(Path(sys._MEIPASS))
+    if getattr(sys, "frozen", False):
+        locations.append(Path(sys.executable).resolve().parent)
+    for directory in locations:
+        candidate = directory / "USER_MANUAL.html"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _open_manual_url(path):
+    """Ask the operating system to open the local file in its web browser."""
+    return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+
+
+def _manual_warning(window, title, message):
+    QMessageBox.warning(window, title, message)
+
+
+def _show_user_manual(window):
+    manual = _user_manual_path()
+    if manual is None:
+        _manual_warning(
+            window, "Help File Not Found",
+            "ICR2 3DO CAD could not find USER_MANUAL.html.\n\n"
+            "Place the help file beside icr2_3do_cad.py (or include it "
+            "in the packaged application) and try again.")
+        return False
+    if not _open_manual_url(manual):
+        _manual_warning(
+            window, "Unable to Open Help",
+            f"Windows could not open the local help file:\n{manual}\n\n"
+            "Try opening it directly in a web browser.")
+        return False
+    return True
 
 
 def install_menus(window):
@@ -290,6 +333,9 @@ def install_menus(window):
         assets, "&Reload MIPs (R)", window.reload_mips)
 
     help_menu = bar.addMenu("&Help")
+    _add_action(help_menu, "&User Manual (Contents and Index)…",
+                lambda: _show_user_manual(window), "F1")
+    help_menu.addSeparator()
     _add_action(help_menu, "&Keyboard and Mouse Controls",
                 lambda: _show_controls(window))
     _add_action(help_menu, "&About ICR2 3DO CAD", lambda:

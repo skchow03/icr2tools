@@ -68,6 +68,29 @@ class CADViewerMenuTests(unittest.TestCase):
                 return action
         self.fail(f"Missing action {title}")
 
+
+    def test_help_manual_opens_local_html_and_reports_missing_file(self):
+        help_menu = self._menu("Help")
+        manual_action = self._action(
+            help_menu, "User Manual (Contents and Index)…")
+        self.assertEqual(manual_action.shortcut().toString(), "F1")
+        manual = self.menus._user_manual_path()
+        self.assertIsNotNone(manual)
+        self.assertTrue(manual.is_file())
+        self.assertEqual(manual.name, "USER_MANUAL.html")
+        with patch.object(self.menus, "_open_manual_url",
+                          return_value=True) as open_url:
+            manual_action.trigger()
+            open_url.assert_called_once_with(manual)
+        with patch.object(self.menus, "_user_manual_path", return_value=None):
+            with patch.object(self.menus, "_manual_warning") as warning:
+                manual_action.trigger()
+            self.assertIn("Help File Not Found", warning.call_args.args[1])
+        with patch.object(self.menus, "_open_manual_url", return_value=False):
+            with patch.object(self.menus, "_manual_warning") as warning:
+                manual_action.trigger()
+            self.assertIn("Unable to Open Help", warning.call_args.args[1])
+
     def test_standard_commands_and_shortcuts(self):
         self.assertEqual(
             [a.text().replace("&", "") for a in
