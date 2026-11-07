@@ -10,8 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from math import hypot
+from hashlib import blake2s
 import numpy as np
 
+from car import recolor_index
 from dynamic_scene import ExternalResolver
 from pmp_preview import load_pmp, PMPError
 
@@ -25,6 +27,17 @@ _INDEX_PALETTE = tuple((i, i, i) for i in range(256))
 # The 3DO anchor is at original source row 127, not the visible sprite's
 # midpoint. This convention is independent of which rows contain pixels.
 PMP_ANCHOR_ROW = 127.0
+_IDENTITY_PALETTE = np.arange(256, dtype=np.uint8)
+
+
+def _recolor_lut(layers):
+    """Resolve an instance's car palette remap without changing its PMP asset."""
+    if not layers:
+        return None
+    lookup = np.fromiter(
+        (recolor_index(index, layers) for index in range(256)),
+        dtype=np.uint8, count=256)
+    return None if np.array_equal(lookup, _IDENTITY_PALETTE) else lookup
 
 
 @dataclass(frozen=True)
@@ -76,6 +89,12 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
         if on_activity and instance_id % 100 == 0:
             on_activity(f"PMP scan: instance {instance_id + 1}/{len(scene.instances)} "
                         f"({instance.model.path.name})")
+        # PMPs are indexed colors just like polygon palette slots. Keep
+        # original files and the common palette texture unchanged; prepare
+        # a separate GPU index image for each distinct driver appearance.
+        lookup = _recolor_lut(instance.recolor_layers)
+        suffix = ("#recolor-" + blake2s(lookup.tobytes(), digest_size=12).hexdigest()
+                  if lookup is not None else "")
         for offset, sprite in instance.model.pmp_sprites.items():
             vertex = instance.model.vertices.get(sprite.vertex_ref)
             if vertex is None:
@@ -89,7 +108,7 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                 warnings.append(
                     f"{instance.model.path.name}: missing {sprite.name}.pmp")
                 continue
-            key = str(location.resolve()).casefold()
+            key = str(location.resolve()).casefold() + suffix
             if key not in images:
                 if len(images) >= max_images:
                     warnings.append(
@@ -102,6 +121,10 @@ def prepare_scene_sprites(scene, *, objects_folder=None, texture_folder=None,
                     rgba = np.asarray(decoded.rgba, dtype=np.uint8)
                     image = np.ascontiguousarray(
                         np.stack((rgba[:, :, 0], rgba[:, :, 3]), axis=-1))
+                    if lookup is not None:
+                        # Transform palette *indices*, never RGB or alpha.
+                        # Each helmet angle uses the same driver mapping.
+                        image[:, :, 0] = lookup[image[:, :, 0]]
                     if (sum(data.nbytes for data, _ in images.values()) +
                             image.nbytes > max_bytes):
                         warnings.append(
