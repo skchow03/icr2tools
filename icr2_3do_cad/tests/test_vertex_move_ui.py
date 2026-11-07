@@ -44,7 +44,8 @@ class VertexMoveUITests(unittest.TestCase):
         self.model=SimpleNamespace(
             vertices={11: SimpleNamespace(xyz=(100,20,30)),
                       22: SimpleNamespace(xyz=(-100,20,30))},
-            n3_label_offsets={"left":11,"right":22})
+            n3_label_offsets={"left":11,"right":22},
+            polygons={})
         self.assertTrue(self.pane.goto_model_vertex(self.model,11))
         self.sent=[]
         self.pane.compileRequested.connect(
