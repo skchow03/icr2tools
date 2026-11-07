@@ -44,6 +44,7 @@ try:
     from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings
     from PySide6.QtGui import (
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
+        QImageReader,
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -103,6 +104,9 @@ from vertex_label_data import (
 )
 from vertex_label_overlay import VertexLabelOverlay
 from mip_browser import MipUVBrowser
+from tracing_reference import initial_reference
+from tracing_reference_dialog import TracingReferenceDialog
+from tracing_reference_gl import TracingImageGL
 
 
 VERTEX_SHADER = """
@@ -590,6 +594,9 @@ class GLViewport(QOpenGLWidget):
         self.sky_eye = tuple(SKY_EYE)  # independently adjustable HORIZ-local XYZ
         self._sprite_renderer = None
         self._sprite_events = ()
+        self.tracing_reference = None
+        self.tracing_error = None
+        self._tracing_renderer = TracingImageGL()
         self._atlas = None
         self._palette = None
         self.textures_enabled = True
@@ -811,6 +818,7 @@ class GLViewport(QOpenGLWidget):
             self._release_wire_buffers()
             self._wire_mesh = None
             self._delete_skybox_buffers()
+            self._tracing_renderer.release()
             textures = [tex for tex in (self._atlas_texture, self._palette_texture)
                         if tex is not None]
             if textures:
@@ -823,6 +831,26 @@ class GLViewport(QOpenGLWidget):
             self._program = None
         finally:
             self.doneCurrent()
+
+    def set_tracing_reference(self, reference, image=None):
+        """Update independent reference state; existing 3DO/mesh untouched."""
+        self.tracing_reference = reference
+        self.tracing_error = None
+        if image is not None or reference is None:
+            self._tracing_renderer.set_image(image)
+        self.update()
+
+    def _paint_tracing_reference(self, projection, view):
+        if self.tracing_reference is None or self._mesh is None:
+            return
+        try:
+            self._tracing_renderer.draw(
+                self.tracing_reference, projection, view, self._mesh,
+                depth_enabled=False, restore_program=self._program)
+        except Exception as exc:
+            # An optional photograph cannot make CAD geometry unusable.
+            self.tracing_error = f"Tracing image rendering failed: {exc}"
+            self.tracing_reference = None
 
     def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
                  *, preserve_view=False, on_activity=None):
@@ -1693,11 +1721,13 @@ class GLViewport(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
+            self._paint_tracing_reference(projection, view)
             self._paint_wireframe(projection, view)
             self._capture_depth_visible_labels(projection, view, w, h)
             self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
+        self._paint_tracing_reference(projection, view)
         glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
@@ -2052,6 +2082,8 @@ class Window(QMainWindow):
         self._load_trace = None
         self._info = {}
         self.mip_browser = None  # Separate, non-modal texture reference window
+        self.tracing_dialog = None  # Nonmodal reference calibration controls
+        self._tracing_image = None  # Original full-resolution QImage
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
