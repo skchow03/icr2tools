@@ -62,8 +62,11 @@ def update_model_actions(window):
     """Avoid advertising Save, Export, or Reload on an empty viewer."""
     loaded = window.viewer._model is not None
     for name in ("save", "save_as", "export", "reload", "reload_mips",
-                 "mip_browser", "appearance_overlay"):
+                 "mip_browser", "appearance_overlay", "tracing_load"):
         window.menu_actions[name].setEnabled(loaded)
+    tracing = loaded and window.viewer.tracing_reference is not None
+    for name in ("tracing_adjust", "tracing_remove"):
+        window.menu_actions[name].setEnabled(tracing)
     window.menu_actions["clear_appearance_overlay"].setEnabled(
         loaded and window.car_appearance_overlay is not None)
     window.apply_car_appearance_button.setEnabled(loaded)
@@ -242,6 +245,16 @@ def install_menus(window):
     window.menu_actions["clear_appearance_overlay"] = _add_action(
         assets, "Clear Car Appearance Overlay",
         window.clear_car_appearance_overlay)
+    assets.addSeparator()
+    window.menu_actions["tracing_load"] = _add_action(
+        assets, "Load &Tracing Reference Image…",
+        window.load_tracing_reference_image)
+    window.menu_actions["tracing_adjust"] = _add_action(
+        assets, "Adjust Tracing Reference…",
+        window.adjust_tracing_reference_image)
+    window.menu_actions["tracing_remove"] = _add_action(
+        assets, "Remove Tracing Reference",
+        window.clear_tracing_reference_image)
     assets.addSeparator()
     window.menu_actions["mip_browser"] = _add_action(
         assets, "Browse Model &MIPs / U,V…", window.open_mip_browser)

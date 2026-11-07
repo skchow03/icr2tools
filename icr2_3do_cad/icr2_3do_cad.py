@@ -44,6 +44,7 @@ try:
     from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings
     from PySide6.QtGui import (
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
+        QImageReader,
     )
     from PySide6.QtWidgets import (
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
@@ -103,6 +104,9 @@ from vertex_label_data import (
 )
 from vertex_label_overlay import VertexLabelOverlay
 from mip_browser import MipUVBrowser
+from tracing_reference import initial_reference
+from tracing_reference_dialog import TracingReferenceDialog
+from tracing_reference_gl import TracingImageGL
 
 
 VERTEX_SHADER = """
@@ -590,6 +594,9 @@ class GLViewport(QOpenGLWidget):
         self.sky_eye = tuple(SKY_EYE)  # independently adjustable HORIZ-local XYZ
         self._sprite_renderer = None
         self._sprite_events = ()
+        self.tracing_reference = None
+        self.tracing_error = None
+        self._tracing_renderer = TracingImageGL()
         self._atlas = None
         self._palette = None
         self.textures_enabled = True
@@ -811,6 +818,7 @@ class GLViewport(QOpenGLWidget):
             self._release_wire_buffers()
             self._wire_mesh = None
             self._delete_skybox_buffers()
+            self._tracing_renderer.release()
             textures = [tex for tex in (self._atlas_texture, self._palette_texture)
                         if tex is not None]
             if textures:
@@ -823,6 +831,26 @@ class GLViewport(QOpenGLWidget):
             self._program = None
         finally:
             self.doneCurrent()
+
+    def set_tracing_reference(self, reference, image=None):
+        """Update independent reference state; existing 3DO/mesh untouched."""
+        self.tracing_reference = reference
+        self.tracing_error = None
+        if image is not None or reference is None:
+            self._tracing_renderer.set_image(image)
+        self.update()
+
+    def _paint_tracing_reference(self, projection, view):
+        if self.tracing_reference is None or self._mesh is None:
+            return
+        try:
+            self._tracing_renderer.draw(
+                self.tracing_reference, projection, view, self._mesh,
+                depth_enabled=False, restore_program=self._program)
+        except Exception as exc:
+            # An optional photograph cannot make CAD geometry unusable.
+            self.tracing_error = f"Tracing image rendering failed: {exc}"
+            self.tracing_reference = None
 
     def set_mesh(self, mesh: MeshData, model, atlas, palette, scene,
                  *, preserve_view=False, on_activity=None):
@@ -1693,11 +1721,13 @@ class GLViewport(QOpenGLWidget):
         glActiveTexture(GL_TEXTURE1)
         glBindTexture(GL_TEXTURE_2D, self._palette_texture or 0)
         if self.render_mode == 'wire':
+            self._paint_tracing_reference(projection, view)
             self._paint_wireframe(projection, view)
             self._capture_depth_visible_labels(projection, view, w, h)
             self._paint_split_preview(projection, view)
             return
         self._draw_skybox(view, aspect)
+        self._paint_tracing_reference(projection, view)
         glUniformMatrix4fv(self._uniform, 1, GL_FALSE, matrix)
         glActiveTexture(GL_TEXTURE0)
         glBindTexture(GL_TEXTURE_2D, self._atlas_texture or 0)
@@ -2052,6 +2082,8 @@ class Window(QMainWindow):
         self._load_trace = None
         self._info = {}
         self.mip_browser = None  # Separate, non-modal texture reference window
+        self.tracing_dialog = None  # Nonmodal reference calibration controls
+        self._tracing_image = None  # Original full-resolution QImage
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
@@ -3466,6 +3498,97 @@ class Window(QMainWindow):
     def restore_palette(self):
         self._apply_palette(CAD_ROOT / "gamepal.pcx")
 
+    def load_tracing_reference_image(self):
+        """Load a local photo or drawing without compiling or altering 3DO."""
+        if self._busy():
+            return
+        if self.viewer._mesh is None or self.viewer._model is None:
+            QMessageBox.information(
+                self, "No model", "Open an editable model before adding a "
+                "tracing reference image.")
+            return
+        existing = self.viewer.tracing_reference
+        start = (existing.path.parent if existing is not None else
+                 self.model_path.parent if self.model_path else CAD_ROOT)
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load a tracing reference photo or drawing", str(start),
+            "Images (*.png *.jpg *.jpeg *.bmp *.webp *.tif *.tiff);;All files (*)")
+        if not path:
+            return
+        reader = QImageReader(path)
+        reader.setAutoTransform(True)  # honor JPEG EXIF orientation
+        size = reader.size()
+        if (size.isValid() and
+                (size.width() * size.height() > 40_000_000 or
+                 max(size.width(), size.height()) > 30000)):
+            QMessageBox.warning(
+                self, "Reference image too large",
+                "Please reduce the image below 40 million pixels and "
+                "30,000 pixels per side before loading.")
+            return
+        image = reader.read()
+        if image.isNull():
+            QMessageBox.warning(
+                self, "Cannot read reference image",
+                reader.errorString() or f"Cannot decode {Path(path).name}.")
+            return
+        if (image.width() * image.height() > 40_000_000 or
+                max(image.width(), image.height()) > 30000):
+            QMessageBox.warning(
+                self, "Reference image too large",
+                "Please resize the image below 40 million pixels.")
+            return
+        ref = initial_reference(
+            Path(path), image.width(), image.height(), self.viewer._mesh)
+        self._tracing_image = image
+        self.viewer.set_tracing_reference(ref, image)
+        if self.tracing_dialog is None:
+            self.tracing_dialog = TracingReferenceDialog(
+                ref, image, mesh=self.viewer._mesh,
+                on_change=self._tracing_reference_changed,
+                on_align=self.align_tracing_reference_view,
+                on_browse=self.load_tracing_reference_image,
+                on_remove=self.clear_tracing_reference_image,
+                parent=self)
+        else:
+            self.tracing_dialog.set_reference(ref, image, self.viewer._mesh)
+        update_model_actions(self)
+        self.align_tracing_reference_view(ref.plane)
+        self.adjust_tracing_reference_image()
+
+    def adjust_tracing_reference_image(self):
+        """Show nonmodal placement/calibration controls alongside N3 source."""
+        if (self.viewer.tracing_reference is None or
+                self.tracing_dialog is None):
+            self.load_tracing_reference_image()
+            return
+        self.tracing_dialog.show()
+        self.tracing_dialog.raise_()
+        self.tracing_dialog.activateWindow()
+
+    def _tracing_reference_changed(self, reference):
+        """Live preview: no worker or mesh reparse is involved."""
+        self.viewer.set_tracing_reference(reference)
+        update_model_actions(self)
+
+    def align_tracing_reference_view(self, plane):
+        """Switch to the plane's matching orthographic tracing view."""
+        if self.viewer.fixed_camera_mode:
+            self.fixed_camera_button.setChecked(False)
+        self.viewer.set_view(plane)
+        self.viewer.perspective = False
+        self.viewer.invalidate_visibility()
+        self._sync_projection_controls()
+
+    def clear_tracing_reference_image(self):
+        """Discard independent reference without touching source/model."""
+        self.viewer.set_tracing_reference(None)
+        self._tracing_image = None
+        if self.tracing_dialog is not None:
+            self.tracing_dialog.close()
+            self.tracing_dialog = None
+        update_model_actions(self)
+
     def choose_mip_folder(self):
         if self._busy():
             return
@@ -4198,6 +4321,9 @@ class Window(QMainWindow):
         self._load_progress_stage(
             self.worker, 97, "Finishing controls and track setup",
             repaint=True)
+        if not from_source and not was_reloading:
+            # Reference belongs to the old model; source rebuilds/reloads keep it.
+            self.clear_tracing_reference_image()
         if not from_source:
             self._record_load_activity(
                 "GUI setup: updating MIP browser, camera, workspace and controls")

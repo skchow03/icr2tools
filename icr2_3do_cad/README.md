@@ -21,9 +21,32 @@ To measure viewport performance, use `--benchmark` and optionally `--report cad_
 - Open compiled `.3do` files or standalone Papyrus/N3 `.3D` source; the editable source panel recompiles and updates the viewport after validation.
 - Car, Track and Object workspaces; camera orbit, pan, zoom, orthographic and fixed-camera views, track-guided navigation, indexed HI/MED/LO section windows and optional skybox.
 - Inspect vertex and polygon source declarations, BSP/draw-order decisions, external DYNAMIC models, MIP materials, PMP sprites and visibility.
+- Import a photo, blueprint or car profile as a calibrated model-space tracing image behind the geometry (Front/Side/Top planes, opacity and alignment controls).
 - Preview a separate driver `.3do` RECOLOR and body MIP on the currently editable car or car-part geometry without opening the driver's referenced carshape.
 - Edit N3 source with live diagnostics, reference navigation, polygon splitting, vertex inspection, pointer renaming and scaling.
 - Save source or export a newly compiled `.3do` explicitly; failed compilation does not overwrite game assets.
+
+## Trace geometry over a calibrated reference image
+
+Open a car, part, building or trackside object. Choose **Assets → Load
+Tracing Reference Image…**, then choose a PNG/JPEG/other supported image.
+An independent tracing plane is added behind the editable geometry. The
+nonmodal calibration window stays open alongside the source editor.
+
+Choose **Side (Y/Z)**, **Front (X/Z)** or **Top (X/Y)** and click
+**Align viewport to this plane (orthographic)**. Use **Pick A** and
+**Pick B** to select two points on the photograph (for example the two
+wheel centers), then enter their actual distance in **raw model units**.
+The image scales and rotates so A→B aligns horizontally with the entered
+distance. Move the reference using its U/V origin, or manually adjust the
+scale, rotation, opacity and visibility. The initial image is fitted
+approximately to the model's bounding box before calibration.
+
+To reopen the controls use **Assets → Adjust Tracing Reference…**;
+**Remove Tracing Reference** discards the image. The image is purely a
+preview, not a material, model polygon, source edit or exported asset.
+It stays aligned while orbiting/zooming or editing source, but opening
+an unrelated model clears it. Project-file persistence is not provided.
 
 ## Preview a driver appearance on an editable car model
 

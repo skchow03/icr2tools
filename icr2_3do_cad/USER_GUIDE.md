@@ -26,6 +26,49 @@ The optional --report path writes aggregate timings on close, omitting
 full paths, geometry coordinates and model source. Run once with RENO and
 once with a building or fixtures/roadcar.3do.
 
+## Calibrated tracing/reference images
+
+Use a scanned plan, building elevation, blueprint or car side-profile
+photo as a guide while editing the underlying model:
+
+1. Open the geometry in **File → Open Model…**.
+2. Choose **Assets → Load Tracing Reference Image…** and select a supported
+   PNG, JPEG, BMP, WebP or TIFF. The image is previewed with the default
+   Side (Y/Z) plane centered on the model; you can select Front (X/Z) or
+   Top (X/Y) in the nonmodal calibration window.
+3. Click **Align viewport to this plane (orthographic)** for a useful
+   tracing view. The image is in *model space*, not fixed to screen pixels:
+   it follows the orbit, pan and zoom camera.
+4. Click **Pick A** and the first identifiable point in the image; then
+   **Pick B** and the second. For a car, choose wheel centers; for a
+   building, two points whose separation is known. Enter the corresponding
+   length in **raw Papyrus model units**, not feet/meters unless you have
+   independently converted them. This determines world units per pixel and
+   rotates the image so A→B aligns to the horizontal axis of its selected
+   plane. A coincides with the current **world U/V** anchor.
+5. Fine-tune the **world U/V** anchor, **rotation**, **raw units/pixel**,
+   **opacity** and **Show tracing image**. The **Reset scale and center to
+   model** button restores an approximate fit based on mesh bounds.
+   The reference can be kept while the dialog closes. **Assets → Adjust
+   Tracing Reference…** reopens the controls.
+6. Choose **Assets → Remove Tracing Reference** (or **Remove image** in
+   the dialog) to discard it.
+
+Side uses raw **Y right / Z up**, Front uses **X right / Z up**,
+and Top uses **X right / Y up**, matching the editor's canonical
+orthographic views. The reference is composited **behind** polygons
+even in painter and wireframe modes, so it never steals clicks or
+obscures a modeled face. The image is a *reference-only* GL pass and is
+not added to the geometry, BSP, source, texture atlas or saved/exported
+3DO. A reload or live source recompile preserves the overlay; opening
+a different model clears it. The image file is read locally and is not
+uploaded or modified. Large images are downsampled for GPU display;
+marker coordinates remain relative to the original image size.
+The current tool does not persist references across application restarts.
+For tracing, use a true side elevation/orthographic photograph where
+possible: perspective photos have foreshortening that a two-point
+uniform calibration cannot remove.
+
 ## Car, Track, and Object workspaces
 
 The main window is a **3D viewport and a side-by-side editable .3D source
