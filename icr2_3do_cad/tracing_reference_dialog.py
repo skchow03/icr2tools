@@ -185,6 +185,9 @@ class TracingReferenceDialog(QDialog):
         form.addRow("Tracing plane", self.plane)
 
         self.distance = self._spin(0.000001, 1e12, 4)
+        # A useful first guess is the opened model's bounding-box width;
+        # Qt's QDoubleSpinBox otherwise starts at the tiny minimum value.
+        self.distance.setValue(max(float(mesh.scale) * 2.0, 1.0))
         self.distance.setToolTip(
             "Raw model units between the two photo points, e.g. wheelbase "
             "measured in the model; this is not automatically feet/meters.")
