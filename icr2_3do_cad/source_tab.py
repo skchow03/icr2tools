@@ -953,6 +953,125 @@ class SourcePane(QWidget):
         self._emit_cursor_target()
         self._update_syntax_help()
 
+    def _symmetry_toggled(self, enabled):
+        # No remembered globally-enabled mode: each newly loaded model
+        # deliberately starts with editing independent vertices.
+        for widget in (self.symmetry_plane, self.symmetry_plane_at,
+                       self.symmetry_tolerance):
+            widget.setEnabled(enabled)
+        if enabled and self._ready:
+            self.status.setText(
+                "Symmetry ON: mirrored XYZ source edits use the last valid "
+                "vertex positions; UV/T fields will remain unchanged.")
+
+    def apply_symmetry_before_use(self):
+        """Resolve counterpart edits before compile/save as a single Undo step.
+
+        Called only after the user has finished a source edit (debounced
+        Apply/explicit Apply/Save), not once per keystroke. The unchanged
+        validated source is the pairing reference. No guesses on ambiguity.
+        """
+        if (not self._ready or not self.symmetry_enabled.isChecked()
+                or not self.pending or self._symmetry_skip_once
+                or self._applying_symmetry):
+            return
+        old = self._symmetry_baseline
+        current = self.editor.toPlainText()
+        axis = self.symmetry_plane.currentData()
+        plane_at = self.symmetry_plane_at.value()
+        tolerance = self.symmetry_tolerance.value()
+        try:
+            proposals, issues = plan_mirrored_vertices(
+                old, current, axis=axis, plane_at=plane_at,
+                tolerance=tolerance)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Symmetry matching unavailable", str(exc))
+            return
+        if len(proposals) > 100:
+            QMessageBox.warning(
+                self, "Too many simultaneous vertex edits",
+                "More than 100 vertices changed at once. Automatic symmetry "
+                "was skipped to avoid applying an unintended bulk change. "
+                "Edit a smaller selection or disable symmetry for global "
+                "transformations.")
+            return
+
+        selected = []
+        notes = [entry.reason for entry in issues]
+        for entry in proposals:
+            candidates = entry.candidates
+            if len(candidates) == 1:
+                target = candidates[0]
+            else:
+                # Ambiguous (duplicated/coincident) original geometry:
+                # never select the first candidate without user approval.
+                choices = [
+                    f"{candidate.label} — source line {candidate.line}: "
+                    f"{', '.join(map(str, candidate.xyz))}"
+                    for candidate in candidates]
+                choice, accepted = QInputDialog.getItem(
+                    self, "Choose mirrored vertex",
+                    f"Changed vertex {entry.source.label} "
+                    f"(source line {entry.source.line}) has "
+                    f"{len(candidates)} possible mirror matches across "
+                    f"{axis}={plane_at}.\nSelect which vertex to update:",
+                    choices, 0, False)
+                if not accepted:
+                    notes.append(
+                        f"{entry.source.label}: multiple mirrored vertices "
+                        "found; you canceled the choice, so none was updated.")
+                    continue
+                target = candidates[choices.index(choice)]
+            selected.append((entry, target.label))
+        try:
+            replacements = coordinate_replacements(
+                current, selected, axis=axis, plane_at=plane_at)
+        except ValueError as exc:
+            notes.append(f"Mirrored update not applied: {exc}")
+            replacements = []
+
+        if replacements:
+            from source_rename import qt_utf16_offset
+            cursor = QTextCursor(self.editor.document())
+            self._applying_symmetry = True
+            try:
+                # Join the user's preceding typed edit for a single Undo.
+                cursor.joinPreviousEditBlock()
+                try:
+                    # Descending positions preserve earlier source/UV spans.
+                    for start, end, rendered in replacements:
+                        cursor.setPosition(qt_utf16_offset(current, start))
+                        cursor.setPosition(
+                            qt_utf16_offset(current, end),
+                            QTextCursor.MoveMode.KeepAnchor)
+                        cursor.insertText(rendered)
+                finally:
+                    cursor.endEditBlock()
+            finally:
+                self._applying_symmetry = False
+            self._rename_snapshot = self.editor.toPlainText()
+            # The batch edit blocked _edited's normal revision/debounce
+            # path; invoke it exactly once after committing the edit block.
+            self._edited()
+            self.change_log.appendPlainText(
+                f"[{QTime.currentTime().toString('HH:mm:ss')}] "
+                f"Mirrored XYZ across {axis}={plane_at}: "
+                + ", ".join(f"{edit.source.label} → {target}"
+                            for edit, target in selected)
+                + f" ({len(replacements)} coordinate values; UV unchanged).")
+        if notes:
+            self.change_log.appendPlainText(
+                f"[{QTime.currentTime().toString('HH:mm:ss')}] "
+                "Symmetry warnings:\n" + "\n".join(notes[:25]))
+            extra = (f"\n…and {len(notes)-12} more in the source change log."
+                     if len(notes) > 12 else "")
+            QMessageBox.warning(
+                self, "Symmetry counterpart not resolved",
+                "\n".join(notes[:12]) + extra +
+                "\n\nThe edited source remains intact; unpaired changes "
+                "were not silently reflected.")
+        return len(replacements)
+
     def apply_now(self):
         if not self._ready:
             return
