@@ -153,8 +153,9 @@ geometry and .3D Source. A wrapper's own geometry reference is intentionally
 ignored for this explicit overlay: `cit74.3do` can be previewed on
 `roadcar.3do` despite referencing `indycar.3do`. Paintable external DYNAMIC body pieces (for example, `flpod.3do` or
 `frpod.3do`) inherit the driver RECOLOR and livery MIP when they have no
-closer named MATERIAL. Wheel, tire and helmet attachments keep their own
-palette colors and MIPs. The overlay is **preview-only**: exporting
+closer named MATERIAL. Wheel and tire attachments keep independent palette colors and
+MIPs. Helmet and helmetp PMP/PMP2 sprites instead inherit driver RECOLOR
+for all eight camera-angle variants, without inheriting the body MIP. The overlay is **preview-only**: exporting
 compiled geometry does not embed the wrapper's RECOLOR/MIP or rewrite it.
 If a body MIP is missing, the MIP diagnostics identify it. A separate manual
 body-MIP override takes precedence until cleared.
