@@ -3326,11 +3326,18 @@ class Window(QMainWindow):
         target = self.source_pane.current_target()
         if (not self.source_toggle.isChecked() or
                 self._source_invalid or target is None or
-                target[0] != "polygon" or
-                self.viewer._model is None or
-                (self.viewer._visibility_dirty and
-                 (self.viewer.render_mode != "all" or
-                  self.viewer._track_lod_active()))):
+                self.viewer._model is None):
+            self.source_pane.set_polygon_visibility(None)
+            return
+        if target[0] == "vertex":
+            # Vertices have no BSP visibility bit. Use the same full-row
+            # green selection treatment as a visible POLY.
+            self.source_pane.set_polygon_visibility(True)
+            return
+        if target[0] != "polygon" or (
+                self.viewer._visibility_dirty and
+                (self.viewer.render_mode != "all" or
+                 self.viewer._track_lod_active())):
             self.source_pane.set_polygon_visibility(None)
             return
         offset = target_offset(self.viewer._model, "polygon", target[1])
@@ -3496,6 +3503,9 @@ class Window(QMainWindow):
                     f'"{target.name}". Existing file contents will be lost.',
                     'Overwrite original'):
                 return False
+        # Ctrl+S can precede the debounce/compile timer. Finish any
+        # pending counterpart edits before serializing the source.
+        self.source_pane.apply_symmetry_before_use()
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             fd, temporary = tempfile.mkstemp(

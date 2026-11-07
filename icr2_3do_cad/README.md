@@ -47,6 +47,29 @@ Toggle either overlay independently under **View → Display Options** or
 These are transparent, nonselectable UI guides only; they do not alter
 the model, tracing-image calibration, BSP, rendered geometry or exports.
 
+## Symmetrical vertex editing (optional)
+
+Clicking a vertex in the viewport navigates to its .3D Source declaration,
+highlighting the **whole row green**, as with a visible POLY.
+
+The new **Symmetrical vertex editing** checkbox above the source is
+**OFF by default every time a model opens**. Set a mirror plane:
+X=constant (YZ), Y=constant (XZ) or Z=constant (XY). The raw model
+plane coordinate defaults to 0; tolerance defaults to 0 (exact matches).
+
+At Apply or the normal source debounce, the editor pairs each modified
+named vertex using its *last validated* XYZ coordinates, then updates
+the opposite vertex to the mirrored new XYZ. **Only XYZ numbers change;
+texture U/V, labels, comments and polygon statements are preserved.**
+Automatic edits are grouped for Undo and logged. Missing counterparts and
+centerline points moved off-plane trigger warnings; multiple matching
+vertices present a choice of labeled source rows, which can be canceled.
+If both halves were edited manually, neither is silently overwritten.
+
+This is for matched existing N3 vertices, not an operation that creates
+new geometry. Structural edits and whole-model scaling are independent
+of per-vertex mirroring.
+
 ## Trace geometry over a calibrated reference image
 
 Open a car, part, building or trackside object. Choose **Assets → Load

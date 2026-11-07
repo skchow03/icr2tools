@@ -54,6 +54,40 @@ Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
 geometry, selection or texture rendering; toggling them does not recompile
 any model.
 
+## Symmetry editing and vertex highlighting
+
+Selected vertex declarations in .3D Source now receive the same green
+full-row highlight as a visible polygon. This works when picking a vertex
+in the 3D viewport and when placing the source cursor on its declaration.
+Vertices have no BSP polygon visibility status.
+
+The **Symmetrical vertex editing** checkbox above the source is **off by
+default on each new model**. Enable it only for geometry you expect to be
+symmetrical, and select the correct mirror plane. X=constant mirrors across
+YZ, Y=constant across XZ, and Z=constant across XY. The plane location
+is in raw Papyrus coordinates and defaults to 0. The tolerance (also
+raw coordinates) defaults to 0, requiring exact counterpart positions.
+
+Edit a named vertex's XYZ triple normally. Before the editor compiles,
+it finds the opposite vertex by reflecting its *previous successfully
+validated XYZ*, not the already edited coordinates. With X=0,
+changing left: [<100,20,30>]; to left: [<150,25,40>]; updates the
+existing right: [<-100,20,30>]; to right: [<-150,25,40>].
+With an offset mirror plane X=500, reflected X is 1000 - X.
+
+**U/V texture coordinates and T fields never change.** The replacement
+touches only the three XYZ number tokens, leaving other statements,
+comments, materials, labels and references intact. Mirrored edits are
+recorded in Automatic source changes and grouped with the source edit
+for Undo.
+
+When no match exists, the editor warns you; it also warns about a vertex
+moved off its original symmetry plane. When several vertices occupy a
+reflected position, you must choose which named source vertex to modify.
+Canceling skips it. Editing both halves yourself prevents an automatic
+overwrite. This mode never creates missing vertices or repairs unrelated
+asymmetry. Structural edits and whole-model scaling bypass this helper.
+
 ## Calibrated tracing/reference images
 
 Use a scanned plan, building elevation, blueprint or car side-profile
