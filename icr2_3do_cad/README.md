@@ -45,8 +45,23 @@ approximately to the model's bounding box before calibration.
 To reopen the controls use **Assets → Adjust Tracing Reference…**;
 **Remove Tracing Reference** discards the image. The image is purely a
 preview, not a material, model polygon, source edit or exported asset.
-It stays aligned while orbiting/zooming or editing source, but opening
-an unrelated model clears it. Project-file persistence is not provided.
+It stays aligned while orbiting/zooming or editing source. Opening an
+unrelated model clears the active overlay, but **saved reference profiles**
+can restore the full calibration on any model, including after restarting CAD.
+
+Use **Save as…** in the calibration window (or **Assets → Save Tracing
+Reference Profile…**) to name a reusable profile. Select a saved name in
+the dialog and click **Restore**, or use **Assets → Restore Saved Tracing
+Profile…**. The default places the same calibrated image and model-unit
+offset relative to the **new model's center**; choose **Keep exact saved
+model coordinates** if you need the original absolute U/V instead. Delete
+profiles from the dialog or Assets menu without deleting the actual image.
+
+Profiles are saved in the user's application configuration directory
+(`ICR2Tools/3DOCAD/tracing_profiles.json`), **not** in a game model or
+track folder. They reference image files by absolute path; moving an
+image breaks that profile until the image is restored to its saved path.
+Images are not embedded, copied, or uploaded.
 
 ## Preview a driver appearance on an editable car model
 
