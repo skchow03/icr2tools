@@ -30,6 +30,7 @@ from source_scale import scale_n3_source
 from source_symmetry import (
     named_vertices, plan_mirrored_vertices, coordinate_replacements,
 )
+from source_vertex_move import plan_vertex_move
 from source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
 from source_filters import CATEGORIES, index_source_entries
@@ -1140,6 +1141,64 @@ class SourcePane(QWidget):
             self.editor.setTextCursor(cursor)
             self.editor.centerCursor()
             self.editor.setFocus()
+
+    def move_compiled_vertex(self, model, offset, new_raw_xyz):
+        """Write viewport-dragged XYZ into canonical N3 as one Undo step.
+
+        Model offsets can change on recompilation; resolve the selected
+        label against this model and current valid source before each drag.
+        Preserve all U/V/T, comments, pointer names and unrelated rows.
+        Symmetry (when enabled) is subsequently applied by apply_now().
+        """
+        if not self._ready or self.pending or self._last_error_line is not None:
+            raise ValueError("Finish or correct pending .3D Source edits first.")
+        if self.filtered_list.state() == QAbstractItemView.State.EditingState:
+            raise ValueError("Finish the filtered statement edit first.")
+        if model is None or offset not in model.vertices:
+            raise ValueError("The selected root-model vertex is no longer available.")
+        current = self.current_target()
+        if current is None or current[0] != "vertex" or (
+                target_offset(model, "vertex", current[1]) != offset):
+            raise ValueError(
+                "Selected source vertex no longer matches the viewport point. "
+                "Select the vertex again before dragging.")
+
+        label = current[1]
+        original_source = self.editor.toPlainText()
+        plan = plan_vertex_move(
+            original_source, label, model.vertices[offset].xyz, new_raw_xyz)
+        if not plan.changed:
+            return plan
+
+        from source_rename import qt_utf16_offset
+        self._rename_timer.stop()
+        self._rename_pending = None
+        self._applying_rename = True
+        cursor = QTextCursor(self.editor.document())
+        try:
+            cursor.beginEditBlock()
+            try:
+                for start, end, text in plan.edits:
+                    cursor.setPosition(qt_utf16_offset(original_source, start))
+                    cursor.setPosition(
+                        qt_utf16_offset(original_source, end),
+                        QTextCursor.MoveMode.KeepAnchor)
+                    cursor.insertText(text)
+            finally:
+                cursor.endEditBlock()
+        finally:
+            self._applying_rename = False
+
+        self._rename_snapshot = self.editor.toPlainText()
+        self._edited()
+        self.change_log.appendPlainText(
+            f"[{QTime.currentTime().toString('HH:mm:ss')}] "
+            f"Moved {label} raw XYZ: {plan.before} → {plan.after}; "
+            "texture UV unchanged.")
+        # The normal symmetry path pairs from the previous validated
+        # coordinates and joins its edits to this same Undo block.
+        self.apply_now()
+        return plan
 
     def goto_model_vertex(self, model, offset):
         """Jump to a compiled root vertex's authored or generated N3 label."""
