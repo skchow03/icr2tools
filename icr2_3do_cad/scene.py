@@ -34,6 +34,11 @@ _INDEPENDENT_CAR_PARTS = frozenset({
 })
 
 
+def _helmet_part(name):
+    """Driver helmet models are independent MIPs but share car RECOLOR."""
+    return Path(name).stem.casefold().startswith("helmet")
+
+
 def _independent_car_part(name):
     stem = Path(name).stem.casefold()
     return (stem in _INDEPENDENT_CAR_PARTS or "wheel" in stem
@@ -50,6 +55,7 @@ class Instance:
     texture_source: Path | None = None
     recolor_layers: tuple[dict[int, int], ...] = ()
     car_body: bool = False  # True for base shape and paintable DYNAMIC children
+    sprite_recolor_layers: tuple[dict[int, int], ...] = ()
 
 
 @dataclass
@@ -98,7 +104,8 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
         texture_source=(appearance.path if appearance is not None and
                         appearance.texture_name else None),
         recolor_layers=((root_recolor,) if root_recolor else ()),
-        car_body=paintable_car)]
+        car_body=paintable_car,
+        sprite_recolor_layers=((root_recolor,) if root_recolor else ()))]
     links = {}
     warnings = []
     if on_activity:
@@ -164,15 +171,22 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
             local_recolor = recolor_table(child)
-            # Paint continues through bodywork parts such as flpod/frpod,
-            # but not through wheel/helmet attachment branches.
+            # Geometry RECOLOR continues through paintable bodywork only.
+            # Independent helmet models may have polygons, which must keep
+            # their original palette slots. Their PMP/PMP2 indexed pixels,
+            # however, inherit the driver's remapping separately.
             inherited = (instance.recolor_layers
                          if not instance.car_body or child_car_body else ())
             layers = inherited + ((local_recolor,) if local_recolor else ())
+            sprite_inherited = (instance.sprite_recolor_layers
+                                if (not instance.car_body or child_car_body or
+                                    _helmet_part(name)) else ())
+            sprite_layers = sprite_inherited + (
+                (local_recolor,) if local_recolor else ())
             instances.append(Instance(
                 child, transform, instance.depth+1,
                 instance.ancestry | frozenset((key,)), texture_override,
-                texture_source, layers, child_car_body))
+                texture_source, layers, child_car_body, sprite_layers))
 
     vertices = {}
     polygons = {}
