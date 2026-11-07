@@ -622,7 +622,10 @@ rebuilt. Back up and validate any edited model in ICR2.
   base-car and paintable DYNAMIC bodywork polygon color indices, while wheel
   attachments preserve their independent colors and textures. Helmet
   PMP/PMP2 sprites inherit the driver RECOLOR for their indexed pixels across
-  all eight viewing angles, but never the car-body MIP.
+  all eight viewing angles, but never the car-body MIP. Mesh-based helmets in
+  custom carsets instead inherit the driver's polygon RECOLOR and body MIP
+  when they lack a local MATERIAL; their UVs may address extended MIP rows
+  beyond the usual first 256 pixels.
   The livery's indexed MIP pixels are unchanged.
 - **Apply Individual-Car RECOLOR / MIP…**: after opening a geometry model
   (for example `roadcar.3do` or `indycar.3do`), choose this command in
@@ -631,7 +634,9 @@ rebuilt. Back up and validate any edited model in ICR2.
   DYNAMIC bodywork children (for example `flpod.3do`); the wrapper MIP is
   looked up beside `cit74.3do` and inherited by textured bodywork without a
   closer named MATERIAL. Wheel and tire branches are excluded from
-  RECOLOR; helmet/helmetp PMP sprites inherit RECOLOR only, not the MIP. This intentionally ignores the wrapper's
+  RECOLOR; sprite-only helmet/helmetp PMP models inherit sprite RECOLOR only,
+  whereas geometric helmets with POLY/POLY[T] faces inherit polygon RECOLOR
+  and the driver MIP for textured faces without a closer named MATERIAL. This intentionally ignores the wrapper's
   own EXTERN geometry reference, so CIT74 (which references INDYCAR) can be
   previewed over ROADCAR without swapping meshes. The model currently in the
   .3D Source pane remains editable; live recompilation, camera position and
