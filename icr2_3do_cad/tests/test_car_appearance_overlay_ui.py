@@ -156,12 +156,12 @@ class CarAppearanceOverlayUITests(unittest.TestCase):
 
     def test_source_recompile_worker_retains_appearance(self):
         from icr2_3do_cad import LoadWorker
-        source = ("3D VERSION 3.0;\\n"
-                  "a: [<0,0,0>];\\n"
-                  "b: [<100,0,0>];\\n"
-                  "c: [<0,100,0>];\\n"
-                  "surface: POLY <44> {a,b,c};\\n"
-                  "root: LIST {surface};\\n")
+        source = ("3D VERSION 3.0;\n"
+                  "a: [<0,0,0>];\n"
+                  "b: [<100,0,0>];\n"
+                  "c: [<0,100,0>];\n"
+                  "surface: POLY <44> {a,b,c};\n"
+                  "root: LIST {surface};\n")
         worker = LoadWorker(
             Path("source_preview.3d"), ROOT / "gamepal.pcx",
             source_text=source, source_path=Path("source_preview.3d"),
