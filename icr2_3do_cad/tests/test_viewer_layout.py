@@ -52,6 +52,23 @@ class CADViewerLayoutTests(unittest.TestCase):
         self.assertTrue(self.window.source_toggle.isChecked())
         self.assertFalse(self.window.source_pane.isHidden())
 
+    def test_direct_vertex_move_controls_are_visible_and_default_off(self):
+        window = self.window
+        self.assertIs(window.move_vertex_button.parentWidget(),
+                      window.distance_bar)
+        self.assertFalse(window.move_vertex_button.isChecked())
+        self.assertFalse(window.viewer.move_vertex_enabled)
+        self.assertEqual(window.move_snap_combo.currentData(), 1)
+        window.move_vertex_button.setChecked(True)
+        self.assertTrue(window.viewer.move_vertex_enabled)
+        index = window.move_snap_combo.findData(100)
+        window.move_snap_combo.setCurrentIndex(index)
+        self.assertEqual(window.viewer.move_snap, 100)
+        window.move_vertex_button.setChecked(False)
+        window.move_snap_combo.setCurrentIndex(
+            window.move_snap_combo.findData(1))
+        self.assertFalse(window.viewer.move_vertex_enabled)
+
     def test_former_sidebar_sections_are_nonmodal_dialogs(self):
         for key in ("model", "display", "assets", "advanced"):
             with self.subTest(key=key):
