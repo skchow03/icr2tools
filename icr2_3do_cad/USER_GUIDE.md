@@ -64,7 +64,34 @@ not added to the geometry, BSP, source, texture atlas or saved/exported
 a different model clears it. The image file is read locally and is not
 uploaded or modified. Large images are downsampled for GPU display;
 marker coordinates remain relative to the original image size.
-The current tool does not persist references across application restarts.
+The active overlay is session-only, but you can save reusable profiles:
+
+- **Save as…** in the calibration window, or **Assets → Save Tracing
+  Reference Profile…**, names the active image and its plane, two
+  calibration points, known distance, raw model-units-per-pixel, rotation,
+  U/V placement, visibility and opacity. Saving an existing name asks before
+  replacing it.
+- Choose a name and **Restore** inside the dialog, or use **Assets →
+  Restore Saved Tracing Profile…** after opening a different model. Profiles
+  persist after quitting and reopening 3DO CAD. The default **Place relative
+  to current model center** keeps the original raw-unit offset from the
+  source mesh center while retaining the same physical scale and rotation.
+  To place it at the saved *exact absolute coordinates*, choose **Keep exact
+  saved model coordinates** in the dialog before restoring.
+- **Delete** in the calibration window, or **Assets → Delete Saved
+  Tracing Profile…**, removes that saved calibration entry. It does not
+  remove the source photograph, the currently displayed image, or the
+  model. Deleted profiles cannot be restored unless saved again.
+
+The profile library is a human-readable JSON file in the user configuration
+folder, `ICR2Tools/3DOCAD/tracing_profiles.json`, separate from game assets.
+Profiles keep an **absolute filesystem path** to the original image rather
+than copying image pixels. If an image is moved, removed or resized, the
+app reports the problem and leaves the current reference untouched. Restore
+the original image path/dimensions or recalibrate/save a new profile.
+Profiles can be applied to any model in that installation; moving to a
+different computer requires the image files to be available at the saved
+paths. A saved profile is not baked into any compiled 3DO.
 For tracing, use a true side elevation/orthographic photograph where
 possible: perspective photos have foreshortening that a two-point
 uniform calibration cannot remove.
