@@ -104,6 +104,32 @@ def hit_move_handle(handles, mouse_x, mouse_y, *, radius=11.0):
     return choices[0][1]
 
 
+def connected_vertex_edges(model, offset, *, max_neighbors=96):
+    """Return unique neighboring root vertices for a lightweight drag preview.
+
+    A moved pointer changes every polygon that refers to it. Outline only
+    the connected edges, rather than rebuilding the polygon mesh or BSP.
+    Refuse huge neighborhoods instead of allocating an unbounded overlay.
+    """
+    if model is None or offset not in model.vertices:
+        return ()
+    neighbors = set()
+    for poly in model.polygons.values():
+        refs = poly.unique_refs
+        if offset not in refs or len(refs) < 2:
+            continue
+        for i, ref in enumerate(refs):
+            if ref == offset:
+                neighbors.add(refs[(i - 1) % len(refs)])
+                neighbors.add(refs[(i + 1) % len(refs)])
+        if len(neighbors) > max_neighbors:
+            return ()
+    return tuple(
+        (ref, tuple(model.vertices[ref].xyz))
+        for ref in sorted(neighbors)
+        if ref != offset and ref in model.vertices)
+
+
 def drag_raw_coordinate(handle, press, mouse, original_xyz, *, snap=1,
                         fine=False):
     """Unproject mouse displacement onto the picked raw model-space axis.
