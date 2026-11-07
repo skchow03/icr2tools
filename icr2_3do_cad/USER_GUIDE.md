@@ -65,7 +65,7 @@ any model.
    Click the *shaft or arrowhead* of the desired axis and drag.
    The camera will not orbit during a handle drag.
 4. The live marker and readout show the proposed **raw Papyrus XYZ**
-   while the original compiled mesh remains stable. **Release** the
+   and dashed connected polygon edges while the original compiled mesh remains stable. **Release** the
    mouse to apply the new coordinate to the original N3 source and
    start an ordinary full-mesh rebuild. Only the selected axis changes.
    To cancel mid-drag, press **Esc**. Hold **Shift during a drag**
