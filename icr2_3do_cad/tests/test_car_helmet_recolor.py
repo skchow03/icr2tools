@@ -94,12 +94,14 @@ class CarHelmetRecolorTests(unittest.TestCase):
         for instance in scene.instances:
             stem = instance.model.path.stem.casefold()
             if stem.startswith("helmet"):
-                self.assertEqual(instance.recolor_layers,
+                self.assertFalse(instance.recolor_layers)
+                self.assertEqual(instance.sprite_recolor_layers,
                                  (self.wrapper.mapping,))
                 self.assertFalse(instance.car_body)
                 self.assertIsNone(instance.texture_override)
             elif stem in {"sfront", "srear", "fwheel", "rwheel"}:
                 self.assertFalse(instance.recolor_layers)
+                self.assertFalse(instance.sprite_recolor_layers)
                 if stem in {"sfront", "srear"}:
                     self.assertIsNone(instance.texture_override)
                 else:
