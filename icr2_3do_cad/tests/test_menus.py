@@ -69,27 +69,47 @@ class CADViewerMenuTests(unittest.TestCase):
         self.fail(f"Missing action {title}")
 
 
-    def test_help_manual_opens_local_html_and_reports_missing_file(self):
+    def test_help_menu_opens_native_window_and_reuses_it(self):
+        from unittest.mock import Mock
+
         help_menu = self._menu("Help")
-        manual_action = self._action(
-            help_menu, "User Manual (Contents and Index)…")
+        manual_action = self._action(help_menu, "Help Topics…")
         self.assertEqual(manual_action.shortcut().toString(), "F1")
         manual = self.menus._user_manual_path()
         self.assertIsNotNone(manual)
         self.assertTrue(manual.is_file())
         self.assertEqual(manual.name, "USER_MANUAL.html")
-        with patch.object(self.menus, "_open_manual_url",
-                          return_value=True) as open_url:
-            manual_action.trigger()
-            open_url.assert_called_once_with(manual)
-        with patch.object(self.menus, "_user_manual_path", return_value=None):
-            with patch.object(self.menus, "_manual_warning") as warning:
+
+        try:
+            self.window._user_manual_dialog = None
+            dialog = Mock()
+            with patch.object(
+                self.menus, "_create_help_window", return_value=dialog
+            ) as create:
                 manual_action.trigger()
-            self.assertIn("Help File Not Found", warning.call_args.args[1])
-        with patch.object(self.menus, "_open_manual_url", return_value=False):
-            with patch.object(self.menus, "_manual_warning") as warning:
                 manual_action.trigger()
-            self.assertIn("Unable to Open Help", warning.call_args.args[1])
+                create.assert_called_once_with(manual, self.window)
+                self.assertEqual(dialog.show.call_count, 2)
+                self.assertEqual(dialog.raise_.call_count, 2)
+                self.assertEqual(dialog.activateWindow.call_count, 2)
+                self.assertIs(self.window._user_manual_dialog, dialog)
+
+            self.window._user_manual_dialog = None
+            with patch.object(self.menus, "_user_manual_path", return_value=None):
+                with patch.object(self.menus, "_manual_warning") as warning:
+                    manual_action.trigger()
+                self.assertIn("Help File Not Found", warning.call_args.args[1])
+
+            self.window._user_manual_dialog = None
+            with patch.object(
+                self.menus, "_create_help_window",
+                side_effect=ValueError("malformed document"),
+            ):
+                with patch.object(self.menus, "_manual_warning") as warning:
+                    manual_action.trigger()
+                self.assertIn("Unable to Read Help", warning.call_args.args[1])
+        finally:
+            self.window._user_manual_dialog = None
 
     def test_standard_commands_and_shortcuts(self):
         self.assertEqual(
