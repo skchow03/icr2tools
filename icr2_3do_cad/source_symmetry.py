@@ -8,6 +8,7 @@ not the newly moved coordinate. No model binary or GL dependency.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from bisect import bisect_right
 from decimal import Decimal, InvalidOperation
 import re
 
@@ -73,6 +74,9 @@ def named_vertices(source):
     """
     masked = mask_comments(source)
     vertices = {}
+    # Preindex line breaks: counting from the document's start for every
+    # vertex becomes quadratic on large track files like RENO.3D.
+    line_ends = [m.start() for m in re.finditer("\\n", source)]
     for match in _VERTEX.finditer(masked):
         label = match.group("label")
         if label in vertices:
@@ -85,7 +89,7 @@ def named_vertices(source):
             continue
         vertices[label] = NamedVertex(
             label, xyz, tuple(match.span(axis) for axis in "xyz"),
-            source.count('\n', 0, match.start()) + 1)
+            bisect_right(line_ends, match.start()) + 1)
     return vertices
 
 
@@ -182,8 +186,7 @@ def coordinate_replacements(current, selected, *, axis, plane_at=0):
             if old_value == new_value:
                 continue
             # Use decimal text as plain N3 coordinates; no UV fields touched.
-            rendered = format(new_value, "f").rstrip("0").rstrip(".") if (
-                new_value == new_value.to_integral_value()) is False else format(new_value, "f")
+            rendered = format(new_value, "f")
             if "." in rendered:
                 rendered = rendered.rstrip("0").rstrip(".")
             if rendered in ("", "-0"):
