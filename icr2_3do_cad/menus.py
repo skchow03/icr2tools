@@ -215,6 +215,11 @@ def install_menus(window):
     _bind_checkbox(options, "Textures", window.show_textures)
     _bind_checkbox(options, "PMP sprites", window.show_sprites)
     _bind_checkbox(options, "Repeat UV (tile MIPs)", window.repeat_uv)
+    options.addSeparator()
+    _bind_checkbox(options, "Extended XYZ &axis guides",
+                   window.axis_guides_toggle)
+    _bind_checkbox(options, "Corner XYZ &orientation gizmo",
+                   window.orientation_gizmo_toggle)
 
     model = bar.addMenu("&Model")
     workspace = model.addMenu("&Workspace")
