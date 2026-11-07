@@ -58,7 +58,7 @@ cancel without modifying anything. An axis pointing directly at the
 camera cannot be manipulated in that view: orbit or choose another
 orthographic view.
 
-The translucent Qt gizmo shows the proposed raw Papyrus XYZ immediately.
+The translucent Qt gizmo shows the proposed raw Papyrus XYZ and a dashed preview of incident polygon edges immediately.
 The geometry itself remains unchanged while dragging, to avoid repeated
 expensive N3 compilation. **Release** the mouse to modify the selected
 vertex's XYZ fields in the canonical .3D Source, apply the existing
