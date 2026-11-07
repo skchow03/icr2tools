@@ -35,7 +35,7 @@ _INDEPENDENT_CAR_PARTS = frozenset({
 
 
 def _helmet_part(name):
-    """Driver helmet models are independent MIPs but share car RECOLOR."""
+    """Helmet components may be PMP sprites or actual paintable 3DO meshes."""
     return Path(name).stem.casefold().startswith("helmet")
 
 
@@ -136,15 +136,6 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                 texture_source = (instance.model.path if event[2]
                                   else instance.texture_source)
 
-            child_car_body = (instance.car_body and
-                              not _independent_car_part(name))
-            if instance.car_body and not child_car_body:
-                # A car's MIP/RECOLOR must not repaint the wheels or driver.
-                # Preserve a MATERIAL explicitly present at the insertion site.
-                if kind == 'dynamic' or not event[2]:
-                    texture_override = None
-                    texture_source = None
-
             if (parent_id, kind, ref) in links:
                 # Original traversal deduplicates each record. Negative child
                 # pointers can be reused by distinct MATERIAL wrappers; the
@@ -168,13 +159,27 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             if len(instances) >= max_instances:
                 warnings.append(f'Maximum {max_instances} external instances reached')
                 continue
+            # Stock helmets contain only PMP/PMP2 sprite angle views.
+            # Modern carsets can instead use a real 3DO helmet mesh with
+            # POLY[T] faces UV-mapped onto the driver's extended body MIP.
+            # Decide inheritance from parsed child geometry, not filename
+            # alone, so sprite-only helmets stay independent of the body MIP.
+            child_car_body = (instance.car_body and
+                              (not _independent_car_part(name) or
+                               (_helmet_part(name) and bool(child.polygons))))
+            if instance.car_body and not child_car_body:
+                # Wheel/tire and sprite-only helmet branches never inherit
+                # the driver's body MIP. Named MATERIAL at the insertion
+                # site still takes precedence over inherited paint.
+                if kind == 'dynamic' or not event[2]:
+                    texture_override = None
+                    texture_source = None
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
             local_recolor = recolor_table(child)
-            # Geometry RECOLOR continues through paintable bodywork only.
-            # Independent helmet models may have polygons, which must keep
-            # their original palette slots. Their PMP/PMP2 indexed pixels,
-            # however, inherit the driver's remapping separately.
+            # Mesh helmets inherit the driver's polygon RECOLOR and
+            # unassigned MIP just like bodywork. Stock sprite-only helmets
+            # inherit RECOLOR for PMP/PMP2 pixels but no body MIP.
             inherited = (instance.recolor_layers
                          if not instance.car_body or child_car_body else ())
             layers = inherited + ((local_recolor,) if local_recolor else ())
