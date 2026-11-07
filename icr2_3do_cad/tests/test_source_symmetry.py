@@ -126,6 +126,22 @@ other: MIP "a: [<100,20,30>];";
         self.assertIn('% the trailing comment stays', replacement)
         self.assertIn('% ghost: [<-100,20,30>]', replacement)
 
+    def test_newly_inserted_vertex_warns_but_simple_rename_does_not(self):
+        with_new = BASE.replace(
+            "root: LIST {p};",
+            "added: [<250,8,9>, T=<7,8>];\\nroot: LIST {p};")
+        proposals, issues = plan_mirrored_vertices(
+            BASE, with_new, axis="X")
+        self.assertFalse(proposals)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("no validated mirror pairing", issues[0].reason)
+        renamed = BASE.replace("left: [<100,20,30>",
+                               "frontleft: [<100,20,30>")
+        proposals, issues = plan_mirrored_vertices(
+            BASE, renamed, axis="X")
+        self.assertFalse(proposals)
+        self.assertFalse(issues)
+
     def test_decimal_precision_and_duplicate_name_rejection(self):
         a = "a: [<1.250,-2.5,3>];\nb: [<-1.25,-2.5,3>];"
         edited = a.replace("1.250,-2.5,3", "2.75,-1.125,3.5")
