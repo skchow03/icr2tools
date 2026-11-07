@@ -6,6 +6,7 @@ import numpy as np
 
 from vertex_move import (
     move_handles, hit_move_handle, drag_raw_coordinate,
+    connected_vertex_edges,
 )
 
 
@@ -82,6 +83,21 @@ class VertexMoveMathTests(unittest.TestCase):
             (45,55,65))
         self.assertNotEqual(result[0],45)
         self.assertEqual(result[1:],(55,65))
+
+    def test_connected_edge_preview_only_tracks_incident_polygons(self):
+        from types import SimpleNamespace
+        model = SimpleNamespace(
+            vertices={i: SimpleNamespace(xyz=(i, 0, 0))
+                      for i in range(1, 7)},
+            polygons={
+                10: SimpleNamespace(unique_refs=(1,2,3)),
+                20: SimpleNamespace(unique_refs=(1,3,4)),
+                30: SimpleNamespace(unique_refs=(5,6,3)),
+            })
+        self.assertEqual(connected_vertex_edges(model,1),
+                         ((2,(2,0,0)),(3,(3,0,0)),(4,(4,0,0))))
+        self.assertEqual(connected_vertex_edges(model,1,max_neighbors=2),())
+        self.assertEqual(connected_vertex_edges(model,999),())
 
     def test_clip_rejection_and_near_edge_safety(self):
         h = move_handles((1_000_000,0,0), (0,0,0), 1,
