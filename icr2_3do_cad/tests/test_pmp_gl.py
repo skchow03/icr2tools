@@ -40,8 +40,16 @@ class GPURealPMPRenderingTests(unittest.TestCase):
         self.assertTrue(self.view.context().isValid())
 
     def tearDown(self):
+        # Each test creates a separate OpenGL context. close() hides the
+        # QWidget but does not destroy its native GL context immediately;
+        # under Xvfb/Mesa several hidden contexts can exhaust shader link
+        # resources. Flush Qt's deferred widget destruction between tests.
+        from PySide6.QtCore import QCoreApplication, QEvent
         self.view.shutdown_gl()
         self.view.close()
+        self.view.deleteLater()
+        QCoreApplication.sendPostedEvents(
+            None, QEvent.Type.DeferredDelete)
         self.app.processEvents()
 
     def install_model(self, name):
