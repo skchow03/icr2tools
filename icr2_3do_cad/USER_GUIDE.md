@@ -442,6 +442,25 @@ rebuilt. Back up and validate any edited model in ICR2.
   the referenced base geometry (e.g. `indycar.3do`) separately. It maps
   only *base car* polygon color indices, preserving independent wheel and
   helmet colors and textures. The livery's indexed MIP pixels are unchanged.
+- **Apply Individual-Car RECOLOR / MIP…**: after opening a geometry model
+  (for example `roadcar.3do` or `indycar.3do`), choose this command in
+  **Assets** or **Model → Car Settings…**. Select an individual-driver wrapper,
+  such as `cit74.3do`. Its RECOLOR mapping applies only to the loaded root
+  geometry; its MIP name is looked up beside `cit74.3do` and assigned only to
+  the root textured body polygons. This intentionally ignores the wrapper's
+  own EXTERN geometry reference, so CIT74 (which references INDYCAR) can be
+  previewed over ROADCAR without swapping meshes. The model currently in the
+  .3D Source pane remains editable; live recompilation, camera position and
+  the source document are preserved. The window title and Car settings
+  identify the active wrapper. **Clear Car Appearance Overlay** restores
+  the prior model appearance; reopening another model clears the manual
+  overlay. A wrapper that is not a valid individual-car RECOLOR/MATERIAL
+  file is rejected. Missing named MIPs appear in the load diagnostics.
+  A manually assigned body MIP remains a higher-priority explicit override
+  until that manual override is cleared.
+  **This is a preview overlay, not a source edit**: Save .3D and Export
+  Compiled 3DO write edited root geometry only; they do not bake RECOLOR,
+  include the wrapper's livery MIP, or modify the wrapper or its textures.
 - **Car geometry / Assign carshape 3DO…**: on an individual-car wrapper,
   this lists the actual named base shape, not the wheel/helmet DYNAMIC
   references. Use it to locate the base `.3do` manually if necessary.

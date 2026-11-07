@@ -62,8 +62,13 @@ def update_model_actions(window):
     """Avoid advertising Save, Export, or Reload on an empty viewer."""
     loaded = window.viewer._model is not None
     for name in ("save", "save_as", "export", "reload", "reload_mips",
-                 "mip_browser"):
+                 "mip_browser", "appearance_overlay"):
         window.menu_actions[name].setEnabled(loaded)
+    window.menu_actions["clear_appearance_overlay"].setEnabled(
+        loaded and window.car_appearance_overlay is not None)
+    window.apply_car_appearance_button.setEnabled(loaded)
+    window.clear_car_appearance_button.setEnabled(
+        loaded and window.car_appearance_overlay is not None)
 
 
 def _add_action(menu, title, callback, shortcut=None):
@@ -230,6 +235,13 @@ def install_menus(window):
     assets = bar.addMenu("&Assets")
     _add_action(assets, "Asset &Settings…",
                 lambda: window.open_settings_dialog("assets"))
+    assets.addSeparator()
+    window.menu_actions["appearance_overlay"] = _add_action(
+        assets, "Apply Individual-Car &RECOLOR / MIP…",
+        window.choose_car_appearance_overlay)
+    window.menu_actions["clear_appearance_overlay"] = _add_action(
+        assets, "Clear Car Appearance Overlay",
+        window.clear_car_appearance_overlay)
     assets.addSeparator()
     window.menu_actions["mip_browser"] = _add_action(
         assets, "Browse Model &MIPs / U,V…", window.open_mip_browser)
