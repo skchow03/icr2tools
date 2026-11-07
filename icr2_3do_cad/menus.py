@@ -138,17 +138,21 @@ def _open_manual_url(path):
     return QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
 
 
+def _manual_warning(window, title, message):
+    QMessageBox.warning(window, title, message)
+
+
 def _show_user_manual(window):
     manual = _user_manual_path()
     if manual is None:
-        QMessageBox.warning(
+        _manual_warning(
             window, "Help File Not Found",
             "ICR2 3DO CAD could not find USER_MANUAL.html.\n\n"
             "Place the help file beside icr2_3do_cad.py (or include it "
             "in the packaged application) and try again.")
         return False
     if not _open_manual_url(manual):
-        QMessageBox.warning(
+        _manual_warning(
             window, "Unable to Open Help",
             f"Windows could not open the local help file:\n{manual}\n\n"
             "Try opening it directly in a web browser.")
