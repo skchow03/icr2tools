@@ -312,7 +312,7 @@ def ordered_scene_indices(scene, mesh, camera, distance=0.0, *,
 
 def load_car_or_model(path, *, existing_model=None, objects_folder=None,
                       object_overrides=None, fixtures_folder=None,
-                      on_activity=None):
+                      appearance_override=None, on_activity=None):
     """Mirror CPU editor's read_car_appearance + locate_base_geometry flow.
 
     Individual car wrappers point their MATERIAL to a RECOLOR at offset 0;
@@ -326,6 +326,18 @@ def load_car_or_model(path, *, existing_model=None, objects_folder=None,
         raise ValueError('Expected a 3DO model')
     if on_activity:
         on_activity(f"Inspecting model/wrapper: {path.name}")
+    if appearance_override is not None:
+        # This is a *preview* of a wrapper on already-open geometry. Never
+        # resolve the wrapper's own EXTERN carshape: the current root model
+        # (and therefore the editable source and exported geometry) stays put.
+        if existing_model is None:
+            raise ValueError("Apply an appearance overlay only to an already-open model")
+        model = existing_model
+        scene = build_scene(model, objects_folder=objects_folder,
+                            object_overrides=object_overrides,
+                            appearance=appearance_override,
+                            on_activity=on_activity)
+        return model, scene, appearance_override
     try:
         appearance = read_car_appearance(path)
     except AppearanceError:
