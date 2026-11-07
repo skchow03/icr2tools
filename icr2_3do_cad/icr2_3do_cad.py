@@ -2444,6 +2444,13 @@ class Window(QMainWindow):
         distance_row = QHBoxLayout(self.distance_bar)
         distance_row.setContentsMargins(5, 3, 5, 3)
         distance_row.setSpacing(6)
+        # Editing has its own short row: the full-width SWITCH DISTANCE
+        # slider must not become unusable when the .3D Source pane is open.
+        self.edit_bar = QWidget()
+        edit_row = QHBoxLayout(self.edit_bar)
+        edit_row.setContentsMargins(5, 1, 5, 3)
+        edit_row.setSpacing(6)
+        edit_row.addWidget(QLabel("Edit"))
         distance_row.addWidget(QLabel("Projection"))
         self.projection_combo = QComboBox()
         self.projection_combo.setObjectName("projectionCombo")
@@ -2466,7 +2473,7 @@ class Window(QMainWindow):
             "to click polygon faces and jump to their .3D source row.")
         self.pick_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_pick_mode(self.pick_mode_combo.currentData()))
-        distance_row.addWidget(self.pick_mode_combo)
+        edit_row.addWidget(self.pick_mode_combo)
         self.move_vertex_button = QPushButton("Move vertex")
         self.move_vertex_button.setObjectName("enableVertexMoveGizmo")
         self.move_vertex_button.setCheckable(True)
@@ -2478,7 +2485,7 @@ class Window(QMainWindow):
             "drag. Shift while dragging moves one tenth as far.")
         self.move_vertex_button.toggled.connect(
             self.viewer.set_vertex_move_enabled)
-        distance_row.addWidget(self.move_vertex_button)
+        edit_row.addWidget(self.move_vertex_button)
         self.move_snap_combo = QComboBox()
         self.move_snap_combo.setObjectName("vertexMoveSnap")
         for amount in (1, 10, 100, 1000):
@@ -2499,7 +2506,7 @@ class Window(QMainWindow):
             "marker. Off by default for large track models.")
         self.vertex_labels_toggle.toggled.connect(
             self.viewer.set_all_vertex_labels)
-        distance_row.addWidget(self.vertex_labels_toggle)
+        edit_row.addWidget(self.vertex_labels_toggle)
         self.vertex_label_mode_combo = QComboBox()
         self.vertex_label_mode_combo.setObjectName("vertexLabelDisplayMode")
         self.vertex_label_mode_combo.addItem("All", "all")
@@ -2515,7 +2522,7 @@ class Window(QMainWindow):
         self.vertex_label_mode_combo.currentIndexChanged.connect(
             lambda _: self.viewer.set_vertex_label_mode(
                 self.vertex_label_mode_combo.currentData()))
-        distance_row.addWidget(self.vertex_label_mode_combo)
+        edit_row.addWidget(self.vertex_label_mode_combo)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")
@@ -2523,7 +2530,8 @@ class Window(QMainWindow):
             "Open the polygon split controls beneath the viewport; click "
             "a face in Polys pick mode to select the target.")
         self.split_button.toggled.connect(self._toggle_split_tool)
-        distance_row.addWidget(self.split_button)
+        edit_row.addWidget(self.split_button)
+        edit_row.addStretch(1)
         distance_label = QLabel("SWITCH DISTANCE")
         distance_label.setToolTip(
             "Controls RES/SWITCH DISTANCE in the currently opened model.")
@@ -2787,6 +2795,7 @@ class Window(QMainWindow):
         self.viewport_layout = QVBoxLayout(self.viewport_panel)
         self.viewport_layout.setContentsMargins(0, 0, 0, 0)
         self.viewport_layout.setSpacing(0)
+        self.viewport_layout.addWidget(self.edit_bar)
         self.viewport_layout.addWidget(self.distance_bar)
         # Always visible above the viewport during a load, even when the
         # collapsible settings panel is closed. Stage markers are coarse,
