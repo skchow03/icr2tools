@@ -47,6 +47,33 @@ Toggle either overlay independently under **View → Display Options** or
 These are transparent, nonselectable UI guides only; they do not alter
 the model, tracing-image calibration, BSP, rendered geometry or exports.
 
+## Move vertices directly in the 3D viewport
+
+Choose **Pick → Vertices**, select a root-model vertex, then enable
+**Move vertex** beside the Pick selector. Red X, green Y and blue Z arrows
+appear at the selected vertex. Drag one visible arrow to move the point
+**along that axis only**, in either perspective or orthographic view.
+Shift while dragging makes movement ten times finer; press **Esc** to
+cancel without modifying anything. An axis pointing directly at the
+camera cannot be manipulated in that view: orbit or choose another
+orthographic view.
+
+The translucent Qt gizmo shows the proposed raw Papyrus XYZ and a dashed preview of incident polygon edges immediately.
+The geometry itself remains unchanged while dragging, to avoid repeated
+expensive N3 compilation. **Release** the mouse to modify the selected
+vertex's XYZ fields in the canonical .3D Source, apply the existing
+optional symmetry rules (including ambiguity prompts), and recompile the
+full mesh. View → Display Settings has a **Vertex move snap step** choice
+(1, 10, 100, 1000 raw units; default 1). Changes are undoable with
+Ctrl+Z. Save/Export is explicit; a drag never overwrites an original file.
+
+The editor respects implicit or explicit ICR2_COORD_SCALE, source
+comments, declaration names and T/U/V fields. Moving a vertex affects
+all polygons that reference its pointer. No arbitrary anonymous inline
+polygon vertex or referenced external DYNAMIC child may be dragged.
+Move mode starts OFF when opening a new model, and normal viewport
+selection/orbit/pan continue to work when not dragging a handle.
+
 ## Symmetrical vertex editing (optional)
 
 Clicking a vertex in the viewport navigates to its .3D Source declaration,

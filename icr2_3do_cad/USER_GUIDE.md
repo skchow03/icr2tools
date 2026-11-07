@@ -54,6 +54,53 @@ Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
 geometry, selection or texture rendering; toggling them does not recompile
 any model.
 
+## Direct vertex moving in the viewport
+
+1. Open a model and ensure **.3D Source** is ready and valid. Set the
+   **Pick** selector above the viewport to **Vertices**.
+2. Click the vertex to select it. Its N3 declaration is highlighted
+   green, and its selected marker appears in the viewport.
+3. Enable **Move vertex** beside the Pick selector (off by default).
+   Three world-axis handles appear: **red X, green Y and blue Z**.
+   Click the *shaft or arrowhead* of the desired axis and drag.
+   The camera will not orbit during a handle drag.
+4. The live marker and readout show the proposed **raw Papyrus XYZ**
+   and dashed connected polygon edges while the original compiled mesh remains stable. **Release** the
+   mouse to apply the new coordinate to the original N3 source and
+   start an ordinary full-mesh rebuild. Only the selected axis changes.
+   To cancel mid-drag, press **Esc**. Hold **Shift during a drag**
+   to move 10× more slowly.
+5. For coarse/fine integer steps, set **View → Display Settings →
+   Vertex move snap step** to 1, 10, 100 or 1000 raw units.
+   Use Source Undo/Ctrl+Z to undo a completed drag. Nothing is saved
+   until Save .3D or Export Compiled 3DO is explicitly invoked.
+
+The gizmo derives its directions from the **same projection and camera**
+as the GPU, including perspective and orthographic views. An exactly
+end-on axis has no meaningful screen drag direction and is not shown:
+rotate the camera or use the other view. The arrows maintain a readable
+screen size while zooming; dragging does not move the camera.
+
+A source vertex may use integer Papyrus values or scaled fractional
+values; the move operation converts into the proper authored units
+using ICR2_COORD_SCALE (or the compiler's inferred fractional scale).
+This is checked against the currently compiled vertex before anything
+changes. **U/V texture coordinates, labels, comments, material data and
+all other vertices are preserved** unless the separate **Symmetrical
+vertex editing** mode was enabled. Then the existing mirror-matching
+and multiple-candidate confirmation run as part of the same undoable
+edit. All polygons sharing a named vertex respond when the mesh is
+recompiled.
+
+The gizmo edits only **root-model named vertex declarations** with
+valid compilation/source mappings. It does not edit anonymous inline
+coordinates or external DYNAMIC children. It does not rebuild original
+BSP plane coefficient data, and complex geometry can still need manual
+FACE/BSP and winding checks. While dragging, the preview is a
+screen-space point/axis overlay; the real triangles update only after
+release and successful recompilation. Invalid or pending text disables
+direct moving rather than allowing the editor to edit stale offsets.
+
 ## Symmetry editing and vertex highlighting
 
 Selected vertex declarations in .3D Source now receive the same green
