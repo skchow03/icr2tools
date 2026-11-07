@@ -94,7 +94,11 @@ class GPUCarWrapperParityTests(unittest.TestCase):
             self.assertGreater(scene.loaded_instances, 0, (scene.warnings, model.path, scene.root.path))
             for (inst,off),poly_id in scene.polygon_lookup.items():
                 orig = scene.instances[inst].model.polygons[off].color
-                expected = app.map_color(orig) if inst == 0 else orig
+                part = scene.instances[inst].model.path.stem.casefold()
+                # A real polygon-based helmet now shares driver's RECOLOR;
+                # sfront/srear wheel models keep their independent colors.
+                expected = (app.map_color(orig)
+                            if inst == 0 or part == 'helmet' else orig)
                 self.assertEqual(scene.geometry.polygons[poly_id].color, expected)
             # Texture override targeted at body faces MUST not touch
             # children's atlas assignments even with identical MIP pixels.
