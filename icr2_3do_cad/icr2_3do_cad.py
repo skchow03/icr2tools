@@ -3517,7 +3517,8 @@ class Window(QMainWindow):
         if not name:
             QMessageBox.information(
                 self, "No referenced carshape",
-                "Open an individual-car appearance wrapper to assign its shared carshape.")
+                "Open an individual-car wrapper as the main model to assign "
+                "its shared carshape. Preview overlays keep the open geometry.")
             return
         path, _ = QFileDialog.getOpenFileName(
             self, f"Use a 3DO for {name}",
@@ -3548,7 +3549,8 @@ class Window(QMainWindow):
                 self, "No model", "Open a car or car-part model first.")
             return
         if (self._source_busy_revision is not None or
-                self._source_queued is not None or self.source_pane.pending):
+                self._source_queued is not None or self.source_pane.pending or
+                self._source_invalid):
             QMessageBox.information(
                 self, "Source is being edited",
                 "Finish or correct the pending .3D source compilation "
@@ -4166,7 +4168,8 @@ class Window(QMainWindow):
         self._load_progress_stage(
             self.worker, 92, "Uploading geometry, textures and skybox to GPU",
             repaint=True)
-        self._info = stats
+        # Commit the palette and statistics only if the OpenGL upload
+        # succeeds; a failed overlay must not replace the visible model state.
         # Commit the auto-selected palette only after the whole model has
         # loaded successfully. Failed loads leave the prior palette intact.
         self.palette_path = Path(stats.get("palette_path", self.palette_path))
@@ -4185,6 +4188,7 @@ class Window(QMainWindow):
             self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
                               previous_preserved=False)
             return
+        self._info = stats
         if self._appearance_change_pending:
             self.car_appearance_overlay = self._appearance_candidate
             self._appearance_candidate = None
@@ -4322,11 +4326,11 @@ class Window(QMainWindow):
         previous_ref = self.car_ref_combo.currentData()
         self.car_ref_combo.blockSignals(True)
         self.car_ref_combo.clear()
-        if stats['appearance_geometry']:
+        if stats['appearance_geometry'] and self.car_appearance_overlay is None:
             name = stats['appearance_geometry']
             self.car_ref_combo.addItem(name, name)
         else:
-            self.car_ref_combo.addItem("(opened geometry)", "")
+            self.car_ref_combo.addItem("(editing opened geometry)", "")
         if previous_ref:
             selected = self.car_ref_combo.findData(previous_ref)
             if selected >= 0:
