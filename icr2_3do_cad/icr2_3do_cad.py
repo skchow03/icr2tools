@@ -103,6 +103,8 @@ from vertex_label_data import (
     vertex_pointer_names, include_source_vertex_declarations,
 )
 from vertex_label_overlay import VertexLabelOverlay
+from axis_overlay import AxisGuideOverlay
+from axis_guides import GUIDE_ANCHORS
 from mip_browser import MipUVBrowser
 from tracing_reference import initial_reference
 from tracing_profiles import TracingProfileStore, ProfileError
@@ -689,6 +691,22 @@ class GLViewport(QOpenGLWidget):
         self.visibility_banner.hide()
         # Qt-composited child widget avoids GL/QPainter glyph corruption.
         # The overlay is mouse transparent; picking/orbiting remain unchanged.
+        self.axis_guides_enabled = QSettings(
+            "ICR2Tools", "3DOCAD").value(
+                "axis_guides_enabled", True, type=bool)
+        self.orientation_gizmo_enabled = QSettings(
+            "ICR2Tools", "3DOCAD").value(
+                "orientation_gizmo_enabled", True, type=bool)
+        anchor = QSettings("ICR2Tools", "3DOCAD").value(
+            "axis_guide_anchor", "focus")
+        self.axis_guide_anchor = (
+            anchor if anchor in GUIDE_ANCHORS else "focus")
+        # Order matters: labels sit on top of the guide layer, but all Qt
+        # overlays are mouse transparent and never touch the GL framebuffer.
+        self.axis_guide_overlay = AxisGuideOverlay(self)
+        self.axis_guide_overlay.setGeometry(self.rect())
+        self.axis_guide_overlay.setVisible(
+            self.axis_guides_enabled or self.orientation_gizmo_enabled)
         self.vertex_label_overlay = VertexLabelOverlay(self)
 
     def update(self, *args):
@@ -697,6 +715,33 @@ class GLViewport(QOpenGLWidget):
         overlay = getattr(self, "vertex_label_overlay", None)
         if overlay is not None and not overlay.isHidden():
             overlay.update()
+        axes = getattr(self, "axis_guide_overlay", None)
+        if axes is not None and not axes.isHidden():
+            axes.update()
+
+    def set_axis_guides_enabled(self, enabled):
+        self.axis_guides_enabled = bool(enabled)
+        QSettings("ICR2Tools", "3DOCAD").setValue(
+            "axis_guides_enabled", self.axis_guides_enabled)
+        self.axis_guide_overlay.setVisible(
+            self.axis_guides_enabled or self.orientation_gizmo_enabled)
+        self.update()
+
+    def set_orientation_gizmo_enabled(self, enabled):
+        self.orientation_gizmo_enabled = bool(enabled)
+        QSettings("ICR2Tools", "3DOCAD").setValue(
+            "orientation_gizmo_enabled", self.orientation_gizmo_enabled)
+        self.axis_guide_overlay.setVisible(
+            self.axis_guides_enabled or self.orientation_gizmo_enabled)
+        self.update()
+
+    def set_axis_guide_anchor(self, anchor):
+        if anchor not in GUIDE_ANCHORS:
+            raise ValueError(f"Unknown axis guide anchor: {anchor}")
+        self.axis_guide_anchor = anchor
+        QSettings("ICR2Tools", "3DOCAD").setValue(
+            "axis_guide_anchor", anchor)
+        self.update()
 
     def set_all_vertex_labels(self, enabled):
         overlay = self.vertex_label_overlay
@@ -726,6 +771,9 @@ class GLViewport(QOpenGLWidget):
         overlay = getattr(self, 'vertex_label_overlay', None)
         if overlay is not None:
             overlay.setGeometry(self.rect())
+        axes = getattr(self, "axis_guide_overlay", None)
+        if axes is not None:
+            axes.setGeometry(self.rect())
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
@@ -2164,6 +2212,44 @@ class Window(QMainWindow):
         self.perspective_toggle = QCheckBox("Perspective")
         self.perspective_toggle.toggled.connect(self._set_perspective)
         display_layout.addWidget(self.perspective_toggle)
+        self.axis_guides_toggle = QCheckBox("Show extended XYZ axis guides")
+        self.axis_guides_toggle.setObjectName("axisGuidesToggle")
+        self.axis_guides_toggle.setToolTip(
+            "Transparent positive/negative XYZ guides extend across the "
+            "current camera view. They never affect editing or selection.")
+        self.axis_guides_toggle.setChecked(self.viewer.axis_guides_enabled)
+        self.axis_guides_toggle.toggled.connect(
+            self.viewer.set_axis_guides_enabled)
+        display_layout.addWidget(self.axis_guides_toggle)
+        self.orientation_gizmo_toggle = QCheckBox(
+            "Show XYZ orientation gizmo in viewport corner")
+        self.orientation_gizmo_toggle.setObjectName("orientationGizmoToggle")
+        self.orientation_gizmo_toggle.setToolTip(
+            "Small camera-rotating XYZ triad stays visible while zooming, "
+            "panning, orbiting or working with an empty model.")
+        self.orientation_gizmo_toggle.setChecked(
+            self.viewer.orientation_gizmo_enabled)
+        self.orientation_gizmo_toggle.toggled.connect(
+            self.viewer.set_orientation_gizmo_enabled)
+        display_layout.addWidget(self.orientation_gizmo_toggle)
+        display_layout.addWidget(QLabel("Axis guide anchor"))
+        self.axis_anchor_combo = QComboBox()
+        self.axis_anchor_combo.setObjectName("axisGuideAnchor")
+        self.axis_anchor_combo.addItem(
+            "View focus (always near the camera target)", "focus")
+        self.axis_anchor_combo.addItem(
+            "Model bounding-box center", "model")
+        self.axis_anchor_combo.addItem(
+            "Raw Papyrus XYZ origin (0, 0, 0)", "origin")
+        self.axis_anchor_combo.setToolTip(
+            "Focus follows your camera pan/orbit target so the axes stay "
+            "visible. Model center and raw origin may leave the screen.")
+        self.axis_anchor_combo.setCurrentIndex(
+            self.axis_anchor_combo.findData(self.viewer.axis_guide_anchor))
+        self.axis_anchor_combo.currentIndexChanged.connect(
+            lambda _: self.viewer.set_axis_guide_anchor(
+                self.axis_anchor_combo.currentData()))
+        display_layout.addWidget(self.axis_anchor_combo)
         # Menu state is backed by this control, but there is no toolbar.
         self.source_toggle = QPushButton(".3D Source", self)
         self.source_toggle.setCheckable(True)
