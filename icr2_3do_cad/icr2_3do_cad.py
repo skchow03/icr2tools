@@ -105,7 +105,8 @@ from vertex_label_data import (
 from vertex_label_overlay import VertexLabelOverlay
 from axis_overlay import AxisGuideOverlay
 from axis_guides import GUIDE_ANCHORS
-from vertex_move import move_handles, hit_move_handle, drag_raw_coordinate
+from vertex_move import (move_handles, hit_move_handle, drag_raw_coordinate,
+                         connected_vertex_edges)
 from vertex_move_overlay import VertexMoveOverlay
 from mip_browser import MipUVBrowser
 from tracing_reference import initial_reference
@@ -677,6 +678,7 @@ class GLViewport(QOpenGLWidget):
         self._move_hover_axis = None
         self._move_original_xyz = None
         self._move_preview_xyz = None
+        self._move_neighbors = ()
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
         self.fps = 0.0
@@ -931,6 +933,7 @@ class GLViewport(QOpenGLWidget):
         self._move_hover_axis = None
         self._move_original_xyz = None
         self._move_preview_xyz = None
+        self._move_neighbors = ()
         self.unsetCursor()
         self._mesh = mesh
         self._model = model
@@ -1650,6 +1653,7 @@ class GLViewport(QOpenGLWidget):
         self._move_preview_xyz = None
         self._move_original_xyz = None
         self._move_hover_axis = None
+        self._move_neighbors = ()
         self._drag = None
         self._pick_press = None
         self.unsetCursor()
@@ -2141,6 +2145,8 @@ class GLViewport(QOpenGLWidget):
                 self._move_original_xyz = tuple(
                     int(v) for v in self._model.vertices[offset].xyz)
                 self._move_preview_xyz = self._move_original_xyz
+                self._move_neighbors = connected_vertex_edges(
+                    self._model, offset)
                 self._drag = None
                 self._pick_press = None
                 self._pick_dragged = True
