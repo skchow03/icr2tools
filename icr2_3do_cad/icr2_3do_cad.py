@@ -2132,7 +2132,12 @@ class GLViewport(QOpenGLWidget):
     def mousePressEvent(self, event):
         self.setFocus(Qt.FocusReason.MouseFocusReason)
         if (event.button() == Qt.MouseButton.LeftButton and
-                event.modifiers() == Qt.KeyboardModifier.NoModifier):
+                not (event.modifiers() &
+                     (Qt.KeyboardModifier.ControlModifier |
+                      Qt.KeyboardModifier.AltModifier |
+                      Qt.KeyboardModifier.MetaModifier))):
+            # Shift may be held before pressing the axis handle for a
+            # precision drag. Away from a handle, Shift+drag still pans.
             handles = self._move_handles()
             axis = hit_move_handle(
                 handles, event.position().x(), event.position().y())
