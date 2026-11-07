@@ -40,3 +40,14 @@ Stock Vancouver `pitsuite.3do` provides one orientation check; the X-angle sign 
 From this directory, run `python -m unittest discover -s tests -p 'test_*.py'`. Run graphical tests with `xvfb-run -a`, PySide6, PyOpenGL, Pillow and NumPy. Use `python smoke_test.py fixtures/roadcar.3do` in an OpenGL 3.3-capable environment. For source/compiler changes, confirm saved results in the game as well as in the editor.
 
 Keep local screenshots in the ignored `screenshots/` directory. Temporary models and benchmark reports are not source assets.
+
+## Car wrapper material inheritance
+
+Individual-car MATERIAL → RECOLOR wrappers resolve the base carshape independently
+of its DYNAMIC pieces. On the GPU scene, the driver's RECOLOR context follows
+paintable bodywork references (e.g. `flpod`, `frpod`, wings, tubs) while
+wheel/tire/helmet references terminate that context. For textured child faces,
+a named child MATERIAL overrides the inherited driver MIP; unassigned child
+faces inherit the wrapper MIP and participate in the manual body-MIP preview.
+Do not alter wheel/helmet palette slots or rewrite any referenced assets.
+This is preview-only and is regression-tested by `test_car_dynamic_livery.py`.

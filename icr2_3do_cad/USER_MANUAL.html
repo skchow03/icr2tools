@@ -209,7 +209,7 @@ root: LIST {face};</pre>
 <section id="cars">
         <h2>10. Cars, Drivers, and Appearance Wrappers</h2>
         <p>Use <b>Model → Workspace → Car</b> for carshape materials, body MIPs, driver appearance, and external wheel/helmet references. A driver-specific car file may primarily carry a <b>RECOLOR</b> table and MIP assignment rather than its own editable car geometry.</p>
-        <p>To inspect a driver's paint on your current carshape, open <code>roadcar.3do</code>, <code>indycar.3do</code>, or another editable car component and choose <b>Assets → Apply Individual-Car RECOLOR / MIP…</b>. Select a driver wrapper such as <code>cit74.3do</code>. The overlay affects the <b>preview only</b>. Clearing or replacing it does not change the source, and exporting compiled geometry does not embed the wrapper's livery or RECOLOR records.</p>
+        <p>To inspect a driver's paint on your current carshape, open <code>roadcar.3do</code>, <code>indycar.3do</code>, or another editable car component and choose <b>Assets → Apply Individual-Car RECOLOR / MIP…</b>. Select a driver wrapper such as <code>cit74.3do</code>. The preview carries the driver's palette remapping and livery into external bodywork pieces such as front pods when those pieces do not specify their own texture; wheels and helmet materials remain independent. The overlay affects the <b>preview only</b>. Clearing or replacing it does not change the source, and exporting compiled geometry does not embed the wrapper's livery or RECOLOR records.</p>
         <p>Car models may depend on other <code>.3do</code> files and MIPs. If wheels or helmets are missing, confirm the external 3DO and MIP folders and review <b>View → Load Error Log…</b>.</p>
       </section>
 

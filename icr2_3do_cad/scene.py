@@ -25,6 +25,21 @@ from car_appearance import read_car_appearance, locate_base_geometry, Appearance
 from three_do import Model
 
 
+# Only non-body car attachments terminate the driver's paint context.
+# Everything else remains paintable, including modded DYNAMIC pods/wings.
+_CAR_SHAPES = frozenset({"indycar", "roadcar", "pacecar", "panoz", "irl", "cars"})
+_INDEPENDENT_CAR_PARTS = frozenset({
+    "sfront", "srear", "fwheel", "rwheel", "wheel", "wheel1", "wheel2",
+    "helmet", "driver",
+})
+
+
+def _independent_car_part(name):
+    stem = Path(name).stem.casefold()
+    return (stem in _INDEPENDENT_CAR_PARTS or "wheel" in stem
+            or "whl" in stem or stem.startswith(("tire", "tyre", "helmet")))
+
+
 @dataclass
 class Instance:
     model: Model
@@ -34,6 +49,7 @@ class Instance:
     texture_override: str | None = None
     texture_source: Path | None = None
     recolor_layers: tuple[dict[int, int], ...] = ()
+    car_body: bool = False  # True for base shape and paintable DYNAMIC children
 
 
 @dataclass
@@ -74,8 +90,15 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
     # The CPU editor treats a standalone driver file as *appearance* over
     # separately opened base geometry, not as a renderable model itself.
     root_recolor = appearance.mapping if appearance is not None else recolor_table(root)
-    instances = [Instance(root, Transform(), 0, frozenset((root_key,)),
-                          recolor_layers=((root_recolor,) if root_recolor else ()))]
+    paintable_car = (appearance is not None or bool(root_recolor)
+                     or root.path.stem.casefold() in _CAR_SHAPES)
+    instances = [Instance(
+        root, Transform(), 0, frozenset((root_key,)),
+        texture_override=(appearance.texture_name if appearance is not None else None),
+        texture_source=(appearance.path if appearance is not None and
+                        appearance.texture_name else None),
+        recolor_layers=((root_recolor,) if root_recolor else ()),
+        car_body=paintable_car)]
     links = {}
     warnings = []
     if on_activity:
@@ -106,6 +129,15 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
                 texture_source = (instance.model.path if event[2]
                                   else instance.texture_source)
 
+            child_car_body = (instance.car_body and
+                              not _independent_car_part(name))
+            if instance.car_body and not child_car_body:
+                # A car's MIP/RECOLOR must not repaint the wheels or driver.
+                # Preserve a MATERIAL explicitly present at the insertion site.
+                if kind == 'dynamic' or not event[2]:
+                    texture_override = None
+                    texture_source = None
+
             if (parent_id, kind, ref) in links:
                 # Original traversal deduplicates each record. Negative child
                 # pointers can be reused by distinct MATERIAL wrappers; the
@@ -132,15 +164,15 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
             local_recolor = recolor_table(child)
-            # A driver's RECOLOR belongs to the base car, not its external
-            # wheels or helmet. Match the CPU editor's effective_color().
-            inherited = (() if appearance is not None and parent_id == 0
-                         else instance.recolor_layers)
+            # Paint continues through bodywork parts such as flpod/frpod,
+            # but not through wheel/helmet attachment branches.
+            inherited = (instance.recolor_layers
+                         if not instance.car_body or child_car_body else ())
             layers = inherited + ((local_recolor,) if local_recolor else ())
             instances.append(Instance(
                 child, transform, instance.depth+1,
                 instance.ancestry | frozenset((key,)), texture_override,
-                texture_source, layers))
+                texture_source, layers, child_car_body))
 
     vertices = {}
     polygons = {}
@@ -170,11 +202,15 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             polygons[next_polygon] = SimpleNamespace(
                 unique_refs=refs, kind=polygon.kind,
                 color=recolor_index(polygon.color, instance.recolor_layers))
-            if instance_id == 0 and polygon.kind == 2:
-                body_polygons.add(next_polygon)
             local_material = instance.model.polygon_materials.get(old)
-            # The wrapper MIP has priority for BODY only. External wheel
-            # materials are independent and must not inherit its paint.
+            # Include unassigned DYNAMIC bodywork in the editable body-MIP
+            # set. Explicit materials on child pieces remain independent.
+            if polygon.kind == 2 and (
+                    instance_id == 0 or
+                    (instance.car_body and not local_material)):
+                body_polygons.add(next_polygon)
+            # Root-car paint has priority as before; child bodywork inherits
+            # it only when the child has no closer named MATERIAL.
             if instance_id == 0 and appearance is not None and appearance.texture_name:
                 name = appearance.texture_name
             else:
