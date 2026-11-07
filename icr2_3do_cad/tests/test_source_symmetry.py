@@ -129,7 +129,7 @@ other: MIP "a: [<100,20,30>];";
     def test_newly_inserted_vertex_warns_but_simple_rename_does_not(self):
         with_new = BASE.replace(
             "root: LIST {p};",
-            "added: [<250,8,9>, T=<7,8>];\\nroot: LIST {p};")
+            "added: [<250,8,9>, T=<7,8>];\nroot: LIST {p};")
         proposals, issues = plan_mirrored_vertices(
             BASE, with_new, axis="X")
         self.assertFalse(proposals)
