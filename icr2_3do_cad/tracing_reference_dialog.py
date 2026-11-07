@@ -124,7 +124,9 @@ class CalibrationCanvas(QWidget):
 
 class TracingReferenceDialog(QDialog):
     def __init__(self, reference, image, *, mesh, on_change, on_align,
-                 on_browse, on_remove, parent=None):
+                 on_browse, on_remove, on_save_profile=None,
+                 on_load_profile=None, on_delete_profile=None,
+                 profile_names=None, parent=None):
         super().__init__(parent)
         self.setObjectName("tracingReferenceDialog")
         self.setWindowTitle("Tracing Reference Image — 3DO CAD")
@@ -136,6 +138,10 @@ class TracingReferenceDialog(QDialog):
         self._on_align = on_align
         self._on_browse = on_browse
         self._on_remove = on_remove
+        self._on_save_profile = on_save_profile
+        self._on_load_profile = on_load_profile
+        self._on_delete_profile = on_delete_profile
+        self._profile_names = profile_names
         self._setting_controls = False
 
         outer = QVBoxLayout(self)
@@ -228,6 +234,50 @@ class TracingReferenceDialog(QDialog):
         self.fit = QPushButton("Reset scale and center to model")
         self.fit.clicked.connect(self._fit_model)
         right.addWidget(self.fit)
+
+        # Named references persist outside any particular model. Restoring a
+        # profile retains physical calibration while reanchoring its image to
+        # the current model's center (or optionally exact saved world U/V).
+        profiles_group = QGroupBox("Saved reference profiles")
+        profiles_box = QVBoxLayout(profiles_group)
+        self.profile_combo = QComboBox()
+        self.profile_combo.setObjectName("savedTracingProfiles")
+        self.profile_combo.setToolTip(
+            "Saved profiles retain image path, calibration markers, physical "
+            "scale, rotation, opacity and placement across CAD sessions.")
+        profiles_box.addWidget(self.profile_combo)
+        self.profile_placement = QComboBox()
+        self.profile_placement.addItem(
+            "Place relative to current model center", "relative")
+        self.profile_placement.addItem(
+            "Keep exact saved model coordinates", "absolute")
+        self.profile_placement.setToolTip(
+            "Relative placement keeps the same raw offset from the model "
+            "center on different models; exact placement uses saved U/V.")
+        profiles_box.addWidget(self.profile_placement)
+        profile_actions = QHBoxLayout()
+        self.profile_save_button = QPushButton("Save as…")
+        self.profile_save_button.clicked.connect(
+            lambda: self._on_save_profile()
+            if self._on_save_profile is not None else None)
+        profile_actions.addWidget(self.profile_save_button)
+        self.profile_load_button = QPushButton("Restore")
+        self.profile_load_button.clicked.connect(
+            lambda: self._on_load_profile(
+                self.profile_combo.currentData(),
+                self.profile_placement.currentData())
+            if self._on_load_profile is not None and
+            self.profile_combo.currentData() else None)
+        profile_actions.addWidget(self.profile_load_button)
+        self.profile_delete_button = QPushButton("Delete")
+        self.profile_delete_button.clicked.connect(
+            lambda: self._on_delete_profile(self.profile_combo.currentData())
+            if self._on_delete_profile is not None and
+            self.profile_combo.currentData() else None)
+        profile_actions.addWidget(self.profile_delete_button)
+        profiles_box.addLayout(profile_actions)
+        right.addWidget(profiles_group)
+        self.refresh_profiles()
         right.addStretch(1)
 
         instructions = QLabel(
@@ -249,6 +299,29 @@ class TracingReferenceDialog(QDialog):
         footer.addWidget(close)
         outer.addLayout(footer)
         self._sync_controls()
+
+    def refresh_profiles(self, preferred=None):
+        """Refresh without discarding the selected profile/placement mode."""
+        if not hasattr(self, "profile_combo"):
+            return
+        previous = preferred or self.profile_combo.currentData()
+        try:
+            names = list(self._profile_names()) if self._profile_names else []
+        except (OSError, ValueError) as exc:
+            names = []
+            self.profile_combo.setToolTip(
+                f"Cannot read tracing profiles: {exc}")
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        for name in names:
+            self.profile_combo.addItem(name, name)
+        index = self.profile_combo.findData(previous)
+        if index >= 0:
+            self.profile_combo.setCurrentIndex(index)
+        self.profile_combo.blockSignals(False)
+        self.profile_load_button.setEnabled(bool(names))
+        self.profile_delete_button.setEnabled(bool(names))
+        self.profile_save_button.setEnabled(self._on_save_profile is not None)
 
     @staticmethod
     def _spin(minimum, maximum, decimals):
