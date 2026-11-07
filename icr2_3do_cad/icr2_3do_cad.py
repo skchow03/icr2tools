@@ -41,7 +41,7 @@ try:
         glActiveTexture, glTexImage2D, glTexParameteri, glPixelStorei,
         glUniform1i, glUniform3f,
     )
-    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings
+    from PySide6.QtCore import Qt, QThread, Signal, QTimer, QPointF, QRectF, QSettings, QStandardPaths
     from PySide6.QtGui import (
         QColor, QPainter, QPen, QBrush, QSurfaceFormat, QShortcut, QKeySequence,
         QImageReader,
@@ -105,6 +105,7 @@ from vertex_label_data import (
 from vertex_label_overlay import VertexLabelOverlay
 from mip_browser import MipUVBrowser
 from tracing_reference import initial_reference
+from tracing_profiles import TracingProfileStore, ProfileError
 from tracing_reference_dialog import TracingReferenceDialog
 from tracing_reference_gl import TracingImageGL
 
@@ -2084,6 +2085,13 @@ class Window(QMainWindow):
         self.mip_browser = None  # Separate, non-modal texture reference window
         self.tracing_dialog = None  # Nonmodal reference calibration controls
         self._tracing_image = None  # Original full-resolution QImage
+        # A single user-level profile library is shared by every loaded
+        # model; it is not stored in the model directory or exported .3DO.
+        config_dir = QStandardPaths.writableLocation(
+            QStandardPaths.StandardLocation.GenericConfigLocation)
+        self.tracing_profile_store = TracingProfileStore(
+            Path(config_dir or Path.home() / ".config") /
+            "ICR2Tools" / "3DOCAD" / "tracing_profiles.json")
         self.report_path = report_path
         self.palette_path = CAD_ROOT / "gamepal.pcx"
         self.texture_folder = None
@@ -3540,21 +3548,164 @@ class Window(QMainWindow):
             return
         ref = initial_reference(
             Path(path), image.width(), image.height(), self.viewer._mesh)
+        self._install_tracing_reference(ref, image)
+
+    def _install_tracing_reference(self, reference, image):
+        """Commit an already-validated image and placement without reloading."""
         self._tracing_image = image
-        self.viewer.set_tracing_reference(ref, image)
+        self.viewer.set_tracing_reference(reference, image)
         if self.tracing_dialog is None:
             self.tracing_dialog = TracingReferenceDialog(
-                ref, image, mesh=self.viewer._mesh,
+                reference, image, mesh=self.viewer._mesh,
                 on_change=self._tracing_reference_changed,
                 on_align=self.align_tracing_reference_view,
                 on_browse=self.load_tracing_reference_image,
                 on_remove=self.clear_tracing_reference_image,
+                on_save_profile=self.save_tracing_profile,
+                on_load_profile=self.load_saved_tracing_profile,
+                on_delete_profile=self.delete_tracing_profile,
+                profile_names=self.tracing_profile_store.names,
                 parent=self)
         else:
-            self.tracing_dialog.set_reference(ref, image, self.viewer._mesh)
+            self.tracing_dialog.set_reference(
+                reference, image, self.viewer._mesh)
+            self.tracing_dialog.refresh_profiles()
         update_model_actions(self)
-        self.align_tracing_reference_view(ref.plane)
+        self.align_tracing_reference_view(reference.plane)
         self.adjust_tracing_reference_image()
+
+    def save_tracing_profile(self):
+        """Save the current appearance, markers and model-relative origin."""
+        if self._busy():
+            return
+        ref = self.viewer.tracing_reference
+        if ref is None or self.viewer._mesh is None:
+            QMessageBox.information(
+                self, "No reference image",
+                "Load and calibrate a tracing image before saving a profile.")
+            return
+        suggested = ref.path.stem
+        name, ok = QInputDialog.getText(
+            self, "Save Tracing Reference Profile",
+            "Profile name:", QLineEdit.EchoMode.Normal, suggested)
+        if not ok:
+            return
+        try:
+            if self.tracing_profile_store.has(name):
+                answer = QMessageBox.question(
+                    self, "Replace saved tracing profile?",
+                    f'A profile named "{name.strip()}" already exists. '
+                    "Overwrite its saved calibration and placement?",
+                    QMessageBox.StandardButton.Yes |
+                    QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No)
+                if answer != QMessageBox.StandardButton.Yes:
+                    return
+            self.tracing_profile_store.save(
+                name, ref, self.viewer._mesh, overwrite=True)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Cannot save tracing profile", str(exc))
+            return
+        self._refresh_tracing_profile_actions(preferred=name.strip())
+        self.statusBar().showMessage(
+            f"Saved tracing profile '{name.strip()}'. The image stays on disk.")
+
+    def load_saved_tracing_profile(self, name=None, placement="relative"):
+        """Restore from the user library onto this model, never the source."""
+        if self._busy():
+            return
+        if self.viewer._mesh is None or self.viewer._model is None:
+            QMessageBox.information(
+                self, "No model", "Open a model before restoring a reference.")
+            return
+        try:
+            if not name:
+                names = self.tracing_profile_store.names()
+                if not names:
+                    QMessageBox.information(
+                        self, "No saved profiles",
+                        "Use Save as… in the reference calibration window "
+                        "to create your first profile.")
+                    return
+                name, ok = QInputDialog.getItem(
+                    self, "Restore Tracing Reference Profile",
+                    "Saved profile:", names, 0, False)
+                if not ok:
+                    return
+            reference = self.tracing_profile_store.load(
+                name, self.viewer._mesh, placement=placement)
+            # Validate the file BEFORE replacing the existing reference.
+            if not reference.path.is_file():
+                raise ProfileError(
+                    f"Image is missing: {reference.path}. "
+                    "The profile remains saved; restore the image at its "
+                    "original location to use it.")
+            reader = QImageReader(str(reference.path))
+            reader.setAutoTransform(True)
+            size = reader.size()
+            if (size.isValid() and
+                    (size.width() * size.height() > 40_000_000 or
+                     max(size.width(), size.height()) > 30000)):
+                raise ProfileError("Saved image exceeds the 40-megapixel limit")
+            image = reader.read()
+            if image.isNull():
+                raise ProfileError(
+                    f"Cannot read {reference.path}: {reader.errorString()}")
+            if ((image.width(), image.height()) !=
+                    (reference.width, reference.height)):
+                raise ProfileError(
+                    f"Image dimensions have changed for {reference.path.name}: "
+                    f"saved {reference.width}×{reference.height}, now "
+                    f"{image.width()}×{image.height()}. "
+                    "Recalibrate and save a new profile.")
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Cannot restore tracing profile", str(exc))
+            return
+        self._install_tracing_reference(reference, image)
+        self._refresh_tracing_profile_actions(preferred=name)
+        self.statusBar().showMessage(
+            f"Restored tracing profile '{name}' on "
+            f"{self.viewer._model.path.name} ({placement} placement).")
+
+    def delete_tracing_profile(self, name=None):
+        """Delete just the named settings; never delete referenced photos."""
+        try:
+            if not name:
+                names = self.tracing_profile_store.names()
+                if not names:
+                    QMessageBox.information(
+                        self, "No saved profiles",
+                        "There are no saved tracing profiles to delete.")
+                    return
+                name, ok = QInputDialog.getItem(
+                    self, "Delete Tracing Reference Profile",
+                    "Saved profile:", names, 0, False)
+                if not ok:
+                    return
+            answer = QMessageBox.question(
+                self, "Delete tracing profile?",
+                f'Delete saved profile "{name}"? '
+                "The original image and current viewport reference "
+                "will not be deleted.",
+                QMessageBox.StandardButton.Yes |
+                QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No)
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            self.tracing_profile_store.delete(name)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(
+                self, "Cannot delete tracing profile", str(exc))
+            return
+        self._refresh_tracing_profile_actions()
+        self.statusBar().showMessage(f"Deleted saved tracing profile '{name}'.")
+
+    def _refresh_tracing_profile_actions(self, *, preferred=None):
+        if self.tracing_dialog is not None:
+            self.tracing_dialog.refresh_profiles(preferred=preferred)
+        update_model_actions(self)
 
     def adjust_tracing_reference_image(self):
         """Show nonmodal placement/calibration controls alongside N3 source."""
