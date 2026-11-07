@@ -34,6 +34,11 @@ _INDEPENDENT_CAR_PARTS = frozenset({
 })
 
 
+def _helmet_part(name):
+    """Driver helmet models are independent MIPs but share car RECOLOR."""
+    return Path(name).stem.casefold().startswith("helmet")
+
+
 def _independent_car_part(name):
     stem = Path(name).stem.casefold()
     return (stem in _INDEPENDENT_CAR_PARTS or "wheel" in stem
@@ -164,10 +169,12 @@ def build_scene(root, *, objects_folder=None, object_overrides=None,
             child_id = len(instances)
             links[parent_id, kind, ref] = child_id
             local_recolor = recolor_table(child)
-            # Paint continues through bodywork parts such as flpod/frpod,
-            # but not through wheel/helmet attachment branches.
+            # Bodywork inherits both MIP and RECOLOR, but the driver's
+            # helmet is a PMP/PMP2 sprite: it inherits palette RECOLOR only.
+            # Wheels/tires and other independent parts inherit neither.
             inherited = (instance.recolor_layers
-                         if not instance.car_body or child_car_body else ())
+                         if (not instance.car_body or child_car_body or
+                             _helmet_part(name)) else ())
             layers = inherited + ((local_recolor,) if local_recolor else ())
             instances.append(Instance(
                 child, transform, instance.depth+1,
