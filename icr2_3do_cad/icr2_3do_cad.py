@@ -67,6 +67,7 @@ from visibility import (
     FIXED_CAMERA_DEFAULT_EYE, camera_in_model_units, fixed_eye_view_target,
 )
 from scene import build_scene, ordered_scene_indices, load_car_or_model
+from car_appearance import read_car_appearance, AppearanceError
 from skybox import (
     SKY_EYE, load_preferred_track_skybox, skybox_view_matrix,
 )
@@ -309,6 +310,7 @@ class LoadWorker(QThread):
                     objects_folder=self.objects_folder,
                     object_overrides=self.object_overrides,
                     fixtures_folder=CAD_ROOT / 'fixtures',
+                    appearance_override=self.appearance_override,
                     on_activity=detail)
             elif self.path.suffix.lower() == ".3d":
                 if self.existing_model is not None:
@@ -319,10 +321,11 @@ class LoadWorker(QThread):
                     self._activity(f"Compiling source: {self.path.name}")
                     model, _ = compile_n3_text(
                         text, self.path, associate_planes=False)
+                appearance = self.appearance_override
                 scene = build_scene(model, objects_folder=self.objects_folder,
                                     object_overrides=self.object_overrides,
+                                    appearance=appearance,
                                     on_activity=detail)
-                appearance = None
             else:
                 raise ValueError("Open a .3D or .3DO file")
             parse_ms = (perf_counter() - t0) * 1000
@@ -442,6 +445,10 @@ class LoadWorker(QThread):
                 "recolor_pairs": scene.recolor_pairs,
                 "appearance_geometry": (appearance.geometry_name if appearance else ""),
                 "appearance_mip": (appearance.texture_name if appearance else ""),
+                "appearance_file": (appearance.path.name if appearance else ""),
+                "appearance_reference_mismatch": bool(
+                    appearance and appearance.geometry_name and
+                    appearance.geometry_name.casefold() != model.path.stem.casefold()),
                 "geometry_file": model.path.name,
                 "body_textured_faces": len(scene.geometry.body_polygons),
                 "material_names": tuple(sorted(set(
@@ -2053,6 +2060,11 @@ class Window(QMainWindow):
         self.object_overrides = {}
         self.body_mip = None
         self.fallback_mip = None
+        # Manual RECOLOR + livery preview, separate from editable geometry.
+        self.car_appearance_overlay = None
+        self._native_car_appearance = None
+        self._appearance_change_pending = False
+        self._appearance_candidate = None
         self.model_path = None
         self._loaded_file_path = None  # committed open, not an in-flight/failed file
         self._find_text = ""
@@ -2336,6 +2348,21 @@ class Window(QMainWindow):
         clear_livery.clicked.connect(self.clear_livery_mip)
         carbar.addWidget(clear_livery)
         car_layout.addLayout(carbar)
+        appearance_bar = QHBoxLayout()
+        self.apply_car_appearance_button = QPushButton(
+            "Apply individual-car RECOLOR / MIP…")
+        self.apply_car_appearance_button.setToolTip(
+            "Preview a driver .3DO's RECOLOR and body livery on the open "
+            "model. The model and edited .3D source are not replaced.")
+        self.apply_car_appearance_button.clicked.connect(
+            self.choose_car_appearance_overlay)
+        appearance_bar.addWidget(self.apply_car_appearance_button)
+        self.clear_car_appearance_button = QPushButton(
+            "Clear appearance overlay")
+        self.clear_car_appearance_button.clicked.connect(
+            self.clear_car_appearance_overlay)
+        appearance_bar.addWidget(self.clear_car_appearance_button)
+        car_layout.addLayout(appearance_bar)
         car_layout.addWidget(self.car_status)
         self.workspace_tabs.addTab(car_page, "Car")
 
@@ -2751,6 +2778,8 @@ class Window(QMainWindow):
         if self._loaded_file_path is not None:
             changed = " *" if self.source_pane.dirty else ""
             title = f"{self._loaded_file_path.name}{changed} — {title}"
+        if self.car_appearance_overlay is not None:
+            title += f" | Preview: {self.car_appearance_overlay.path.name}"
         self.setWindowTitle(title)
 
     def _edit_source_command(self, command):
@@ -3507,6 +3536,78 @@ class Window(QMainWindow):
             self.object_overrides.pop(name.casefold())
             self._reload_texture_assets()
 
+    def _change_car_appearance_overlay(self, appearance):
+        """Preview-only change; preserve source, model, camera and edits.
+
+        Commit the selected wrapper only after a successful worker/GL reload.
+        """
+        if self._busy():
+            return
+        if self.model_path is None or self.viewer._model is None:
+            QMessageBox.information(
+                self, "No model", "Open a car or car-part model first.")
+            return
+        if (self._source_busy_revision is not None or
+                self._source_queued is not None or self.source_pane.pending):
+            QMessageBox.information(
+                self, "Source is being edited",
+                "Finish or correct the pending .3D source compilation "
+                "before changing the appearance overlay.")
+            return
+        self._appearance_candidate = appearance
+        self._appearance_change_pending = True
+        self.load(self.model_path, reuse_model=True)
+
+    def choose_car_appearance_overlay(self):
+        """Load a driver wrapper without following its base-car reference."""
+        if self._busy():
+            return
+        if self.model_path is None or self.viewer._model is None:
+            QMessageBox.information(
+                self, "No model", "Open roadcar.3do, indycar.3do, "
+                "or another geometry model first.")
+            return
+        chosen, _ = QFileDialog.getOpenFileName(
+            self, "Preview an individual-car RECOLOR / MIP",
+            str(self.car_appearance_overlay.path.parent
+                if self.car_appearance_overlay else self.model_path.parent),
+            "Individual-car 3DO (*.3do *.3DO);;All files (*)")
+        if not chosen:
+            return
+        try:
+            appearance = read_car_appearance(Path(chosen))
+        except (AppearanceError, OSError) as exc:
+            QMessageBox.warning(
+                self, "Invalid individual-car appearance",
+                f"Could not read RECOLOR / MIP from {Path(chosen).name}: {exc}")
+            return
+        self._change_car_appearance_overlay(appearance)
+
+    def clear_car_appearance_overlay(self):
+        if self.car_appearance_overlay is None or self._busy():
+            return
+        self._change_car_appearance_overlay(None)
+
+    def _car_appearance_status(self, stats):
+        """Distinguish a temporary visual overlay from edited source data."""
+        overlay = self.car_appearance_overlay
+        if overlay is not None:
+            ref = (f" | wrapper references {overlay.geometry_name}.3do "
+                   "(ignored)" if stats.get("appearance_reference_mismatch")
+                   else "")
+            return (
+                f"Previewing {overlay.path.name} on {stats['geometry_file']}"
+                f" | {stats['recolor_pairs']} RECOLOR mappings"
+                f" | body MIP: {overlay.texture_name or 'none'}"
+                + ref + " | appearance is not baked into exported geometry")
+        if stats.get("appearance_file"):
+            return (
+                f"Car appearance: {stats['appearance_file']}"
+                f" | {stats['recolor_pairs']} RECOLOR mappings"
+                f" | body MIP: {stats.get('appearance_mip') or 'none'}")
+        return (f"No individual-car appearance overlay"
+                f" | editable geometry: {stats.get('geometry_file', '')}")
+
     def choose_livery_mip(self):
         if self._busy():
             return
@@ -3585,10 +3686,7 @@ class Window(QMainWindow):
             self.statusBar().showMessage(
                 "Livery MIPs reloaded; UV atlas layout changed, rebuilt VBO")
         self._show_mip_stats(stats)
-        self.car_status.setText(
-            f"Individual-car RECOLOR: {self._info.get('recolor_pairs',0)} mappings"
-            f" | base: {self._info.get('geometry_file','')}"
-            f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        self.car_status.setText(self._car_appearance_status(self._info))
         # MIP reload may repair or introduce errors. Refresh the menu log
         # without interrupting interactive texture iteration with popups.
         self._update_load_error_log(
@@ -3999,6 +4097,12 @@ class Window(QMainWindow):
                     'Discard changes'):
                 return
         if not reuse_model:
+            # A new Open resets the optional preview; the wrapper is not
+            # retained silently when switching to another geometry model.
+            self.car_appearance_overlay = None
+            self._native_car_appearance = None
+            self._appearance_change_pending = False
+            self._appearance_candidate = None
             self._source_invalid = False
             self._source_applied = False
             self._last_valid_source_text = None
@@ -4021,6 +4125,14 @@ class Window(QMainWindow):
         self._preserve_view = reuse_model
         self.load_label.setText(f"Loading {Path(path).name}… (background worker)")
         self.stats_label.setText("Loading geometry and MIP atlas…")
+        # On a repeat render, use either a pending manual preview or the
+        # current preview; a loaded wrapper's native appearance is the
+        # fallback when the user clears a manual overlay.
+        preview = (self._appearance_candidate
+                   if self._appearance_change_pending
+                   else self.car_appearance_overlay)
+        if preview is None and reuse_model:
+            preview = self._native_car_appearance
         self.worker = LoadWorker(
             path, self.palette_path, self.texture_folder, self.fallback_mip,
             objects_folder=self.objects_folder,
@@ -4032,8 +4144,7 @@ class Window(QMainWindow):
                          if reuse_model and self._source_applied else None),
             source_path=(self.source_pane.source_path
                          if reuse_model and self._source_applied else None),
-            appearance_override=(self.viewer._scene.appearance
-                                 if reuse_model and self._source_applied else None),
+            appearance_override=preview,
             auto_local_palette=not reuse_model)
         self.worker.ready.connect(self._loaded)
         self.worker.failed.connect(self._load_failed)
@@ -4074,6 +4185,12 @@ class Window(QMainWindow):
             self._load_failed(f"GPU upload: {type(exc).__name__}: {exc}",
                               previous_preserved=False)
             return
+        if self._appearance_change_pending:
+            self.car_appearance_overlay = self._appearance_candidate
+            self._appearance_candidate = None
+            self._appearance_change_pending = False
+        elif not from_source and not was_reloading:
+            self._native_car_appearance = scene.appearance
         self._load_progress_stage(
             self.worker, 97, "Finishing controls and track setup",
             repaint=True)
@@ -4140,10 +4257,7 @@ class Window(QMainWindow):
             f"{len(stats['pmp_warnings'])} missing or invalid"
             + (": " + "; ".join(stats['pmp_warnings'][:3])
                if stats['pmp_warnings'] else ""))
-        self.car_status.setText(
-            f"Individual-car RECOLOR: {stats['recolor_pairs']} mappings"
-            f" | referenced carshape(s): {len(model.external_names)}"
-            f" | active texture overrides: {len(self.mip_overrides) + int(self.body_mip is not None)}")
+        self.car_status.setText(self._car_appearance_status(stats))
         self.track_status.setText(workspace_scene_summary("track", stats))
         skybox = scene.skybox
         # Reopening a different asset defaults the detected skybox to ON;
@@ -4283,6 +4397,10 @@ class Window(QMainWindow):
 
     def _load_failed(self, message, *, previous_preserved=True):
         self._record_load_activity(f"LOAD FAILED: {message}")
+        # Keep the previously applied appearance if the preview failed.
+        if self._appearance_change_pending:
+            self._appearance_candidate = None
+            self._appearance_change_pending = False
         self._end_load_progress(self.worker, success=False)
         self.load_label.setText(
             "Load failed; previous model preserved" if previous_preserved
