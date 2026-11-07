@@ -53,6 +53,19 @@ class VertexMoveOverlay(QWidget):
                     painter.setPen(QPen(QColor("#ffeab0"), 1))
                     painter.setBrush(Qt.BrushStyle.NoBrush)
                     painter.drawEllipse(QPointF(*original), 5.5, 5.5)
+                if raw_preview != start:
+                    painter.setPen(QPen(
+                        QColor(255, 231, 143, 210), 1.8,
+                        Qt.PenStyle.DashLine))
+                    painter.setBrush(QBrush(QColor("#ffe78f")))
+                    for _, raw in viewport._move_neighbors:
+                        neighbor = raw_point_screen_position(
+                            viewport._mesh, raw, projection @ view,
+                            self.width(), self.height())
+                        if neighbor is None:
+                            continue
+                        painter.drawLine(QPointF(*drawn), QPointF(*neighbor))
+                        painter.drawEllipse(QPointF(*neighbor), 2.5, 2.5)
 
             # Thick dark outlines keep the handles usable over any palette,
             # wireframe or tracing reference image.
