@@ -105,6 +105,8 @@ from vertex_label_data import (
 from vertex_label_overlay import VertexLabelOverlay
 from axis_overlay import AxisGuideOverlay
 from axis_guides import GUIDE_ANCHORS
+from vertex_move import move_handles, hit_move_handle, drag_raw_coordinate
+from vertex_move_overlay import VertexMoveOverlay
 from mip_browser import MipUVBrowser
 from tracing_reference import initial_reference
 from tracing_profiles import TracingProfileStore, ProfileError
@@ -572,6 +574,7 @@ class GLViewport(QOpenGLWidget):
     trackDrivePositionChanged = Signal(object)
     vertexPicked = Signal(int)  # root-model vertex body offset from a click
     polygonPicked = Signal(int)  # root-model POLY body offset from a click
+    vertexMoveRequested = Signal(int, object)  # compiled root offset, raw XYZ
 
     def __init__(self):
         super().__init__()
@@ -666,6 +669,14 @@ class GLViewport(QOpenGLWidget):
         self._drag = None
         self._pick_press = None
         self._pick_dragged = False
+        self.move_vertex_enabled = False
+        self.move_snap = 1
+        self._move_press = None
+        self._move_handle = None
+        self._move_active_axis = None
+        self._move_hover_axis = None
+        self._move_original_xyz = None
+        self._move_preview_xyz = None
         self._frametimes = deque(maxlen=240)
         self._frame_count = 0
         self.fps = 0.0
@@ -708,6 +719,8 @@ class GLViewport(QOpenGLWidget):
         self.axis_guide_overlay.setVisible(
             self.axis_guides_enabled or self.orientation_gizmo_enabled)
         self.vertex_label_overlay = VertexLabelOverlay(self)
+        self.vertex_move_overlay = VertexMoveOverlay(self)
+        self.vertex_move_overlay.setGeometry(self.rect())
 
     def update(self, *args):
         """Keep optional labels aligned whenever camera/selection redraws."""
@@ -718,6 +731,9 @@ class GLViewport(QOpenGLWidget):
         axes = getattr(self, "axis_guide_overlay", None)
         if axes is not None and not axes.isHidden():
             axes.update()
+        mover = getattr(self, "vertex_move_overlay", None)
+        if mover is not None and not mover.isHidden():
+            mover.update()
 
     def set_axis_guides_enabled(self, enabled):
         self.axis_guides_enabled = bool(enabled)
@@ -751,6 +767,7 @@ class GLViewport(QOpenGLWidget):
         if enabled:
             overlay.setGeometry(self.rect())
             overlay.raise_()
+            self.vertex_move_overlay.raise_()
             if self.visibility_banner.isVisible():
                 self.visibility_banner.raise_()
         else:
@@ -774,6 +791,9 @@ class GLViewport(QOpenGLWidget):
         axes = getattr(self, "axis_guide_overlay", None)
         if axes is not None:
             axes.setGeometry(self.rect())
+        mover = getattr(self, "vertex_move_overlay", None)
+        if mover is not None:
+            mover.setGeometry(self.rect())
 
     def _size_visibility_banner(self):
         width = max(120, min(660, self.width() - 24))
@@ -905,6 +925,13 @@ class GLViewport(QOpenGLWidget):
                  *, preserve_view=False, on_activity=None):
         if on_activity:
             on_activity("GPU setup: preparing vertex and polygon pickers")
+        self._move_press = None
+        self._move_handle = None
+        self._move_active_axis = None
+        self._move_hover_axis = None
+        self._move_original_xyz = None
+        self._move_preview_xyz = None
+        self.unsetCursor()
         self._mesh = mesh
         self._model = model
         self._vertex_picker = VertexPicker.from_model(model, mesh)
@@ -1011,6 +1038,9 @@ class GLViewport(QOpenGLWidget):
             kind, offset = ("bsp", None) if points is not None else (None, None)
         elif kind not in ("polygon", "vertex") or offset is None:
             kind, offset = None, None
+        if kind != "vertex":
+            self._move_hover_axis = None
+            self._move_preview_xyz = None
         if ((self.inspection_kind, self.inspection_offset,
              self.inspection_points) != (kind, offset, points)):
             self.inspection_kind = kind
@@ -1584,10 +1614,54 @@ class GLViewport(QOpenGLWidget):
                 self.half_height, aspect, near, far)
         return projection, view
 
+    def set_vertex_move_enabled(self, enabled):
+        """Explicit, opt-in axis dragging; ordinary clicking/orbit is unchanged."""
+        self.move_vertex_enabled = bool(enabled)
+        if not enabled:
+            self._cancel_vertex_drag()
+        self.vertex_move_overlay.setVisible(self.move_vertex_enabled)
+        if enabled:
+            self.vertex_move_overlay.setGeometry(self.rect())
+            self.vertex_move_overlay.raise_()
+        self.update()
+
+    def set_vertex_move_snap(self, step):
+        self.move_snap = max(1, int(step))
+
+    def _move_handles(self, *, preview=False):
+        if (not self.move_vertex_enabled or self.pick_mode != "vertex"
+                or self.inspection_kind != "vertex"
+                or self._mesh is None or self._model is None
+                or self.inspection_offset not in self._model.vertices):
+            return {}
+        raw = (self._move_preview_xyz if preview and
+               self._move_preview_xyz is not None else
+               self._model.vertices[self.inspection_offset].xyz)
+        projection, view = self._projection_and_view()
+        return move_handles(
+            raw, self._mesh.center, self._mesh.scale, projection @ view,
+            self.width(), self.height())
+
+    def _cancel_vertex_drag(self):
+        """Restore input routing without touching N3 or issuing a compile."""
+        self._move_press = None
+        self._move_handle = None
+        self._move_active_axis = None
+        self._move_preview_xyz = None
+        self._move_original_xyz = None
+        self._move_hover_axis = None
+        self._drag = None
+        self._pick_press = None
+        self.unsetCursor()
+        self.vertex_move_overlay.update()
+
     def set_pick_mode(self, mode):
         if mode not in ('vertex', 'polygon'):
             raise ValueError(f"Unknown viewport pick mode: {mode}")
+        if mode != self.pick_mode:
+            self._cancel_vertex_drag()
         self.pick_mode = mode
+        self.vertex_move_overlay.update()
 
     def pick_nearest_polygon(self, x, y):
         """Pick a rendered root POLY, honoring the current BSP/RES selection.
@@ -1950,6 +2024,10 @@ class GLViewport(QOpenGLWidget):
 
     def keyPressEvent(self, event):
         """W/Up forward, S/Down backward, A/Left left, D/Right right."""
+        if event.key() == Qt.Key.Key_Escape and self._move_press is not None:
+            self._cancel_vertex_drag()
+            event.accept()
+            return
         if self.track_drive_enabled and not (
                 event.modifiers() & (Qt.KeyboardModifier.ControlModifier
                                      | Qt.KeyboardModifier.AltModifier)):
@@ -2049,6 +2127,27 @@ class GLViewport(QOpenGLWidget):
 
     def mousePressEvent(self, event):
         self.setFocus(Qt.FocusReason.MouseFocusReason)
+        if (event.button() == Qt.MouseButton.LeftButton and
+                event.modifiers() == Qt.KeyboardModifier.NoModifier):
+            handles = self._move_handles()
+            axis = hit_move_handle(
+                handles, event.position().x(), event.position().y())
+            if axis is not None:
+                offset = self.inspection_offset
+                self._move_press = (
+                    (event.position().x(), event.position().y()), offset)
+                self._move_handle = handles[axis]
+                self._move_active_axis = axis
+                self._move_original_xyz = tuple(
+                    int(v) for v in self._model.vertices[offset].xyz)
+                self._move_preview_xyz = self._move_original_xyz
+                self._drag = None
+                self._pick_press = None
+                self._pick_dragged = True
+                self.setCursor(Qt.CursorShape.ClosedHandCursor)
+                self.vertex_move_overlay.update()
+                event.accept()
+                return
         self._drag = (event.position(), event.button())
         self._pick_press = (
             event.position(), event.button(), event.modifiers())
@@ -2056,6 +2155,18 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        if (self._move_press is not None
+                and event.button() == Qt.MouseButton.LeftButton):
+            offset = self._move_press[1]
+            candidate = self._move_preview_xyz
+            original = self._move_original_xyz
+            self._cancel_vertex_drag()
+            if (candidate is not None and original is not None
+                    and candidate != original and self._model is not None
+                    and offset in self._model.vertices):
+                self.vertexMoveRequested.emit(offset, candidate)
+            event.accept()
+            return
         pressed = self._pick_press
         self._drag = None
         self._pick_press = None
@@ -2078,7 +2189,31 @@ class GLViewport(QOpenGLWidget):
         event.accept()
 
     def mouseMoveEvent(self, event):
+        if self._move_press is not None:
+            if event.buttons() & Qt.MouseButton.LeftButton:
+                origin, _ = self._move_press
+                pointer = (event.position().x(), event.position().y())
+                try:
+                    self._move_preview_xyz = drag_raw_coordinate(
+                        self._move_handle, origin, pointer,
+                        self._move_original_xyz, snap=self.move_snap,
+                        fine=bool(event.modifiers() &
+                                  Qt.KeyboardModifier.ShiftModifier))
+                except (ArithmeticError, ValueError, OverflowError):
+                    self._move_preview_xyz = self._move_original_xyz
+                self.vertex_move_overlay.update()
+            event.accept()
+            return
         if self._drag is None:
+            if event.buttons() == Qt.MouseButton.NoButton:
+                hovered = hit_move_handle(
+                    self._move_handles(),
+                    event.position().x(), event.position().y())
+                if hovered != self._move_hover_axis:
+                    self._move_hover_axis = hovered
+                    self.setCursor(Qt.CursorShape.OpenHandCursor
+                                   ) if hovered else self.unsetCursor()
+                    self.vertex_move_overlay.update()
             return
         old, button = self._drag
         dx = event.position().x() - old.x()
