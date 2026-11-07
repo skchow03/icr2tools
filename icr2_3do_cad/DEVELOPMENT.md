@@ -18,6 +18,8 @@ The sole application entry point is `icr2_3do_cad.py` in this directory. It runs
 
 The application uses flat imports relative to this directory. Direct execution of `python icr2_3do_cad.py` and the Windows batch launcher must work without a separate Python package.
 
+- Direct vertex manipulation: vertex_move.py computes screen-space XYZ handles and unprojects axis-aligned mouse delta back to *raw* Papyrus coordinates (both perspective and ortho). vertex_move_overlay.py paints through a transparent, mouse-transparent child QWidget, never in paintGL. GLViewport owns input capture; Escape cancels. source_vertex_move.py validates the last compiled raw XYZ and writes only changed N3 coordinate tokens, respecting ICR2_COORD_SCALE and preserving UV. SourcePane joins the result into one Qt Undo step, then applies optional symmetry through the preexisting source helper. No N3 rebuild per mouse move; model is rebuilt once on release. Move gizmo resets OFF on new model; UI and math tests in test_vertex_move*.py and test_source_vertex_move.py.
+
 ## Binary safety invariants
 
 1. Unmodified binary `.3do` parsing and byte-preserving `Model.build_modified_bytes()` operations must remain non-destructive.
