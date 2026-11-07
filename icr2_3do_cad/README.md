@@ -155,7 +155,10 @@ ignored for this explicit overlay: `cit74.3do` can be previewed on
 `frpod.3do`) inherit the driver RECOLOR and livery MIP when they have no
 closer named MATERIAL. Wheel and tire attachments keep independent palette colors and
 MIPs. Helmet and helmetp PMP/PMP2 sprites instead inherit driver RECOLOR
-for all eight camera-angle variants, without inheriting the body MIP. The overlay is **preview-only**: exporting
+for all eight camera-angle variants, without inheriting the body MIP.
+A modded helmet.3do containing real polygons inherits driver RECOLOR on its
+polygon colors and inherits the livery MIP on POLY[T] faces without an explicit
+local MATERIAL (including extended MIPs with helmet UVs below row 255). The overlay is **preview-only**: exporting
 compiled geometry does not embed the wrapper's RECOLOR/MIP or rewrite it.
 If a body MIP is missing, the MIP diagnostics identify it. A separate manual
 body-MIP override takes precedence until cleared.
