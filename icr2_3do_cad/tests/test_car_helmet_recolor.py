@@ -10,7 +10,7 @@ import unittest
 import numpy as np
 
 from car_appearance import read_car_appearance
-from scene import build_scene, ordered_scene_indices
+from scene import build_scene, load_car_or_model, ordered_scene_indices
 from mesh import make_mesh
 from sprites import prepare_scene_sprites
 from three_do import Model
@@ -85,7 +85,7 @@ class CarHelmetRecolorTests(unittest.TestCase):
     def test_regular_helmet_pmp_recolored_for_every_angle(self):
         self.assert_helmet_palette("helmet.3do")
 
-    def test_pit_helmet_pmp2_recolored_for_every_angle(self):
+    def test_helmetp_pmp2_recolored_for_every_angle(self):
         self.assert_helmet_palette("helmetp.3do")
 
     def test_helmet_inherits_recolor_but_not_body_mip(self):
@@ -106,6 +106,31 @@ class CarHelmetRecolorTests(unittest.TestCase):
                     self.assertIsNone(instance.texture_override)
                 else:
                     self.assertEqual(instance.texture_override, "wheel1")
+
+    def test_roadcar_attached_helmet_uses_driver_recolor(self):
+        roadcar = Model(FIX / "roadcar.3do", associate_planes=False)
+        scene = build_scene(roadcar, objects_folder=FIX,
+                            appearance=self.wrapper)
+        sprites = prepare_scene_sprites(scene, objects_folder=FIX)
+        self.assertFalse(sprites.warnings)
+        self.assertEqual(len(sprites.placements), 8)
+        helmet = next(
+            instance for instance in scene.instances
+            if instance.model.path.stem.casefold() == "helmet")
+        self.assertFalse(helmet.recolor_layers)
+        self.assertEqual(helmet.sprite_recolor_layers,
+                         (self.wrapper.mapping,))
+
+    def test_opening_driver_wrapper_directly_recolors_helmet(self):
+        model, scene, wrapper = load_car_or_model(
+            FIX / "cit74.3do", objects_folder=FIX)
+        self.assertEqual(model.path.stem.casefold(), "indycar")
+        self.assertIsNotNone(wrapper)
+        resources = prepare_scene_sprites(scene, objects_folder=FIX)
+        self.assertFalse(resources.warnings)
+        self.assertEqual(len(resources.placements), 8)
+        self.assertTrue(all("#recolor-" in key
+                            for key in resources.images))
 
     def test_plain_standalone_helmet_keeps_original_pmp_indices(self):
         helmet = Model(FIX / "helmet.3do", associate_planes=False)
