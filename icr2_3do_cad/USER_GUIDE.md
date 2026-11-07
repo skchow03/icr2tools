@@ -342,7 +342,7 @@ menu bar. There is no permanent right sidebar.
   Settings dialog, with direct entries to each workspace's controls.
 - **Assets:** Asset Settings dialog, palette selection/reset, MIP and
   external-3DO folders, fallback MIP selection/reset, and Reload MIPs.
-- **Help:** keyboard/mouse controls and an About dialog.
+- **Help:** **User Manual (Contents and Index)…** (**F1**) opens the bundled, self-contained [HTML help file](USER_MANUAL.html) in the system browser; keyboard/mouse controls and an About dialog remain available. If the HTML file is missing from a distributed build, the application displays an explanatory warning instead of opening a broken path.
 
 The first **Save .3D Source** prompts for a .3D output path (by default an
 `_edited.3d` name). Later Saves reuse that explicitly chosen path;
