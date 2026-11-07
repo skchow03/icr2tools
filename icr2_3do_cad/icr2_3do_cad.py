@@ -3326,10 +3326,7 @@ class Window(QMainWindow):
         target = self.source_pane.current_target()
         if (not self.source_toggle.isChecked() or
                 self._source_invalid or target is None or
-                self.viewer._model is None or
-                (self.viewer._visibility_dirty and
-                 (self.viewer.render_mode != "all" or
-                  self.viewer._track_lod_active()))):
+                self.viewer._model is None):
             self.source_pane.set_polygon_visibility(None)
             return
         if target[0] == "vertex":
@@ -3337,7 +3334,10 @@ class Window(QMainWindow):
             # green selection treatment as a visible POLY.
             self.source_pane.set_polygon_visibility(True)
             return
-        if target[0] != "polygon":
+        if target[0] != "polygon" or (
+                self.viewer._visibility_dirty and
+                (self.viewer.render_mode != "all" or
+                 self.viewer._track_lod_active())):
             self.source_pane.set_polygon_visibility(None)
             return
         offset = target_offset(self.viewer._model, "polygon", target[1])
