@@ -21,8 +21,26 @@ To measure viewport performance, use `--benchmark` and optionally `--report cad_
 - Open compiled `.3do` files or standalone Papyrus/N3 `.3D` source; the editable source panel recompiles and updates the viewport after validation.
 - Car, Track and Object workspaces; camera orbit, pan, zoom, orthographic and fixed-camera views, track-guided navigation, indexed HI/MED/LO section windows and optional skybox.
 - Inspect vertex and polygon source declarations, BSP/draw-order decisions, external DYNAMIC models, MIP materials, PMP sprites and visibility.
+- Preview a separate driver `.3do` RECOLOR and body MIP on the currently editable car or car-part geometry without opening the driver's referenced carshape.
 - Edit N3 source with live diagnostics, reference navigation, polygon splitting, vertex inspection, pointer renaming and scaling.
 - Save source or export a newly compiled `.3do` explicitly; failed compilation does not overwrite game assets.
+
+## Preview a driver appearance on an editable car model
+
+Open `roadcar.3do`, `indycar.3do`, a wheel, or another car-part geometry file.
+Choose **Assets → Apply Individual-Car RECOLOR / MIP…**, then choose an
+individual-car file such as `cit74.3do`. The **Car Settings** dialog offers the
+same command, plus **Clear appearance overlay**.
+
+The viewport applies the driver file's RECOLOR mapping and resolves its named
+body MIP relative to the driver file, while you continue editing the original
+geometry and .3D Source. A wrapper's own geometry reference is intentionally
+ignored for this explicit overlay: `cit74.3do` can be previewed on
+`roadcar.3do` despite referencing `indycar.3do`. External wheel/helmet
+materials remain independent. The overlay is **preview-only**: exporting
+compiled geometry does not embed the wrapper's RECOLOR/MIP or rewrite it.
+If a body MIP is missing, the MIP diagnostics identify it. A separate manual
+body-MIP override takes precedence until cleared.
 
 **Important:** Exporting edited source recompiles a model; binary record offsets may change. Back up originals, validate new assets, and test compiled models in-game. The renderer is a diagnostic approximation, not a game-exact rasterizer.
 
