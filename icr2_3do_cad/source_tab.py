@@ -331,7 +331,10 @@ class SourcePane(QWidget):
         self.symmetry_plane.setToolTip(
             "X mirrors across YZ; Y across XZ; Z across XY.")
         symmetry_row.addWidget(self.symmetry_plane)
-        symmetry_row.addWidget(QLabel("At"))
+        symmetry_row.addStretch(1)
+        layout.addLayout(symmetry_row)
+        symmetry_options = QHBoxLayout()
+        symmetry_options.addWidget(QLabel("Plane coordinate"))
         self.symmetry_plane_at = QDoubleSpinBox()
         self.symmetry_plane_at.setObjectName("symmetryPlaneAt")
         self.symmetry_plane_at.setRange(-2_000_000_000, 2_000_000_000)
@@ -340,8 +343,8 @@ class SourcePane(QWidget):
         self.symmetry_plane_at.setToolTip(
             "Raw Papyrus coordinate of the symmetry plane; usually 0.")
         self.symmetry_plane_at.setMaximumWidth(110)
-        symmetry_row.addWidget(self.symmetry_plane_at)
-        symmetry_row.addWidget(QLabel("Tolerance"))
+        symmetry_options.addWidget(self.symmetry_plane_at)
+        symmetry_options.addWidget(QLabel("Match tolerance"))
         self.symmetry_tolerance = QDoubleSpinBox()
         self.symmetry_tolerance.setObjectName("symmetryTolerance")
         self.symmetry_tolerance.setRange(0, 1_000_000)
@@ -351,8 +354,9 @@ class SourcePane(QWidget):
             "Maximum raw-coordinate difference for finding mirror points; "
             "0 requires exact matches. Multiple matches require a choice.")
         self.symmetry_tolerance.setMaximumWidth(94)
-        symmetry_row.addWidget(self.symmetry_tolerance)
-        layout.addLayout(symmetry_row)
+        symmetry_options.addWidget(self.symmetry_tolerance)
+        symmetry_options.addStretch(1)
+        layout.addLayout(symmetry_options)
         self.symmetry_enabled.toggled.connect(self._symmetry_toggled)
         for widget in (self.symmetry_plane, self.symmetry_plane_at,
                        self.symmetry_tolerance):
