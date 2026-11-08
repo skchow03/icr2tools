@@ -279,6 +279,68 @@ def _omit_radiator_rear_cap(source: str) -> str:
     return source
 
 
+# Radiator's outer front cap is in the finished +X-forward game frame
+# at x=42660 raw (original design x=0.39 ft). The previous x=0 BSPN was
+# merely a painter SORT plane, so it could not back-face-cull this cap.
+# Place a new *one-sided* front-face plane at x=42600, 60 raw units (0.12in)
+# behind the radiator front. Positive X is the only visible viewing side.
+RADIATOR_FRONT_X_RAW = 42660
+RADIATOR_VIS_PLANE_X_RAW = 42600
+
+
+def _attach_radiator_front_cull(game_source: str) -> str:
+    """Hide only the radiator's front hexagon behind a local +X FACE plane.
+
+    The 12 surrounding shell triangles remain two-sided/always reachable.
+    This changes the authored N3 scene topology, not a runtime material flag.
+    """
+    group = re.search(
+        r"(?m)^radiator_face_geo: LIST \{([^}\n]+)\};$", game_source
+    )
+    if not group:
+        raise ValueError("Cannot locate open-backed radiator geometry")
+    elements = [x.strip() for x in group.group(1).split(",")]
+    front = "radiator_face_p0000"
+    shell = [f"radiator_face_p{i:04}" for i in range(1, 13)]
+    if elements != [front] + shell:
+        raise ValueError(f"Unexpected radiator cap/shell polygons: {elements!r}")
+
+    game_source = (
+        game_source[:group.start()]
+        + "radiator_face_geo: LIST {" + ", ".join(shell) + "};"
+        + game_source[group.end():]
+    )
+    nose_old = ("wasp_noseparts: BSPN "
+                "(wasp_x_a, wasp_x_b, wasp_x_c), "
+                "long_bonnet_geo, radiator_face_geo;")
+    nose_new = nose_old.replace(
+        "long_bonnet_geo, radiator_face_geo;",
+        "long_bonnet_geo, wasp_radiator_surfaces;",
+    )
+    if game_source.count(nose_old) != 1:
+        raise ValueError("Cannot find the radiator reference under nose BSPN")
+    game_source = game_source.replace(nose_old, nose_new)
+
+    # Winding chosen so the cross-product normal is +X.
+    # This plane is 60 raw units behind the front cap and is *not* the
+    # general car-body sorter at x=0, which must remain unchanged.
+    face = "\n".join([
+        "% Radiator FRONT visibility: positive +X only, 0.12in behind grille.",
+        f"wasp_rad_face_a: [<{RADIATOR_VIS_PLANE_X_RAW}, -1200, -3000>];",
+        f"wasp_rad_face_b: [<{RADIATOR_VIS_PLANE_X_RAW}, 1200, -3000>];",
+        f"wasp_rad_face_c: [<{RADIATOR_VIS_PLANE_X_RAW}, 0, -1000>];",
+        "wasp_rad_front_only: FACE "
+        "(wasp_rad_face_a, wasp_rad_face_b, wasp_rad_face_c), "
+        "radiator_face_p0000;",
+        "wasp_radiator_surfaces: LIST "
+        "{radiator_face_geo, wasp_rad_front_only};",
+    ])
+    if game_source.count("wasp_rad_front_only:") or game_source.count(
+            "wasp_radiator_surfaces:"):
+        raise ValueError("Radiator culling already inserted")
+    return game_source + "\n" + face + "\n"
+
+
 def _attach_shadow_root(game_source: str) -> str:
     key = "root: LIST {wasp_black_frame, wasp_vehicle_sort};"
     if game_source.count(key) != 1:
@@ -334,7 +396,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         body[m.end():]
     )
     wasp_text = _attach_shadow_root(
-        _game_source(_omit_radiator_rear_cap(wasp_text))
+        _attach_radiator_front_cull(
+            _game_source(_omit_radiator_rear_cap(wasp_text))
+        )
     )
 
     # Real N3 compiler and parser verify all parent source records and external names.
@@ -354,6 +418,48 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             raise ValueError("Shadow color/height differs from stock car")
     if len(model.children[frame_geo]) != 13:
         raise ValueError("Chassis must have 13 named, first-drawn components")
+
+    # Confirm the compiled FACE record lies at the front of the radiator and
+    # truly CULLS the front hexagon from every rear-side camera, rather than
+    # only changing its painter sequence. The existing nose BSPN x=0 sorts
+    # separate body parts and should NOT be moved.
+    front_caps = [
+        p.offset for p in model.polygons.values()
+        if p.color == 0 and len(set(p.refs)) == 6 and
+        all(model.vertices[v].xyz[0] == RADIATOR_FRONT_X_RAW
+            for v in p.refs)
+    ]
+    if len(front_caps) != 1:
+        raise ValueError(f"Expected one radiator front hexagon: {front_caps}")
+    radiator_front_offset = front_caps[0]
+    cull_faces = [p for p in model.planes.values() if p.kind == 5]
+    if len(cull_faces) != 1:
+        raise ValueError(f"Expected one radiator FACE, got {len(cull_faces)}")
+    face_eq = cull_faces[0].equation
+    nx, ny, nz, d = face_eq
+    if not (nx > 0 and ny == 0 and nz == 0 and
+            abs(-d / nx - RADIATOR_VIS_PLANE_X_RAW) < 0.001):
+        raise ValueError(f"Radiator cull plane orientation/location wrong: {face_eq}")
+    visibility_checks = {}
+    for side in (-1, 1):
+        for x, visible in (
+                (100000, True),        # well in front of radiator
+                (RADIATOR_VIS_PLANE_X_RAW + 10, True),
+                (RADIATOR_VIS_PLANE_X_RAW - 10, False),
+                (41000, False),        # behind the front grille, near back cap
+                (0, False),            # driver's cockpit / side view
+                (-100000, False)):     # completely behind the car
+            polys, _stats, _lod = model.switched_polygons(
+                None, (x, side * 90000, 12000), bsp_mode="original")
+            got = radiator_front_offset in polys
+            if got != visible:
+                raise ValueError(
+                    f"Radiator face visibility failure camera=({x}, {side}): "
+                    f"expected {visible}, got {got}"
+                )
+            visibility_checks[f"camera_x_{x}_side_{side}"] = got
+
+
     radiator_back_x_raw = _game_coordinates((3300, 0, 0))[0]
     if any(p.color == 0 and len(p.refs) == 6
            and all(model.vertices[v].xyz[0] == radiator_back_x_raw
@@ -432,6 +538,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "black_chassis_before_body": True,
             "frame_polygon_count": expected_frame_polygons,
             "radiator_rear_cap_removed": True,
+        "radiator_front_culling": {
+            "plane_kind": "FACE",
+            "plane_x_raw": RADIATOR_VIS_PLANE_X_RAW,
+            "front_cap_x_raw": RADIATOR_FRONT_X_RAW,
+            "visible_only_from_positive_x": True,
+            "camera_visibility_tests": visibility_checks,
+            "face_normal_signed_equation": list(face_eq),
+        },
             "far_wheels_before_body": True,
             "near_wheels_after_body": True,
             "body_polygon_events": len(polygon_positions),
@@ -492,7 +606,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
         "Black is reserved common palette index 0; no MIP textures.\n"
         "Shadow: eight flat polygons, palette 27 at raw Z=-8501, stock ICR2 convention.\n"
-        "Rear radiator cap omitted; black frame always drawn before colored body.\n",
+        "Rear radiator cap omitted; black frame always drawn before colored body.\n"
+        "Radiator front FACE plane x=42600 (just behind cap x=42660): only +X views.\n",
         encoding="utf-8",
     )
     manifest = {
