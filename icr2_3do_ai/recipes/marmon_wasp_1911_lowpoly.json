@@ -1,6 +1,6 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp #32 low-poly body with exposed chassis; solid beam axles front and rear physically reach four removable wheel-center locators; rear underbody chassis extension; four simplified longitudinal leaf-spring packs (8 half segments), plus twin mirror supports and rounded tail fin. Historic spring exact layout unverified. Surface details and wheel meshes left separate.",
+  "description": "1911 Marmon Wasp body-only master N3 recipe. Solid yellow cockpit walls form a five-chord rounded U-shaped side opening; rounded cowl, raised rear fin, chassis, axles and simplified leaf springs are retained. No wheel placeholder blocks. Four separate wheel 3DO DYNAMIC instances are added to the generated .3D by assemble_wasp.py: FWHEEL front pair, RWHEEL rear pair.",
   "coordinate_scale": 6000,
   "operations": [
     {
@@ -347,7 +347,7 @@
     },
     {
       "type": "extrude",
-      "name": "cockpit_sill_left",
+      "name": "cockpit_body_left_1",
       "axis": "y",
       "color": 158,
       "outline": [
@@ -356,26 +356,153 @@
           6.1
         ],
         [
-          2.08,
+          3.38,
           6.1
         ],
         [
-          2.08,
-          8.96
+          2.78,
+          6.53
         ],
         [
           1.52,
-          8.96
+          6.53
         ]
       ],
-      "from": -1.38,
-      "to": -1.13,
-      "caps": false
+      "from": -1.37,
+      "to": -1.04
     },
     {
       "type": "mirror",
-      "name": "cockpit_sill_right",
-      "source": "cockpit_sill_left",
+      "name": "cockpit_body_right_1",
+      "source": "cockpit_body_left_1",
+      "axis": "y"
+    },
+    {
+      "type": "extrude",
+      "name": "cockpit_body_left_2",
+      "axis": "y",
+      "color": 158,
+      "outline": [
+        [
+          1.52,
+          6.53
+        ],
+        [
+          2.78,
+          6.53
+        ],
+        [
+          2.42,
+          7.09
+        ],
+        [
+          1.52,
+          7.09
+        ]
+      ],
+      "from": -1.37,
+      "to": -1.04
+    },
+    {
+      "type": "mirror",
+      "name": "cockpit_body_right_2",
+      "source": "cockpit_body_left_2",
+      "axis": "y"
+    },
+    {
+      "type": "extrude",
+      "name": "cockpit_body_left_3",
+      "axis": "y",
+      "color": 158,
+      "outline": [
+        [
+          1.52,
+          7.09
+        ],
+        [
+          2.42,
+          7.09
+        ],
+        [
+          2.4,
+          7.92
+        ],
+        [
+          1.52,
+          7.92
+        ]
+      ],
+      "from": -1.37,
+      "to": -1.04
+    },
+    {
+      "type": "mirror",
+      "name": "cockpit_body_right_3",
+      "source": "cockpit_body_left_3",
+      "axis": "y"
+    },
+    {
+      "type": "extrude",
+      "name": "cockpit_body_left_4",
+      "axis": "y",
+      "color": 158,
+      "outline": [
+        [
+          1.52,
+          7.92
+        ],
+        [
+          2.4,
+          7.92
+        ],
+        [
+          2.66,
+          8.44
+        ],
+        [
+          1.52,
+          8.44
+        ]
+      ],
+      "from": -1.37,
+      "to": -1.04
+    },
+    {
+      "type": "mirror",
+      "name": "cockpit_body_right_4",
+      "source": "cockpit_body_left_4",
+      "axis": "y"
+    },
+    {
+      "type": "extrude",
+      "name": "cockpit_body_left_5",
+      "axis": "y",
+      "color": 159,
+      "outline": [
+        [
+          1.52,
+          8.44
+        ],
+        [
+          2.66,
+          8.44
+        ],
+        [
+          3,
+          8.98
+        ],
+        [
+          1.52,
+          8.98
+        ]
+      ],
+      "from": -1.37,
+      "to": -1.04
+    },
+    {
+      "type": "mirror",
+      "name": "cockpit_body_right_5",
+      "source": "cockpit_body_left_5",
       "axis": "y"
     },
     {
@@ -669,72 +796,6 @@
       "type": "mirror",
       "name": "rear_leaf_aft_right",
       "source": "rear_leaf_aft_left",
-      "axis": "y"
-    },
-    {
-      "type": "extrude",
-      "name": "wheel_FL_locator",
-      "axis": "z",
-      "color": 40,
-      "outline": [
-        [
-          1.28,
-          -3.02
-        ],
-        [
-          1.52,
-          -3.02
-        ],
-        [
-          1.52,
-          -2.78
-        ],
-        [
-          1.28,
-          -2.78
-        ]
-      ],
-      "from": 1.31,
-      "to": 1.52,
-      "caps": false
-    },
-    {
-      "type": "mirror",
-      "name": "wheel_FR_locator",
-      "source": "wheel_FL_locator",
-      "axis": "y"
-    },
-    {
-      "type": "extrude",
-      "name": "wheel_RL_locator",
-      "axis": "z",
-      "color": 40,
-      "outline": [
-        [
-          10.946667,
-          -2.92
-        ],
-        [
-          11.186667,
-          -2.92
-        ],
-        [
-          11.186667,
-          -2.68
-        ],
-        [
-          10.946667,
-          -2.68
-        ]
-      ],
-      "from": 1.31,
-      "to": 1.52,
-      "caps": false
-    },
-    {
-      "type": "mirror",
-      "name": "wheel_RR_locator",
-      "source": "wheel_RL_locator",
       "axis": "y"
     }
   ]
