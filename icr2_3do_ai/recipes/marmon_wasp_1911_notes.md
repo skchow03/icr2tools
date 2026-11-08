@@ -1,6 +1,32 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 5
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 6
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 6 — non-floating wheels, period-style axle and leaf-spring blockout
+
+**Motivation:** the previous iteration provided 4 named wheel location marker cubes but no load path or visible connecting suspension. It also stopped its exposed black underbody at x=8.91 ft, roughly 2.16 ft before the rear wheel center. This revision provides visually and geometrically connected black undercarriage members.
+
+**Added geometry** (11 named components, +94 polygons):
+- `front_beam_axle`, a black rectangular-profile solid beam spanning y=−2.88 to +2.88 ft, centered near x=1.40 ft and z=1.38 ft. Its end sections intersect both front marker cubes.
+- `rear_beam_axle`, black, spanning y=−2.78 to +2.78 ft, centered at x=11.066667 ft; its ends intersect both rear marker cubes.
+- `rear_chassis_extension`, black, x=8.86..11.76 ft, continuing the underbody under the tail and intersecting the rear axle. Existing black chassis ends at x=8.91, so the two pieces overlap by 0.05 ft.
+- **Four narrow stylized longitudinal leaf-spring assemblies**, each with two flat angled segments meeting beneath the axle, one spring per wheel side. Component names: `front_leaf_fore_left`, `front_leaf_aft_left`, `rear_leaf_fore_left`, `rear_leaf_aft_left` and four mirrored right-side copies. Their inner y positions (−1.20..−1.03 ft and corresponding positive range) slightly overlap the chassis sides (y=±1.06 ft). Thin side-facing extrusions are 0.10 ft deep in z; end caps omitted to save polygons. Front springs run x≈0.66..2.54; rear springs x≈9.68..12.24; the axle beams intersect the springs near their centers.
+
+**Appearance and fidelity:** Period photographs of the Wasp show exposed frame and transverse axle pieces, and leaf-spring assemblies are characteristic of cars of the era. However, the specific original Wasp spring lengths, shackle connections, exact types, damping hardware, steering linkage and chassis attachment geometry are **not verified** from the evidence used. These are **illustrative** mechanical blockouts, not a reconstruction of measured suspension. The simplified spring packs are meant to provide visual structure at ICR2 scale, not simulate actual suspension travel or steering.
+
+**Complexity:** **268 polygons, 26 named components**, of which 32 polygons remain the four removable wheel locator cubes. Original version was 444 polygons; Rev 5 was 174. Axles are deliberately part of the body model; the four wheel locator parts can be removed independently when separate wheel 3DOs are attached. Surface texture tasks are unchanged.
+
+**Palette:** new axles and rear frame use verified common sunny/gamepal index **48** (31,31,31 dark black); spring leaf packs use index **47** (51,51,51 dark gray). Colors decoded previously from repository `icr2_3do_cad/gamepal.pcx`, PCX palette blob SHA `8784dc6278cb7c057cd717c7b786301a8aa8890a`.
+
+**References / scope:** 
+- [Hagerty Drivers Foundation 1911 Marmon Wasp register](https://driversfoundation.org/registry/1911-marmon-wasp) (original Wasp photos, 34x4.5-inch tires and rear-wheel mechanical drums)
+- [1911 Wasp photos, Hagerty Drivers Foundation](https://driversfoundation.org/register/13) (visible axle/frame/spring assemblies)
+- [HAER IN-115, Library of Congress](https://loc.gov/pictures/item/in0548/) (measured survey resource, not translated into these suspension positions)
+- [Wasp replica, Marmon Holdings](https://www.marmon.com/news/our-replica-marmon-wasp-is-complete/) (replica construction reference only, not proof of original mechanics)
+- Note: a well-documented commercially sold "Marmon Wasp Re-Creation" uses an *early Nash chassis*, so its reported elliptical springs and radius rods should **not** be assumed to document the genuine 1911 car.
+
+**Validation limits:** the Stage 2 compiler and inspector can verify N3/3DO structure and static geometry diagnostics; they do not verify wheel model mating, renderer BSP ordering, physics or in-game display. Axle-to-marker overlap is asserted by recipe coordinate review.
+
 
 ## Rev 5 — mirror attachment and aspect-ratio correction
 
@@ -28,7 +54,7 @@
 
 ## Complexity
 
-Evolution: original 444 polygons → Rev 2 at 120 → Rev 3 at 134 → **Rev 4 at 174 polygons across 15 named components** including four removable wheel-center markers (32 polygons). The body, fin, chassis and mirror use 142 polygons. This remains a no-texture solid-color prototype, not a finished textured appearance.
+Evolution: original 444 polygons → Rev 2 at 120 → Rev 3 at 134 → **Rev 4 at 174 polygons across 15 named components** including four removable wheel-center markers (32 polygons). For Rev 6 the main geometry plus new suspension totals 236 polygons excluding the 32 wheel locator polygons. This remains a no-texture solid-color prototype, not a finished textured appearance.
 
 ## Coordinate conventions
 
