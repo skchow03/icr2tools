@@ -98,7 +98,7 @@ def _pair(value, where):
 
 
 def _axis(value, where):
-    if value not in AXIS:
+    if not isinstance(value, str) or value not in AXIS:
         _fail(where, "expected axis 'x', 'y', or 'z'")
     return value
 
@@ -183,6 +183,8 @@ def _checked_faces(component, where):
         if len(face) < 3 or len(set(face)) != len(face):
             _fail(where, f"face {i} repeats vertices or has fewer than 3")
         points = [component.vertices[index] for index in face]
+        if any(a == b for a, b in zip(points, points[1:] + points[:1])):
+            _fail(where, f"face {i} contains a collapsed edge after quantization")
         if not any(_length2(points[0], points[j], points[j+1]) > 0
                    for j in range(1, len(points)-1)):
             _fail(where, f"face {i} collapses after coordinate quantization")
@@ -196,7 +198,8 @@ def _uv_options(config, where):
           {"axes", "pixels_per_unit"}, where)
     axes = config["axes"]
     if (not isinstance(axes, list) or len(axes) != 2 or
-            not all(x in AXIS for x in axes) or axes[0] == axes[1]):
+            not all(isinstance(x, str) and x in AXIS for x in axes)
+            or axes[0] == axes[1]):
         _fail(where, "axes must be two different values from x/y/z")
     origin = _pair(config.get("origin", [0, 0]), where + ".origin")
     factor = _pair(config["pixels_per_unit"], where + ".pixels_per_unit")
