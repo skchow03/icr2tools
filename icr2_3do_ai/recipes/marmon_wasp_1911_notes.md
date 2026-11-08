@@ -1,41 +1,46 @@
-# 1911 Marmon Wasp — ICR2 body blockout
+# 1911 Marmon Wasp — texture-first ICR2 low-poly revision
 
-This is a **low-poly, Stage 2 illustration** of Ray Harroun's 1911 Marmon Wasp #32. It is not a fully measured replica or in-game-tested carshape. The wheels are **not modeled**: there are four named small wheel-center locator cuboids only, so separate wheel 3DOs can be attached later.
+**Purpose:** retain only the large silhouette and necessary 3D features. This is an **approximate** Ray Harroun 1911 Marmon Wasp #32 body blockout, not a measured reconstruction. It revises the earlier 444-polygon version, preserving the prior Git revision. The model does not yet include a body texture or the four wheel models.
 
-## Historical evidence
-- [Historic Vehicle Association / Indianapolis Motor Speedway Museum specification sheet](https://s07.static-shell.com/content/dam/royaldutchshell/documents/sema/1911-marmon-wasp.pdf): 116-inch wheelbase, pointed single-seat tail, rearview mirror, steel-covered wooden wheels.
-- [Hagerty Drivers Foundation, National Historic Vehicle Register entry](https://www.driversfoundation.org/registry/1911-marmon-wasp): original yellow/black finish, 25-inch wheels with steel covers and 34 x 4.5-inch tires, black cabin.
-- [Library of Congress, HAER IN-115](https://loc.gov/pictures/item/in0548/): original measured drawings (two sheets), useful for subsequent silhouette refinements.
-- [Hagerty photo register](https://driversfoundation.org/register/13): museum side and three-quarter views.
+## Geometry budget
 
-## Coordinates and estimated geometry
-- x axis: forward radiator to rear stinger; increasing x goes to the rear.
-- y axis: left and right; centerline y=0.
-- z axis: height above ground; ground at z=0.
-- Recipe coordinates are **feet**; 1 foot = 6000 raw Papyrus units.
-- Front wheel-center x=1.400 ft; rear wheel-center x=11.066667 ft; x spacing 9.666667 ft = 116 in, documented.
-- Wheel center z=1.4167 ft derived from 34-inch tire outer diameter; no tire geometry is emitted.
-- Lateral locator y coordinates (front ±2.90 ft, rear ±2.80 ft), hood width, section heights, body length (~14.35 ft), fin and cockpit details: **estimated from reference photographs**, not verified measurements.
-- Overall body x bounds ~0.27 to 14.62 ft, excluding wheel tires; 34-inch tires would project outside these body bounds once modeled.
+- **120 polygons, 12 editable components** including four removable, open-ended wheel-center markers (32 polygons). No modeled tires, spokes, axle beams, driver, or steering mechanism.
+- Bonnet: 3 rectangular four-point section rings (18 triangles/caps).
+- Rear pointed boat-tail: 3 four-point rings (18 triangles/caps). **No vertical fin**; the "Wasp" tail is pointed in plan view.
+- Radiator: one plain dark front piece; any grille mesh pattern belongs on a texture.
+- Cockpit: flat dark recessed floor and two simple side sills. Open cockpit is a gap between bonnet and tail, not a boolean-cut hole.
+- Single rear-view mirror and a simple mast (important silhouette feature). Reflective glass finish is a later texture detail.
+- No surface-detail polygons for hood louvres, straps, panel seams, number 32, seat stitching, grille slats, or rear trim.
 
-## Palette evidence
-The color indices below were decoded from the **actual** repository file `icr2_3do_cad/gamepal.pcx` (Git blob SHA `8784dc6278cb7c057cd717c7b786301a8aa8890a`), using its 256-entry trailing PCX RGB palette. The user's [palette guide](https://skchow.com/indy/palette/) verifies shared `gamepal` and `sunny` indices 0 and 25–175.
+## Coordinates
 
-| Index | RGB | Use |
-|---|---|---|
-| 158 | 255,223,35 | bright yellow bonnet, cockpit front and fins |
-| 159 | 235,203,0 | darker yellow rear boat-tail panels |
-| 48 | 31,31,31 | black frame, straps and engine vents |
-| 47 | 51,51,51 | radiator grille |
-| 49 | 19,19,19 | seat and cockpit floor |
-| 40 | 167,167,167 | simple gray mirror and wheel-center locators |
-| 148 | 163,103,63 | brown steering-wheel crossbar |
+- x increases from the front radiator toward the pointed rear; y is lateral; z is vertical.
+- Recipe dimensions in **feet** (6000 raw Papyrus units per foot).
+- Wheel centers front **x=1.4 ft**, rear **x=11.066667 ft**, wheelbase **116 in** (documented); center height ~1.4167 ft derives from **34-inch tire outer diameter** (documented).
+- Front track placeholder centers **y=±2.90 ft**, rear **y=±2.80 ft**, and all body cross-sections are *illustrative estimates*. They are not authoritative measurements of track width or silhouette.
+- The four wheel placeholders are separately selectable, removable, capless small cuboids; replace with separately built 3DO wheel objects at these center coordinates.
+- No in-game validation; Stage 2 emits LIST groups, not view-dependent BSP or LOD.
 
-All solid color indices are in the common palette set, chosen for their material. No painted #32 lettering is created: apply a small texture or CAD geometry separately.
+## Suggested later texture pass
 
-## Composition and next steps
-The body parts are separate named components; convex cross sections avoid custom binary editing. The engine is enclosed rather than modeled. Hood ventilation holes are represented by separate dark colored inserts. The cockpit void is a deliberate space between the main hood and tail, bridged by low side sills; the Stage 2 generator does not support Boolean cuts.
+Paint **#32**, the yellow/black paint transitions, bonnet straps, simulated hood vents and radiator mesh using game-compatible MIP textures and UV mapping. No texture files are currently claimed or referenced by this recipe; solid colors remain valid when no textures are supplied.
 
-**Wheels:** make four external 3DOs, with historical 34-inch OD and 4.5-inch nominal tire section width, replacing or removing the four `wheel_*_locator` parts. Align to documented fore/aft centers above. Do not mistake placeholder marker width for final wheel or track width.
+## Common palette verified
 
-The Stage 2 generated LIST structure lacks automated view-dependent BSP and LOD; verify occlusion and backface drawing in CAD and ICR2 before release.
+Colors below come from repository `icr2_3do_cad/gamepal.pcx` (SHA `8784dc6278cb7c057cd717c7b786301a8aa8890a`), matching the shared `sunny.pcx` common-color range in [the ICR2 palette guide](https://skchow.com/indy/palette/):
+
+| index | RGB | assigned to |
+| --- | --- | --- |
+| 158 | (255,223,35) | bonnet and cockpit sills |
+| 159 | (235,203,0) | yellow boat-tail |
+| 48 | (31,31,31) | radiator and mirror mast |
+| 49 | (19,19,19) | cockpit floor |
+| 40 | (167,167,167) | mirror housing and removable wheel markers |
+
+## Reference material
+
+- [HVA / Indianapolis Motor Speedway Museum technical sheet](https://s07.static-shell.com/content/dam/royaldutchshell/documents/sema/1911-marmon-wasp.pdf) (116-inch wheelbase, single-seat layout)
+- [Hagerty Drivers Foundation vehicle entry](https://www.driversfoundation.org/registry/1911-marmon-wasp) (visual and historic descriptions)
+- [Library of Congress HAER IN-115](https://loc.gov/pictures/item/in0548/) (measured drawing resource, not yet digitized into this silhouette)
+
+Before finalizing for ICR2, check the side/top wireframes, individual component visibility, BSP draw order, backface handling and in-game LOD.
