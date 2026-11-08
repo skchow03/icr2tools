@@ -1,6 +1,15 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 3
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 4
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 4 corrections — black chassis, two mirror struts, rounded body crown
+
+- Added a single **exposed_black_chassis** solid-color underbody box from x=0.62 to x=8.91 ft, y=±1.06 ft and z=0.97–1.58 ft. The yellow bonnet starts at z≈1.50–1.52 ft, so its side elevation now reveals a black lower chassis band. This is a simplified representation of the visible chassis structure, not complete mechanical frame rails.
+- Replaced the centrally mounted **mirror_mast** with two thin struts: **mirror_strut_left** starts at the left dashboard/cowl edge (x=6.12, y=-1.06, z=3.36) and meets the left portion of the rearview mirror (x=6.46, y=-0.60, z=4.10); **mirror_strut_right** is its mirrored counterpart. The housing position is unchanged. Both supports have only eight polygons each (caps omitted where they join the body/mirror).
+- Changed radiator, long bonnet and pointed-tail cross-sections from rectangular (four-vertex) outlines to **six-vertex convex chamfered shoulders with a narrower flat crown**. This softens the body's profile without decorative tessellation or new textures. The cross-section ring counts remain unchanged: 2 radiator, 3 bonnet, 3 tail.
+- Retains the taller cockpit-front bonnet lip, raised pointed rear tip, six-point faceted rounded fin and four separately replaceable wheel-center placeholders from Rev 3.
+- **Budget: 174 polygons, 15 named components**, compared with Rev 3's 134 polygons. Of these, 32 polygons are the removable wheel center locators. All new surfaces use verified shared palette black index 48 (RGB 31,31,31), existing yellow 158/159 unchanged. No MIP or texture assignments were introduced.
+- In-game color/material rendering, draw order, BSP and LOD remain unverified by the build pipeline.
 
 ## Rev 3 corrections (request: higher pointed tail, rounded fin, higher cockpit front)
 
@@ -11,7 +20,7 @@
 
 ## Complexity
 
-The original blockout was 444 polygons, the texture-first revision was 120, and this revised version is **134 polygons over 13 components**, including four removable wheel markers (32 polygons). The body and mirror/fin contain 102 polygons. This is a no-texture solid-color prototype, not a finished textured appearance.
+Evolution: original 444 polygons → Rev 2 at 120 → Rev 3 at 134 → **Rev 4 at 174 polygons across 15 named components** including four removable wheel-center markers (32 polygons). The body, fin, chassis and mirror use 142 polygons. This remains a no-texture solid-color prototype, not a finished textured appearance.
 
 ## Coordinate conventions
 
