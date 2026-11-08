@@ -17,13 +17,24 @@ from .stage2 import validate_source, validate_path
 
 # Raw Papyrus coordinates (6000 / foot).
 # Both wheel variants are defined in their own local coordinates at (0,0,0).
-# Original wheelbase: (66400-8400) / 6000 * 12 = 116 inches.
+# Indy 500 2011 published specifications: 116-inch wheelbase and 187-inch
+# overall length. Wheels have 34-inch OD: radius = 8500 raw ICR2 units.
+# Front wheel x=2300 raw, radiator face x=2340 raw (0.08 inch difference).
+# Rear center x=60300 raw => 58000 / 6000 * 12 = exactly 116 inches.
+# Front tire leading x=-6200 raw, tail tip x=87300 raw => 93500 raw
+# / 6000 * 12 = exactly 187 inches. The length is a fit to the reported
+# specification, whereas the radiator/axle overlap is based on side photos.
 WHEEL_PLACEMENTS = (
-    ("front_left", "FWHEEL", (8400, -17400, 8500)),
-    ("front_right", "FWHEEL", (8400, 17400, 8500)),
-    ("rear_left", "RWHEEL", (66400, -16800, 8500)),
-    ("rear_right", "RWHEEL", (66400, 16800, 8500)),
+    ("front_left", "FWHEEL", (2300, -17400, 8500)),
+    ("front_right", "FWHEEL", (2300, 17400, 8500)),
+    ("rear_left", "RWHEEL", (60300, -16800, 8500)),
+    ("rear_right", "RWHEEL", (60300, 16800, 8500)),
 )
+NOMINAL_WHEELBASE_IN = 116
+NOMINAL_OVERALL_IN = 187
+FRONT_RADIATOR_RAW_X = 2340
+BODY_TAIL_RAW_X = 87300
+TIRE_RADIUS_RAW = 8500
 ROOT_RE = re.compile(r"(?m)^root:\s*LIST\s*\{([^{}]*)\};[ \t]*$")
 
 
@@ -37,6 +48,18 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     body = (body_dir / "model.3D").read_text(encoding="utf-8")
     if "wheel_FL_locator" in body or "wheel_RL_locator" in body:
         raise ValueError("Body recipe still includes wheel cubes; remove them first")
+    front_x = WHEEL_PLACEMENTS[0][2][0]
+    rear_x = WHEEL_PLACEMENTS[2][2][0]
+    wheelbase_in = (rear_x - front_x) / 6000 * 12
+    length_in = (BODY_TAIL_RAW_X - (front_x - TIRE_RADIUS_RAW)) / 6000 * 12
+    radiator_to_front_axle_in = (front_x - FRONT_RADIATOR_RAW_X) / 6000 * 12
+    if abs(wheelbase_in - NOMINAL_WHEELBASE_IN) > 0.001:
+        raise ValueError(f"Wheelbase mismatch: {wheelbase_in} inches")
+    if abs(length_in - NOMINAL_OVERALL_IN) > 0.001:
+        raise ValueError(f"Overall length mismatch: {length_in} inches")
+    if abs(radiator_to_front_axle_in) > 1:
+        raise ValueError("Front axle not aligned with radiator front")
+
     roots = list(ROOT_RE.finditer(body))
     if len(roots) != 1:
         raise ValueError(f"Expected one root LIST in body source, found {len(roots)}")
@@ -119,6 +142,13 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             for name, target, loc in WHEEL_PLACEMENTS
         ],
         "external_names": list(model.external_names),
+        "dimensions": {
+            "wheelbase_inches": wheelbase_in,
+            "overall_length_inches": length_in,
+            "radiator_front_to_front_axle_inches": radiator_to_front_axle_in,
+            "documented_source": "INDYCAR/IMS 2011 centennial specifications",
+            "radiator_axle_alignment": "photograph-guided estimate; not a published measurement",
+        },
         "source_files": ["WASP.3D", "FWHEEL.3D", "RWHEEL.3D"],
         "binary_files": ["WASP.3do", "FWHEEL.3do", "RWHEEL.3do"],
         "validation": checks,
