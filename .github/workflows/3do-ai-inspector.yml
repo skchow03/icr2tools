@@ -25,7 +25,7 @@ jobs:
         run: python -m pip install numpy Pillow
       - name: Validate new inspector Python files
         run: python -m compileall -q icr2_3do_ai
-      - name: Run read-only semantic inspector tests
+      - name: Run semantic inspector and procedural N3 generator tests
         run: python -m unittest discover -s icr2_3do_ai/tests -p 'test_*.py' -v
       - name: Smoke-test CLI on stock car fixture
         run: |
@@ -36,3 +36,26 @@ jobs:
           test -s /tmp/3do-ai-inspector-smoke/summary.json
           test -s /tmp/3do-ai-inspector-smoke/scene_graph.json
           test -s /tmp/3do-ai-inspector-smoke/views/side.png
+      - name: Generate N3 models for checked-in recipes
+        shell: bash
+        run: |
+          shopt -s nullglob
+          mkdir -p /tmp/3do-ai-recipes
+          count=0
+          for recipe in icr2_3do_ai/recipes/*.json; do
+            name="$(basename "$recipe" .json)"
+            echo "Building recipe: $recipe"
+            python -m icr2_3do_ai generate "$recipe" \
+              --views -o "/tmp/3do-ai-recipes/$name"
+            python -m icr2_3do_ai validate "/tmp/3do-ai-recipes/$name/model.3do"
+            count=$((count + 1))
+          done
+          echo "Built $count checked-in recipes"
+          test "$count" -gt 0
+      - name: Publish generated source, binary and diagnostics
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3do-ai-generated-models
+          path: /tmp/3do-ai-recipes/
+          if-no-files-found: error
+          retention-days: 14

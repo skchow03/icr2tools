@@ -17,3 +17,19 @@ Run the headless tests from the repository root:
     python -m unittest discover -s icr2_3do_ai/tests -p 'test_*.py' -v
 
 Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
+
+## Stage 2 procedural N3 generation
+
+- `parametric.py` handles declarative JSON shapes, not hand-authored opaque
+  shell commands or executable Python supplied in recipes.
+- Validate operation names, schema, units, source component references, convex
+  outlines, polygon winding, UV range and signed coordinate limits.
+- Output explicit `% ICR2_COORD_SCALE: 1` with already-quantized raw XYZ.
+  Reuse `n3_compile.compile_n3_text` and `three_do.Model` to produce and
+  reparse binaries, never a second compiler or custom binary serializer.
+- The Stage 2 CLI **never overwrites** any existing output directory, existing
+  .3DO files or source. Temporary builds are validated before being renamed.
+- Do not claim LIST-only N3 output has game-proven BSP draw order or accurate
+  material/UV rendering. Manual or automated BSP validation is future work.
+- Keep `icr2_3do_ai/recipes/` examples checked into the repository. GitHub
+  Actions compiles them and publishes build artifacts for agent workflows.
