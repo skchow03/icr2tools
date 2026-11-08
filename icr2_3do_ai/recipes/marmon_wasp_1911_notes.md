@@ -31,7 +31,7 @@
 
 ### Complexity and validation
 
-- Body-only Stage 2 recipe: **324 polygons across 30 components**, including solid walls and suspension; no markers.
+- Body-only Stage 2 recipe: **320 polygons across 30 components**, including solid walls and suspension; no markers.
 - Each wheel external model: **114 polygons**; repeated twice per car via shared `DYNAMIC` references, rather than baking duplicate wheel meshes into the body.
 - The complete visible scene should consist of **1 parent plus 4 external wheel instances**. Correct external filenames, placements and compiler-parser round-trip are checked by the assembly script, and GitHub Actions' inspector checks that the compiled scene resolves 5 instances.
 - The compiled files may still need hand-authored BSP/LOD, texture work, steering angles and wheel spin. These are static visual blockouts.
