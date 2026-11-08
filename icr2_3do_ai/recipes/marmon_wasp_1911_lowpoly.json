@@ -1,6 +1,6 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp #32, compact ICR2 texture-first 134-polygon silhouette: rear tip raised, 6-point faceted rounded tail number fin reinstated, cockpit forward cowl slightly raised. Four wheel location placeholders; no wheel meshes or surface detail textures.",
+  "description": "1911 Marmon Wasp #32 editable low-poly geometry: rounded bonnet/radiator/tail upper contours; exposed black chassis below yellow body from nose to cockpit; two dashboard-side mirror struts. High pointed tail and rounded fin retained. No integrated wheels, only four removable markers. Paint/details remain a later texture pass.",
   "coordinate_scale": 6000,
   "operations": [
     {
@@ -22,11 +22,19 @@
             ],
             [
               1.125,
+              2.89
+            ],
+            [
+              0.48375,
+              3.32
+            ],
+            [
+              -0.48375,
               3.32
             ],
             [
               -1.125,
-              3.32
+              2.89
             ]
           ]
         },
@@ -43,11 +51,19 @@
             ],
             [
               1.135,
+              2.89
+            ],
+            [
+              0.48805,
+              3.32
+            ],
+            [
+              -0.48805,
               3.32
             ],
             [
               -1.135,
-              3.32
+              2.89
             ]
           ]
         }
@@ -72,11 +88,19 @@
             ],
             [
               1.17,
+              2.87
+            ],
+            [
+              0.5031,
+              3.3
+            ],
+            [
+              -0.5031,
               3.3
             ],
             [
               -1.17,
-              3.3
+              2.87
             ]
           ]
         },
@@ -93,11 +117,19 @@
             ],
             [
               1.26,
+              2.91
+            ],
+            [
+              0.5418,
+              3.34
+            ],
+            [
+              -0.5418,
               3.34
             ],
             [
               -1.26,
-              3.34
+              2.91
             ]
           ]
         },
@@ -114,11 +146,19 @@
             ],
             [
               1.31,
+              2.99
+            ],
+            [
+              0.5633,
+              3.42
+            ],
+            [
+              -0.5633,
               3.42
             ],
             [
               -1.31,
-              3.42
+              2.99
             ]
           ]
         }
@@ -143,11 +183,19 @@
             ],
             [
               1.33,
+              2.59
+            ],
+            [
+              0.5719,
+              3.02
+            ],
+            [
+              -0.5719,
               3.02
             ],
             [
               -1.33,
-              3.02
+              2.59
             ]
           ]
         },
@@ -164,11 +212,19 @@
             ],
             [
               1.2,
+              2.43
+            ],
+            [
+              0.516,
+              2.86
+            ],
+            [
+              -0.516,
               2.86
             ],
             [
               -1.2,
-              2.86
+              2.43
             ]
           ]
         },
@@ -185,11 +241,19 @@
             ],
             [
               0.08,
+              2.6101
+            ],
+            [
+              0.0344,
+              2.71
+            ],
+            [
+              -0.0344,
               2.71
             ],
             [
               -0.08,
-              2.71
+              2.6101
             ]
           ]
         }
@@ -228,6 +292,32 @@
       "from": -0.055,
       "to": 0.055,
       "color": 158
+    },
+    {
+      "type": "extrude",
+      "name": "exposed_black_chassis",
+      "axis": "z",
+      "color": 48,
+      "outline": [
+        [
+          0.62,
+          -1.06
+        ],
+        [
+          8.91,
+          -1.06
+        ],
+        [
+          8.91,
+          1.06
+        ],
+        [
+          0.62,
+          1.06
+        ]
+      ],
+      "from": 0.97,
+      "to": 1.58
     },
     {
       "type": "extrude",
@@ -289,27 +379,61 @@
       "axis": "y"
     },
     {
-      "type": "extrude",
-      "name": "mirror_mast",
-      "axis": "y",
+      "type": "loft",
+      "name": "mirror_strut_left",
+      "axis": "x",
       "color": 48,
-      "outline": [
-        [
-          3.02,
-          6.13
-        ],
-        [
-          3.11,
-          6.13
-        ],
-        [
-          4.11,
-          6.48
-        ]
-      ],
-      "from": -0.045,
-      "to": 0.045,
-      "caps": false
+      "caps": false,
+      "sections": [
+        {
+          "at": 6.12,
+          "outline": [
+            [
+              -1.105,
+              3.305
+            ],
+            [
+              -1.015,
+              3.305
+            ],
+            [
+              -1.015,
+              3.415
+            ],
+            [
+              -1.105,
+              3.415
+            ]
+          ]
+        },
+        {
+          "at": 6.46,
+          "outline": [
+            [
+              -0.645,
+              4.045
+            ],
+            [
+              -0.555,
+              4.045
+            ],
+            [
+              -0.555,
+              4.155
+            ],
+            [
+              -0.645,
+              4.155
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "type": "mirror",
+      "name": "mirror_strut_right",
+      "source": "mirror_strut_left",
+      "axis": "y"
     },
     {
       "type": "extrude",
