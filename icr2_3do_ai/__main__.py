@@ -1,4 +1,4 @@
-"""ICR2 3DO AI CLI: inspect, generate and validate without the CAD GUI."""
+"""ICR2 3DO AI CLI: inspect, generate, validate and run modeling jobs."""
 from __future__ import annotations
 
 import argparse
@@ -9,6 +9,7 @@ import sys
 from .inspector import write_package
 from .parametric import RecipeError
 from .stage2 import generate_package, validate_path
+from .model_jobs import run_job
 
 
 def main(argv=None):
@@ -49,6 +50,16 @@ def main(argv=None):
         "validate", help="Compile-check .3D or parse-check .3do without writing")
     validate.add_argument("input", type=Path, help="Existing N3 .3D or .3do file")
 
+    job = commands.add_parser(
+        "build-job", help="Run a structured Stage 3 blockout/revision plan")
+    job.add_argument("job", type=Path, help="Existing Stage 3 modeling job JSON")
+    job.add_argument("-o", "--output", type=Path, required=True,
+                     help="NEW output directory; never overwrites source files")
+    job.add_argument("--repository-root", type=Path,
+                     help="Root for repository-relative base_recipe paths")
+    job.add_argument("--no-views", action="store_true",
+                     help="Skip Stage 1 wireframe projections")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect":
@@ -78,6 +89,10 @@ def main(argv=None):
                 "polygons": package["validation"]["polygons"],
                 "compiled": package["validation"]["compiled"],
             }
+        elif args.command == "build-job":
+            result = run_job(
+                args.job, args.output, repository_root=args.repository_root,
+                with_views=not args.no_views)
         else:
             result = validate_path(args.input)
     except (OSError, ValueError) as exc:
