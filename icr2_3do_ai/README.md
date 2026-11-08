@@ -1,4 +1,4 @@
-# ICR2 3DO AI toolkit: semantic inspector + procedural N3 generator
+# ICR2 3DO AI toolkit: inspector, N3 generator and modeling jobs
 
 A standalone **read-only analysis CLI** for agents and human reverse engineers.
 This is not a second CAD viewer or 3DO parser. It calls the existing
@@ -231,6 +231,175 @@ present in its checkout, not your unpublished local carset directory.
   compatibility.
 
 To run all tests locally:
+
+```sh
+python -m unittest discover -s icr2_3do_ai/tests -p 'test_*.py' -v
+```
+
+
+---
+
+## Stage 3 — AI-directed modeling jobs
+
+Stage 3 is a **deterministic execution backend for an AI agent**. ChatGPT or
+Codex can interpret a design request and author a structured JSON job in
+the repository; GitHub Actions then builds and tests it without an LLM API key.
+The Python runtime does **not** interpret arbitrary prose or retrieve images
+by itself. The `goal` is descriptive metadata, not executable instructions.
+
+It supports two modes today:
+
+1. **blockout**: start a new editable Papyrus model using the
+   `vintage_open_wheel` vehicle template. This is a generic early
+   single-seat racing car template with tapered body, wheel/tyre/hub and
+   optional spoke geometry, cockpit marker and rearview mirror.
+2. **revise**: apply named **add**, **replace** and **remove** operations to an
+   existing **Stage 2 JSON recipe**. Preserve unedited components by canonical
+   recipe checksums, compile before/after, and enforce polygon budgets.
+   This does **not** modify arbitrary existing 3DO binaries, older N3 files
+   without a recipe, or their BSP trees.
+
+### Run a vehicle blockout
+
+```sh
+python -m icr2_3do_ai build-job \
+  icr2_3do_ai/jobs/vintage_racer_blockout.json \
+  -o output/vintage_racer
+```
+
+### Revise an existing generated model
+
+```sh
+python -m icr2_3do_ai build-job \
+  icr2_3do_ai/jobs/nose_revision_demo.json \
+  --repository-root . \
+  -o output/revised_nose
+```
+
+The revision sample uses the Stage 2 `example_indycar_nose.json` recipe
+and explicitly protects the unchanged left/right sidepod components.
+The full Stage 2 source recipe remains an ordinary editable JSON file.
+
+### Modeling-job schema
+
+Blockout example:
+
+```json
+{
+  "schema": "icr2.n3.job.v1",
+  "mode": "blockout",
+  "goal": "Generic 1911-era racer for future Marmon Wasp research",
+  "template": "vintage_open_wheel",
+  "parameters": {
+    "overall_length_ft": 15,
+    "wheelbase_ft": 9,
+    "track_width_ft": 6.2,
+    "wheel_diameter_ft": 3,
+    "spokes_per_wheel": 8,
+    "body_palette_index": 79
+  },
+  "quality": {"max_polygons": 2500}
+}
+```
+
+Default parameter values are defined in `blockouts.py`; additional supported
+parameters include tyre width, body dimensions, body bottom elevation and
+several palette indices. All dimensions are illustrative authoring guesses.
+The geometry uses raw Papyrus units after the Stage 2 scale conversion
+(6,000 units per input foot). This is **not a historically accurate Marmon
+Wasp reproduction**. In particular, the cockpit is an overlay rather than
+a real opening, the wheel construction is schematic and true historical
+dimensions have not been verified. The goal is a low-poly, editable starting
+shape.
+
+Revision example (omitting the full replacement geometry for brevity):
+
+```json
+{
+  "schema": "icr2.n3.job.v1",
+  "mode": "revise",
+  "goal": "Refine the nose while protecting the sidepods",
+  "base_recipe": "icr2_3do_ai/recipes/example_indycar_nose.json",
+  "edits": [
+    {
+      "action": "replace",
+      "target": "nose",
+      "operation": {
+        "type": "loft",
+        "name": "nose",
+        "axis": "x",
+        "sections": []
+      }
+    }
+  ],
+  "quality": {
+    "must_preserve": ["left_pod", "right_pod"],
+    "max_abs_polygon_delta": 100,
+    "max_polygons": 1500
+  }
+}
+```
+
+The above revision operation is **schematic** and not runnable as shown,
+because `sections` must be valid. Use
+`jobs/nose_revision_demo.json` as a complete working example.
+
+A valid `base_recipe` must be repository-relative and may not traverse
+outside the repository. Optionally set `base_recipe_sha256` to reject
+stale edit plans. The changes are applied in order. Removing an operation
+referenced by a mirror fails validation; a replace must retain the target
+name. Every untouched component's canonical recipe representation is checked,
+and `must_preserve` can additionally protect named components.
+
+### Output and safety
+
+The job creates a **new output directory**, never overwriting source models
+or an existing build. A temporary build validates successfully before it
+becomes visible at the requested output path.
+
+```text
+vintage_racer/
+  job.json
+  generated_recipe.json
+  change_report.json
+  generated/
+    recipe.json
+    model.3D
+    model.3do
+    manifest.json
+    validation.json
+    analysis/
+      summary.json
+      geometry.json
+      scene_graph.json
+      materials.json
+      diagnostics.json
+      views/{front,side,top}.png
+```
+
+Revision jobs also include a `baseline/` generated source, binary and
+analysis package for comparing the old and new models. All files are suitable
+for local inspection, and `generated/model.3D` opens directly in the CAD tool.
+
+### Running a job directly through GitHub
+
+On each push or PR that changes `icr2_3do_ai/`, the CI workflow automatically
+runs `build-job` for every checked-in `icr2_3do_ai/jobs/*.json`. Its
+`3do-ai-stage3-modeling-jobs` artifact contains the compiled source,
+binary, analysis and comparison reports (14-day retention).
+
+An AI assistant with the connected repository can create a modeling job from
+your description, commit it on a branch and read back the CI results. The
+repository workflow has no runtime LLM, so it needs that assistant to turn
+the prose/design references into a JSON job.
+
+**What is still not built:** visual analysis of supplied reference photographs,
+historically grounded vehicle modeling, arbitrary N3/3DO surgery, a closed-loop
+agent that automatically chooses geometric corrections from a raster image,
+multi-angle BSP generation or in-game renderer parity. Those can be layered
+onto the Stage 3 job interface without replacing the validated source engine.
+
+Test headlessly:
 
 ```sh
 python -m unittest discover -s icr2_3do_ai/tests -p 'test_*.py' -v
