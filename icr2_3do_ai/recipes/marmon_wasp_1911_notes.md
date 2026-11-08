@@ -1,6 +1,41 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 6
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 7
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 7 — solid U-shaped cockpit walls and three separate N3 models
+
+**User request:** cockpit is not a see-through frame; the upper silhouette is a shallow U-shaped dip. Front and rear wheel objects must be authored separately and *actually referenced* from the car.
+
+### Body cockpit
+
+- Removed `cockpit_sill_left` and `cockpit_sill_right` (thin former framing) and all four `wheel_*_locator` cuboids.
+- Added a **solid side panel on each cockpit side**, assembled from **five adjacent, solid trapezoid sections**, yellow paint index 158 and rear edge 159. They extend in the y direction between ±1.04 and ±1.37 ft, from the cockpit floor z=1.52 ft up to a continuously lowered U-profile as viewed sideways:
+  - x=6.10 ft, upper z=3.38 ft (dashboard/cowl)
+  - x=6.53, z=2.78
+  - x=7.09, z=2.42
+  - x=7.92, z=2.40
+  - x=8.44, z=2.66
+  - x=8.98, z=3.00 (behind the seat)
+- These sidewalls are contiguous and **physically filled** down to the floor, not outline-only pipes. Smoothness is a five-chord low-poly approximation of the real U-shaped cockpit edge. Shape is a photo-derived estimate (not digitized from orthographic survey).
+
+### Wheel objects, detachable and reusable
+
+- New N3 model **`FWHEEL.3D`**: 34×4.5-inch black tire, a yellow ~25-inch diameter sheet-metal covering over wood spokes, and simple small black front hub.
+- New N3 model **`RWHEEL.3D`**: same nominal tire and cover dimensions, with a larger black center hub suggesting the rear mechanical drum hardware. Braking mechanical details are not modeled.
+- Each object starts at local origin `(0,0,0)` at wheel center. Tire modeled as a 12-sided black cylinder, covers as two 12-sided shallow yellow discs, and hubs as two 8-sided cylinders. All circles are highly simplified, suitable for ICR2 scale. No spokes (covered by the actual car's steel discs), no MIP textures, no steering or wheel spin behavior authored in the placement.
+- **`WASP.3D`** parent is built from the Stage 2 body source with `DYNAMIC` inserts for four external children (two references to `FWHEEL`, two to `RWHEEL`). The complete package contains three editable .3D files and matching three compiled .3do binaries. This is a separate source assembly step in `icr2_3do_ai/assemble_wasp.py`, not a Stage 2 recipe primitive. The compiler supports `DYNAMIC ... EXTERN "NAME"`; names are under the 8-character DOS limit.
+- Wheel locations in **raw Papyrus** (1ft=6000): front x=8400, y=±17400, z=8500; rear x=66400, y=±16800, z=8500. Front/rear center x separation = 58000 raw units = **116 inches**. These y track widths remain estimates from Rev 1.
+- The solid axles and suspension remain part of the parent `WASP` geometry; wheels are separate and intersect the beam-axle ends. Wheel cylinder extends ±0.1875 ft along y from the wheel-center location (total width 4.5 inches).
+- The complete wheel references require the **three compiled .3do files alongside each other** in the CAD viewer's objects folder. Editable sources `WASP.3D`, `FWHEEL.3D`, `RWHEEL.3D` are independent.
+- Source-model original 116-inch wheelbase and tire/wheel dimensions: [Hagerty Drivers Foundation National Historic Vehicle Register](https://www.driversfoundation.org/registry/1911-marmon-wasp). The original steel-covered wooden spokes are not separately visible from the outside. Side view and cockpit photos: [Hagerty historic photographs](https://driversfoundation.org/register/13).
+
+### Complexity and validation
+
+- Body-only Stage 2 recipe: **324 polygons across 30 components**, including solid walls and suspension; no markers.
+- Each wheel external model: **114 polygons**; repeated twice per car via shared `DYNAMIC` references, rather than baking duplicate wheel meshes into the body.
+- The complete visible scene should consist of **1 parent plus 4 external wheel instances**. Correct external filenames, placements and compiler-parser round-trip are checked by the assembly script, and GitHub Actions' inspector checks that the compiled scene resolves 5 instances.
+- The compiled files may still need hand-authored BSP/LOD, texture work, steering angles and wheel spin. These are static visual blockouts.
+
 
 ## Rev 6 — non-floating wheels, period-style axle and leaf-spring blockout
 
