@@ -262,8 +262,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Wasp tires do not meet stock ICR2 wheel-ground height")
     if game_front[0] - game_rear[0] != 58000:
         raise ValueError("Post-rotation wheelbase no longer 116 inches")
-    if not (-9000 <= 0 <= 9000):
-        raise ValueError("Unexpected origin")
+    # Cockpit opening spans x=6.10..8.98 feet in design coordinates.
+    if not (36600 < COCKPIT_DESIGN_X_RAW < 53880):
+        raise ValueError("Game origin must lie within the cockpit opening")
 
     # Exercise the *compiled* BSP order from both sides, not just its syntax.
     # The far-side wheel pair must draw before ALL body polygons; the
