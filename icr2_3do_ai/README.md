@@ -106,47 +106,47 @@ comparison without replacing the existing CAD tool.
 The Stage 2 generator is deterministic: a recipe declares geometry using
 named primitives, and Python emits readable N3 vertices, polygons, LIST
 groups, MATERIAL assignments, and a root LIST. The output is then compiled
-through the **existing** \`n3_compile\` and independently reparsed by the
-existing \`three_do.Model\` validator. There are no LLM calls or handwritten
+through the **existing** `n3_compile` and independently reparsed by the
+existing `three_do.Model` validator. There are no LLM calls or handwritten
 binary 3DO structures in the generator.
 
 **Quick start** (run from the repository root):
 
-\`\`\`sh
+```sh
 python -m icr2_3do_ai generate \
   icr2_3do_ai/recipes/example_indycar_nose.json \
   -o output/example_indycar_nose --views
 
 python -m icr2_3do_ai validate output/example_indycar_nose/model.3D
 python -m icr2_3do_ai validate output/example_indycar_nose/model.3do
-\`\`\`
+```
 
 Stage 2 creates a *new* output directory containing:
 
-- \`recipe.json\`: exact copy of the input recipe.
-- \`model.3D\`: readable, named, editable Papyrus N3 source.
-- \`model.3do\`: compiled and binary-validated model.
-- \`manifest.json\`: name, vertex/face counts and bounds of every component.
-- \`validation.json\`: compiler/reparser results and SHA256 hashes.
-- \`analysis/\`: Stage 1 semantic reports, and optionally top/front/side
-  wireframes with \`--views\`.
+- `recipe.json`: exact copy of the input recipe.
+- `model.3D`: readable, named, editable Papyrus N3 source.
+- `model.3do`: compiled and binary-validated model.
+- `manifest.json`: name, vertex/face counts and bounds of every component.
+- `validation.json`: compiler/reparser results and SHA256 hashes.
+- `analysis/`: Stage 1 semantic reports, and optionally top/front/side
+  wireframes with `--views`.
 
 The destination **must not already exist**. No source carsets or previously
-generated outputs are overwritten. Use \`--no-analysis\` to skip reports, if
+generated outputs are overwritten. Use `--no-analysis` to skip reports, if
 you want only the generated model and validation.
 
 ### Recipe format
 
-The recipe has \`schema: "icr2.n3.recipe.v1"\` and a list of operations. A
-\`coordinate_scale\` converts each recipe coordinate to raw Papyrus units
-before source generation. For example, \`6000\` represents 6000 raw units per
-input unit, consistent with the usual N3 feet convention; \`1\` is raw units.
-Output source always explicitly uses \`% ICR2_COORD_SCALE: 1\` so values are
+The recipe has `schema: "icr2.n3.recipe.v1"` and a list of operations. A
+`coordinate_scale` converts each recipe coordinate to raw Papyrus units
+before source generation. For example, `6000` represents 6000 raw units per
+input unit, consistent with the usual N3 feet convention; `1` is raw units.
+Output source always explicitly uses `% ICR2_COORD_SCALE: 1` so values are
 not accidentally multiplied again.
 
 Example:
 
-\`\`\`json
+```json
 {
   "schema": "icr2.n3.recipe.v1",
   "coordinate_scale": 6000,
@@ -173,23 +173,23 @@ Example:
     {"type": "mirror", "name": "rightpod", "source": "leftpod", "axis": "y"}
   ]
 }
-\`\`\`
+```
 
 Operations:
 
 | Type | Purpose | Required properties |
 |---|---|---|
-| \`loft\` | Connect multiple cross-sections with triangular shell faces | \`name\`, \`axis\`, \`sections\` (strictly increasing \`at\`) |
-| \`extrude\` | Extrude a convex 2D outline between two planes | \`name\`, \`axis\`, \`outline\`, \`from\`, \`to\` |
-| \`mirror\` | Reflect a previously created component, reversing its face winding | \`name\`, \`source\`, \`axis\`, optional plane location \`at\` |
+| `loft` | Connect multiple cross-sections with triangular shell faces | `name`, `axis`, `sections` (strictly increasing `at`) |
+| `extrude` | Extrude a convex 2D outline between two planes | `name`, `axis`, `outline`, `from`, `to` |
+| `mirror` | Reflect a previously created component, reversing its face winding | `name`, `source`, `axis`, optional plane location `at` |
 
-\`loft.sections\` may use rectangular \`width\` / \`height\` / \`center\`,
-or explicit \`outline: [[u,v], ...]\`; each section must contain the same
-number of points with corresponding vertex ordering. \`extrude\` and \`loft\`
-support \`color\` (0–255) and \`caps\` (boolean, default true).
-An optional \`material\` (1–8-character MIP resource name) **must** be
-paired with a planar \`uv\` projection using two world axes,
-\`pixels_per_unit\`, optional \`origin\`, and optional \`offset\`.
+`loft.sections` may use rectangular `width` / `height` / `center`,
+or explicit `outline: [[u,v], ...]`; each section must contain the same
+number of points with corresponding vertex ordering. `extrude` and `loft`
+support `color` (0–255) and `caps` (boolean, default true).
+An optional `material` (1–8-character MIP resource name) **must** be
+paired with a planar `uv` projection using two world axes,
+`pixels_per_unit`, optional `origin`, and optional `offset`.
 For example, use V offsets above 255 to address extended MIP artwork.
 Mirrors inherit the source material and UV rules.
 
@@ -204,9 +204,9 @@ raise a detailed error. Maximums are 128 operations, 30,000 vertices and
 
 The repository's **3DO AI semantic inspector** GitHub Actions workflow
 automatically tests Stage 1 and Stage 2 when you push or open a pull request
-that changes \`icr2_3do_ai/\`. It also builds every checked-in JSON recipe in
-\`icr2_3do_ai/recipes/\` and publishes the generated files as the
-\`3do-ai-generated-models\` Actions artifact (retained 14 days).
+that changes `icr2_3do_ai/`. It also builds every checked-in JSON recipe in
+`icr2_3do_ai/recipes/` and publishes the generated files as the
+`3do-ai-generated-models` Actions artifact (retained 14 days).
 
 With the GitHub connection, you can ask ChatGPT to author or revise a recipe,
 commit it on a branch, and open a PR. That commit starts the Actions build,
@@ -225,13 +225,13 @@ present in its checkout, not your unpublished local carset directory.
   future work.
 - The generator does not import, replace, or mutate an existing carshape:
   it emits a new separate model, suitable for later composition in N3.
-- \`--views\` produces diagnostic wireframes, **not** game-accurate renders.
+- `--views` produces diagnostic wireframes, **not** game-accurate renders.
 - Compiler validation proves syntax and binary structural consistency, **not**
   historical shape fidelity, visibility from all camera angles or in-game
   compatibility.
 
 To run all tests locally:
 
-\`\`\`sh
+```sh
 python -m unittest discover -s icr2_3do_ai/tests -p 'test_*.py' -v
-\`\`\`
+```
