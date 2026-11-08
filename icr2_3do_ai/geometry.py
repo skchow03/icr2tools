@@ -168,9 +168,11 @@ def analyze_geometry(scene):
         face["adjacent_polygon_ids"] = sorted(adjacent[face["id"]])
         comps[(face["instance_id"], union.find(face["id"]))].append(face["id"])
     groups = []
+    component_number = defaultdict(int)
     for inst_id, root in sorted(comps, key=lambda x: (x[0], min(comps[x]))):
         member_ids = sorted(comps[inst_id, root])
-        group_id = f"i{inst_id}:c{len([g for g in groups if g['instance_id'] == inst_id])}"
+        group_id = f"i{inst_id}:c{component_number[inst_id]}"
+        component_number[inst_id] += 1
         members = [by_id[x] for x in member_ids]
         for p in members:
             p["component_id"] = group_id
