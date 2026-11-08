@@ -1,6 +1,30 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 8
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 9
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 9 — in-game palette/occlusion correction (2026-11-08)
+
+**Evidence:** a user-supplied screenshot from ICR2 shows the undercarriage and tire rubber in vivid blue, plus obvious incorrect occlusion of wheel, body and frame surfaces. The old three .3D sources were verified to be flat `LIST` hierarchies without BSP orientation sorting. This is inappropriate for overlapping 3D objects in Papyrus's painter's algorithm, even though compilation and geometry diagnostics were green.
+
+### Black palette correction
+
+- Checked the actual PCX trailing RGB palette from repository blob `icr2_3do_cad/gamepal.pcx` SHA `8784dc6278cb7c057cd717c7b786301a8aa8890a`. Entries **47=(51,51,51)**, **48=(31,31,31)** and **49=(19,19,19)** are neutral grays in the reference palette; **0=(0,0,0)** is explicitly reserved black in both `gamepal.pcx` and `sunny.pcx` (see the [ICR2 palette guide](https://skchow.com/indy/palette/)). The screenshot's large saturated blue surfaces resemble palette hues 126–127 much more than gray 47–49. This is consistent with a runtime palette mismatch/remapping or rendering issue but not proof of the specific mechanism.
+- Changed all body/suspension/mirror-strut black recipes using indices 47,48,49 to **0**, including cockpit floor, radiator face, exposed chassis, front/rear axles, leaf springs, and front/rear tire + hub meshes. Yellow remains **158/159** and the mirror metal housing **40** (167,167,167).
+- No track palette, shared palette files, colors beyond the affected dark components, or MIP textures were modified.
+
+### Painter sorting in the assembled N3
+
+- **`WASP.3D`** now uses top-level **`BSPA`** partition at y=0 instead of one flat `LIST`. The opposite-side pair of DYNAMIC wheels is painted behind the body; the camera-side wheels are drawn afterward. Within the body, a second y=0 `BSPA` sorts the solid cockpit sidewall pieces, mirror supports and left/right leaf-spring detail around the main chassis and shell.
+- An **x≈7.5 ft `BSPA`** sorts the nose, cockpit/chassis and rear shell based on view direction; an **`BSPN`** manages bonnet/radiator ordering and each near/far wheel pair's front/rear relative depth.
+- **`FWHEEL.3D` and `RWHEEL.3D`** now use a y=0 `BSPA` to draw the far cover/hub first, then the black tire, then the near cover/hub. This avoids the old fixed-order two-face overlap when the camera changes side.
+- Source-side colored polygon counts and wheel placements unchanged: **WASP=320**, **FWHEEL=114**, **RWHEEL=114** unique polygons, instantiated in scene as body + four wheels = **776** polygons viewed across 5 instances. 116-in wheelbase and 187-in overall length preserved. No extra mesh tessellation.
+- The assembly script compiles through the repository's actual N3 compiler and reparses; it now explicitly verifies top-level flavor 8 (`BSPA`) for each object and tests parent DYNAMIC event ordering from both positive and negative Y view positions. The inspector reports structural diagnostic issues, but it is **not a substitute for in-game rendering tests**.
+
+### Remaining draw-order limitations
+
+This is **coarse component-level BSP** to fix the principal painter-order errors, not a polygon-level BSP splitting solution. Each Stage 2 primitive's internal triangles remain grouped in a `LIST`; individual back-facing or intersecting surfaces may still need proper per-polygon BSP visibility/culling and/or geometry cleanup based on new in-game screenshots. The CAD inspector's wireframes do not emulate the 1995 renderer. We cannot claim the blue/overlap issue is fully fixed until the user replaces all three compiled model files together and checks in ICR2.
+
+**Technical references:** [Papyrus N3/3DO creation notes](https://www.icr2.net/tutorials/tools/3d_file_creation.pdf) on `LIST`, `BSPA`, `BSPN` and painter ordering; [ICR2 forum on when to use BSP sorting](https://www.icr2.net/forum/showthread.php?page=51&tid=1315); [ICR2 palette guide](https://skchow.com/indy/palette/).
 
 ## Rev 8 — radiator/axle alignment and documented total length
 
