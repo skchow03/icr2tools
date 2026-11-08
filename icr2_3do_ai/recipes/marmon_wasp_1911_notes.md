@@ -1,6 +1,27 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 7
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 8
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 8 — radiator/axle alignment and documented total length
+
+**Reason for change:** The original front wheel center at x=1.400 ft was **12.12 inches behind** the radiator front at x=0.390 ft. This incorrectly made the engine/radiator appear too far in front of the front axle. Historical side views of the actual 1911 Wasp place the axle nearly in line with the radiator's forward face, though no precise radiator-to-axle offset is published in the sources used.
+
+**Published 1911 Marmon Wasp dimensions:**
+- **116-inch wheelbase** — Historic Vehicle Association / Indianapolis Motor Speedway Museum ([fact sheet](https://s07.static-shell.com/content/dam/royaldutchshell/documents/sema/1911-marmon-wasp.pdf)).
+- **187-inch overall length** and **34-inch diameter tires** — Indianapolis Motor Speedway / INDYCAR 2011 centennial race information, [contemporaneous trackside report preserved at Doctor Indy](https://doctorindy.com/wp-content/uploads/2019/06/2011-newscan.pdf), p. 43.
+- **34×4.5-inch tires, 25-inch covered wood wheels** — [Hagerty Drivers Foundation historical vehicle register](https://www.driversfoundation.org/registry/1911-marmon-wasp).
+- **Side-view reference photographs** — [Hagerty original Marmon Wasp gallery](https://driversfoundation.org/register/13).
+- The Library of Congress [HAER IN-115](https://loc.gov/pictures/item/in0548/) lists two measured drawings, but this revision does **not** claim their full dimensioned views were read. Specific nose-to-axle distance and tail geometry are **inferred**, not verified by engineering measurements.
+
+**Geometry adjustments:**
+- Front axle / front `FWHEEL` centers moved **12.2 inches forward**, from x=1.400 ft (8400 raw) to x=0.383333 ft (**2300 raw**). The radiator's leading x=0.390 ft (2340 raw) differs from the axle by only **0.08 inch**, i.e. effectively in line.
+- Rear axle / `RWHEEL` centers also moved **12.2 inches forward**, from x=11.066667 ft (66400 raw) to x=10.050 ft (**60300 raw**). This **preserves exactly 116 inches** of center-to-center wheelbase (58000 raw units).
+- Front and rear transverse axle meshes and left/right leaf-spring arms were shifted to meet the new wheel centers. The black exposed chassis now reaches forward to x=0.28 ft to intersect the front axle. The rear chassis extension already spans x=8.86–11.76 ft and intersects the relocated rear axle; the black chassis, rear body and tail still join.
+- **Did not shorten the yellow body.** Its pointed rear tip stays x=14.55 ft (87300 raw). Because the front tire now projects to x=(2300 − 8500)=−6200 raw, the model's overall extent to the tail is **93500 raw units = 187.0 inches**. This is the reported historical overall dimension, instead of the prior approximately 174.8 inches.
+- Kept the shape of the U cockpit, twin-strut mirror, rounded tail fin, two standalone wheel models, wheel diameter, color palette and all other bodywork unchanged.
+- `assemble_wasp.py` now checks wheelbase, length, and radiator/front-axle proximity as part of the GitHub Actions assembly build.
+
+**Interpretation:** The user observed a car that appeared overly long and a front axle not aligned to the radiator. The measured length comparison shows that the car was actually **too short overall**; the apparent stretch resulted from **axles too far rearward relative to the nose and tail**. Moving both axles fixes those silhouette relationships while fitting the published overall length. Treat the exact front-axle-to-radiator alignment as a historically motivated approximation, not a documented 0.08-inch offset.
 
 ## Rev 7 — solid U-shaped cockpit walls and three separate N3 models
 
