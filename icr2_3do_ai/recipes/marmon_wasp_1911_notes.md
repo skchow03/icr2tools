@@ -1,6 +1,29 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 10
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 11
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 11 — stock-style shadow, invisible radiator back, chassis-first drawing
+
+**Stock source:** The user's original indycar.3do (15,364 bytes) has exactly eight flat shadow POLY records at body offsets 10760, 10812, 10836, 10864, 10892, 10920, 10948 and 10976. All use color index 27 and Z=-8501 raw, 255 units above the documented stock tire contact at Z=-8756. The original uses a central decagonal body patch, pointed front nose, nose/tail patches and four wheel-shadow patches.
+
+### New Wasp ground shadow
+- The assembled WASP.3D now has eight flat upward-facing shadow polygons at the same Z=-8501 and palette index 27 as the stock model. Their silhouettes are scaled/rearranged to the historic Wasp proportions; no existing stock game geometry is copied.
+- The main ground shadow is a ten-point polygon, plus a nose triangle, radiator and tail patches, and four wheel-contact rectangles. All appear as the first parent root LIST child.
+- The stock game has a shadow LOD branch, but this version does not add distance switching. No fourth 3D file or texture is needed.
+
+### Radiator rear face removed
+- The rear hexagonal radiator cap, radiator_face_p0013 (the original x=0.55-ft plane; x=41700 in final game coordinates), is removed from the final assembled N3 declaration and its pointer from radiator_face_geo. The front-facing radiator polygon p0000 and twelve edge-shell triangles remain.
+- This is genuinely absent geometry, not just a visual color override. A compiled binary check rejects any reachable six-sided black cap at x=41700.
+
+### Black chassis always draws before the body
+- The final parent root is LIST {wasp_ground_shadow, wasp_black_frame, wasp_vehicle_sort}, retaining the vehicle's camera-dependent near/far wheel BSPA under the third child.
+- The black chassis has 13 named components: exposed chassis, floor, two beam axles, rear chassis extension, and eight half-leaf segments. Their 114 polygon faces (palette 0) now draw before the yellow bodywork from both camera sides, instead of being mixed into body or near-side lists.
+- Radiator front face and mirror struts remain in body groups for silhouette purposes.
+- The assembler verifies from both side cameras that the first eight visible polygons are shadow index 27, followed by all 114 chassis faces index 0, with far wheels before and near wheels after yellow bodywork.
+
+### Unchanged and unverified
+- Three editable source files, three binaries, four DYNAMIC wheel references, +X nose direction, cockpit origin, 116-inch wheelbase, 187-inch length, and stock tire contact Z=-8756 remain intact.
+- Compilation, binary reparse, external instance resolution and geometry diagnostics pass CI. Actual DOS ICR2 shadow appearance, per-polygon clipping and in-game sorting must be tested by the user; compiler structural validation does not prove runtime correctness.
 
 ## Rev 10 — stock ICR2 origin, forward direction and wheel-contact height
 
