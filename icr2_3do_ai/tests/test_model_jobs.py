@@ -83,8 +83,12 @@ class Stage3JobsTests(unittest.TestCase):
         fl = model.vertices[labels["tire_fl_v0000"]].xyz
         fr = model.vertices[labels["tire_fr_v0000"]].xyz
         rl = model.vertices[labels["tire_rl_v0000"]].xyz
+        # Ring 0 is the minimum Y edge on both wheels. Symmetric
+        # wheels' *centers*, not same-index tire sidewalls, must mirror.
+        fl_other = model.vertices[labels["tire_fl_v0012"]].xyz
+        fr_other = model.vertices[labels["tire_fr_v0012"]].xyz
         self.assertEqual(fl[0], fr[0])
-        self.assertEqual(fl[1], -fr[1])
+        self.assertEqual(fl[1] + fl_other[1], -(fr[1] + fr_other[1]))
         self.assertEqual(fl[2], fr[2])
         self.assertGreater(fl[0], rl[0])
         self.assertIn("% COMPONENT: cockpit_placeholder", source)
