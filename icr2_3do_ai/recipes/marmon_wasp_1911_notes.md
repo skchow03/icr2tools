@@ -1,6 +1,21 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 11
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 12
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 12 — front radiator face culling at the physical radiator
+
+**Observed issue:** The Wasp's black radiator front appeared when the camera rotated toward the rear of the car, disappearing only after crossing a sorting partition. In the Rev 11 source, the shared `wasp_x_*` triangle defined a **BSPN** at **game X=0** (cockpit origin); the physical front cap is instead at **X=+42,660**. Crucially, a **BSPN is only a near/far ordering node, not a visibility gate**, so moving that shared plane alone would not reliably fix the grille.
+
+**Correction (final assembled `WASP.3D` only):**
+- Keep the common middle-of-car X=0 BSPN/BSPA planes for nose/tail and front/rear wheel *ordering*.
+- Separate the six-vertex `radiator_face_p0000` front cap from `radiator_face_geo`: that original group now contains **only the 12 side-shell triangles**, which remain drawable from all sides.
+- Create `wasp_rad_front_only: FACE (wasp_rad_face_a, wasp_rad_face_b, wasp_rad_face_c), radiator_face_p0000;` and group it with the radiator shell under `wasp_radiator_surfaces`. This one-sided `FACE` accepts camera viewpoints only from the **+X/front** half-space.
+- The three oriented visibility-plane points are at **game X=+42,600**, a mere **60 Papyrus units = 0.12 inch immediately behind the front cap (X=+42,660)**. Their winding yields positive +X plane normal. The rear radiator hexagon was already removed in Rev 11 and remains absent.
+- Because these operations happen in `assemble_wasp.py` after transforming the design recipe to stock ICR2 coordinates, the *game-ready* WASP parent has the new one-sided front grille without changing the independent wheel models or the Stage 2 body recipe.
+
+**CI regression validation:** The compiled binary must have exactly one positive-X `FACE` at X=42,600 and exactly one reachable front hexagon at X=42,660. For both Y camera sides, test front viewpoints (X=100,000 and 42,610) where that cap is present; rear viewpoints (X=42,590, 41,000, 0, and −100,000) where it is absent. All tests run with the real compiled Papyrus node traversal, not text-string matching. The parent still contains 8 stock-style ground shadow faces, early black chassis geometry and four referenced wheel instances; **no polygon count change** from Rev 11.
+
+**Remaining limitation:** CI reproduces the repository parser's ICR2 face-plane evaluation but does not execute DOS ICR2. The result should still be inspected in-game, especially at extreme grazing angles and with the selected track's palette.
 
 ## Rev 11 — stock-style shadow, invisible radiator back, chassis-first drawing
 
