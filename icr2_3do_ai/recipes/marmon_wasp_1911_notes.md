@@ -1,6 +1,30 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 9
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 10
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 10 — stock ICR2 origin, forward direction and wheel-contact height
+
+**Problem:** the Wasp faced backward in ICR2, used a nose-side origin rather than one near the cockpit, and its wheel/ground geometry was too high. The new calibration is derived directly from the user's uploaded three unmodified game binaries (stock indycar.3do, fwheel(1).3do and rwheel(1).3do). The stock files themselves are not copied to the repository.
+
+### Exact measurements from stock 3DO record trees
+
+- **+X is forward.** IndyCar front wheel centers at x=+32,284, rear x=−29,426, confirming the standard game orientation; the original Wasp model had increasing X toward the tail.
+- Stock IndyCar wheel DYNAMIC centers are z=−2,253 raw. Front wheels x=+32,284, y=±17,497; rear x=−29,426, y=±16,248. Original front/rear wheel child meshes both have **radius 6,503 raw** in the XZ plane, yielding **stock ground Z=−8,756 raw**.
+- Stock body vertices span X −47,082..+57,171, Y ±19,998, Z −8,501..+10,316 raw.
+- Papyrus recipe coordinates have 6,000 units per foot. The historic Wasp has a *larger* 34-inch tire radius of 8,500 raw, so it needs a *higher* axle center than the default IndyCar for the tire bottoms to match the original game's track-ground plane.
+
+### Transformation of the generated source
+
+- Stage 2 recipe remains authored in a nose-to-tail design frame. The final game-ready **WASP.3D parent source** is rotated rigidly 180° around the vertical Z axis and shifted, preserving all polygon winding: **new X=45,000−design X, new Y=−design Y, new Z=design Z−8,756**. All BSP partition vertices undergo exactly the same transformation.
+- The origin maps from **design x=45,000**, inside the solid U cockpit opening (36,600..53,880 raw), to game X=0; it is no longer near the radiator.
+- Four wheel DYNAMIC translations and orientations are transformed together, including 180° heading specified as N3 value 1800 tenths of a degree (binary signed −2,147,483,648).
+- Final front wheel centers: **(+42,700, ±17,400, −256)**. Rear: **(−15,300, ±16,800, −256)**. Tire bottoms equal **−256−8,500=−8,756**, precisely matching stock original wheel contact plane.
+- Wasp body-only bounds after transformation: x≈−42,300..+47,140, z≈−2,936..+18,104. Larger height compared with 1995 IndyCar is expected for 1911 body; user should test actual wheel-ground contact in-game.
+- Wheelbase remains **58,000 raw = 116 inches**; total length remains **93,500 raw = 187 inches**.
+- Front and rear wheel meshes remain two separate 3D objects; main parent still references four wheel instances. Black components remain reserved palette index 0 and camera-dependent BSP sorting from Revision 9 is retained.
+- Assembly code asserts forward orientation, cockpit origin, matching wheel/ground plane, wheelbase, external DYNAMIC references, and compiled left/right painter order.
+
+**Limits:** Structurally validated in CAD compiler/parser and inspector, **not yet tested in the user's actual ICR2 executable**. In-game stance, external wheel behavior, clipping and per-polygon BSP draw order may still require targeted changes.
 
 ## Rev 9 — in-game palette/occlusion correction (2026-11-08)
 
