@@ -33,3 +33,24 @@ Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
   material/UV rendering. Manual or automated BSP validation is future work.
 - Keep `icr2_3do_ai/recipes/` examples checked into the repository. GitHub
   Actions compiles them and publishes build artifacts for agent workflows.
+
+## Stage 3 modeled design jobs
+
+- Modeling plans are declarative JSON proposals, not an instruction channel
+  granting permission to run arbitrary Python or download remote assets.
+- A plan's goal is documentation only. The assistant must convert design
+  intent into validated template parameters or Stage 2 operations; the CLI
+  does not understand unstructured English itself.
+- Keep vintage-racer templates explicitly illustrative. Do not claim exact
+  Marmon Wasp shapes, dimensions, colors or technical details without
+  documented period references and user validation.
+- Revisions operate **only on Stage 2 JSON recipes**. Never imply they patch
+  arbitrary binary 3DOs, replace hidden BSP nodes, or preserve byte offsets.
+  The candidate source is compiled anew into separate output assets.
+- The code must preserve untargeted components, enforce quality limits and
+  verify old/new source through the existing N3 compiler/3DO parser.
+- Keep baseline and candidate source, validation results and geometry
+  diagnostics in the CI artifact. Never auto-merge PRs into main or modify
+  game data outside the new output directory.
+- Add headless tests for invalid plans, path traversal, stale baseline
+  hashes, mirror dependencies and no-overwrite behavior.
