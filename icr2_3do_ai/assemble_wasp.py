@@ -200,6 +200,40 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if placements != expected:
         raise ValueError(f"Wrong wheel instance placements: {placements!r}")
 
+    # Exercise the *compiled* BSP order from both sides, not just its syntax.
+    # The far-side wheel pair must draw before ALL body polygons; the
+    # near-side pair must draw after them (painter's algorithm).
+    bsp_tests = {}
+    for side in (-1, 1):
+        events = []
+        model.switched_polygons(
+            None, (0, side * 300000, 30000),
+            bsp_mode="original", events=events,
+        )
+        ordered = [
+            (i, model.dynamics[event[1]].xyz[1])
+            for i, event in enumerate(events) if event[0] == "dynamic"
+        ]
+        polygon_positions = [
+            i for i, event in enumerate(events) if event[0] == "polygon"
+        ]
+        if len(ordered) != 4 or not polygon_positions:
+            raise ValueError("BSP order omitted a wheel or body polygon")
+        far = [i for i, y in ordered if y * side < 0]
+        near = [i for i, y in ordered if y * side > 0]
+        if (len(far) != 2 or len(near) != 2
+                or max(far) >= min(polygon_positions)
+                or max(polygon_positions) >= min(near)):
+            raise ValueError(
+                f"Incorrect BSP wheel/body order viewing from y={side}: "
+                f"far={far}, body={polygon_positions[:1]}, near={near}"
+            )
+        bsp_tests[str(side)] = {
+            "far_wheels_before_body": True,
+            "near_wheels_after_body": True,
+            "body_polygon_events": len(polygon_positions),
+        }
+
     output.mkdir(parents=True, exist_ok=False)
     (output / "WASP.3D").write_text(wasp_text, encoding="utf-8")
     (output / "WASP.3do").write_bytes(model.raw)
@@ -211,6 +245,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         ordered_model, _ = validate_source(
             ordered_source, model_path=output / (obj_name + ".3D")
         )
+        if re.search(r'POLY\\s*<(?:47|48|49)>', ordered_source):
+            raise ValueError(f"Non-safe dark gray colors remain in {obj_name}")
         if ordered_model.records[ordered_model.root_offset] != 8:
             raise ValueError(f"{obj_name} root is not BSPA")
         (output / (obj_name + ".3D")).write_text(
@@ -269,6 +305,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "source_files": ["WASP.3D", "FWHEEL.3D", "RWHEEL.3D"],
         "binary_files": ["WASP.3do", "FWHEEL.3do", "RWHEEL.3do"],
         "validation": checks,
+        "bsp_camera_sides": bsp_tests,
         "body_with_placements": result,
         "sha256": {
             p.name: sha256(p.read_bytes()).hexdigest()
