@@ -38,6 +38,110 @@ TIRE_RADIUS_RAW = 8500
 ROOT_RE = re.compile(r"(?m)^root:\s*LIST\s*\{([^{}]*)\};[ \t]*$")
 
 
+
+# N3 BSPA sorts 3 layers as far/middle/near depending on the camera side.
+# With these counter-clockwise planes, positive normals point toward +Y
+# and +X respectively. The near-side body panels and wheels must always
+# paint AFTER the main body and the far side.
+Y_PLANE = "(wasp_y_a, wasp_y_b, wasp_y_c)"
+X_PLANE = "(wasp_x_a, wasp_x_b, wasp_x_c)"
+Y_WHEEL_PLANE = "(wheel_y_a, wheel_y_b, wheel_y_c)"
+
+
+def _group(label: str, items: list[str]) -> str:
+    if not items:
+        raise ValueError(f"Empty named geometry group: {label}")
+    return f'{label}: LIST {{{", ".join(items)}}};'
+
+
+def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
+    """Replace fixed-order parent LIST with painter-safe BSP subgroups.
+
+    This is *not* a polygon-level visibility solver: polygon winding, BSP/LOD,
+    in-game clipping and car palettes still require an ICR2 test. It does
+    correct near/far ordering for wheels and the solid cockpit sidewalls.
+    """
+    parts = [v.strip() for v in existing.split(",")]
+    if len(parts) != len(set(parts)):
+        raise ValueError("Duplicate body components in source root")
+    mandatory = {
+        "radiator_face_geo", "long_bonnet_geo",
+        "pointed_tail_geo", "rounded_tail_fin_geo",
+    }
+    if not mandatory <= set(parts):
+        raise ValueError("Missing key bonnet/radiator/tail components")
+    if len(wheel_symbols) != 4:
+        raise ValueError("Expected four independently placed wheel references")
+    pos, neg = [], []
+    for part in parts:
+        if ("_right_" in part or part == "mirror_strut_right_geo"):
+            pos.append(part)
+        elif ("_left_" in part or part == "mirror_strut_left_geo"):
+            neg.append(part)
+    if len(pos) != len(neg):
+        raise ValueError("Asymmetric cockpit/suspension side groups")
+    middle = [p for p in parts if p not in pos and p not in neg
+              and p not in mandatory]
+    if not middle:
+        raise ValueError("Empty center-body geometry")
+
+    lines = [
+        "% View-dependent partition planes. Their normals point +Y / +X.",
+        "wasp_y_a: [<0, 0, 0>];",
+        "wasp_y_b: [<0, 0, 6000>];",
+        "wasp_y_c: [<6000, 0, 0>];",
+        "wasp_x_a: [<45000, 0, 0>];",
+        "wasp_x_b: [<45000, 6000, 0>];",
+        "wasp_x_c: [<45000, 0, 6000>];",
+        _group("wasp_pos_sides", pos),
+        _group("wasp_neg_sides", neg),
+        _group("wasp_midparts", middle),
+        _group("wasp_tailparts", ["pointed_tail_geo", "rounded_tail_fin_geo"]),
+        # N3 BSPN: positive-side tail nearer than radiator; reverse from front.
+        f"wasp_noseparts: BSPN {X_PLANE}, long_bonnet_geo, radiator_face_geo;",
+        f"wasp_body_xsort: BSPA {X_PLANE}, "
+        "wasp_tailparts, wasp_midparts, wasp_noseparts;",
+        f"wasp_body_ysort: BSPA {Y_PLANE}, "
+        "wasp_pos_sides, wasp_body_xsort, wasp_neg_sides;",
+        f"wasp_positive_wheels: BSPN {X_PLANE}, "
+        f"{wheel_symbols[3]}, {wheel_symbols[1]};",
+        f"wasp_negative_wheels: BSPN {X_PLANE}, "
+        f"{wheel_symbols[2]}, {wheel_symbols[0]};",
+        f"root: BSPA {Y_PLANE}, "
+        "wasp_positive_wheels, wasp_body_ysort, wasp_negative_wheels;",
+    ]
+    return "\n".join(lines)
+
+
+def _sort_wheel_source(source: str) -> str:
+    """BSP sort near yellow cover / hub over black tire, far cover behind it."""
+    roots = list(ROOT_RE.finditer(source))
+    if len(roots) != 1:
+        raise ValueError(f"Expected one wheel root LIST, got {len(roots)}")
+    m = roots[0]
+    expected = {
+        "black_firestone_tire_geo",
+        "yellow_outer_cover_l_geo", "yellow_outer_cover_r_geo",
+        "black_center_l_geo", "black_center_r_geo",
+    }
+    parts = set(p.strip() for p in m.group(1).split(","))
+    if parts != expected:
+        raise ValueError(f"Unexpected wheel components: {parts ^ expected}")
+    extra = "\n".join([
+        "% Rim/cover BSP: plus-Y side shows plus-Y cover last; vice versa.",
+        "wheel_y_a: [<0, 0, 0>];",
+        "wheel_y_b: [<0, 0, 6000>];",
+        "wheel_y_c: [<6000, 0, 0>];",
+        _group("wheel_pos_cover", ["yellow_outer_cover_r_geo",
+                                    "black_center_r_geo"]),
+        _group("wheel_neg_cover", ["yellow_outer_cover_l_geo",
+                                    "black_center_l_geo"]),
+        f"root: BSPA {Y_WHEEL_PLANE}, "
+        "wheel_pos_cover, black_firestone_tire_geo, wheel_neg_cover;",
+    ])
+    return source[:m.start()] + extra + source[m.end():]
+
+
 def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if output.exists():
         raise FileExistsError(f"Refusing to overwrite {output}")
@@ -75,16 +179,18 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
 
     existing = m.group(1).strip()
-    new_root = f'root: LIST {{{existing}, {", ".join(wheel_symbols)}}};'
+    new_root = _sort_body_source(existing, wheel_symbols)
     wasp_text = (
         body[:m.start()] +
-        '\n% Four wheel references; the two wheel meshes are external and shared.\n' +
+        '\n% Four reusable wheels and BSP-sorted body / front-rear geometry.\n' +
         '\n'.join(placement_lines) + '\n' + new_root +
         body[m.end():]
     )
 
     # Real N3 compiler and parser verify all parent source records and external names.
     model, result = validate_source(wasp_text, model_path=output / "WASP.3D")
+    if model.records[model.root_offset] != 8:
+        raise ValueError("WASP root is not camera-sorted BSPA")
     if set(model.external_names) != {"FWHEEL", "RWHEEL"}:
         raise ValueError(f"Incorrect external filenames: {model.external_names}")
     if len(model.dynamics) != 4:
@@ -99,8 +205,18 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     (output / "WASP.3do").write_bytes(model.raw)
 
     for obj_name, directory in (("FWHEEL", front_dir), ("RWHEEL", rear_dir)):
-        shutil.copy2(directory / "model.3D", output / (obj_name + ".3D"))
-        shutil.copy2(directory / "model.3do", output / (obj_name + ".3do"))
+        ordered_source = _sort_wheel_source(
+            (directory / "model.3D").read_text(encoding="utf-8")
+        )
+        ordered_model, _ = validate_source(
+            ordered_source, model_path=output / (obj_name + ".3D")
+        )
+        if ordered_model.records[ordered_model.root_offset] != 8:
+            raise ValueError(f"{obj_name} root is not BSPA")
+        (output / (obj_name + ".3D")).write_text(
+            ordered_source, encoding="utf-8"
+        )
+        (output / (obj_name + ".3do")).write_bytes(ordered_model.raw)
 
     checks = {}
     for name in ("WASP", "FWHEEL", "RWHEEL"):
@@ -132,7 +248,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Axles and leaf springs are body geometry, not separate wheel geometry.\n"
         "Body U-shaped cockpit walls are solid, made of five joined facets per side.\n"
         "Tire size 34x4.5 inches, steel wheel covers nominal 25 inches; polygonal.\n"
-        "BSP, LOD and in-game renderer still require testing. No MIP textures.\n",
+        "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
+        "Black is reserved common palette index 0; no MIP textures.\n",
         encoding="utf-8",
     )
     manifest = {
