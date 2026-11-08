@@ -1,6 +1,6 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp #32 editable low-poly geometry: rounded bonnet/radiator/tail upper contours; exposed black chassis below yellow body from nose to cockpit; two dashboard-side mirror struts. High pointed tail and rounded fin retained. No integrated wheels, only four removable markers. Paint/details remain a later texture pass.",
+  "description": "1911 Marmon Wasp #32 low-poly silhouette with rounded upper surfaces, exposed chassis, raised rear fin and historically proportioned 8x5-inch mirror. Twin supports physically embed into the dashboard/cowl roof and meet the mirror housing. Four removable wheel location markers, no integrated wheel meshes. Surface detail deferred to later textures.",
   "coordinate_scale": 6000,
   "operations": [
     {
@@ -386,23 +386,23 @@
       "caps": false,
       "sections": [
         {
-          "at": 6.12,
+          "at": 6.105,
           "outline": [
             [
-              -1.105,
-              3.305
+              -1.206,
+              2.924
             ],
             [
-              -1.015,
-              3.305
+              -1.134,
+              2.924
             ],
             [
-              -1.015,
-              3.415
+              -1.134,
+              3.016
             ],
             [
-              -1.105,
-              3.415
+              -1.206,
+              3.016
             ]
           ]
         },
@@ -410,20 +410,20 @@
           "at": 6.46,
           "outline": [
             [
-              -0.645,
-              4.045
+              -0.272,
+              4.054
             ],
             [
-              -0.555,
-              4.045
+              -0.2,
+              4.054
             ],
             [
-              -0.555,
-              4.155
+              -0.2,
+              4.146
             ],
             [
-              -0.645,
-              4.155
+              -0.272,
+              4.146
             ]
           ]
         }
@@ -442,20 +442,20 @@
       "color": 40,
       "outline": [
         [
-          -0.75,
+          -0.333333,
           4.06
         ],
         [
-          0.75,
+          0.333333,
           4.06
         ],
         [
-          0.75,
-          4.22
+          0.333333,
+          4.476667
         ],
         [
-          -0.75,
-          4.22
+          -0.333333,
+          4.476667
         ]
       ],
       "from": 6.44,
