@@ -5,11 +5,13 @@ on:
     paths:
       - 'icr2_3do_ai/**'
       - 'icr2_3do_cad/**'
+      - '.agents/skills/icr2-3do-modeler/**'
       - '.github/workflows/3do-ai-inspector.yml'
   push:
     paths:
       - 'icr2_3do_ai/**'
       - 'icr2_3do_cad/**'
+      - '.agents/skills/icr2-3do-modeler/**'
       - '.github/workflows/3do-ai-inspector.yml'
 
 jobs:
