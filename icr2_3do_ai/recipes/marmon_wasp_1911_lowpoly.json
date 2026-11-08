@@ -1,6 +1,6 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp #32, texture-first silhouette-only Stage 2 blockout. Simplified bonnet, separate radiator cap, pointed tail, cockpit and single rearview mirror. Four removable wheel-center placeholders, no wheel/tire meshes, no surface-detail geometry and no textures embedded.",
+  "description": "1911 Marmon Wasp #32, compact ICR2 texture-first 134-polygon silhouette: rear tip raised, 6-point faceted rounded tail number fin reinstated, cockpit forward cowl slightly raised. Four wheel location placeholders; no wheel meshes or surface detail textures.",
   "coordinate_scale": 6000,
   "operations": [
     {
@@ -114,11 +114,11 @@
             ],
             [
               1.31,
-              3.1
+              3.42
             ],
             [
               -1.31,
-              3.1
+              3.42
             ]
           ]
         }
@@ -177,23 +177,57 @@
           "outline": [
             [
               -0.08,
-              1.94
+              2.44
             ],
             [
               0.08,
-              1.94
+              2.44
             ],
             [
               0.08,
-              2.18
+              2.71
             ],
             [
               -0.08,
-              2.18
+              2.71
             ]
           ]
         }
       ]
+    },
+    {
+      "type": "extrude",
+      "name": "rounded_tail_fin",
+      "axis": "y",
+      "outline": [
+        [
+          2.53,
+          12.25
+        ],
+        [
+          3.32,
+          12.9
+        ],
+        [
+          3.69,
+          13.38
+        ],
+        [
+          3.72,
+          13.82
+        ],
+        [
+          3.48,
+          14.2
+        ],
+        [
+          2.52,
+          14.43
+        ]
+      ],
+      "from": -0.055,
+      "to": 0.055,
+      "color": 158
     },
     {
       "type": "extrude",
