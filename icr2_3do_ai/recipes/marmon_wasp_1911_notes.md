@@ -1,6 +1,14 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 4
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 5
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 5 — mirror attachment and aspect-ratio correction
+
+- Geometry audit revealed two actual errors in Rev 4: the mirror supports started at z=3.305–3.415 ft, floating over the cowl shoulder near y=±1.06; and the mirror was 18 inches wide by just 1.92 inches high.
+- Both supports now start inside the sloped dashboard/cowl at **x=6.105 ft**, **y=±1.17 ft**, and **z=2.970 ft**, with cross-sections reaching z=3.016 ft. At this y, the bonnet cross-section surface is ~z=3.071 ft (about **0.655 inches of deliberate overlap** with the end face; the support rises out of the body toward the mirror). This eliminates the floating support.
+- Both struts end at **x=6.460 ft**, **y=±0.236 ft**, **z=4.100 ft** and penetrate the mirror housing at x=6.44–6.50, y=±0.333, z=4.060–4.477 ft. This explicitly verifies the upper strut/housing intersection too.
+- The housing width changes from **18 inches to 8 inches**, and its visible height from **1.92 inches to 5 inches**. An attributed historical account reports that the original mirror measured 5 by 8 inches; see [Supercars.net's historical summary](https://www.supercars.net/blog/motoring-masterpiece-1932-marmon-v16-victoria-coupe/2/). While this secondary source is not an engineering drawing, its 8:5 aspect matches museum detail photographs ([Hagerty Drivers Foundation](https://driversfoundation.org/register/13)). Treat it as reported, not independently measured.
+- **Polygon budget remains 174 polygons, 15 editable components**, including the same four wheel location markers. Nothing else is remodeled. Surface details remain for future textures.
 
 ## Rev 4 corrections — black chassis, two mirror struts, rounded body crown
 
