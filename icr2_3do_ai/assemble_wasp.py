@@ -32,7 +32,9 @@ WHEEL_PLACEMENTS = (
 )
 # Model-space helmet anchor. The supplied sprite's own PMP origin is (0,0,0)
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
-HELMET_GAME_XYZ = (-2100, 0, 8850)
+# Helmet height is 4.18ft above ground; stock PMP size 4800 raw
+# gives an approximate chin at 3.78ft, above the bonnet crown at 3.42ft.
+HELMET_GAME_XYZ = (-2100, 0, 16324)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 NOMINAL_OVERALL_IN = 187
@@ -448,9 +450,9 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
 wasp_front_gate_a: [<8150, -1200, -3000>];
 wasp_front_gate_b: [<8150, 0, -1000>];
 wasp_front_gate_c: [<8150, 1200, -3000>];
-wasp_rear_gate_a: [<-8580, -1200, -3000>];
-wasp_rear_gate_b: [<-8580, 1200, -3000>];
-wasp_rear_gate_c: [<-8580, 0, -1000>];
+wasp_rear_gate_a: [<-5100, -1200, -3000>];
+wasp_rear_gate_b: [<-5100, 1200, -3000>];
+wasp_rear_gate_c: [<-5100, 0, -1000>];
 wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0025;
 wasp_seat_inner: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), pointed_tail_p0000;
 wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), wasp_seat_inner;
@@ -505,7 +507,7 @@ def _fix_roof_occlusion(source: str) -> str:
 
     # Avoid the tiny but genuine X overlap with the bonnet and the tail.
     for side in ("left", "right"):
-        for section, x0, x1 in ((1, 8400, 8100), (5, -8880, -8520)):
+        for section, x0, x1 in ((1, 8400, 8100),):
             name = f"cockpit_body_{side}_{section}"
             pattern = rf"(?m)^({name}_v\d{{4}}: \[<){x0}(, -?\d+, -?\d+>\];)$"
             source, count = re.subn(
@@ -527,10 +529,13 @@ def _fix_roof_occlusion(source: str) -> str:
             (1, 1): (8100, sy*7860, 9184),
             (1, 4): (8100, sy*6240, 364),
             (1, 5): (8100, sy*6240, 10117),
-            (5, 2): (-8520, sy*7980, 6784),
-            (5, 3): (-8520, sy*7980, 364),
-            (5, 6): (-8520, sy*6240, 7770),
-            (5, 7): (-8520, sy*6240, 364),
+            # Raised rear deck now begins at design X=8.34ft rather than
+            # 8.92ft. Outer junction is at the same height as the tail
+            # shoulder; inner cap meets its sloped upper skin.
+            (5, 2): (-5040, sy*7980, 9904),
+            (5, 3): (-5040, sy*7980, 364),
+            (5, 6): (-5040, sy*6240, 10864),
+            (5, 7): (-5040, sy*6240, 364),
         }
         for (section, vertex), (x, y, z) in junction_vertices.items():
             label = f"cockpit_body_{side}_{section}_v{vertex:04}"
@@ -623,7 +628,7 @@ def _attach_driver_helmet(source: str) -> str:
     if "wasp_driver_helmet: DYNAMIC" in source:
         raise ValueError("Driver already has an external helmet reference")
     x, y, z = HELMET_GAME_XYZ
-    if not (-8520 < x < 8100 and y == 0 and 7000 < z < 11500):
+    if not (-5040 < x < 8100 and y == 0 and 13500 < z < 19000):
         raise ValueError("Helmet attachment is outside the Wasp cockpit")
     return source + (
         f'\nwasp_driver_helmet: DYNAMIC {x}, {y}, {z}, '
@@ -1003,7 +1008,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             raise ValueError(f"Expected one retained cockpit cap at x={x}, got {matches}")
         return matches[0]
     dashboard_cap = closure_cap(8100)
-    seat_cap = closure_cap(-8520)
+    seat_cap = closure_cap(-5040)
     closure_offsets = {dashboard_cap, seat_cap}
     direct_faces = [
         f for f in face_nodes
@@ -1174,6 +1179,30 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     helmet_dynamic = helmet_dynamics[0]
     if tuple(helmet_dynamic.xyz) != HELMET_GAME_XYZ or helmet_dynamic.angles != (0, 0, 0):
         raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
+    # Stock eight-view PMP uses 4800 raw scaling. Conservatively treat
+    # half this value as the lower head extent; the entire chin should
+    # remain above the highest dashboard roof crown (3.42 feet).
+    dashboard_roof_z = round(3.42 * 6000) + STOCK_GROUND_RAW_Z
+    helmet_chin_conservative_z = helmet_dynamic.xyz[2] - 2400
+    if helmet_chin_conservative_z <= dashboard_roof_z + 600:
+        raise ValueError("Helmet chin does not adequately clear the dashboard")
+    # Ensure rear deck now starts behind the seat but before the old
+    # rear wheel line, and both broad front and middle sections are
+    # higher than the rear bonnet's 3.42 ft crown.
+    rear_deck_x = _game_coordinates((int(round(8.34*6000)), 0, 0))[0]
+    rear_deck_crown = int(round(3.54*6000)) + STOCK_GROUND_RAW_Z
+    middle_deck_x = _game_coordinates((int(round(11.12*6000)), 0, 0))[0]
+    middle_deck_crown = int(round(3.47*6000)) + STOCK_GROUND_RAW_Z
+    if not any(
+        v.xyz[0] == rear_deck_x and v.xyz[2] == rear_deck_crown
+        for v in model.vertices.values()
+    ):
+        raise ValueError("Front of raised rear deck is missing")
+    if not any(
+        v.xyz[0] == middle_deck_x and v.xyz[2] == middle_deck_crown
+        for v in model.vertices.values()
+    ):
+        raise ValueError("Middle raised rear deck is missing")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
@@ -1355,7 +1384,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
         "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
-        "Helmet sprite DYNAMIC at (-2100, 0, 8850), no geometric head replacement.\n",
+        "Helmet sprite DYNAMIC at (-2100, 0, 16324): chin above dashboard.\n"
+        "Rear deck starts at 8.34ft and has crowns at 3.54, 3.47, 3.03ft.\n"
+        "Tail fin follows the raised rear deck profile; previous wheel positions unchanged.\n",
         encoding="utf-8",
     )
     manifest = {
@@ -1379,6 +1410,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "measured_from": "user-supplied stock indycar.3do, fwheel.3do, rwheel.3do",
         },
         "dimensions": {
+            "rear_deck_design_start_ft": 8.34,
+            "rear_deck_front_crown_ft": 3.54,
+            "rear_deck_mid_crown_ft": 3.47,
+            "tail_tip_crown_ft": 3.03,
+            "helmet_center_height_above_ground_ft": 4.18,
             "wheelbase_inches": wheelbase_in,
             "overall_length_inches": length_in,
             "radiator_front_to_front_axle_inches": radiator_to_front_axle_in,
@@ -1393,6 +1429,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "gloves_seat_palette": BLACK_PALETTE,
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
+            "chin_clearance_above_dashboard_raw": helmet_chin_conservative_z - dashboard_roof_z,
+            "dashboard_roof_z_raw": dashboard_roof_z,
             "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
             "helmet_pmp_names": [f"helm{i:04}" for i in range(1, 9)],
             "head_is_external_sprite_not_polygon_mesh": True,
