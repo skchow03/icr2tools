@@ -883,7 +883,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "mirror_front": ("mirror_housing_p0000", TOP_YELLOW),
         "mirror_back": ("mirror_housing_p0009", MIRROR_GRAY),
         "mirror_edge": ("mirror_housing_p0001", MIRROR_GRAY),
-        "fin_side": ("rounded_tail_fin_p0000", SIDE_YELLOW),
+        "fin_plane": ("rounded_tail_fin_p0000", SIDE_YELLOW),
         "bonnet_side": ("long_bonnet_p0003", SIDE_YELLOW),
         "bonnet_shoulder": ("long_bonnet_p0005", TOP_YELLOW),
         "bonnet_crown": ("long_bonnet_p0007", TOP_YELLOW),
@@ -903,9 +903,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "driver_right_arm": ("driver_right_arm_p0000", DRIVER_BROWN),
         "driver_left_glove": ("driver_left_glove_p0000", DRIVER_GLOVE_BROWN),
         "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
-        "cowl_side": ("long_bonnet_p0039", SIDE_YELLOW),
-        "cowl_top": ("long_bonnet_p0043", TOP_YELLOW),
-        "raised_dashboard_bulkhead": ("long_bonnet_p0049", SIDE_YELLOW),
+        "cowl_side": ("long_bonnet_p0027", SIDE_YELLOW),
+        "cowl_top": ("long_bonnet_p0031", TOP_YELLOW),
+        "raised_dashboard_bulkhead": ("long_bonnet_p0037", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -914,7 +914,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 f"Unexpected {label} paint: {symbol}={actual}, "
                 f"expected {expected_color}"
             )
-    for component, spans in (("long_bonnet",4), ("pointed_tail",2)):
+    for component, spans in (("long_bonnet",3), ("pointed_tail",2)):
         for span in range(spans):
             for local in range(5,11):
                 index = 12*span+local
@@ -927,8 +927,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Duplicate cowl shell still present in N3 source")
     if re.search(r"(?m)^long_bonnet_p0000: POLY", wasp_text):
         raise ValueError("Hidden nose cross-section was not removed")
-    if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 49:
-        raise ValueError("Unified bonnet must have 48 exterior triangles and 1 rear cap")
+    if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 37:
+        raise ValueError("Traced bonnet must have 36 outward skin tris and one dashboard cap")
+    # V28 fin is a single planar 6-corner POLY, with no second cap,
+    # no thickness surfaces and no live off-plane vertices.
+    fin_decls = re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", wasp_text)
+    if fin_decls != ["rounded_tail_fin_p0000: POLY"]:
+        raise ValueError("The two-dimensional fin must contain exactly one POLY")
+    fin_vertices = re.findall(
+        r"(?m)^rounded_tail_fin_v\d{4}: \[<-?\d+, (-?\d+), -?\d+>\];$",
+        wasp_text,
+    )
+    if len(fin_vertices) != 6 or any(y != "0" for y in fin_vertices):
+        raise ValueError("Fin vertices must all lie on central Y=0 plane")
     # Verify ALL retained bonnet triangles point outwards. A second shell
     # or a mis-wound inward-facing side is not an exterior surface and
     # must not be left as a painter-order workaround.
@@ -958,7 +969,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
 
     outward_winding_checks = 0
-    for span in range(4):
+    for span in range(3):
         for side_index in range(12):
             name = f"long_bonnet_p{span*12+side_index+1:04}"
             nx, ny, nz = bonnet_normal(name)
@@ -975,7 +986,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             ):
                 raise ValueError(f"Inward or degenerate bonnet surface {name}")
             outward_winding_checks += 1
-    if bonnet_normal("long_bonnet_p0049")[0] >= 0:
+    if bonnet_normal("long_bonnet_p0037")[0] >= 0:
         raise ValueError("Dashboard closure must face rearward toward cockpit")
     for side in ("left","right"):
         for segment in range(1,6):
@@ -1125,19 +1136,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if len(matches) != 1:
             raise ValueError(f"Expected one retained cockpit cap at x={x}, got {matches}")
         return matches[0]
-    dashboard_cap = closure_cap(8460)
-    seat_cap = closure_cap(-5040)
+    dashboard_cap = closure_cap(13013)
+    seat_cap = closure_cap(-3000)
     closure_offsets = {dashboard_cap, seat_cap}
     # The dashboard is the ONLY remaining transverse bonnet cap.
     # Its upper crown is the raised scuttle; there is no second
     # bonnet or separately superimposed bulkhead.
     if any(
-        len(set(v.xyz[0] for v in (model.vertices[i] for i in p.refs))) == 1
-        and next(iter({model.vertices[i].xyz[0] for i in p.refs})) == 8100
+        len({model.vertices[i].xyz[0] for i in p.refs}) == 1
+        and next(iter({model.vertices[i].xyz[0] for i in p.refs})) == 8460
         and p.color == SIDE_YELLOW and len(p.refs) >= 6
         for p in model.polygons.values()
     ):
-        raise ValueError("Former internal dashboard cross section at X=8100 remains")
+        raise ValueError("Former dashboard cross section at X=8460 remains")
     direct_faces = [
         f for f in face_nodes
         if (dashboard_cap in model.children.get(f.offset, []) or
