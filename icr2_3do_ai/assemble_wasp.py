@@ -262,10 +262,11 @@ def _stock_style_shadow_source() -> str:
 
 
 # Palette in shared sunny/gamepal (verified previous work):
-# 49 = near-black (19,19,19); 159 = darker yellow (235,203,0);
+# 33 = user-requested fixed black, unlike RECOLOR-sensitive 49;
+# 159 = darker yellow (235,203,0);
 # 158 = bright yellow (255,223,35); 40 = gray (167,167,167).
 # Stock ground shadow remains palette index 27.
-BLACK_PALETTE = 49
+BLACK_PALETTE = 33
 SIDE_YELLOW = 159
 TOP_YELLOW = 158
 MIRROR_GRAY = 40
@@ -361,7 +362,7 @@ wasp_mirror_rear_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_c, wasp_mirr
 
 
 def _omit_cockpit_internal_bulkheads(source: str) -> str:
-    """Remove transverse solid end caps and gate cockpit closures by X."""
+    """Remove hidden end caps; keep dashboard closed from behind."""
     def remove_polygons(group: str, doomed: tuple[str, ...]) -> None:
         nonlocal source
         group_pattern = rf"(?m)^{re.escape(group)}: LIST \{{([^}}\n]+)\}};$"
@@ -422,20 +423,19 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
         "wasp_cockpit_seat_only",
     )
 
-    # Two nested FACE half-spaces form an X-window spanning the cockpit:
-    # the dashboard and seat closures are visible from the cockpit's X
-    # range, but absent when viewed from ahead of the nose or aft of tail.
-    # Source has already been converted to GAME coordinates (+X forward).
+    # IMPORTANT: dashboard has a single rear-facing -X FACE, not the
+    # old pair of gates that wrongly hid it from cameras behind the tail.
+    # Retain seat's two nested gates so it does not leak through bodywork.
+    # Source already uses GAME coordinates (+X forward).
     source += """
-% Interior-only dashboard and seat closures; no exterior bulkheads.
+% Dashboard closes the nose from behind; seat remains cockpit-window gated.
 wasp_front_gate_a: [<8150, -1200, -3000>];
 wasp_front_gate_b: [<8150, 0, -1000>];
 wasp_front_gate_c: [<8150, 1200, -3000>];
 wasp_rear_gate_a: [<-8580, -1200, -3000>];
 wasp_rear_gate_b: [<-8580, 1200, -3000>];
 wasp_rear_gate_c: [<-8580, 0, -1000>];
-wasp_dashboard_inner: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), long_bonnet_p0025;
-wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), wasp_dashboard_inner;
+wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0025;
 wasp_seat_inner: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), pointed_tail_p0000;
 wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), wasp_seat_inner;
 """
@@ -767,7 +767,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
 
     # Palette regression: ensure the intended 1995 runtime indices are
     # actually assigned to the N3 POLY records (not just recipe metadata).
-    expected_colors = {27, 40, 49, 158, 159}
+    expected_colors = {27, 33, 40, 158, 159}
 
     def source_poly_color(poly_name: str) -> int:
         hits = re.findall(
@@ -825,7 +825,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             r"(?m)^\w+: POLY <(\d+)> \{",wasp_text
         )
     }
-    if not source_palette <= expected_colors:
+    if not source_palette <= expected_colors or 49 in source_palette:
         raise ValueError(
             f"Unexpected reserved/obsolete POLY palette {source_palette}"
         )
@@ -884,9 +884,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 23:
+    if len(face_nodes) != 22:
         raise ValueError(
-            f"Expected 7 radiator + 4 closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
+            f"Expected 7 radiator + 3 closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
         )
     # Confirm front and rear mirror faces were actually isolated in the
     # compiled BSP tree and cannot paint through each other.
@@ -958,35 +958,73 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     dashboard_cap = closure_cap(8100)
     seat_cap = closure_cap(-8520)
     closure_offsets = {dashboard_cap, seat_cap}
-    inner_faces = [
-        face for face in face_nodes
-        if any(off in closure_offsets for off in model.children.get(face.offset, []))
+    direct_faces = [
+        f for f in face_nodes
+        if (dashboard_cap in model.children.get(f.offset, []) or
+            seat_cap in model.children.get(f.offset, []))
     ]
-    if len(inner_faces) != 2:
-        raise ValueError("Dashboard and seat each require an interior FACE gate")
-    inner_offsets = {p.offset for p in inner_faces}
-    outer_faces = [
-        face for face in face_nodes
-        if any(off in inner_offsets for off in model.children.get(face.offset, []))
+    if len(direct_faces) != 2:
+        raise ValueError("Dashboard and seat must each have a direct FACE")
+    dashboard_faces = [
+        f for f in direct_faces
+        if model.children.get(f.offset) == [dashboard_cap]
     ]
-    if len(outer_faces) != 2:
-        raise ValueError("Cockpit closure gates require an exterior FACE gate")
-    protected_offsets = inner_offsets | {p.offset for p in outer_faces}
+    seat_inner_faces = [
+        f for f in direct_faces
+        if model.children.get(f.offset) == [seat_cap]
+    ]
+    if len(dashboard_faces) != 1 or len(seat_inner_faces) != 1:
+        raise ValueError("Dashboard or seat FACE connection missing")
+    dashboard_face = dashboard_faces[0]
+    if not (dashboard_face.equation[0] < 0 and
+            dashboard_face.equation[1] == dashboard_face.equation[2] == 0):
+        raise ValueError("Dashboard FACE must point rearward (-X)")
+    seat_outer_faces = [
+        f for f in face_nodes
+        if model.children.get(f.offset) == [seat_inner_faces[0].offset]
+    ]
+    if len(seat_outer_faces) != 1:
+        raise ValueError("Seat must retain two cockpit-only FACE gates")
+    protected_offsets = {
+        dashboard_face.offset, seat_inner_faces[0].offset,
+        seat_outer_faces[0].offset,
+    }
     protected_offsets |= {p.offset for p in wall_faces}
     protected_offsets |= {p.offset for p in mirror_faces}
     radiator_face_nodes = [
-        face for face in face_nodes if face.offset not in protected_offsets
+        f for f in face_nodes if f.offset not in protected_offsets
     ]
     if len(radiator_face_nodes) != 7:
-        raise ValueError("Expected exactly seven unaffected radiator FACE nodes")
-    for x, expected in ((100000, False), (0, True), (-100000, False)):
+        raise ValueError("Expected seven unaffected radiator FACE nodes")
+
+    # Validate both caps from front, inside cockpit, and behind the tail,
+    # from both sides and high/low elevations. The old failure was that
+    # the dashboard vanished at x<-8580 and the front cavity was exposed.
+    cockpit_visibility_tests = {}
+    for x, dashboard_expected, seat_expected in (
+        (100000, False, False),
+        (8200, False, False),
+        (0, True, True),
+        (-8600, True, False),
+        (-100000, True, False),
+    ):
         for side in (-1, 1):
-            visible, _stats, _lod = model.switched_polygons(
-                None, (x, side * 90000, 12000), bsp_mode="original"
-            )
-            for cap in closure_offsets:
-                if (cap in set(visible)) != expected:
-                    raise ValueError(f"Cockpit cap FACE visibility wrong for x={x}, y={side}")
+            for z in (12000, 25000):
+                camera = (x, side * 90000, z)
+                visible, _stats, _lod = model.switched_polygons(
+                    None, camera, bsp_mode="original"
+                )
+                shown = set(visible)
+                if ((dashboard_cap in shown) != dashboard_expected or
+                        (seat_cap in shown) != seat_expected):
+                    raise ValueError(
+                        f"Cockpit cap visibility wrong from {camera}: "
+                        f"dashboard={dashboard_cap in shown}, seat={seat_cap in shown}"
+                    )
+                cockpit_visibility_tests[str(camera)] = {
+                    "dashboard": dashboard_expected,
+                    "seat": seat_expected,
+                }
 
     front_face_nodes = [
         p for p in radiator_face_nodes
@@ -1181,7 +1219,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         ordered_model, _ = validate_source(
             ordered_source, model_path=output / (obj_name + ".3D")
         )
-        if re.search(r'POLY\s*<(?:0|47|48)>', ordered_source):
+        if re.search(r'POLY\s*<(?:0|47|48|49)>', ordered_source):
             raise ValueError(f"Disallowed reserved/obsolete black in {obj_name}")
         wheel_palette = {poly.color for poly in ordered_model.polygons.values()}
         if wheel_palette != {BLACK_PALETTE, SIDE_YELLOW}:
@@ -1224,10 +1262,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         ) +
         "Axles and leaf springs are body geometry, not separate wheel geometry.\n"
         "U cockpit walls retain visible shell and top lips; 40 hidden endcaps omitted.\n"
-        "Dashboard and seat caps are visible only from cockpit X-window; bonnet nose cap removed.\n"
+        "Dashboard closes nose from all behind-the-car views; seat remains cockpit-only.\n"
         "Tire size 34x4.5 inches, steel wheel covers nominal 25 inches; polygonal.\n"
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
-        "True black uses shared index 49 (not 0); ground shadow 27 unchanged.\n"
+        "Fixed black palette 33 replaces RECOLOR-sensitive 49; shadow remains 27.\n"
         "Upper yellow 158, sides/fin and wheel discs 159; mirror forward 158, real reflective rear 40.\n"
         "Mirror caps are oppositely FACE-culled; gray rear never overdraws yellow front.\n"
         "Shadow: eight flat polygons, palette 27 at Z=-8501; full-width tapered bonnet shadow.\n"
@@ -1290,6 +1328,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "camera_visibility_tests": visibility_checks,
             "front_face_normal_signed_equation": list(face_eq),
         },
+        "cockpit_closure_visibility": cockpit_visibility_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
