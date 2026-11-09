@@ -1,6 +1,26 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 15
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 16
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 16 — mirror face yellow, shaded bodywork, black index 49
+
+**User-directed livery and palette change.** Previous dark pieces used palette 0, but the user specifies that index 0 has game-reserved functions and requests black 49 instead. This supersedes earlier prototype palette advice. No game or track palette files are modified.
+
+### Verified common palette assignments
+- **49**, shared sunny/gamepal RGB (19,19,19): *all* intended black polygons, including radiator grille and frame, chassis, cockpit floor, beam axles, leaf springs, both front/rear tire meshes and wheel hubs. Former palette 0 assignments are entirely removed from generated body and wheel sources. The user's game-specific use of 0 is respected even though the PCX RGB entry is black.
+- **159**, RGB (235,203,0), **darker yellow**: bonnet outer sides, tapered tail outer sides, entire rounded vertical rear fin, broad U-cockpit exterior panels, and the steel disc covers of both front and rear wheels.
+- **158**, RGB (255,223,35), **brighter yellow**: bonnet and tail top crowns and sloping upper shoulders, narrow top rims of both cockpit side panels, the twin mirror support struts, and the mirror's **forward-facing (+X) front end cap**.
+- **40**, RGB (167,167,167), **gray metal**: mirror's rear-facing (−X) end cap and its thin perimeter/edge surfaces.
+- **27**: stock-game ground shadow polygons, unchanged. The ground shadow's original game-specific treatment is separate from the intended-black-material rule.
+
+### Editable geometry and per-face N3 color changes
+- In the Stage 2 master body recipe, the bonnet and tail base component color is 159; the fin and all five source cockpit side panels are also 159, with opposite panels mirrored. The chassis, floor, axle, spring, radiator and all tire/hub source components use 49. Both front/rear wheel recipe disc coverings use 159.
+- Stage 2 loft creates a six-sided body ring (bottom, vertical side, upper slope, crown, upper slope, vertical side). Assembly code `icr2_3do_ai/assemble_wasp.py::_paint_wasp_upper_surfaces` selectively recolors upper slope/crown triangles (`p0005..p0010` and `p0017..p0022`) to 158, retaining dark vertical sides 159. The yellow body keeps exactly the same geometry and number of faces.
+- Each of 10 cockpit panel components (five per side) retains broad dark-159 side faces; its pair of narrow top-edge triangles `p0003` and `p0004` is recolored to 158 so the U opening has a subtle bright upper lip.
+- The mirror housing is extruded along local X and reoriented into the game's +X-forward system: the game-forward cap `mirror_housing_p0000` at X=6360 raw is recolored from 40 to yellow 158. Its aft-facing cap `mirror_housing_p0009` at X=6000 and the other 8 perimeter triangles remain gray 40. The two supporting struts remain bright yellow 158.
+- Strict named-polygon assertions and compiled-palette checks are now part of GitHub Actions, including both independent wheel binaries. No material, MIP, new polygon, wheel placement, shadow, radiator FACE rule, or BSP hierarchy changes are made.
+
+**Scope limitations:** These are flat solid-color Papyrus polygons; the palette's in-game lighting and track color behavior remain under the game engine's control. The front/back designations for the mirror here refer to the **car's forward +X axis**, not the driver's direction of view. Any requested distinction of the reflective surface may require reversing that cap assignment.
 
 ## Rev 15 — radiator near-side frame visible, far-side frame culled
 
