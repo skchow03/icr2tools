@@ -30,6 +30,10 @@ WHEEL_PLACEMENTS = (
     ("rear_left", "RWHEEL", (60300, -16800, 8500)),
     ("rear_right", "RWHEEL", (60300, 16800, 8500)),
 )
+# Model-space helmet anchor. The supplied sprite's own PMP origin is (0,0,0)
+# and its eight camera-angle PMP variants each use nominal size 4800 raw.
+HELMET_GAME_XYZ = (-2100, 0, 8850)
+SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 NOMINAL_OVERALL_IN = 187
 FRONT_RADIATOR_RAW_X = 2340
@@ -115,6 +119,14 @@ CHASSIS_COMPONENTS = (
     "rear_leaf_aft_left_geo", "rear_leaf_aft_right_geo",
 )
 
+# Driver geometry is authored in the Stage 2 recipe; the head remains
+# the exact stock HELMET.3do PMP sprite referenced by a DYNAMIC node.
+DRIVER_COMPONENTS = (
+    "driver_seatback_geo", "driver_torso_geo", "driver_neck_geo",
+    "driver_left_arm_geo", "driver_right_arm_geo",
+    "driver_left_glove_geo", "driver_right_glove_geo",
+)
+
 
 def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
     """View-sort far wheels, then black chassis, yellow body, near wheels."""
@@ -129,13 +141,15 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
         raise ValueError("Missing key bonnet/radiator/tail components")
     if not set(CHASSIS_COMPONENTS) <= set(parts):
         raise ValueError("Missing black chassis/suspension subcomponents")
+    if not set(DRIVER_COMPONENTS) <= set(parts):
+        raise ValueError("Missing the seven named driver body components")
     if len(wheel_symbols) != 4:
         raise ValueError("Expected four independently placed wheel references")
 
     frame = [p for p in parts if p in CHASSIS_COMPONENTS]
     pos, neg = [], []
     for part in parts:
-        if part in CHASSIS_COMPONENTS:
+        if part in CHASSIS_COMPONENTS or part in DRIVER_COMPONENTS:
             continue
         if "_right_" in part or part == "mirror_strut_right_geo":
             pos.append(part)
@@ -144,7 +158,8 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
     if len(pos) != len(neg) or len(pos) != 6:
         raise ValueError("Expected five solid cockpit panels and one mirror strut per side")
     middle = [p for p in parts if p not in pos and p not in neg
-              and p not in mandatory and p not in CHASSIS_COMPONENTS]
+              and p not in mandatory and p not in CHASSIS_COMPONENTS
+              and p not in DRIVER_COMPONENTS]
     if middle != ["mirror_housing_geo"]:
         raise ValueError(f"Unexpected mid-body components: {middle}")
     if sorted(frame) != sorted(CHASSIS_COMPONENTS):
@@ -161,6 +176,7 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
         _group("wasp_black_frame", frame),
         _group("wasp_pos_sides", pos),
         _group("wasp_neg_sides", neg),
+        _group("wasp_driver_body", list(DRIVER_COMPONENTS)),
         _group("wasp_midparts", middle),
         _group("wasp_tailparts", ["pointed_tail_geo", "rounded_tail_fin_geo"]),
         f"wasp_noseparts: BSPN {X_PLANE}, long_bonnet_geo, radiator_face_geo;",
@@ -571,6 +587,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
     source += """
 % Rebuilt painter tree: all cockpit walls behind the exterior top shell.
 wasp_nose_shell: LIST {long_bonnet_geo};
+wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};
 wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
 wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
 wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
@@ -578,8 +595,10 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
 """
     old_xsort = ("wasp_body_xsort: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), "
                  "wasp_tailparts, wasp_midparts, wasp_noseparts;")
-    new_xsort = ("wasp_body_xsort: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), "
-                 "wasp_tailparts, wasp_nose_shell;")
+    # A 3-way BSPA puts the pilot between the nearer tail and nearer nose.
+    # +X is forward AFTER the 180-degree conversion; this X plane points -X.
+    new_xsort = ("wasp_body_xsort: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), "
+                 "wasp_tailparts, wasp_driver_center, wasp_nose_shell;")
     if source.count(old_xsort) != 1:
         raise ValueError("Original X sorting not found")
     source = source.replace(old_xsort, new_xsort)
@@ -589,6 +608,27 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
     if source.count(old_list) != 1:
         raise ValueError("Original body list not found")
     return source.replace(old_list, new_list)
+
+
+
+def _attach_driver_helmet(source: str) -> str:
+    """Add a stock-style DYNAMIC helmet without rescaling or embedding its PMP.
+
+    Place after rotating the Stage 2 car to the game's +X-forward frame:
+    stock helmet direction is zero, unlike the 1800-tenths wheel transform.
+    """
+    key = "wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};"
+    if source.count(key) != 1:
+        raise ValueError("Driver must be centered in the BSPA cockpit layer")
+    if "wasp_driver_helmet: DYNAMIC" in source:
+        raise ValueError("Driver already has an external helmet reference")
+    x, y, z = HELMET_GAME_XYZ
+    if not (-8520 < x < 8100 and y == 0 and 7000 < z < 11500):
+        raise ValueError("Helmet attachment is outside the Wasp cockpit")
+    return source + (
+        f'\nwasp_driver_helmet: DYNAMIC {x}, {y}, {z}, '
+        '0, 0, 0, 1, EXTERN "HELMET";\n'
+    )
 
 
 def _omit_radiator_rear_cap(source: str) -> str:
@@ -752,13 +792,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         body[m.end():]
     )
     wasp_text = _attach_shadow_root(
-        _cull_mirror_caps_by_camera(
-            _fix_roof_occlusion(
-                _attach_radiator_front_cull(
-                    _omit_cockpit_internal_bulkheads(
-                        _game_source(_omit_radiator_rear_cap(
-                            _paint_wasp_upper_surfaces(wasp_text)
-                        ))
+        _attach_driver_helmet(
+            _cull_mirror_caps_by_camera(
+                _fix_roof_occlusion(
+                    _attach_radiator_front_cull(
+                        _omit_cockpit_internal_bulkheads(
+                            _game_source(_omit_radiator_rear_cap(
+                                _paint_wasp_upper_surfaces(wasp_text)
+                            ))
+                        )
                     )
                 )
             )
@@ -794,6 +836,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "right_cockpit_lip": ("cockpit_body_right_1_p0003", TOP_YELLOW),
         "radiator": ("radiator_face_p0000", BLACK_PALETTE),
         "main_chassis": ("exposed_black_chassis_p0000", BLACK_PALETTE),
+        "driver_seatback": ("driver_seatback_p0000", BLACK_PALETTE),
+        "driver_torso": ("driver_torso_p0000", MIRROR_GRAY),
+        "driver_neck": ("driver_neck_p0000", MIRROR_GRAY),
+        "driver_left_arm": ("driver_left_arm_p0000", MIRROR_GRAY),
+        "driver_left_glove": ("driver_left_glove_p0000", BLACK_PALETTE),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -1109,17 +1156,24 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                    for v in p.refs)
            for p in model.polygons.values()):
         raise ValueError("Radiator rear cap still reachable")
-    if set(model.external_names) != {"FWHEEL", "RWHEEL"}:
+    if set(model.external_names) != {"FWHEEL", "RWHEEL", "HELMET"}:
         raise ValueError(f"Incorrect external filenames: {model.external_names}")
-    if len(model.dynamics) != 4:
-        raise ValueError(f"Expected four DYNAMIC wheel objects; found {len(model.dynamics)}")
-    placements = {(tuple(obj.xyz), obj.name) for obj in model.dynamics.values()}
+    if len(model.dynamics) != 5:
+        raise ValueError(f"Expected four wheels and one sprite helmet; found {len(model.dynamics)}")
+    wheel_dynamics = [o for o in model.dynamics.values() if o.name in {"FWHEEL", "RWHEEL"}]
+    helmet_dynamics = [o for o in model.dynamics.values() if o.name == "HELMET"]
+    placements = {(tuple(o.xyz), o.name) for o in wheel_dynamics}
     expected = {(_game_coordinates(loc), ref) for _name, ref, loc in WHEEL_PLACEMENTS}
-    for dyn in model.dynamics.values():
+    if len(wheel_dynamics) != 4 or placements != expected:
+        raise ValueError(f"Wrong wheel placements: {placements!r}")
+    for dyn in wheel_dynamics:
         if dyn.angles != (-(1 << 31), 0, 0):
             raise ValueError(f"Wheel orientation incorrect: {dyn.name} {dyn.angles}")
-    if placements != expected:
-        raise ValueError(f"Wrong wheel instance placements: {placements!r}")
+    if len(helmet_dynamics) != 1:
+        raise ValueError("Driver sprite must reference one exact HELMET.3do")
+    helmet_dynamic = helmet_dynamics[0]
+    if tuple(helmet_dynamic.xyz) != HELMET_GAME_XYZ or helmet_dynamic.angles != (0, 0, 0):
+        raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
@@ -1148,14 +1202,25 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
         dynamic_positions = [
             (i, model.dynamics[event[1]].xyz[1])
-            for i, event in enumerate(events) if event[0] == "dynamic"
+            for i, event in enumerate(events)
+            if event[0] == "dynamic"
+            and model.dynamics[event[1]].name in {"FWHEEL", "RWHEEL"}
+        ]
+        driver_sprite_events = [
+            (i, event[1]) for i, event in enumerate(events)
+            if event[0] == "dynamic"
+            and model.dynamics[event[1]].name == "HELMET"
         ]
         polygons = [
             (i, model.polygons[event[1]])
             for i, event in enumerate(events) if event[0] == "polygon"
         ]
-        if len(dynamic_positions) != 4 or len(polygons) < 240:
-            raise ValueError("Compiled BSP omitted a wheel or main body surface")
+        if (len(dynamic_positions) != 4 or len(driver_sprite_events) != 1
+                or len(polygons) < 280):
+            raise ValueError("Compiled BSP omitted wheel, pilot sprite or body polygon")
+        # Ensure a centerline helmet is painted between far/near cockpit
+        # sides and before the vehicle's near wheel pair.
+        helmet_event_index = driver_sprite_events[0][0]
         if [p.color for _i,p in polygons[:8]] != [STOCK_SHADOW_COLOR]*8:
             raise ValueError("Stock-style shadow must paint first")
         # The black chassis polygons immediately follow the 8 shadows
@@ -1177,7 +1242,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if (len(far_wheels) != 2 or len(near_wheels) != 2
                 or max(far_wheels) >= frame_start
                 or frame_end >= first_yellow
-                or last_yellow >= min(near_wheels)):
+                or last_yellow >= min(near_wheels)
+                or not frame_end < helmet_event_index < min(near_wheels)):
             raise ValueError(
                 f"Wrong camera-side painter order y={side}: "
                 f"far={far_wheels}, frame={frame_start}-{frame_end}, "
@@ -1206,6 +1272,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "radiator_rear_cap_removed": True,
             "mirror_struts_palette": 158,
             "body_polygon_events": len(polygons),
+            "driver_helmet_dynamic_event": helmet_event_index,
+            "driver_sprite_extern": "HELMET",
         }
 
     output.mkdir(parents=True, exist_ok=False)
@@ -1231,8 +1299,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
         (output / (obj_name + ".3do")).write_bytes(ordered_model.raw)
 
+    # The uploaded helmet.3do exactly matches the repository's stock binary
+    # fixture (same SHA-256), so it can be bundled without committing an
+    # additional or modified copy of any game asset to the source tree.
+    helmet_file = Path(__file__).resolve().parents[1] / "icr2_3do_cad" / "fixtures" / "helmet.3do"
+    if not helmet_file.is_file():
+        raise FileNotFoundError("Stock sprite HELMET fixture missing")
+    helmet_bytes = helmet_file.read_bytes()
+    if sha256(helmet_bytes).hexdigest() != SUPPLIED_HELMET_SHA256:
+        raise ValueError("Stock sprite fixture differs from user-supplied helmet.3do")
+    shutil.copy2(helmet_file, output / "HELMET.3do")
+
     checks = {}
-    for name in ("WASP", "FWHEEL", "RWHEEL"):
+    for name in ("WASP", "FWHEEL", "RWHEEL", "HELMET"):
         binary = output / (name + ".3do")
         check = validate_path(binary)
         if check["parser_warnings"]:
@@ -1250,7 +1329,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "1911 MARMON WASP - THREE-OBJECT ICR2 N3 ASSEMBLY\n"
         "================================================\n"
         "Edit WASP.3D (main body), FWHEEL.3D (front wheel) and RWHEEL.3D (rear wheel).\n"
-        "Place WASP.3do, FWHEEL.3do and RWHEEL.3do together in the same model folder.\n"
+        "Place WASP.3do, FWHEEL.3do, RWHEEL.3do, HELMET.3do in one folder.\n"
+        "HELMET.3do is the unchanged eight-angle stock sprite reference.\n"
+        "The eight helm0001..helm0008.pmp images must be available from game resources.\n"
         "WASP.3do holds four DYNAMIC external references, two to each wheel model.\n"
         "No wheel cubes remain in the parent; wheels originate at their own axle center.\n"
         "GAME ORIENTATION: forward is +X, origin inside cockpit, Z=-8756 at ground.\n"
@@ -1272,11 +1353,13 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Far wheels paint before black frame; frame before yellow; near wheels last.\n"
         "Both mirror supports are yellow palette index 158.\n"
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
-        "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n",
+        "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
+        "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
+        "Helmet sprite DYNAMIC at (-2100, 0, 8850), no geometric head replacement.\n",
         encoding="utf-8",
     )
     manifest = {
-        "description": "Marmon Wasp body plus external front and rear wheels",
+        "description": "Marmon Wasp body, seated driver, and external wheels and helmet sprite",
         "wheel_placements": [
             {"name": name, "external": target, "translation_raw": list(loc)}
             for name, target, loc in WHEEL_PLACEMENTS
@@ -1303,7 +1386,17 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "radiator_axle_alignment": "photograph-guided estimate; not a published measurement",
         },
         "source_files": ["WASP.3D", "FWHEEL.3D", "RWHEEL.3D"],
-        "binary_files": ["WASP.3do", "FWHEEL.3do", "RWHEEL.3do"],
+        "binary_files": ["WASP.3do", "FWHEEL.3do", "RWHEEL.3do", "HELMET.3do"],
+        "driver": {
+            "body_components": list(DRIVER_COMPONENTS),
+            "gray_suit_palette": MIRROR_GRAY,
+            "gloves_seat_palette": BLACK_PALETTE,
+            "head_external": "HELMET",
+            "helmet_anchor_raw": list(HELMET_GAME_XYZ),
+            "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
+            "helmet_pmp_names": [f"helm{i:04}" for i in range(1, 9)],
+            "head_is_external_sprite_not_polygon_mesh": True,
+        },
         "validation": checks,
         "stock_style_shadow": {
             "polygon_count": 8,
