@@ -426,8 +426,14 @@ def _make_parts(recipe):
             raw_outline = _simple_polygon_outline(
                 op["outline"], scale, where + ".outline"
             )
-            vertices = [_to_xyz(axis, op["at"], u/scale, v/scale,
-                                scale, where) for u,v in raw_outline]
+            at_raw = _raw(op["at"], scale, where + ".at")
+            other = PLANES[axis]
+            vertices = []
+            for u, v in raw_outline:
+                xyz = [0, 0, 0]
+                xyz[AXIS[axis]] = at_raw
+                xyz[other[0]], xyz[other[1]] = u, v
+                vertices.append(tuple(xyz))
             faces = _polygon_faces(raw_outline, where)
             color, mip, uv, _caps = _options(op, where)
             part = Component(name, vertices, faces, color, mip, uv)
