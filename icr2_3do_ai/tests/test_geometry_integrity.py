@@ -130,6 +130,28 @@ class GeometryIntegrityTests(unittest.TestCase):
         _,report=generate_source(recipe(a,touching))
         self.assertEqual(report["surface_checks"]["diagnostics"],[])
 
+    def test_overlapping_bonnet_and_cowl_lofts_are_reported(self):
+        # Regression for the real Wasp modeling mistake: a second hull
+        # occupies the same exterior volume instead of extending one loft.
+        bonnet={"type":"loft","name":"bonnet","axis":"x","color":159,
+                "caps":False,"sections":[
+                    {"at":0,"width":2,"height":1,"center":[0,.5]},
+                    {"at":4,"width":2,"height":1,"center":[0,.5]},
+                ]}
+        cowl={"type":"loft","name":"cowl","axis":"x","color":158,
+              "caps":False,"sections":[
+                  {"at":2,"width":2,"height":1,"center":[0,1]},
+                  {"at":4,"width":2,"height":1,"center":[0,1]},
+              ]}
+        _,m=generate_source(recipe(bonnet,cowl))
+        collisions=m["surface_checks"]["counts"]
+        self.assertTrue(
+            {"COPLANAR_OVERLAP","INTERSECTING_SURFACES"}.intersection(collisions),
+            collisions
+        )
+        with self.assertRaises(RecipeError):
+            generate_source(recipe(bonnet,cowl,policy="error"))
+
     def test_cross_plane_intersection_warned_and_separated_sheets_clear(self):
         horizontal=sheet("bonnet",[[0,0],[3,0],[3,3],[0,3]])
         vertical=sheet("cowl",[[1,-1],[2,-1],[2,1],[1,1]],
