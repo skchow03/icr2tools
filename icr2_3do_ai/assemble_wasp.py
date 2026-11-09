@@ -1136,7 +1136,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # Confirm new bulkhead exists ahead of the original dashboard,
     # with a raised brow reaching 4.03 feet and with its forward cap
     # removed, so no extra hidden partition overdraws the bonnet.
-    cowl_rear_ring = _game_coordinates((round(6.09*6000), 0, round(4.03*6000)))
+    cowl_rear_ring = _game_coordinates(
+        (round(6.09*6000), round(0.66*6000), round(4.03*6000))
+    )
     cowl_outer_shoulder = _game_coordinates(
         (round(6.09*6000), round(1.31*6000), round(3.65*6000))
     )
