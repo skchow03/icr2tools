@@ -481,8 +481,76 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
     )
 
+    # Palette regression: ensure the intended 1995 runtime indices are
+    # actually assigned to the N3 POLY records (not just recipe metadata).
+    expected_colors = {27, 40, 49, 158, 159}
+
+    def source_poly_color(poly_name: str) -> int:
+        hits = re.findall(
+            rf"(?m)^{re.escape(poly_name)}: POLY <(\d+)> \{{",wasp_text
+        )
+        if len(hits) != 1:
+            raise ValueError(f"Missing or duplicated polygon {poly_name}")
+        return int(hits[0])
+
+    check_colors = {
+        "mirror_front": ("mirror_housing_p0000", TOP_YELLOW),
+        "mirror_back": ("mirror_housing_p0009", MIRROR_GRAY),
+        "mirror_edge": ("mirror_housing_p0001", MIRROR_GRAY),
+        "fin_side": ("rounded_tail_fin_p0000", SIDE_YELLOW),
+        "bonnet_side": ("long_bonnet_p0003", SIDE_YELLOW),
+        "bonnet_shoulder": ("long_bonnet_p0005", TOP_YELLOW),
+        "bonnet_crown": ("long_bonnet_p0007", TOP_YELLOW),
+        "tail_side": ("pointed_tail_p0003", SIDE_YELLOW),
+        "tail_shoulder": ("pointed_tail_p0005", TOP_YELLOW),
+        "tail_crown": ("pointed_tail_p0007", TOP_YELLOW),
+        "left_cockpit_side": ("cockpit_body_left_1_p0000", SIDE_YELLOW),
+        "left_cockpit_lip": ("cockpit_body_left_1_p0003", TOP_YELLOW),
+        "right_cockpit_side": ("cockpit_body_right_1_p0000", SIDE_YELLOW),
+        "right_cockpit_lip": ("cockpit_body_right_1_p0003", TOP_YELLOW),
+        "radiator": ("radiator_face_p0000", BLACK_PALETTE),
+        "main_chassis": ("exposed_black_chassis_p0000", BLACK_PALETTE),
+    }
+    for label, (symbol, expected_color) in check_colors.items():
+        actual = source_poly_color(symbol)
+        if actual != expected_color:
+            raise ValueError(
+                f"Unexpected {label} paint: {symbol}={actual}, "
+                f"expected {expected_color}"
+            )
+    for component in ("long_bonnet","pointed_tail"):
+        for span in (0,1):
+            for local in range(5,11):
+                index = 12*span+local
+                symbol=f"{component}_p{index:04}"
+                if source_poly_color(symbol)!=TOP_YELLOW:
+                    raise ValueError(f"Unpainted upper surface {symbol}")
+    for side in ("left","right"):
+        for segment in range(1,6):
+            for i in (3,4):
+                symbol=f"cockpit_body_{side}_{segment}_p{i:04}"
+                if source_poly_color(symbol)!=TOP_YELLOW:
+                    raise ValueError(f"Unpainted cockpit top rim {symbol}")
+    for component in ("mirror_strut_left","mirror_strut_right"):
+        for index in range(8):
+            # Uncapped thin lofts have 8 side triangles each.
+            if source_poly_color(f"{component}_p{index:04}") != TOP_YELLOW:
+                raise ValueError("Both mirror struts must remain yellow")
+    source_palette = {
+        int(index) for index in re.findall(
+            r"(?m)^\w+: POLY <(\d+)> \{",wasp_text
+        )
+    }
+    if not source_palette <= expected_colors:
+        raise ValueError(
+            f"Unexpected reserved/obsolete POLY palette {source_palette}"
+        )
+
     # Real N3 compiler and parser verify all parent source records and external names.
     model, result = validate_source(wasp_text, model_path=output / "WASP.3D")
+    compiled_palette = {poly.color for poly in model.polygons.values()}
+    if not compiled_palette <= expected_colors or BLACK_PALETTE not in compiled_palette:
+        raise ValueError(f"Compiled body palette not as expected: {compiled_palette}")
     if model.records[model.root_offset] != 11:
         raise ValueError("WASP root should be LIST shadow/BSPA")
     root_children = model.children.get(model.root_offset, [])
@@ -722,6 +790,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         )
         if re.search(r'POLY\s*<(?:0|47|48)>', ordered_source):
             raise ValueError(f"Disallowed reserved/obsolete black in {obj_name}")
+        wheel_palette = {poly.color for poly in ordered_model.polygons.values()}
+        if wheel_palette != {BLACK_PALETTE, SIDE_YELLOW}:
+            raise ValueError(f"{obj_name} wheel has unexpected palette {wheel_palette}")
         if ordered_model.records[ordered_model.root_offset] != 8:
             raise ValueError(f"{obj_name} root is not BSPA")
         (output / (obj_name + ".3D")).write_text(
@@ -825,6 +896,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
+        "paint_source_regression_checks": len(check_colors) + 36 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
             "side_and_fin_yellow": SIDE_YELLOW,
