@@ -146,11 +146,18 @@ def find_surface_conflicts(components):
                 "bounds": _bounds(points),
                 "unique_vertices": tuple(sorted(set(points))),
             })
-    reports = []
+    # Report distinct *component pairs*, not every contacting triangle.
+    # Suspension and chassis meshes deliberately intersect and can generate
+    # hundreds of nearly identical reports. Prioritize duplicate/embedded
+    # skins so meaningful bonnet/cowl issues are never buried by those.
+    groups = {}
     count = 0
+    truncated_scan = False
     ordered = sorted(faces, key=lambda f: (f["bounds"][0][0],
                                          f["part"], f["index"]))
     for i, a in enumerate(ordered):
+        if truncated_scan:
+            break
         for b in ordered[i+1:]:
             if b["bounds"][0][0] > a["bounds"][0][1]:
                 break
@@ -158,11 +165,55 @@ def find_surface_conflicts(components):
                 continue
             count += 1
             if count > MAX_CANDIDATE_PAIRS:
-                reports.append({
-                    "code": "SURFACE_SCAN_LIMIT", "severity": "warning",
-                    "message": f"Stopped after {MAX_CANDIDATE_PAIRS} potentially contacting polygon pairs; no complete overlap guarantee",
-                })
-                return reports
+                truncated_scan = True
+                break
+            if a["unique_vertices"] == b["unique_vertices"]:
+                code = "DUPLICATE_SURFACE"
+            elif a["plane"] == b["plane"]:
+                projected_a = _project(a["pts"], a["plane"][0])
+                projected_b = _project(b["pts"], b["plane"][0])
+                code = ("COPLANAR_OVERLAP"
+                        if _clipped_area(projected_a, projected_b) > 1e-5
+                        else None)
+            else:
+                code = "INTERSECTING_SURFACES" if _crossing(a, b) else None
+            if code is None:
+                continue
+            if a["part"] < b["part"]:
+                parts, ids = (a["part"], b["part"]), (a["index"], b["index"])
+            else:
+                parts, ids = (b["part"], a["part"]), (b["index"], a["index"])
+            key = (code, *parts)
+            if key not in groups:
+                groups[key] = {
+                    "code": code, "severity": "warning",
+                    "components": list(parts),
+                    "polygons": list(ids),
+                    "occurrences": 0,
+                    "message": ("Possible duplicate/overlapping source surfaces; "
+                                "review before retaining both components"),
+                }
+            groups[key]["occurrences"] += 1
+
+    priority = {"DUPLICATE_SURFACE": 0, "COPLANAR_OVERLAP": 1,
+                "INTERSECTING_SURFACES": 2}
+    reports = sorted(
+        groups.values(),
+        key=lambda x: (priority[x["code"]], *x["components"])
+    )
+    if len(reports) > MAX_REPORTS:
+        reports = reports[:MAX_REPORTS] + [{
+            "code": "SURFACE_REPORT_LIMIT", "severity": "warning",
+            "message": (f"Only the first {MAX_REPORTS} component-pair findings "
+                        "are shown, sorted by collision severity"),
+        }]
+    if truncated_scan:
+        reports.append({
+            "code": "SURFACE_SCAN_LIMIT", "severity": "warning",
+            "message": (f"Stopped after {MAX_CANDIDATE_PAIRS} candidate pairs; "
+                        "remaining surfaces were not checked"),
+        })
+    return reports
             if a["unique_vertices"] == b["unique_vertices"]:
                 code = "DUPLICATE_SURFACE"
             elif a["plane"] == b["plane"]:
