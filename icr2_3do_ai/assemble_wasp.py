@@ -1578,13 +1578,18 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Both mirror supports are yellow palette index 158.\n"
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
-        "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
+        "V25 driver wears medium brown 148, leather gloves darker brown 149.\n"
+        "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
+        "Black seat, chassis and tires remain fixed palette 33.\n"
+        "Added raised scuttle at X=5.82..6.09ft; transverse rearward bulkhead.\n"
+        "Scuttle peaks at 4.03ft and steps smoothly down to original bonnet roof.\n"
+        "Extra cowl facing cap visible from cockpit/rear but not from front.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
         "Flatter converging tail: crowns 3.52, 3.40, 3.08ft.\n"
         "Fin now peaks at 4.52ft, with its bottom edge just inside rear roof.\n"
-        "Previous wheel positions and palette assignments unchanged.\n",
+        "Wheels, shadow and original HELMET sprite unchanged.\n",
         encoding="utf-8",
     )
     manifest = {
@@ -1618,6 +1623,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
             "neck_top_height_ft": 3.37,
+            "dashboard_cowl_first_station_ft": 5.82,
+            "dashboard_cowl_bulkhead_station_ft": 6.09,
+            "dashboard_cowl_crown_height_ft": 4.03,
+            "dashboard_cowl_shoulder_height_ft": 3.65,
+            "dashboard_cowl_extra_bulkhead_game_x": 8460,
             "dorsal_fin_peak_height_ft": 4.52,
             "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
@@ -1630,8 +1640,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "binary_files": ["WASP.3do", "FWHEEL.3do", "RWHEEL.3do", "HELMET.3do"],
         "driver": {
             "body_components": list(DRIVER_COMPONENTS),
-            "gray_suit_palette": MIRROR_GRAY,
-            "gloves_seat_palette": BLACK_PALETTE,
+            "brown_suit_palette": DRIVER_BROWN,
+            "brown_suit_rgb": [163, 103, 63],
+            "dark_brown_gloves_palette": DRIVER_GLOVE_BROWN,
+            "dark_brown_gloves_rgb": [127, 79, 47],
+            "black_seat_palette": BLACK_PALETTE,
+            "palette_source": "icr2_3do_cad/gamepal.pcx sha 8784dc6278cb7c057cd717c7b786301a8aa8890a",
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
             "sprite_chin_clearance": "not asserted: PMP silhouette depends on view",
@@ -1665,10 +1679,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "front_face_normal_signed_equation": list(face_eq),
         },
         "cockpit_closure_visibility": cockpit_visibility_tests,
+        "raised_dashboard_cowl": {
+            "component": "dashboard_cowl_riser",
+            "rear_cap_x_raw": 8460,
+            "rear_cap_palette": SIDE_YELLOW,
+            "bonnet_facing_front_cap_removed": True,
+            "rear_cap_uses_rear_facing_FACE": True,
+            "rear_cap_camera_checks": 20,
+        },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
-                                "near_side_wheels"],
+                                "upper_roof", "fin_cowl_mirror",
+                                "helmet_sprite", "near_side_wheels"],
         "paint_source_regression_checks": len(check_colors) + 24 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
@@ -1678,6 +1701,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "mirror_back_and_edge_gray": MIRROR_GRAY,
             "mirror_caps_have_opposing_FACE_culling": True,
             "shadow_original": STOCK_SHADOW_COLOR,
+            "driver_suit_brown": DRIVER_BROWN,
+            "driver_gloves_dark_brown": DRIVER_GLOVE_BROWN,
+            "raised_cowl_top": TOP_YELLOW,
+            "raised_cowl_side_and_bulkhead": SIDE_YELLOW,
         },
         "mirror_strut_palette": 158,
         "chassis_painted_first": True,
