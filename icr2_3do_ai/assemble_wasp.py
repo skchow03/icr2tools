@@ -320,7 +320,7 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     # One exterior bonnet/cowl loft, not two superimposed shells.
     # Four rings/3 spans on bonnet, three rings/2 on tail.
     # Only the exterior roof triangles receive palette 158.
-    for component, spans in (("long_bonnet", 3), ("pointed_tail", 2))
+    for component, spans in (("long_bonnet", 3), ("pointed_tail", 2)):
         for span in range(spans):
             for relative in range(5, 11):
                 idx = span*12 + relative
