@@ -323,14 +323,15 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
                 source=_repaint_one_polygon(
                     source,f"{component}_p{idx:04}",SIDE_YELLOW,TOP_YELLOW
                 )
-    # Raised dashboard cowl has one six-sided loft span: the same top
-    # triangle range as the bonnet, but no extra span. The new rear
-    # transverse bulkhead stays the slightly darker yellow side color.
-    for relative in range(5, 11):
-        source = _repaint_one_polygon(
-            source, f"dashboard_cowl_riser_p{relative:04}",
-            SIDE_YELLOW, TOP_YELLOW
-        )
+    # V26 scuttle covers rear quarter of the bonnet (1.40/5.60ft).
+    # Two shallow loft spans retain all upper faces as bright yellow.
+    # The rear-facing closure remains darker body-side yellow.
+    for span in (0, 1):
+        for relative in range(5, 11):
+            source = _repaint_one_polygon(
+                source, f"dashboard_cowl_riser_p{span*12+relative:04}",
+                SIDE_YELLOW, TOP_YELLOW
+            )
     # These strips lie along the U-shaped upper cockpit opening:
     # triangle faces 3/4 have the sloping top edge, 0/9 are broad sides.
     for side in ("left","right"):
@@ -641,18 +642,18 @@ def _add_raised_dashboard_bulkhead(source: str) -> str:
     The first loft cap is enclosed by the existing bonnet, so it must
     not render. The rear six-sided cap is a NEW cockpit-visible bulkhead
     immediately in FRONT of the old bonnet dashboard closure. Its roof
-    rises into a wedge matching the 1911 side-profile reference.
+    rises gradually over the rear 25% of the bonnet in the side-profile reference.
     """
     name = "dashboard_cowl_riser_geo"
     oldcap = "dashboard_cowl_riser_p0000"
-    rearcap = "dashboard_cowl_riser_p0013"
+    rearcap = "dashboard_cowl_riser_p0025"
     gate = "wasp_raised_dashboard_bulkhead"
     pattern = rf"(?m)^{name}: LIST \{{([^}}\n]+)\}};$"
     match = re.search(pattern, source)
     if match is None:
-        raise ValueError("Missing six-section raised dashboard cowl")
+        raise ValueError("Missing three-station raised dashboard cowl")
     members = [item.strip() for item in match.group(1).split(",")]
-    expected = [f"dashboard_cowl_riser_p{i:04}" for i in range(14)]
+    expected = [f"dashboard_cowl_riser_p{i:04}" for i in range(26)]
     if members != expected:
         raise ValueError(f"Raised cowl polygon topology unexpectedly changed: {members}")
     members = [gate if item == rearcap else item
@@ -668,9 +669,9 @@ def _add_raised_dashboard_bulkhead(source: str) -> str:
         raise ValueError("Hidden bonnet-facing cowl cap must be removed")
     if "wasp_front_gate_a" not in source:
         raise ValueError("Existing rearward dashboard FACE plane unavailable")
-    # Original rear-facing dashboard gate has its plane at game X=8150.
-    # The new cowl baffle is in front at design X=6.09 (game X=8460).
-    # The same gate avoids cap bleed-through from forward viewpoints.
+    # The new ramp begins at design X=4.69ft (rear 1.4/5.6ft),
+    # and its baffle stays at design X=6.09 (game X=8460).
+    # The existing gate hides the baffle from forward viewpoints.
     source += (
         f"\n{gate}: FACE "
         "(wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), "
@@ -917,7 +918,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
         "cowl_side": ("dashboard_cowl_riser_p0003", SIDE_YELLOW),
         "cowl_top": ("dashboard_cowl_riser_p0007", TOP_YELLOW),
-        "new_bulkhead": ("dashboard_cowl_riser_p0013", SIDE_YELLOW),
+        "new_bulkhead": ("dashboard_cowl_riser_p0025", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -1133,9 +1134,30 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(radiator_face_nodes) != 7:
         raise ValueError("Expected seven unaffected radiator FACE nodes")
 
-    # Confirm new bulkhead exists ahead of the original dashboard,
-    # with a raised brow reaching 4.03 feet and with its forward cap
-    # removed, so no extra hidden partition overdraws the bonnet.
+    # Verify three stations span the rear quarter of the bonnet without
+    # an internal front cap, and monotonically rise toward the cockpit.
+    bonnet_start_ft, bonnet_end_ft = .55, 6.15
+    cowl_stations = (
+        # x, shoulder halfwidth, shoulder z, plateau halfwidth, crown z
+        (4.69, 1.284, 2.962, 0.5521, 3.386),
+        (5.39, 1.297, 3.29, 0.603, 3.718),
+        (6.09, 1.31, 3.65, 0.66, 4.03),
+    )
+    if abs((cowl_stations[-1][0]-cowl_stations[0][0]) /
+           (bonnet_end_ft-bonnet_start_ft) - .25) > 1e-8:
+        raise ValueError("Raised cowl does not cover 25% of bonnet")
+    for design_x, shoulder_half, shoulder_z, crown_half, crown_z in cowl_stations:
+        for y_ft, z_ft in (
+            (shoulder_half, shoulder_z), (-shoulder_half, shoulder_z),
+            (crown_half, crown_z), (-crown_half, crown_z)
+        ):
+            raw_xyz = _game_coordinates((
+                round(design_x*6000), round(y_ft*6000), round(z_ft*6000)
+            ))
+            if not any(v.xyz == raw_xyz for v in model.vertices.values()):
+                raise ValueError(f"Missing raised scuttle vertex {raw_xyz}")
+    if not all(a[4] < b[4] for a, b in zip(cowl_stations, cowl_stations[1:])):
+        raise ValueError("Cowl must climb gradually toward dashboard")
     cowl_rear_ring = _game_coordinates(
         (round(6.09*6000), round(0.66*6000), round(4.03*6000))
     )
@@ -1581,7 +1603,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "V25 driver wears medium brown 148, leather gloves darker brown 149.\n"
         "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
         "Black seat, chassis and tires remain fixed palette 33.\n"
-        "Added raised scuttle at X=5.82..6.09ft; transverse rearward bulkhead.\n"
+        "Raised scuttle now covers rear quarter of bonnet, design X=4.69..6.09ft.\n"
+        "Three-station cowl loft X=4.69,5.39,6.09ft rises progressively.\n"
         "Scuttle peaks at 4.03ft and steps smoothly down to original bonnet roof.\n"
         "Extra cowl facing cap visible from cockpit/rear but not from front.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
@@ -1623,7 +1646,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
             "neck_top_height_ft": 3.37,
-            "dashboard_cowl_first_station_ft": 5.82,
+            "dashboard_cowl_first_station_ft": 4.69,
+            "dashboard_cowl_middle_station_ft": 5.39,
+            "dashboard_cowl_bonnet_coverage_fraction": .25,
             "dashboard_cowl_bulkhead_station_ft": 6.09,
             "dashboard_cowl_crown_height_ft": 4.03,
             "dashboard_cowl_shoulder_height_ft": 3.65,
@@ -1686,6 +1711,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "bonnet_facing_front_cap_removed": True,
             "rear_cap_uses_rear_facing_FACE": True,
             "rear_cap_camera_checks": 20,
+            "loft_sections": 3,
+            "cowl_length_ft": 1.40,
+            "bonnet_length_ft": 5.60,
+            "cowl_cover_fraction": .25,
         },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
