@@ -1089,6 +1089,22 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     ]
     if len(mirror_faces) != 2:
         raise ValueError("Each mirror cap requires one independent FACE gate")
+    # Both the mirror and its angled supports must shift coherently.
+    if (model.vertices[model.polygons[mirror_front].refs[0]].xyz[0]
+            + model.vertices[model.polygons[mirror_rear].refs[0]].xyz[0])//2 != 13590:
+        raise ValueError("Mirror housing center must be at X=13590")
+    for part, endpoints in (
+        ("mirror_strut_left",(15780,13650)),
+        ("mirror_strut_right",(15780,13650)),
+    ):
+        x_coords = {
+            int(m.group(1))
+            for m in re.finditer(
+                rf"(?m)^{part}_v\d{{4}}: \[<(-?\d+),", wasp_text
+            )
+        }
+        if not set(endpoints) <= x_coords:
+            raise ValueError(f"Mirror support {part} did not follow the housing")
     for x, front_expected in ((100000, True), (13800, True),
                               (13380, False), (-100000, False)):
         for y in (-90000, 90000):
@@ -1361,8 +1377,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
     # The actual eight-angle PMP silhouette has no fixed geometric chin.
     # Enforce the user-requested sprite anchor without guessing a clearance.
-    if helmet_dynamic.xyz[2] != 12824:
-        raise ValueError("Helmet must be at exactly Z=12824")
+    if helmet_dynamic.xyz != (-600,0,12824):
+        raise ValueError("Driver helmet did not move 1500 raw forward")
+    # The lower torso source begins at design X=7.26 rather than V28's
+    # X=7.51, proving a +1500 game X shift with no Z movement.
+    torso_forward = _game_coordinates(
+        (round(7.26*6000),round(-.44*6000),round(1.65*6000))
+    )
+    if not any(v.xyz == torso_forward for v in model.vertices.values()):
+        raise ValueError("Driver torso not shifted forward exactly 1500 units")
     # Rendering is painter-style, not true depth-tested transparent sprites.
     # Test all parent polygon events, including upper bonnet, upper tail,
     # and mirror housing/struts, paint BEFORE the helmet from representative
@@ -1675,12 +1698,16 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Front bonnet crown Z11967; single cockpit cap X13013.\n"
         "Trace overrides earlier illustrative 25%-of-bonnet ramp.\n"
         "No intermediate X-cross-section polygons are generated.\n"
-        "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
+        "V29 helmet DYNAMIC (-600,0,12824): pilot moved 1500 raw forward.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
-        "Tail deck starts at game (-3000,13902), tip (-38248,12040).\n"
-        "Driver seat back at game X=-3000, with matched cockpit walls.\n"
-        "Fin is ONE 2D polygon at Y=0 (formerly 14 thick faces).\n"
+        "Tail underside flat X=-3000 through -10615, slopes to pointed tip.\n"
+        "Tail top starts at (-3000,13902) and ends (-38248,12040).\n"
+        "Flat cockpit lower rim X=8644 to X=1489, both Z=5644.\n"
+        "Fin one 9-point 2D polygon: uprights -35576/-27895 to Z16444.\n"
+        "Fin crown reaches Z19703 with a broad semicircular arc.\n"
+        "Mirror and both yellow struts translated to mirror center X13590.\n"
+        "Pilot shifted +1500 game X; seat remains at X=-3000.\n"
         "Wheels, shadow and original HELMET sprite unchanged.\n",
         encoding="utf-8",
     )
@@ -1708,9 +1735,17 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "rear_deck_design_start_ft": 8.0,
             "rear_deck_front_crown_ft": 3.7763333333333335,
             "rear_deck_mid_crown_ft": 3.58,
-            "outer_halfwidths_ft": [1.33, 0.88, 0.025],
-            "plateau_halfwidths_ft": [0.86, 0.54, 0.009],
-            "shoulder_heights_ft": [3.6763333333333, 3.48, 3.455],
+            "tail_underside_flat_to_game_x": -10615,
+            "tail_underside_flat_z": 184,
+            "tail_underside_sloped_stations": [[-21720,4886],[-38248,11884]],
+            "cockpit_low_rim_start_game_xz": [8644,5644],
+            "cockpit_low_rim_end_game_xz": [1489,5644],
+            "cockpit_lower_rim_is_flat": True,
+            "mirror_center_game_x": 13590,
+            "driver_forward_shift_raw": 1500,
+            "outer_halfwidths_ft": [1.33,1.1469471153846154,0.88,0.025],
+            "plateau_halfwidths_ft": [0.86,0.7298290598290598,0.54,0.009],
+            "shoulder_heights_ft": [3.6763333333333,3.596468037749268,3.48,3.455],
             "tail_tip_crown_ft": 3.466,
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
@@ -1723,8 +1758,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "bonnet_loft_stations_ft": [0.55, 3.35, 4.259333333333333, 5.331166666666666],
             "bonnet_unified_exterior_triangle_count": 36,
             "redundant_inner_cowl_shell_removed": True,
-            "dorsal_fin_peak_height_ft": 4.52,
-            "dorsal_fin_base_heights_ft": [3.53, 3.43],
+            "dorsal_fin_peak_height_ft": (19703+8756)/6000,
+            "dorsal_fin_top_raw_z": 19703,
+            "dorsal_fin_upright_x_raw": [-35576,-27895],
+            "dorsal_fin_upright_top_z_raw": 16444,
+            "dorsal_fin_base_game_xz": [[-35576,12078],[-27895,12390]],
+            "dorsal_fin_outline_vertex_count": 9,
             "dorsal_fin_is_planar": True,
             "dorsal_fin_polygon_count": 1,
             "driver_seat_back_game_x": -3000,
@@ -1755,6 +1794,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "palette_source": "icr2_3do_cad/gamepal.pcx sha 8784dc6278cb7c057cd717c7b786301a8aa8890a",
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
+            "driver_shift_forward_raw": 1500,
             "sprite_chin_clearance": "not asserted: PMP silhouette depends on view",
             "helmet_paints_last_within_body": True,
             "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
