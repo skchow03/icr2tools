@@ -452,6 +452,35 @@ def _fix_roof_occlusion(source: str) -> str:
             if count != 4:
                 raise ValueError(f"Cannot clip four end vertices: {name}, got {count}")
 
+    # The original cockpit slab tops projected above the neighboring roof
+    # shoulders by 2,000+ raw units. Changing their X endpoint alone does
+    # not cure a real mesh intersection. Set both junction profiles to
+    # the *actual* bonnet/tail shoulder heights (outer and inner Y) so the
+    # side lip blends into the exterior skin instead of sticking out of it.
+    # All other cockpit ribs retain their shape and the cockpit stays open.
+    for side in ("left", "right"):
+        sy = 1 if side == "left" else -1
+        junction_vertices = {
+            (1, 0): (8100, sy*7860, 364),
+            (1, 1): (8100, sy*7860, 9184),
+            (1, 4): (8100, sy*6240, 364),
+            (1, 5): (8100, sy*6240, 10117),
+            (5, 2): (-8520, sy*7980, 6784),
+            (5, 3): (-8520, sy*7980, 364),
+            (5, 6): (-8520, sy*6240, 7770),
+            (5, 7): (-8520, sy*6240, 364),
+        }
+        for (section, vertex), (x, y, z) in junction_vertices.items():
+            label = f"cockpit_body_{side}_{section}_v{vertex:04}"
+            pattern = rf"(?m)^{re.escape(label)}: \[<-?\d+, -?\d+, -?\d+>\];$"
+            source, count = re.subn(
+                pattern, f"{label}: [<{x}, {y}, {z}>];", source
+            )
+            if count != 1:
+                raise ValueError(f"Junction vertex missing or duplicated: {label}")
+            if f"{label}: [<{x}, {y}, {z}>];" not in source:
+                raise ValueError(f"Junction coordinate not updated: {label}")
+
     source += """
 % Inward panels are seen from the cockpit only, never from the exterior
 % camera on their own side of the vehicle.
