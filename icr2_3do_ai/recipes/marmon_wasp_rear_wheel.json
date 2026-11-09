@@ -7,7 +7,7 @@
       "type": "loft",
       "name": "black_firestone_tire",
       "axis": "y",
-      "color": 49,
+      "color": 33,
       "sections": [
         {
           "at": -0.1875,
@@ -349,7 +349,7 @@
       "type": "loft",
       "name": "black_center_l",
       "axis": "y",
-      "color": 49,
+      "color": 33,
       "sections": [
         {
           "at": -0.232,
@@ -431,7 +431,7 @@
       "type": "loft",
       "name": "black_center_r",
       "axis": "y",
-      "color": 49,
+      "color": 33,
       "sections": [
         {
           "at": 0.208,
