@@ -32,9 +32,10 @@ WHEEL_PLACEMENTS = (
 )
 # Model-space helmet anchor. The supplied sprite's own PMP origin is (0,0,0)
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
-# Helmet height is 4.18ft above ground; stock PMP size 4800 raw
-# gives an approximate chin at 3.78ft, above the bonnet crown at 3.42ft.
-HELMET_GAME_XYZ = (-2100, 0, 16324)
+# V23: lower helmet by 1500 raw (3 inches) from V22. New center is
+# 3.93ft above ground; approximate PMP chin is 3.53ft, still ~1.3in
+# above the 3.42ft dashboard crown. Actual sprite silhouette is view-dependent.
+HELMET_GAME_XYZ = (-2100, 0, 14824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 NOMINAL_OVERALL_IN = 187
@@ -1186,6 +1187,37 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     helmet_chin_conservative_z = helmet_dynamic.xyz[2] - 2400
     if helmet_chin_conservative_z <= dashboard_roof_z + 600:
         raise ValueError("Helmet chin does not adequately clear the dashboard")
+    # Confirm this V23 reduction really occurred; a high V22 helmet must
+    # not accidentally pass just because it also clears the dashboard.
+    if helmet_chin_conservative_z - dashboard_roof_z >= 1200:
+        raise ValueError("Helmet is still too high above the dashboard")
+    # Confirm the fin is no longer buried within the elevated deck.
+    # Each fin endpoint should dip only slightly into the deck surface
+    # to prevent a light leak, rather than have ~0.5ft of hidden base.
+    fin_shape_zx = (
+        (3.24, 12.25), (4.12, 12.90), (4.49, 13.38),
+        (4.52, 13.82), (4.20, 14.20), (2.98, 14.43),
+    )
+    for z_ft, x_ft in fin_shape_zx:
+        x_raw = COCKPIT_DESIGN_X_RAW - round(x_ft * 6000)
+        z_raw = round(z_ft * 6000) + STOCK_GROUND_RAW_Z
+        for y_raw in (-330, 330):
+            if not any(v.xyz == (x_raw, y_raw, z_raw)
+                       for v in model.vertices.values()):
+                raise ValueError(
+                    f"Missing compiled dorsal-fin vertex at {(x_raw, y_raw, z_raw)}"
+                )
+    def rear_roof_height_ft(x_ft: float) -> float:
+        return 3.47 + (3.03 - 3.47) * (x_ft - 11.12) / (14.55 - 11.12)
+    for base_height, base_x in ((3.24, 12.25), (2.98, 14.43)):
+        roof_overlap = rear_roof_height_ft(base_x) - base_height
+        if not 0 < roof_overlap < 0.13:
+            raise ValueError(
+                f"Fin base must be 0..0.13ft into rear roof at {base_x}, "
+                f"got {roof_overlap:.3f}ft"
+            )
+    if max(z_ft for z_ft, _ in fin_shape_zx) < 4.5:
+        raise ValueError("Dorsal fin peak is not high enough")
     # Ensure rear deck now starts behind the seat but before the old
     # rear wheel line, and both broad front and middle sections are
     # higher than the rear bonnet's 3.42 ft crown.
@@ -1384,9 +1416,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
         "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
-        "Helmet sprite DYNAMIC at (-2100, 0, 16324): chin above dashboard.\n"
+        "V23 HELMET DYNAMIC (-2100, 0, 14824): lowered 3in from V22.\n"
+        "Neck lowered to design heights 3.15..3.55ft; shoulders unchanged.\n"
         "Rear deck starts at 8.34ft and has crowns at 3.54, 3.47, 3.03ft.\n"
-        "Tail fin follows the raised rear deck profile; previous wheel positions unchanged.\n",
+        "Fin now peaks at 4.52ft, with its bottom edge just inside rear roof.\n"
+        "Previous wheel positions and palette assignments unchanged.\n",
         encoding="utf-8",
     )
     manifest = {
@@ -1414,7 +1448,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "rear_deck_front_crown_ft": 3.54,
             "rear_deck_mid_crown_ft": 3.47,
             "tail_tip_crown_ft": 3.03,
-            "helmet_center_height_above_ground_ft": 4.18,
+            "helmet_center_height_above_ground_ft": 3.93,
+            "neck_bottom_height_ft": 3.15,
+            "neck_top_height_ft": 3.55,
+            "dorsal_fin_peak_height_ft": 4.52,
+            "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
             "overall_length_inches": length_in,
             "radiator_front_to_front_axle_inches": radiator_to_front_axle_in,
