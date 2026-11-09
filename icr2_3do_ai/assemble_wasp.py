@@ -925,8 +925,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Hidden nose cross-section was not removed")
     if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 37:
         raise ValueError("Traced bonnet must have 36 outward skin tris and one dashboard cap")
-    # V28 fin is a single planar 6-corner POLY, with no second cap,
-    # no thickness surfaces and no live off-plane vertices.
+    # V29 fin remains one flat polygon; its 9 outline vertices form
+    # near-vertical uprights capped by a broad semi-elliptical arch.
     fin_decls = re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", wasp_text)
     if fin_decls != ["rounded_tail_fin_p0000: POLY"]:
         raise ValueError("The two-dimensional fin must contain exactly one POLY")
@@ -934,7 +934,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         r"(?m)^rounded_tail_fin_v\d{4}: \[<-?\d+, (-?\d+), -?\d+>\];$",
         wasp_text,
     )
-    if len(fin_vertices) != 6 or any(y != "0" for y in fin_vertices):
+    if len(fin_vertices) != 9 or any(y != "0" for y in fin_vertices):
         raise ValueError("Fin vertices must all lie on central Y=0 plane")
     # Verify ALL retained bonnet triangles point outwards. A second shell
     # or a mis-wound inward-facing side is not an exterior surface and
@@ -1403,39 +1403,39 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                     "all_body_polygons_before_helmet": True,
                     "near_wheels_after_helmet": True,
                 }
-    # The fin is one two-sided 6-point POLY, all vertices at Y=0.
-    # It retains a small root overlap with the new user-traced tail deck,
-    # but has no 3D extruded thickness, perimeter walls, or second cap.
-    fin_shape_zx = (
-        (3.53, 11.65), (4.20, 12.10), (4.47, 12.47),
-        (4.52, 12.90), (4.18, 13.25), (3.43, 13.76),
+    # The 2D dorsal fin forms a tall inverted-U silhouette: straight
+    # vertical edges at X=-35576 and -27895 up to Z=16444, then a
+    # semicircular/elliptical arch peaking at Z=19703. Exactly one POLY.
+    fin_shape_xz = (
+        (-35576,12078), (-35576,16444), (-35061,18074),
+        (-33656,19266), (-31736,19703), (-29815,19266),
+        (-28410,18074), (-27895,16444), (-27895,12390),
     )
-    fin_points = {
-        (COCKPIT_DESIGN_X_RAW-round(x_ft*6000), 0,
-         round(z_ft*6000)+STOCK_GROUND_RAW_Z)
-        for z_ft, x_ft in fin_shape_zx
-    }
+    fin_points = {(x,0,z) for x,z in fin_shape_xz}
     fin_polys = [
         p for p in model.polygons.values()
-        if p.color == SIDE_YELLOW and len(p.refs) >= 6
+        if p.color == SIDE_YELLOW and len(p.refs) >= 9
         and {model.vertices[v].xyz for v in p.refs} == fin_points
     ]
-    if len(fin_polys) != 1 or len(fin_points) != 6:
-        raise ValueError("Expected precisely one 6-vertex flat dorsal fin")
+    if len(fin_polys) != 1:
+        raise ValueError("Expected one exact 9-vertex arched fin polygon")
     fin_offset = fin_polys[0].offset
-    for side in (-1, 1):
-        visible, _, _ = model.switched_polygons(
-            None, (-30000, side*90000, 18000), bsp_mode="original"
+    for side in (-1,1):
+        visible,_,_ = model.switched_polygons(
+            None, (-32000,side*90000,25000), bsp_mode="original"
         )
         if fin_offset not in set(visible):
-            raise ValueError("Single 2D fin must be visible from both sides")
-    def rear_roof_height_ft(x_ft: float) -> float:
-        return (3.58 + (3.466-3.58)*(x_ft-11.12) /
-                (13.874666666666666-11.12))
-    for base_height, base_x in ((3.53, 11.65), (3.43, 13.76)):
-        overlap = rear_roof_height_ft(base_x) - base_height
-        if not 0 < overlap < .12:
-            raise ValueError(f"Flat fin should dip just below tail roof: {overlap}")
+            raise ValueError("2D fin must remain visible from both car sides")
+    for x,z in ((-35576,16444),(-27895,16444),(-31736,19703)):
+        if (x,0,z) not in fin_points:
+            raise ValueError("Fin upright or arch height has regressed")
+    # Interpolate the roof under each fin root; endpoints are slightly
+    # embedded to prevent gaps without burying the U's vertical shafts.
+    def roof_height(x):
+        return 12724+(12040-12724)*(x+21720)/(-38248+21720)
+    if not all(0 < roof_height(x)-z < 120 for x,z in
+               ((-35576,12078),(-27895,12390))):
+        raise ValueError("Fin base roots must just enter the tail upper skin")
     # CAD-traced tail: front of deck is exactly at the seat X=-3000,
     # its crown Z=13902; tapered final section ends at (-38248,12040).
     rear_deck_x = -3000
@@ -1448,30 +1448,44 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if not any(v.xyz[0] == x and v.xyz[2] == z
                    for v in model.vertices.values()):
             raise ValueError(f"Missing tail silhouette CAD anchor {(x,z)}")
+    # The tail's lower line is level from the driver's seat to X=-10615,
+    # then slopes continuously upward toward the point at X=-38248.
     tail_sections = (
-        # x design ft, halfwidth, shoulder z, plateau halfwidth, crown z
-        (8.0, 1.33, 3.6763333333333, .86, 3.7763333333333335),
-        (11.12, .88, 3.48, .54, 3.58),
-        (13.874666666666666, .025, 3.455, .009, 3.466),
+        # game X, outer halfwidth ft, bottom game Z, shoulder design Z,
+        # inner halfwidth ft, crown game Z
+        (-3000,1.33,184,3.6763333333333,.86,13902),
+        (-10615,1.1468990384615386,184,3.5959391025641,.7298047435897,13423),
+        (-21720,.88,4886,3.48,.54,12724),
+        (-38248,.025,11884,3.455,.009,12040),
     )
-    for x_ft, outer_width, shoulder_z, inner_width, crown_z in tail_sections:
-        if not (0 < crown_z-shoulder_z <= .11):
-            raise ValueError("Tail should stay nearly flat across the crown")
-        for y_ft,z_ft in (
-            (outer_width,shoulder_z),(-outer_width,shoulder_z),
-            (inner_width,crown_z),(-inner_width,crown_z)
+    for x,outer,bottom,shoulder,inner,crown in tail_sections:
+        design_x=(COCKPIT_DESIGN_X_RAW-x)/6000
+        for y_ft,z_raw in (
+            (outer,bottom),(-outer,bottom),
+            (outer,round(shoulder*6000)+STOCK_GROUND_RAW_Z),
+            (inner,crown),(-inner,crown),
         ):
-            game_xyz = _game_coordinates((
-                round(x_ft*6000), round(y_ft*6000), round(z_ft*6000)
-            ))
-            if not any(tuple(v.xyz)==game_xyz
-                       for v in model.vertices.values()):
-                raise ValueError(f"Missing CAD tail section {game_xyz}")
-    if not (
-        tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
-        and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]
-    ):
-        raise ValueError("Tail must taper continuously to the traced point")
+            pt=(x,-round(y_ft*6000),z_raw)
+            if not any(v.xyz == pt for v in model.vertices.values()):
+                raise ValueError(f"Missing compiled tail ring position {pt}")
+    if [r[0] for r in tail_sections] != [-3000,-10615,-21720,-38248]:
+        raise ValueError("Tail X stations changed")
+    if tail_sections[0][2] != tail_sections[1][2]:
+        raise ValueError("Tail underside must be level until X=-10615")
+    if not tail_sections[1][2] < tail_sections[2][2] < tail_sections[3][2]:
+        raise ValueError("Tail underside must slope up after X=-10615")
+    if not all(a[1]>b[1] for a,b in zip(tail_sections,tail_sections[1:])):
+        raise ValueError("Tail width must decrease toward the point")
+
+    # The U-shaped cockpit opening has a flat low rim from X=8644
+    # to X=1489, both exactly at Z=5644, between rising shoulders.
+    for x in (8644,1489):
+        for y in (-8220,8220):
+            if not any(v.xyz==(x,y,5644) for v in model.vertices.values()):
+                raise ValueError(f"Cockpit low rim point absent {(x,y,5644)}")
+    if not any(v.xyz[0]==13013 and v.xyz[2]>5644
+               for v in model.vertices.values()):
+        raise ValueError("Dashboard side must rise above the cockpit rim")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
