@@ -34,7 +34,7 @@ WHEEL_PLACEMENTS = (
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
 # V24: use exact requested helmet center, Z=12824 in game coordinates.
 # Sprite-image-dependent chin height must be checked in the game.
-HELMET_GAME_XYZ = (-2100, 0, 12824)
+HELMET_GAME_XYZ = (-600, 0, 12824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 # User's current CAD trace supersedes the earlier 187-inch illustrative
@@ -320,7 +320,7 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     # One exterior bonnet/cowl loft, not two superimposed shells.
     # Four rings/3 spans on bonnet, three rings/2 on tail.
     # Only the exterior roof triangles receive palette 158.
-    for component, spans in (("long_bonnet", 3), ("pointed_tail", 2)):
+    for component, spans in (("long_bonnet", 3), ("pointed_tail", 3)):
         for span in range(spans):
             for relative in range(5, 11):
                 idx = span*12 + relative
@@ -378,12 +378,12 @@ def _cull_mirror_caps_by_camera(source: str) -> str:
         "mirror_housing_geo: LIST {" + ", ".join(revised) + "};"
     ) + source[match.end():]
     # +X is the car's direction of travel in the finished assembled model.
-    # Front cap at x=6360, rear cap at x=6000, split at x=6180.
+    # Repositioned: front cap X=13770, rear cap X=13410, center X=13590.
     source += """
 % Facing-correct mirror: bonnet-facing yellow housing; driver-facing glass gray.
-wasp_mirror_plane_a: [<6180, -1200, 15000>];
-wasp_mirror_plane_b: [<6180, 1200, 15000>];
-wasp_mirror_plane_c: [<6180, 0, 18000>];
+wasp_mirror_plane_a: [<13590, -1200, 15000>];
+wasp_mirror_plane_b: [<13590, 1200, 15000>];
+wasp_mirror_plane_c: [<13590, 0, 18000>];
 wasp_mirror_front_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_b, wasp_mirror_plane_c), mirror_housing_p0000;
 wasp_mirror_rear_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_c, wasp_mirror_plane_b), mirror_housing_p0009;
 """
@@ -571,7 +571,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
         if match is None:
             raise ValueError(f"Missing body skin {shape}")
         members = [x.strip() for x in match.group(1).split(",")]
-        spans = 3 if shape == "long_bonnet" else 2
+        spans = 3
         upper = [f"{shape}_p{span*12+i:04}" for span in range(spans)
                  for i in range(5, 11)]
         if not set(upper) <= set(members):
@@ -647,45 +647,41 @@ def _attach_driver_helmet(source: str) -> str:
 
 
 def _flatten_tail_fin_to_one_polygon(source: str) -> str:
-    """Collapse the 14-faced thick fin to a single double-sided 2D polygon.
-
-    Retain the 6-point source silhouette in the Stage 2 CAD recipe; remove
-    the second cap, the 12 thickness sides and all unused far vertices.
-    In Papyrus N3 a POLY without FACE gating can paint from either side.
-    """
+    """Discard all thickness geometry and retain the 9-point arched silhouette."""
+    n_vertices = 9
+    total_faces = n_vertices * 2 + 2
     group = "rounded_tail_fin_geo"
-    old_members = [f"rounded_tail_fin_p{i:04}" for i in range(14)]
+    old_members = [f"rounded_tail_fin_p{i:04}" for i in range(total_faces)]
     original = f"{group}: LIST {{" + ", ".join(old_members) + "};"
     if source.count(original) != 1:
-        raise ValueError("Expected original thick fin 14-face source")
+        raise ValueError("Expected the 9-point extruded fin source")
     source = source.replace(
         original, f"{group}: LIST {{rounded_tail_fin_p0000}};"
     )
-    for index in range(1, 14):
+    for index in range(1, total_faces):
         label = f"rounded_tail_fin_p{index:04}"
         source, n = re.subn(
             rf"(?m)^{label}: POLY <\d+> \{{[^}}\n]+\}};\n", "", source
         )
         if n != 1:
-            raise ValueError(f"Unexpected fin side polygon {label}")
-    for index in range(6):
+            raise ValueError(f"Fin thickness polygon {label} not removed")
+    for index in range(n_vertices):
         label = f"rounded_tail_fin_v{index:04}"
         pattern = rf"(?m)^({label}: \[<-?\d+, )-?330(, -?\d+>\];)$"
         source, n = re.subn(
             pattern, lambda m: m.group(1)+"0"+m.group(2), source
         )
         if n != 1:
-            raise ValueError(f"Cannot flatten {label} to Y=0")
-    for index in range(6, 12):
+            raise ValueError(f"Cannot flatten {label} onto Y=0")
+    for index in range(n_vertices, 2*n_vertices):
         label = f"rounded_tail_fin_v{index:04}"
         source, n = re.subn(
-            rf"(?m)^{label}: \[<-?\d+, -?\d+, -?\d+>\];\n",
-            "", source
+            rf"(?m)^{label}: \[<-?\d+, -?\d+, -?\d+>\];\n", "", source
         )
         if n != 1:
-            raise ValueError(f"Cannot remove far-side fin vertex {label}")
+            raise ValueError(f"Failed to remove thickness vertex {label}")
     if len(re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", source)) != 1:
-        raise ValueError("Fin must have exactly one planar POLY")
+        raise ValueError("Expected one two-sided flat fin polygon")
     return source
 
 
@@ -914,7 +910,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 f"Unexpected {label} paint: {symbol}={actual}, "
                 f"expected {expected_color}"
             )
-    for component, spans in (("long_bonnet",3), ("pointed_tail",2)):
+    for component, spans in (("long_bonnet",3), ("pointed_tail",3)):
         for span in range(spans):
             for local in range(5,11):
                 index = 12*span+local
@@ -1074,14 +1070,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     mirror_front = next(
         (p.offset for p in model.polygons.values()
          if p.color == TOP_YELLOW and len(p.refs) == 5
-         and all(model.vertices[v].xyz[0] == 6360 for v in p.refs)
+         and all(model.vertices[v].xyz[0] == 13770 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
     )
     mirror_rear = next(
         (p.offset for p in model.polygons.values()
          if p.color == MIRROR_GRAY and len(p.refs) == 5
-         and all(model.vertices[v].xyz[0] == 6000 for v in p.refs)
+         and all(model.vertices[v].xyz[0] == 13410 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
     )
@@ -1093,8 +1089,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     ]
     if len(mirror_faces) != 2:
         raise ValueError("Each mirror cap requires one independent FACE gate")
-    for x, front_expected in ((100000, True), (6400, True),
-                              (5960, False), (-100000, False)):
+    for x, front_expected in ((100000, True), (13800, True),
+                              (13380, False), (-100000, False)):
         for y in (-90000, 90000):
             visible, _, _ = model.switched_polygons(
                 None, (x, y, 16000), bsp_mode="original"
