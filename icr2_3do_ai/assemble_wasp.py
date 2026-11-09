@@ -290,53 +290,78 @@ RADIATOR_VIS_PLANE_X_RAW = 42600
 
 
 def _attach_radiator_front_cull(game_source: str) -> str:
-    """Hide ALL radiator geometry from side/rear viewpoints.
+    """Cull the grille from behind, but retain only the near-side rim surfaces.
 
-    Rev 12 wrapped only the front hexagon with FACE, while the 12 black
-    perimeter triangles remained unconditionally reachable. The side view
-    therefore showed an unwanted thick black outline ahead of the bonnet.
-    Place the entire open-backed 13-polygon radiator under ONE +X-only FACE
-    whose plane is immediately behind the front at x=42600 raw.
+    The rim is a 6-segment extruded hexagon: triangles 1..12 form six
+    consecutive pairs around the perimeter. Each pair gets its own FACE
+    node using the actual outer surface winding, not the grille's +X plane.
+    This restores side-visible black radiator frame without showing the
+    opposite-side triangles through the yellow bonnet.
     """
     group = re.search(
-        r"(?m)^radiator_face_geo: LIST \{([^}\n]+)\};$", game_source
+        r"(?m)^radiator_face_geo: LIST \{([^}\n]+)\};$",game_source
     )
-    if not group:
-        raise ValueError("Cannot locate open-backed radiator geometry")
+    if group is None:
+        raise ValueError("No open-backed radiator model group found")
     elements = [x.strip() for x in group.group(1).split(",")]
     front = "radiator_face_p0000"
-    shell = [f"radiator_face_p{i:04}" for i in range(1, 13)]
-    if elements != [front] + shell:
-        raise ValueError(f"Expected front cap and twelve rim triangles: {elements!r}")
+    rim_polys = [f"radiator_face_p{i:04}" for i in range(1, 13)]
+    if elements != [front] + rim_polys:
+        raise ValueError(f"Unexpected radiator front and rim members: {elements!r}")
     if "radiator_face_p0013:" in game_source:
-        raise ValueError("Radiator rear hexagon must remain deleted")
+        raise ValueError("Rear radiator cap must remain physically absent")
 
+    # Preserve the bonnet/radiator BSPN painter sorting, but its radiator
+    # branch now contains independently culled front and perimeter groups.
     nose_old = ("wasp_noseparts: BSPN "
                 "(wasp_x_a, wasp_x_b, wasp_x_c), "
                 "long_bonnet_geo, radiator_face_geo;")
-    nose_new = nose_old.replace(
-        "long_bonnet_geo, radiator_face_geo;",
-        "long_bonnet_geo, wasp_rad_front_only;",
-    )
     if game_source.count(nose_old) != 1:
-        raise ValueError("Cannot find original radiator under nose BSPN")
-    game_source = game_source.replace(nose_old, nose_new)
+        raise ValueError("Cannot locate nose sorting reference")
+    # No need to edit the existing sorting reference: it continues to point
+    # to radiator_face_geo, whose content is replaced below.
 
-    # +X-facing plane, 60 raw units (0.12in) behind the front radiator.
-    # Unlike general BSPN sorting, FACE actually culls its subtree behind
-    # this plane, including all twelve perimeter triangles.
-    face = "\n".join([
-        "% Entire front radiator + thin rim visible only from the +X/front.",
+    side_names = [f"wasp_rad_rim_side{i}" for i in range(6)]
+    replacement_list = [ "wasp_rad_front_only" ] + side_names
+    game_source = (
+        game_source[:group.start()]
+        + "radiator_face_geo: LIST {" + ", ".join(replacement_list) + "};"
+        + game_source[group.end():]
+    )
+
+    # Front hexagon remains culled by the +X-facing plane at X=42600,
+    # 60 Papyrus units (0.12in) behind the grille face.
+    lines = [
+        "% Front radiator is one-sided; rim sections have independent normals.",
         f"wasp_rad_face_a: [<{RADIATOR_VIS_PLANE_X_RAW}, -1200, -3000>];",
         f"wasp_rad_face_b: [<{RADIATOR_VIS_PLANE_X_RAW}, 1200, -3000>];",
         f"wasp_rad_face_c: [<{RADIATOR_VIS_PLANE_X_RAW}, 0, -1000>];",
         "wasp_rad_front_only: FACE "
         "(wasp_rad_face_a, wasp_rad_face_b, wasp_rad_face_c), "
-        "radiator_face_geo;",
-    ])
-    if game_source.count("wasp_rad_front_only:"):
-        raise ValueError("Radiator culling already inserted")
-    return game_source + "\n" + face + "\n"
+        "radiator_face_p0000;",
+    ]
+    # In every perimeter quad the first triangle follows the sequence
+    # front_a -> front_b -> back_b, whose winding faces OUTWARD. The same
+    # exterior FACE controls both triangles; no new triangles are added.
+    for segment in range(6):
+        first = 1 + 2*segment
+        second = first + 1
+        a = segment
+        b = (segment + 1) % 6
+        c = b + 6
+        lines.append(
+            f"wasp_rad_rim_pair{segment}: LIST "
+            "{"+f"radiator_face_p{first:04}, radiator_face_p{second:04}"+"};"
+        )
+        lines.append(
+            f"wasp_rad_rim_side{segment}: FACE "
+            f"(radiator_face_v{a:04}, radiator_face_v{b:04}, "
+            f"radiator_face_v{c:04}), wasp_rad_rim_pair{segment};"
+        )
+
+    if "wasp_rad_front_only:" in game_source:
+        raise ValueError("Radiator culling has already been applied")
+    return game_source + "\n" + "\n".join(lines) + "\n"
 
 
 def _attach_shadow_root(game_source: str) -> str:
@@ -429,63 +454,97 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(model.children[frame_geo]) != 13:
         raise ValueError("Chassis must have 13 named, first-drawn components")
 
-    # Confirm compiled FACE controls all 13 open-backed radiator polygons,
-    # not only its front hexagon; the nose BSPN at x=0 remains for sorting.
-    front_caps = [
+    # All seven one-sided FACE nodes must be present in the REAL compiled
+    # N3: one front grille, six surface-oriented two-triangle rim sectors.
+    radiator_front_caps = [
         p.offset for p in model.polygons.values()
-        if p.color == 0 and len(set(p.refs)) == 6 and
-        all(model.vertices[v].xyz[0] == RADIATOR_FRONT_X_RAW
-            for v in p.refs)
+        if p.color == 0 and len(set(p.refs)) == 6
+        and all(model.vertices[v].xyz[0] == RADIATOR_FRONT_X_RAW
+                for v in p.refs)
     ]
-    if len(front_caps) != 1:
-        raise ValueError(f"Expected one radiator front hexagon: {front_caps}")
-    radiator_front_offset = front_caps[0]
-    cull_faces = [p for p in model.planes.values() if p.kind == 5]
-    if len(cull_faces) != 1:
-        raise ValueError(f"Expected one radiator FACE, got {len(cull_faces)}")
-    face_node = cull_faces[0].offset
-    face_children = model.children.get(face_node, ())
-    if len(face_children) != 1 or model.records.get(face_children[0]) != 11:
-        raise ValueError("Radiator FACE must directly wrap one rim+cap LIST")
-    radiator_polygon_offsets = tuple(model.children[face_children[0]])
-    if len(radiator_polygon_offsets) != 13:
-        raise ValueError(
-            f"Radiator FACE doesn't include all 13 polygons: {radiator_polygon_offsets}"
-        )
-    if radiator_polygon_offsets[0] != radiator_front_offset:
-        raise ValueError("Radiator front hexagon should be first in wrapped LIST")
-    if any(offset not in model.polygons for offset in radiator_polygon_offsets):
-        raise ValueError("Radiator geometry references a missing polygon")
-    face_eq = cull_faces[0].equation
-    nx, ny, nz, d = face_eq
-    if not (nx > 0 and ny == 0 and nz == 0 and
-            abs(-d / nx - RADIATOR_VIS_PLANE_X_RAW) < 0.001):
-        raise ValueError(f"Radiator cull plane orientation/location wrong: {face_eq}")
+    if len(radiator_front_caps) != 1:
+        raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
+    radiator_front_offset = radiator_front_caps[0]
+    face_nodes = [p for p in model.planes.values() if p.kind == 5]
+    if len(face_nodes) != 7:
+        raise ValueError(f"Expected 7 radiator FACE nodes, got {len(face_nodes)}")
+
+    front_face_nodes = [
+        p for p in face_nodes
+        if p.equation[0] > 0 and p.equation[1] == p.equation[2] == 0
+        and abs(-p.equation[3]/p.equation[0] - RADIATOR_VIS_PLANE_X_RAW)<0.001
+    ]
+    if len(front_face_nodes) != 1:
+        raise ValueError("Front grille must have one +X-only FACE plane")
+    front_face_node = front_face_nodes[0]
+    if model.children.get(front_face_node.offset) != [radiator_front_offset]:
+        raise ValueError("Grille FACE must wrap only the radiator hexagon")
+
+    rim_groups = []
+    rim_faces = []
+    for face in face_nodes:
+        if face.offset == front_face_node.offset:
+            continue
+        child = model.children.get(face.offset, [])
+        if len(child) != 1 or model.records.get(child[0]) != 11:
+            raise ValueError("Every radiator rim FACE must wrap one pair LIST")
+        offsets = tuple(model.children[child[0]])
+        if len(offsets) != 2 or any(off not in model.polygons for off in offsets):
+            raise ValueError("Rim FACE must wrap exactly two surface triangles")
+        rim_groups.append((face, offsets))
+        rim_faces.extend(offsets)
+    if len(rim_groups) != 6 or len(set(rim_faces)) != 12:
+        raise ValueError("Six unique radiator rim pairs not present")
+
+    # Determine a source polygon's outward-facing side from its normal,
+    # not from presumed numeric offsets. The exact outer face normals are
+    # tied to the six physical faces of the hexagonal radiator housing.
+    def side_counts(polys, camera_side):
+        active = set(polys)
+        rim_visible = [off for off in rim_faces if off in active]
+        near_groups = [
+            (face, members) for face,members in rim_groups
+            if face.equation[1] * camera_side > 0
+        ]
+        far_groups = [
+            (face, members) for face,members in rim_groups
+            if face.equation[1] * camera_side < 0
+        ]
+        near_faces = {off for face, members in near_groups for off in members}
+        far_faces = {off for face, members in far_groups for off in members}
+        return rim_visible,near_faces,far_faces
+
+    # Camera tests cover low side views and elevated obliques.
+    # Front cap depends solely on X>42600. The near-side exterior frame
+    # must appear at both Y sides, while far-side triangles are absent.
     visibility_checks = {}
     for side in (-1, 1):
-        for x, visible in (
-                (100000, True),        # well in front of radiator
-                (RADIATOR_VIS_PLANE_X_RAW + 10, True),
-                (RADIATOR_VIS_PLANE_X_RAW - 10, False),
-                (41000, False),        # behind the front grille, near back cap
-                (0, False),            # driver's cockpit / side view
-                (-100000, False)):     # completely behind the car
-            polys, _stats, _lod = model.switched_polygons(
-                None, (x, side * 90000, 12000), bsp_mode="original")
-            reachable = set(polys)
-            visible_radiator = [
-                offset for offset in radiator_polygon_offsets
-                if offset in reachable
-            ]
-            expected_count = 13 if visible else 0
-            if len(visible_radiator) != expected_count:
-                raise ValueError(
-                    f"Radiator frame visibility failure camera=({x}, {side}): "
-                    f"expected {expected_count} rim+cap faces, "
-                    f"got {len(visible_radiator)}"
-                )
-            visibility_checks[f"camera_x_{x}_side_{side}"] = len(visible_radiator)
+        for x in (100000, RADIATOR_VIS_PLANE_X_RAW+10,
+                  RADIATOR_VIS_PLANE_X_RAW-10, 0, -100000):
+            for z in (3500, 12000):
+                camera = (x, side*90000, z)
+                polys,_stats,_lod = model.switched_polygons(
+                    None,camera,bsp_mode="original")
+                visible = set(polys)
+                front_expected = x > RADIATOR_VIS_PLANE_X_RAW
+                if (radiator_front_offset in visible) != front_expected:
+                    raise ValueError(f"Front radiator cull failed at {camera}")
+                rim_visible, near_faces, far_faces = side_counts(polys,side)
+                if len(near_faces) < 4 or len(far_faces) < 4:
+                    raise ValueError("Bad exterior normal distribution in rim FACE nodes")
+                if not (set(rim_visible) & near_faces):
+                    raise ValueError(f"Near-side radiator frame missing at {camera}")
+                if set(rim_visible) & far_faces:
+                    raise ValueError(f"Far-side radiator frame leaks at {camera}")
+                visibility_checks[f"{camera}"] = {
+                    "front_cap": front_expected,
+                    "near_side_frame_count": len(set(rim_visible) & near_faces),
+                    "far_side_frame_count": 0,
+                    "visible_rim_triangles": len(rim_visible),
+                }
 
+    face_eq = front_face_node.equation
+    radiator_polygon_offsets = tuple([radiator_front_offset]+rim_faces)
 
     radiator_back_x_raw = _game_coordinates((3300, 0, 0))[0]
     if any(p.color == 0 and len(p.refs) == 6
@@ -650,7 +709,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Far wheels paint before black frame; frame before yellow; near wheels last.\n"
         "Both mirror supports are yellow palette index 158.\n"
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
-        "Complete radiator incl rim uses FACE plane x=42600: only +X/front views.\n",
+        "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n",
         encoding="utf-8",
     )
     manifest = {
@@ -693,14 +752,16 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         },
         "radiator_rear_cap_removed": True,
         "radiator_front_culling": {
-            "plane_kind": "FACE",
-            "plane_x_raw": RADIATOR_VIS_PLANE_X_RAW,
+            "front_cap_plane_kind": "FACE",
+            "front_plane_x_raw": RADIATOR_VIS_PLANE_X_RAW,
             "front_cap_x_raw": RADIATOR_FRONT_X_RAW,
-            "visible_only_from_positive_x": True,
-            "scope": "complete open-backed radiator, front hexagon and 12 rim triangles",
+            "front_cap_visible_only_from_positive_x": True,
+            "rim_section_count": 6,
+            "rim_surface_facing_planes": 6,
+            "rim_triangle_count": 12,
             "radiator_polygon_count": len(radiator_polygon_offsets),
-            "camera_visible_polygon_counts": visibility_checks,
-            "face_normal_signed_equation": list(face_eq),
+            "camera_visibility_tests": visibility_checks,
+            "front_face_normal_signed_equation": list(face_eq),
         },
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
