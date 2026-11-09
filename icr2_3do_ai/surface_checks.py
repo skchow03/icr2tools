@@ -214,30 +214,3 @@ def find_surface_conflicts(components):
                         "remaining surfaces were not checked"),
         })
     return reports
-            if a["unique_vertices"] == b["unique_vertices"]:
-                code = "DUPLICATE_SURFACE"
-            elif a["plane"] == b["plane"]:
-                projected_a = _project(a["pts"], a["plane"][0])
-                projected_b = _project(b["pts"], b["plane"][0])
-                code = ("COPLANAR_OVERLAP"
-                        if _clipped_area(projected_a, projected_b) > 1e-5
-                        else None)
-            else:
-                code = "INTERSECTING_SURFACES" if _crossing(a, b) else None
-            if code is None:
-                continue
-            reports.append({
-                "code": code,
-                "severity": "warning",
-                "components": [a["part"], b["part"]],
-                "polygons": [a["index"], b["index"]],
-                "message": ("Potential overdraw between distinct source components; "
-                            "inspect before deliberately retaining both surfaces"),
-            })
-            if len(reports) >= MAX_REPORTS:
-                reports.append({
-                    "code": "SURFACE_REPORT_LIMIT", "severity": "warning",
-                    "message": f"Only the first {MAX_REPORTS} conflicts are shown",
-                })
-                return reports
-    return reports
