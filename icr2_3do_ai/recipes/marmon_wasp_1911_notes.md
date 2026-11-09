@@ -1,6 +1,20 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 14
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 15
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 15 — radiator near-side frame visible, far-side frame culled
+
+**Reported issue:** The Rev 13 front-only FACE gate was applied to the entire radiator rim, so the black trim disappeared entirely in the side view, even when the nearer rim edge should remain visible. The corrected front-only culling of the grille is retained, but applying the same visibility rule to a hexagonal shell was too aggressive.
+
+**Source geometry:** The radiator is a 6-vertex hexagonal cross-section extruded between game X=42660 (front) and X=41700 (rear). It has one solid-color hexagonal grille (p0000), twelve perimeter triangles in six pairs (p0001..p0012), and an absent rear cap (p0013). The six perimeter pairs are ordered bottom, negative-Y vertical, negative-Y upper shoulder, top, positive-Y upper shoulder, positive-Y vertical. The winding of each first triangle produces an outward-facing normal in the YZ plane (slightly +X because of the gentle taper).
+
+**Revision:** Keep the positive-X-only grille FACE at X=42600 (0.12 inch behind the grille). Replace the previous single 13-polygon front-only FACE wrapper with a compound radiator LIST containing that **grille FACE** plus six **individual surface-normal FACE nodes**, each wrapping a two-polygon rim strip. Each new FACE plane is defined by actual radiator mesh vertices front_a, front_b, rear_b, so it reliably matches the corresponding visible frame surface. It is not necessary to rebuild the radiator geometry or change its palette.
+
+**Expected viewpoint behavior:** Direct side +Y sees the near positive-Y vertical and upper shoulder rim strips; side -Y sees the near negative-Y strips. Higher camera views may also see the top strip. Opposite/far-side rim strips are culled. The front grille appears only from +X, while a side/rearward camera can still see physically outward-facing rim side surfaces. This preserves legitimate frame trim without the phantom full radiator hexagonal outline.
+
+**Compiled regression gates:** Exactly seven FACE nodes (1 grille + 6 exterior rim strips), exactly 13 unique reachable radiator polygon definitions and no back cap. Twenty source-camera tests (X = 100000, 42610, 42590, 0, -100000; Y = +/-90000; Z=3500 and 12000) assert grille front visibility, at least one near-side rim strip and no far-side rim strips. Four DYNAMIC wheel placements, 8 stock shadow patches, far-wheel/chassis/yellow-body/near-wheel BSP ordering and yellow mirror supports are retained.
+
+**Limits:** The repository compiler validates binary tree traversal, not DOS ICR2's actual rasterization. New in-game screenshots can expose edge cases, including near-end-on angles and physically intersecting radiator/bonnet polygons. The independent wheel objects, wheelbase/overall dimensions and all other components are unchanged.
 
 ## Rev 14 — far wheel/black chassis draw order and yellow mirror supports
 
