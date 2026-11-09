@@ -688,11 +688,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     def closure_cap(x: int) -> int:
         matches = [
             p.offset for p in model.polygons.values()
-            if p.color == SIDE_YELLOW and len(p.refs) == 6
+            if p.color == SIDE_YELLOW and len(p.refs) >= 6
             and all(model.vertices[v].xyz[0] == x for v in p.refs)
         ]
         if len(matches) != 1:
-            raise ValueError(f"Expected one cockpit cap at x={x}, got {matches}; six-ref yellow caps: {[(p.offset,p.color,len(p.refs),sorted({model.vertices[v].xyz[0] for v in p.refs})) for p in model.polygons.values() if p.color == SIDE_YELLOW and len(p.refs) >= 5]}")
+            raise ValueError(f"Expected one retained cockpit cap at x={x}, got {matches}")
         return matches[0]
     dashboard_cap = closure_cap(8100)
     seat_cap = closure_cap(-8520)
