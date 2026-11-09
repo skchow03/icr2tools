@@ -1454,7 +1454,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         # game X, outer halfwidth ft, bottom game Z, shoulder design Z,
         # inner halfwidth ft, crown game Z
         (-3000,1.33,184,3.6763333333333,.86,13902),
-        (-10615,1.1468990384615386,184,3.5959391025641,.7298047435897,13423),
+        (-10615,1.1469471153846154,184,3.596468037749268,.7298290598290598,13423),
         (-21720,.88,4886,3.48,.54,12724),
         (-38248,.025,11884,3.455,.009,12040),
     )
