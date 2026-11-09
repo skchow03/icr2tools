@@ -645,6 +645,50 @@ def _attach_driver_helmet(source: str) -> str:
     )
 
 
+
+def _flatten_tail_fin_to_one_polygon(source: str) -> str:
+    """Collapse the 14-faced thick fin to a single double-sided 2D polygon.
+
+    Retain the 6-point source silhouette in the Stage 2 CAD recipe; remove
+    the second cap, the 12 thickness sides and all unused far vertices.
+    In Papyrus N3 a POLY without FACE gating can paint from either side.
+    """
+    group = "rounded_tail_fin_geo"
+    old_members = [f"rounded_tail_fin_p{i:04}" for i in range(14)]
+    original = f"{group}: LIST {{" + ", ".join(old_members) + "};"
+    if source.count(original) != 1:
+        raise ValueError("Expected original thick fin 14-face source")
+    source = source.replace(
+        original, f"{group}: LIST {{rounded_tail_fin_p0000}};"
+    )
+    for index in range(1, 14):
+        label = f"rounded_tail_fin_p{index:04}"
+        source, n = re.subn(
+            rf"(?m)^{label}: POLY <\d+> \{{[^}}\n]+\}};\n", "", source
+        )
+        if n != 1:
+            raise ValueError(f"Unexpected fin side polygon {label}")
+    for index in range(6):
+        label = f"rounded_tail_fin_v{index:04}"
+        pattern = rf"(?m)^({label}: \[<-?\d+, )-?330(, -?\d+>\];)$"
+        source, n = re.subn(
+            pattern, lambda m: m.group(1)+"0"+m.group(2), source
+        )
+        if n != 1:
+            raise ValueError(f"Cannot flatten {label} to Y=0")
+    for index in range(6, 12):
+        label = f"rounded_tail_fin_v{index:04}"
+        source, n = re.subn(
+            rf"(?m)^{label}: \[<-?\d+, -?\d+, -?\d+>\];\n",
+            "", source
+        )
+        if n != 1:
+            raise ValueError(f"Cannot remove far-side fin vertex {label}")
+    if len(re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", source)) != 1:
+        raise ValueError("Fin must have exactly one planar POLY")
+    return source
+
+
 def _omit_radiator_rear_cap(source: str) -> str:
     """Keep front radiator face & edge shell, omit ONLY its rear hexagon."""
     cap = "radiator_face_p0013"
@@ -811,9 +855,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 _fix_roof_occlusion(
                     _attach_radiator_front_cull(
                         _omit_cockpit_internal_bulkheads(
-                            _game_source(_omit_radiator_rear_cap(
-                                _paint_wasp_upper_surfaces(wasp_text)
-                            ))
+                            _flatten_tail_fin_to_one_polygon(
+                                _game_source(_omit_radiator_rear_cap(
+                                    _paint_wasp_upper_surfaces(wasp_text)
+                                ))
+                            )
                         )
                     )
                 )
