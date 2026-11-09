@@ -138,7 +138,6 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
     mandatory = {
         "radiator_face_geo", "long_bonnet_geo",
         "pointed_tail_geo", "rounded_tail_fin_geo",
-        "dashboard_cowl_riser_geo",
     }
     if not mandatory <= set(parts):
         raise ValueError("Missing key bonnet/radiator/tail components")
@@ -316,22 +315,17 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     # high shoulder, central top, high shoulder, outer vertical side.
     # Each ring span has 12 side triangles. Faces 5 through 10 comprise
     # the raised shoulders and upper crown.
-    for component in ("long_bonnet","pointed_tail"):
-        for span in (0,1):
-            for relative in range(5,11):
-                idx=span*12+relative
-                source=_repaint_one_polygon(
-                    source,f"{component}_p{idx:04}",SIDE_YELLOW,TOP_YELLOW
+    # One exterior bonnet/cowl loft, not two superimposed shells.
+    # Five rings/4 spans on the bonnet; three rings/2 on tail.
+    # Only the exterior roof triangles receive palette 158.
+    for component, spans in (("long_bonnet", 4), ("pointed_tail", 2)):
+        for span in range(spans):
+            for relative in range(5, 11):
+                idx = span*12 + relative
+                source = _repaint_one_polygon(
+                    source, f"{component}_p{idx:04}",
+                    SIDE_YELLOW, TOP_YELLOW
                 )
-    # V26 scuttle covers rear quarter of the bonnet (1.40/5.60ft).
-    # Two shallow loft spans retain all upper faces as bright yellow.
-    # The rear-facing closure remains darker body-side yellow.
-    for span in (0, 1):
-        for relative in range(5, 11):
-            source = _repaint_one_polygon(
-                source, f"dashboard_cowl_riser_p{span*12+relative:04}",
-                SIDE_YELLOW, TOP_YELLOW
-            )
     # These strips lie along the U-shaped upper cockpit opening:
     # triangle faces 3/4 have the sloping top edge, 0/9 are broad sides.
     for side in ("left","right"):
@@ -448,7 +442,7 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
         ) + source[match.end():]
 
     replace_member(
-        "long_bonnet_geo", "long_bonnet_p0025",
+        "long_bonnet_geo", "long_bonnet_p0049",
         "wasp_cockpit_dashboard_only",
     )
     replace_member(
@@ -462,13 +456,13 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
     # Source already uses GAME coordinates (+X forward).
     source += """
 % Dashboard closes the nose from behind; seat remains cockpit-window gated.
-wasp_front_gate_a: [<8150, -1200, -3000>];
-wasp_front_gate_b: [<8150, 0, -1000>];
-wasp_front_gate_c: [<8150, 1200, -3000>];
+wasp_front_gate_a: [<8490, -1200, -3000>];
+wasp_front_gate_b: [<8490, 0, -1000>];
+wasp_front_gate_c: [<8490, 1200, -3000>];
 wasp_rear_gate_a: [<-5100, -1200, -3000>];
 wasp_rear_gate_b: [<-5100, 1200, -3000>];
 wasp_rear_gate_c: [<-5100, 0, -1000>];
-wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0025;
+wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0049;
 wasp_seat_inner: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), pointed_tail_p0000;
 wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), wasp_seat_inner;
 """
@@ -522,7 +516,7 @@ def _fix_roof_occlusion(source: str) -> str:
 
     # Avoid the tiny but genuine X overlap with the bonnet and the tail.
     for side in ("left", "right"):
-        for section, x0, x1 in ((1, 8400, 8100),):
+        for section, x0, x1 in ((1, 8400, 8460),):
             name = f"cockpit_body_{side}_{section}"
             pattern = rf"(?m)^({name}_v\d{{4}}: \[<){x0}(, -?\d+, -?\d+>\];)$"
             source, count = re.subn(
@@ -540,13 +534,13 @@ def _fix_roof_occlusion(source: str) -> str:
     for side in ("left", "right"):
         sy = 1 if side == "left" else -1
         junction_vertices = {
-            (1, 0): (8100, sy*7860, 364),
+            (1, 0): (8460, sy*7860, 364),
             # Higher front cowl rises into a sloped scuttle/firewall.
             # The outer point meets the new raised cowl shoulder and
             # the inward point follows its sloping upper crown.
-            (1, 1): (8100, sy*7860, 13144),
-            (1, 4): (8100, sy*6240, 364),
-            (1, 5): (8100, sy*6240, 14354),
+            (1, 1): (8460, sy*7860, 13144),
+            (1, 4): (8460, sy*6240, 364),
+            (1, 5): (8460, sy*6240, 14090),
             # Raised rear deck now begins at design X=8.34ft rather than
             # 8.92ft. Outer junction is at the same height as the tail
             # shoulder; inner cap meets its sloped upper skin.
@@ -585,7 +579,8 @@ wasp_in_right_c: [<6000, -6240, 0>];
         if match is None:
             raise ValueError(f"Missing body skin {shape}")
         members = [x.strip() for x in match.group(1).split(",")]
-        upper = [f"{shape}_p{span*12+i:04}" for span in (0, 1)
+        spans = 4 if shape == "long_bonnet" else 2
+        upper = [f"{shape}_p{span*12+i:04}" for span in range(spans)
                  for i in range(5, 11)]
         if not set(upper) <= set(members):
             raise ValueError(f"Missing upper skin polygons for {shape}")
@@ -614,7 +609,7 @@ wasp_driver_center: LIST {wasp_driver_body};
 wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
 wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
 wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
-wasp_ornaments: LIST {rounded_tail_fin_geo, dashboard_cowl_riser_geo, wasp_mirror_strut_sort};
+wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
 """
     old_xsort = ("wasp_body_xsort: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), "
                  "wasp_tailparts, wasp_midparts, wasp_noseparts;")
@@ -634,50 +629,6 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, dashboard_cowl_riser_geo, wasp_mirro
     return source.replace(old_list, new_list)
 
 
-
-
-def _add_raised_dashboard_bulkhead(source: str) -> str:
-    """Keep a single transverse, raised rear-facing cowl bulkhead.
-
-    The first loft cap is enclosed by the existing bonnet, so it must
-    not render. The rear six-sided cap is a NEW cockpit-visible bulkhead
-    immediately in FRONT of the old bonnet dashboard closure. Its roof
-    rises gradually over the rear 25% of the bonnet in the side-profile reference.
-    """
-    name = "dashboard_cowl_riser_geo"
-    oldcap = "dashboard_cowl_riser_p0000"
-    rearcap = "dashboard_cowl_riser_p0025"
-    gate = "wasp_raised_dashboard_bulkhead"
-    pattern = rf"(?m)^{name}: LIST \{{([^}}\n]+)\}};$"
-    match = re.search(pattern, source)
-    if match is None:
-        raise ValueError("Missing three-station raised dashboard cowl")
-    members = [item.strip() for item in match.group(1).split(",")]
-    expected = [f"dashboard_cowl_riser_p{i:04}" for i in range(26)]
-    if members != expected:
-        raise ValueError(f"Raised cowl polygon topology unexpectedly changed: {members}")
-    members = [gate if item == rearcap else item
-               for item in members if item != oldcap]
-    source = source[:match.start()] + (
-        f"{name}: LIST {{" + ", ".join(members) + "};"
-    ) + source[match.end():]
-    source, removed = re.subn(
-        rf"(?m)^{oldcap}: POLY <\d+> \{{[^}}\n]+\}};\n",
-        "", source
-    )
-    if removed != 1:
-        raise ValueError("Hidden bonnet-facing cowl cap must be removed")
-    if "wasp_front_gate_a" not in source:
-        raise ValueError("Existing rearward dashboard FACE plane unavailable")
-    # The new ramp begins at design X=4.69ft (rear 1.4/5.6ft),
-    # and its baffle stays at design X=6.09 (game X=8460).
-    # The existing gate hides the baffle from forward viewpoints.
-    source += (
-        f"\n{gate}: FACE "
-        "(wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), "
-        f"{rearcap};\n"
-    )
-    return source
 
 
 def _attach_driver_helmet(source: str) -> str:
@@ -864,15 +815,13 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     )
     wasp_text = _attach_shadow_root(
         _attach_driver_helmet(
-            _add_raised_dashboard_bulkhead(
-                _cull_mirror_caps_by_camera(
-                    _fix_roof_occlusion(
-                        _attach_radiator_front_cull(
-                            _omit_cockpit_internal_bulkheads(
-                                _game_source(_omit_radiator_rear_cap(
-                                    _paint_wasp_upper_surfaces(wasp_text)
-                                ))
-                            )
+            _cull_mirror_caps_by_camera(
+                _fix_roof_occlusion(
+                    _attach_radiator_front_cull(
+                        _omit_cockpit_internal_bulkheads(
+                            _game_source(_omit_radiator_rear_cap(
+                                _paint_wasp_upper_surfaces(wasp_text)
+                            ))
                         )
                     )
                 )
@@ -916,9 +865,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "driver_right_arm": ("driver_right_arm_p0000", DRIVER_BROWN),
         "driver_left_glove": ("driver_left_glove_p0000", DRIVER_GLOVE_BROWN),
         "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
-        "cowl_side": ("dashboard_cowl_riser_p0003", SIDE_YELLOW),
-        "cowl_top": ("dashboard_cowl_riser_p0007", TOP_YELLOW),
-        "new_bulkhead": ("dashboard_cowl_riser_p0025", SIDE_YELLOW),
+        "cowl_side": ("long_bonnet_p0039", SIDE_YELLOW),
+        "cowl_top": ("long_bonnet_p0043", TOP_YELLOW),
+        "raised_dashboard_bulkhead": ("long_bonnet_p0049", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -927,13 +876,69 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 f"Unexpected {label} paint: {symbol}={actual}, "
                 f"expected {expected_color}"
             )
-    for component in ("long_bonnet","pointed_tail"):
-        for span in (0,1):
+    for component, spans in (("long_bonnet",4), ("pointed_tail",2)):
+        for span in range(spans):
             for local in range(5,11):
                 index = 12*span+local
                 symbol=f"{component}_p{index:04}"
                 if source_poly_color(symbol)!=TOP_YELLOW:
                     raise ValueError(f"Unpainted upper surface {symbol}")
+    # There is NO second bonnet shell and no hidden cross-section at
+    # 4.69 or 5.39 feet. Only the rearward-facing cockpit end cap stays.
+    if "dashboard_cowl_riser_" in wasp_text:
+        raise ValueError("Duplicate cowl shell still present in N3 source")
+    if re.search(r"(?m)^long_bonnet_p0000: POLY", wasp_text):
+        raise ValueError("Hidden nose cross-section was not removed")
+    if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 49:
+        raise ValueError("Unified bonnet must have 48 exterior triangles and 1 rear cap")
+    # Verify ALL retained bonnet triangles point outwards. A second shell
+    # or a mis-wound inward-facing side is not an exterior surface and
+    # must not be left as a painter-order workaround.
+    bonnet_vertices = {}
+    for match in re.finditer(
+        r"(?m)^(long_bonnet_v\d{4}): \[<(-?\d+), (-?\d+), (-?\d+)>\];$",
+        wasp_text,
+    ):
+        bonnet_vertices[match.group(1)] = tuple(int(match.group(i)) for i in (2, 3, 4))
+    bonnet_polygons = {}
+    for match in re.finditer(
+        r"(?m)^(long_bonnet_p\d{4}): POLY <\d+> \{([^}\n]+)\};$",
+        wasp_text,
+    ):
+        bonnet_polygons[match.group(1)] = match.group(2).split(", ")
+
+    def bonnet_normal(name: str):
+        if name not in bonnet_polygons or len(bonnet_polygons[name]) < 3:
+            raise ValueError(f"Missing exterior triangle {name}")
+        a, b, c = [bonnet_vertices[x] for x in bonnet_polygons[name][:3]]
+        ab = (b[0]-a[0], b[1]-a[1], b[2]-a[2])
+        ac = (c[0]-a[0], c[1]-a[1], c[2]-a[2])
+        return (
+            ab[1]*ac[2]-ab[2]*ac[1],
+            ab[2]*ac[0]-ab[0]*ac[2],
+            ab[0]*ac[1]-ab[1]*ac[0],
+        )
+
+    outward_winding_checks = 0
+    for span in range(4):
+        for side_index in range(12):
+            name = f"long_bonnet_p{span*12+side_index+1:04}"
+            nx, ny, nz = bonnet_normal(name)
+            if (side_index in (0, 1) and nz >= 0) or (
+                side_index in (2, 3) and ny >= 0
+            ) or (
+                side_index in (4, 5) and not (ny < 0 and nz > 0)
+            ) or (
+                side_index in (6, 7) and nz <= 0
+            ) or (
+                side_index in (8, 9) and not (ny > 0 and nz > 0)
+            ) or (
+                side_index in (10, 11) and ny <= 0
+            ):
+                raise ValueError(f"Inward or degenerate bonnet surface {name}")
+            outward_winding_checks += 1
+    if bonnet_normal("long_bonnet_p0049")[0] >= 0:
+        raise ValueError("Dashboard closure must face rearward toward cockpit")
     for side in ("left","right"):
         for segment in range(1,6):
             for i in (3,4):
@@ -1011,9 +1016,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 23:
+    if len(face_nodes) != 22:
         raise ValueError(
-            f"Expected 7 radiator + 4 bulkhead/closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
+            f"Expected 7 radiator + 3 cockpit closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
         )
     # Confirm front and rear mirror faces were actually isolated in the
     # compiled BSP tree and cannot paint through each other.
@@ -1082,19 +1087,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if len(matches) != 1:
             raise ValueError(f"Expected one retained cockpit cap at x={x}, got {matches}")
         return matches[0]
-    dashboard_cap = closure_cap(8100)
+    dashboard_cap = closure_cap(8460)
     seat_cap = closure_cap(-5040)
-    raised_cowl_cap = closure_cap(8460)
-    # The newly exposed baffle is separate from the original dashboard
-    # closer and must face toward the cockpit, not forward over the hood.
-    cowl_gate_faces = [
-        face for face in face_nodes
-        if model.children.get(face.offset) == [raised_cowl_cap]
-    ]
-    if len(cowl_gate_faces) != 1 or cowl_gate_faces[0].equation[0] >= 0:
-        raise ValueError("New raised cowl bulkhead must have one -X FACE gate")
-    cowl_face = cowl_gate_faces[0]
     closure_offsets = {dashboard_cap, seat_cap}
+    # The dashboard is the ONLY remaining transverse bonnet cap.
+    # Its upper crown is the raised scuttle; there is no second
+    # bonnet or separately superimposed bulkhead.
+    if any(
+        len(set(v.xyz[0] for v in (model.vertices[i] for i in p.refs))) == 1
+        and next(iter({model.vertices[i].xyz[0] for i in p.refs})) == 8100
+        and p.color == SIDE_YELLOW and len(p.refs) >= 6
+        for p in model.polygons.values()
+    ):
+        raise ValueError("Former internal dashboard cross section at X=8100 remains")
     direct_faces = [
         f for f in face_nodes
         if (dashboard_cap in model.children.get(f.offset, []) or
@@ -1124,7 +1129,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Seat must retain two cockpit-only FACE gates")
     protected_offsets = {
         dashboard_face.offset, seat_inner_faces[0].offset,
-        seat_outer_faces[0].offset, cowl_face.offset,
+        seat_outer_faces[0].offset,
     }
     protected_offsets |= {p.offset for p in wall_faces}
     protected_offsets |= {p.offset for p in mirror_faces}
@@ -1175,7 +1180,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 visible, _, _ = model.switched_polygons(
                     None, (x, y, z), bsp_mode="original"
                 )
-                if (raised_cowl_cap in set(visible)) != expected:
+                if (dashboard_cap in set(visible)) != expected:
                     raise ValueError(
                         f"Raised cowl bulkhead visibility wrong from {(x,y,z)}"
                     )
@@ -1185,7 +1190,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     cockpit_visibility_tests = {}
     for x, dashboard_expected, seat_expected in (
         (100000, False, False),
-        (8200, False, False),
+        (8500, False, False),
+        (8200, True, True),
         (0, True, True),
         (-8600, True, False),
         (-100000, True, False),
@@ -1603,10 +1609,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "V25 driver wears medium brown 148, leather gloves darker brown 149.\n"
         "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
         "Black seat, chassis and tires remain fixed palette 33.\n"
-        "Raised scuttle now covers rear quarter of bonnet, design X=4.69..6.09ft.\n"
-        "Three-station cowl loft X=4.69,5.39,6.09ft rises progressively.\n"
-        "Scuttle peaks at 4.03ft and steps smoothly down to original bonnet roof.\n"
-        "Extra cowl facing cap visible from cockpit/rear but not from front.\n"
+        "V27: no separate interior cowl mesh or buried bonnet roof.\n"
+        "One five-ring bonnet loft has 48 outward side/roof triangles.\n"
+        "Single rearward dashboard closure at X=8460; nose cap omitted.\n"
+        "Cowl rises over the final quarter X=4.69..6.09ft (25% of bonnet).\n"
+        "No intermediate X-cross-section polygons are generated.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
@@ -1652,7 +1659,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "dashboard_cowl_bulkhead_station_ft": 6.09,
             "dashboard_cowl_crown_height_ft": 4.03,
             "dashboard_cowl_shoulder_height_ft": 3.65,
-            "dashboard_cowl_extra_bulkhead_game_x": 8460,
+            "dashboard_cowl_cockpit_bulkhead_game_x": 8460,
+            "bonnet_loft_stations_ft": [0.55, 3.35, 4.69, 5.39, 6.09],
+            "bonnet_unified_exterior_triangle_count": 48,
+            "redundant_inner_cowl_shell_removed": True,
             "dorsal_fin_peak_height_ft": 4.52,
             "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
@@ -1705,23 +1715,28 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         },
         "cockpit_closure_visibility": cockpit_visibility_tests,
         "raised_dashboard_cowl": {
-            "component": "dashboard_cowl_riser",
-            "rear_cap_x_raw": 8460,
-            "rear_cap_palette": SIDE_YELLOW,
-            "bonnet_facing_front_cap_removed": True,
+            "component": "long_bonnet",
+            "integrated_into_single_continuous_shell": True,
+            "previous_duplicate_cowl_component_removed": True,
+            "single_cockpit_closure_x_raw": 8460,
+            "front_cap_physically_removed": True,
             "rear_cap_uses_rear_facing_FACE": True,
-            "rear_cap_camera_checks": 20,
-            "loft_sections": 3,
-            "cowl_length_ft": 1.40,
-            "bonnet_length_ft": 5.60,
-            "cowl_cover_fraction": .25,
+            "camera_visibility_checks": 20,
+            "loft_sections": 5,
+            "exterior_triangle_count": 48,
+            "outward_normal_checks": outward_winding_checks,
+            "all_bonnet_skin_faces_point_outward": True,
+            "interior_mid_bonnet_cross_sections": 0,
+            "cowl_ramp_length_ft": 1.40,
+            "original_bonnet_reference_length_ft": 5.60,
+            "cowl_coverage_fraction": .25,
         },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
-                                "upper_roof", "fin_cowl_mirror",
-                                "helmet_sprite", "near_side_wheels"],
-        "paint_source_regression_checks": len(check_colors) + 24 + 20 + 16,
+                                "integrated_bonnet_upper_roof", "tail_upper_roof",
+                                "fin_mirror", "helmet_sprite", "near_side_wheels"],
+        "paint_source_regression_checks": len(check_colors) + 36 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
             "side_and_fin_yellow": SIDE_YELLOW,
