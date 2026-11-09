@@ -21,9 +21,9 @@ from .stage2 import validate_source, validate_path
 # overall length. Wheels have 34-inch OD: radius = 8500 raw ICR2 units.
 # Front wheel x=2300 raw, radiator face x=2340 raw (0.08 inch difference).
 # Rear center x=60300 raw => 58000 / 6000 * 12 = exactly 116 inches.
-# Front tire leading x=-6200 raw, tail tip x=87300 raw => 93500 raw
-# / 6000 * 12 = exactly 187 inches. The length is a fit to the reported
-# specification, whereas the radiator/axle overlap is based on side photos.
+# Front tire leading x=-6200 raw, user-traced tail tip x=83248 raw,
+# giving 178.896 inches overall (CAD trace supersedes original 187-in fit).
+# Existing published dimensions remain historical context, not mesh constraints.
 WHEEL_PLACEMENTS = (
     ("front_left", "FWHEEL", (2300, -17400, 8500)),
     ("front_right", "FWHEEL", (2300, 17400, 8500)),
@@ -37,9 +37,11 @@ WHEEL_PLACEMENTS = (
 HELMET_GAME_XYZ = (-2100, 0, 12824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
-NOMINAL_OVERALL_IN = 187
+# User's current CAD trace supersedes the earlier 187-inch illustrative
+# bounding-box fit. Front axle/wheelbase positions are unchanged.
+NOMINAL_OVERALL_IN = 178.896
 FRONT_RADIATOR_RAW_X = 2340
-BODY_TAIL_RAW_X = 87300
+BODY_TAIL_RAW_X = 83248
 TIRE_RADIUS_RAW = 8500
 ROOT_RE = re.compile(r"(?m)^root:\s*LIST\s*\{([^{}]*)\};[ \t]*$")
 
@@ -316,9 +318,9 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     # Each ring span has 12 side triangles. Faces 5 through 10 comprise
     # the raised shoulders and upper crown.
     # One exterior bonnet/cowl loft, not two superimposed shells.
-    # Five rings/4 spans on the bonnet; three rings/2 on tail.
+    # Four rings/3 spans on bonnet, three rings/2 on tail.
     # Only the exterior roof triangles receive palette 158.
-    for component, spans in (("long_bonnet", 4), ("pointed_tail", 2)):
+    for component, spans in (("long_bonnet", 3), ("pointed_tail", 2))
         for span in range(spans):
             for relative in range(5, 11):
                 idx = span*12 + relative
@@ -442,7 +444,7 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
         ) + source[match.end():]
 
     replace_member(
-        "long_bonnet_geo", "long_bonnet_p0049",
+        "long_bonnet_geo", "long_bonnet_p0037",
         "wasp_cockpit_dashboard_only",
     )
     replace_member(
@@ -456,13 +458,13 @@ def _omit_cockpit_internal_bulkheads(source: str) -> str:
     # Source already uses GAME coordinates (+X forward).
     source += """
 % Dashboard closes the nose from behind; seat remains cockpit-window gated.
-wasp_front_gate_a: [<8490, -1200, -3000>];
-wasp_front_gate_b: [<8490, 0, -1000>];
-wasp_front_gate_c: [<8490, 1200, -3000>];
-wasp_rear_gate_a: [<-5100, -1200, -3000>];
-wasp_rear_gate_b: [<-5100, 1200, -3000>];
-wasp_rear_gate_c: [<-5100, 0, -1000>];
-wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0049;
+wasp_front_gate_a: [<13043, -1200, -3000>];
+wasp_front_gate_b: [<13043, 0, -1000>];
+wasp_front_gate_c: [<13043, 1200, -3000>];
+wasp_rear_gate_a: [<-3060, -1200, -3000>];
+wasp_rear_gate_b: [<-3060, 1200, -3000>];
+wasp_rear_gate_c: [<-3060, 0, -1000>];
+wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), long_bonnet_p0037;
 wasp_seat_inner: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), pointed_tail_p0000;
 wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), wasp_seat_inner;
 """
@@ -514,16 +516,8 @@ def _fix_roof_occlusion(source: str) -> str:
                      "wasp_in_right_a, wasp_in_right_b, wasp_in_right_c")
             source += f"\n{face_name}: FACE ({plane}), {inward};\n"
 
-    # Avoid the tiny but genuine X overlap with the bonnet and the tail.
-    for side in ("left", "right"):
-        for section, x0, x1 in ((1, 8400, 8460),):
-            name = f"cockpit_body_{side}_{section}"
-            pattern = rf"(?m)^({name}_v\d{{4}}: \[<){x0}(, -?\d+, -?\d+>\];)$"
-            source, count = re.subn(
-                pattern, lambda m: m.group(1) + str(x1) + m.group(2), source
-            )
-            if count != 4:
-                raise ValueError(f"Cannot clip four end vertices: {name}, got {count}")
+    # V28 Stage 2 cockpit endpoints already match the CAD trace.
+    # Do not move their X coordinates after generation.
 
     # The original cockpit slab tops projected above the neighboring roof
     # shoulders by 2,000+ raw units. Changing their X endpoint alone does
@@ -534,20 +528,18 @@ def _fix_roof_occlusion(source: str) -> str:
     for side in ("left", "right"):
         sy = 1 if side == "left" else -1
         junction_vertices = {
-            (1, 0): (8460, sy*7860, 364),
-            # Higher front cowl rises into a sloped scuttle/firewall.
-            # The outer point meets the new raised cowl shoulder and
-            # the inward point follows its sloping upper crown.
-            (1, 1): (8460, sy*7860, 13144),
-            (1, 4): (8460, sy*6240, 364),
-            (1, 5): (8460, sy*6240, 14090),
-            # Raised rear deck now begins at design X=8.34ft rather than
-            # 8.92ft. Outer junction is at the same height as the tail
-            # shoulder; inner cap meets its sloped upper skin.
-            (5, 2): (-5040, sy*7980, 11764),
-            (5, 3): (-5040, sy*7980, 364),
-            (5, 6): (-5040, sy*6240, 12134),
-            (5, 7): (-5040, sy*6240, 364),
+            (1, 0): (13013, sy*7860, 364),
+            # Bonnet dashboard shoulder and upper roof, matching the
+            # actual CAD-traced X/Z rather than the earlier illustration.
+            (1, 1): (13013, sy*7860, 11491),
+            (1, 4): (13013, sy*6240, 364),
+            (1, 5): (13013, sy*6240, 12563),
+            # Rear deck begins at the traced rear of the seat, x=-3000.
+            # Inner cockpit lip follows the tail shoulder-to-plateau slope.
+            (5, 2): (-3000, sy*7980, 13302),
+            (5, 3): (-3000, sy*7980, 364),
+            (5, 6): (-3000, sy*6240, 13672),
+            (5, 7): (-3000, sy*6240, 364),
         }
         for (section, vertex), (x, y, z) in junction_vertices.items():
             label = f"cockpit_body_{side}_{section}_v{vertex:04}"
@@ -579,7 +571,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
         if match is None:
             raise ValueError(f"Missing body skin {shape}")
         members = [x.strip() for x in match.group(1).split(",")]
-        spans = 4 if shape == "long_bonnet" else 2
+        spans = 3 if shape == "long_bonnet" else 2
         upper = [f"{shape}_p{span*12+i:04}" for span in range(spans)
                  for i in range(5, 11)]
         if not set(upper) <= set(members):
