@@ -1,6 +1,20 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 13
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 14
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
+
+## Rev 14 — far wheel/black chassis draw order and yellow mirror supports
+
+**Reported in-game behavior:** A rear/far-side yellow wheel center appears over the car's black lower chassis in a user screenshot, even though that wheel should be visually behind the chassis in that viewing direction. The dashboard mirror supports are black but should be yellow.
+
+**Cause confirmed in the N3 hierarchy:** Rev 13 used `root: LIST {wasp_ground_shadow, wasp_black_frame, wasp_vehicle_sort}`. Because `wasp_vehicle_sort` contained all four DYNAMIC wheel instances, even the **far-side pair** was painted after the chassis. The flat painter renderer therefore allows far-side wheel polygons to overwrite the near visible chassis. The existing body BSP correctly sorted *far wheels vs body vs near wheels*, but the chassis was outside that BSP and always drew first.
+
+**Correction:** Root now has `LIST {wasp_ground_shadow, wasp_vehicle_sort}`. Inside the camera-dependent vehicle BSPA, the middle child becomes `wasp_frame_and_body: LIST {wasp_black_frame, wasp_body_ysort}`. Regardless of the camera's Y side, drawing order is exactly: ground shadow, far-side pair of DYNAMIC wheels, 114 black chassis/suspension polygon surfaces, yellow/cockpit body BSP, and near-side pair of DYNAMIC wheels. The wheel models and their 4 child placements are unchanged.
+
+**Paint:** Stage 2 recipe component `mirror_strut_left` changes from common index 0 black to shared sunny/gamepal **index 158 yellow, RGB (255,223,35)**. The opposite support `mirror_strut_right` is mirrored from it, so both become yellow. The mirror housing stays gray index 40.
+
+**Regression validation:** The assembly checks real compiled N3 record hierarchy for root `[LIST shadow, BSPA car]`; camera BSP middle layer is `[LIST chassis, BSPA painted body]`; and actual traversal events from both +Y/-Y cameras enforce `far wheels < black frame < yellow body < near wheels`, plus stock shadow first, all 114 black-frame faces and two yellow struts. Distances, wheelbase 116in, total length 187in, tire height, stock shadow Z/color, radiator full 13-polygon FACE culling, and object names unchanged.
+
+**Limit:** These tests verify structural painter ordering in repository's compiler/parser, not the final DOS game's image. Some surfaces intersect physically and may need finer BSP or geometry changes if artifacts persist in-game. Three compiled objects remain independent (WASP, FWHEEL, RWHEEL).
 
 ## Rev 13 — hide complete radiator outline from the sides
 
