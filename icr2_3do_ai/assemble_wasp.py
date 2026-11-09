@@ -218,11 +218,15 @@ STOCK_SHADOW_COLOR = 27                         # exact stock palette entry
 # four wheel contact patches. These are illustrative Wasp footprints.
 SHADOW_POLYGONS = (
     ("body", (
-        (13000, -4000), (13000, 4000), (10500, 8200), (6000, 9600),
+        (13000, -7800), (13000, 7800), (10500, 8200), (6000, 9600),
         (-6000, 9500), (-33000, 5100), (-33000, -5100),
         (-6000, -9500), (6000, -9600), (10500, -8200),
     )),
-    ("nose", ((13000,-4000), (44000,0), (13000,4000))),
+    # Broad, slightly tapered bonnet projection (not a pointed triangle).
+    # Compare the actual model bonnet: +/-7860 at X=8100,
+    # +/-7560 at X=24900 and +/-7020 at X=41700.
+    ("nose", ((13000,-7800), (44000,-7100),
+              (44000,7100), (13000,7800))),
     ("radiator", ((38000,-7200), (45500,-7200), (45500,7200), (38000,7200))),
     ("tail", ((-41500,-6000), (-32500,-6000), (-32500,6000), (-41500,6000))),
     ("front_left", ((36200,14200), (49300,14200), (49300,20800), (36200,20800))),
@@ -312,6 +316,48 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
         raise ValueError("Mirror rear cap must remain gray")
     return source
 
+
+
+
+def _cull_mirror_caps_by_camera(source: str) -> str:
+    """Keep yellow forward housing and gray rearward reflective mirror.
+
+    The original generic LIST draws the rear gray cap after the front
+    yellow cap, which overpaints yellow from forward camera angles in ICR2.
+    Two opposite FACE halfspaces at the housing's midpoint prevent that.
+    """
+    pattern = r"(?m)^mirror_housing_geo: LIST \{([^}\n]+)\};$"
+    match = re.search(pattern, source)
+    if match is None:
+        raise ValueError("Missing mirror housing geometry group")
+    members = [name.strip() for name in match.group(1).split(",")]
+    expected = [f"mirror_housing_p{i:04}" for i in range(10)]
+    if members != expected:
+        raise ValueError("Mirror housing polygons/order changed")
+    front, rear = expected[0], expected[9]
+    if not re.search(
+        rf"(?m)^{front}: POLY <{TOP_YELLOW}> \{{", source):
+        raise ValueError("Forward housing must be yellow 158")
+    if not re.search(
+        rf"(?m)^{rear}: POLY <{MIRROR_GRAY}> \{{", source):
+        raise ValueError("Rearward reflective mirror must be gray 40")
+
+    front_cull, rear_cull = "wasp_mirror_front_cull", "wasp_mirror_rear_cull"
+    revised = [front_cull] + members[1:9] + [rear_cull]
+    source = source[:match.start()] + (
+        "mirror_housing_geo: LIST {" + ", ".join(revised) + "};"
+    ) + source[match.end():]
+    # +X is the car's direction of travel in the finished assembled model.
+    # Front cap at x=6360, rear cap at x=6000, split at x=6180.
+    source += """
+% Facing-correct mirror: bonnet-facing yellow housing; driver-facing glass gray.
+wasp_mirror_plane_a: [<6180, -1200, 15000>];
+wasp_mirror_plane_b: [<6180, 1200, 15000>];
+wasp_mirror_plane_c: [<6180, 0, 18000>];
+wasp_mirror_front_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_b, wasp_mirror_plane_c), mirror_housing_p0000;
+wasp_mirror_rear_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_c, wasp_mirror_plane_b), mirror_housing_p0009;
+"""
+    return source
 
 
 def _omit_cockpit_internal_bulkheads(source: str) -> str:
@@ -706,12 +752,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         body[m.end():]
     )
     wasp_text = _attach_shadow_root(
-        _fix_roof_occlusion(
-            _attach_radiator_front_cull(
-                _omit_cockpit_internal_bulkheads(
-                    _game_source(_omit_radiator_rear_cap(
-                        _paint_wasp_upper_surfaces(wasp_text)
-                    ))
+        _cull_mirror_caps_by_camera(
+            _fix_roof_occlusion(
+                _attach_radiator_front_cull(
+                    _omit_cockpit_internal_bulkheads(
+                        _game_source(_omit_radiator_rear_cap(
+                            _paint_wasp_upper_surfaces(wasp_text)
+                        ))
+                    )
                 )
             )
         )
@@ -814,6 +862,13 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         zvals = {model.vertices[v].xyz[2] for v in p.refs}
         if p.color != 27 or zvals != {STOCK_SHADOW_Z_RAW}:
             raise ValueError("Shadow color/height differs from stock car")
+    # The second shadow polygon must project the width of the bonnet,
+    # not the old narrow triangular patch. Verify the *compiled* vertices.
+    nose_shadow = model.polygons[model.children[shadow_geo][1]]
+    nose_points = {tuple(model.vertices[v].xyz[:2]) for v in nose_shadow.refs}
+    if nose_points != {(13000,-7800), (44000,-7100),
+                       (44000,7100), (13000,7800)}:
+        raise ValueError(f"Bonnet shadow footprint regressed: {nose_points}")
     if len(model.children[frame_geo]) != 13:
         raise ValueError("Chassis must have 13 named, first-drawn components")
 
@@ -829,8 +884,46 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 21:
-        raise ValueError(f"Expected 7 radiator + 4 closure + 10 inward FACE nodes, got {len(face_nodes)}")
+    if len(face_nodes) != 23:
+        raise ValueError(
+            f"Expected 7 radiator + 4 closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
+        )
+    # Confirm front and rear mirror faces were actually isolated in the
+    # compiled BSP tree and cannot paint through each other.
+    mirror_front = next(
+        (p.offset for p in model.polygons.values()
+         if p.color == TOP_YELLOW and len(p.refs) == 4
+         and all(model.vertices[v].xyz[0] == 6360 for v in p.refs)
+         and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
+        None,
+    )
+    mirror_rear = next(
+        (p.offset for p in model.polygons.values()
+         if p.color == MIRROR_GRAY and len(p.refs) == 4
+         and all(model.vertices[v].xyz[0] == 6000 for v in p.refs)
+         and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
+        None,
+    )
+    if mirror_front is None or mirror_rear is None:
+        raise ValueError("Missing exact yellow forward/gray rear mirror caps")
+    mirror_faces = [
+        f for f in face_nodes
+        if model.children.get(f.offset) in ([mirror_front], [mirror_rear])
+    ]
+    if len(mirror_faces) != 2:
+        raise ValueError("Each mirror cap requires one independent FACE gate")
+    for x, front_expected in ((100000, True), (6400, True),
+                              (5960, False), (-100000, False)):
+        for y in (-90000, 90000):
+            visible, _, _ = model.switched_polygons(
+                None, (x, y, 16000), bsp_mode="original"
+            )
+            shown = set(visible)
+            if ((mirror_front in shown) != front_expected
+                    or (mirror_rear in shown) == front_expected):
+                raise ValueError(
+                    f"Mirror must show yellow forward, gray rear only at {(x, y)}"
+                )
     wall_faces = [
         p for p in face_nodes if p.equation[0] == p.equation[2] == 0
         and p.equation[1] != 0
@@ -880,6 +973,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Cockpit closure gates require an exterior FACE gate")
     protected_offsets = inner_offsets | {p.offset for p in outer_faces}
     protected_offsets |= {p.offset for p in wall_faces}
+    protected_offsets |= {p.offset for p in mirror_faces}
     radiator_face_nodes = [
         face for face in face_nodes if face.offset not in protected_offsets
     ]
@@ -1134,8 +1228,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Tire size 34x4.5 inches, steel wheel covers nominal 25 inches; polygonal.\n"
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
         "True black uses shared index 49 (not 0); ground shadow 27 unchanged.\n"
-        "Upper yellow 158, sides/fin and wheel discs 159; mirror front 158 back 40.\n"
-        "Shadow: eight flat polygons, palette 27 at raw Z=-8501, stock ICR2 convention.\n"
+        "Upper yellow 158, sides/fin and wheel discs 159; mirror forward 158, real reflective rear 40.\n"
+        "Mirror caps are oppositely FACE-culled; gray rear never overdraws yellow front.\n"
+        "Shadow: eight flat polygons, palette 27 at Z=-8501; full-width tapered bonnet shadow.\n"
         "Far wheels paint before black frame; frame before yellow; near wheels last.\n"
         "Both mirror supports are yellow palette index 158.\n"
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
@@ -1179,6 +1274,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "stock_ground_raw_z": STOCK_GROUND_RAW_Z,
             "offset_above_ground_raw": 255,
             "source": "user-provided stock indycar.3do shadow POLY group",
+            "bonnet_footprint": [[13000,-7800], [44000,-7100],
+                                  [44000,7100], [13000,7800]],
         },
         "radiator_rear_cap_removed": True,
         "radiator_front_culling": {
@@ -1203,6 +1300,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "upper_crown_yellow": TOP_YELLOW,
             "mirror_front_yellow": TOP_YELLOW,
             "mirror_back_and_edge_gray": MIRROR_GRAY,
+            "mirror_caps_have_opposing_FACE_culling": True,
             "shadow_original": STOCK_SHADOW_COLOR,
         },
         "mirror_strut_palette": 158,
