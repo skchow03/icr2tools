@@ -402,6 +402,120 @@ wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate
     return source
 
 
+
+def _fix_roof_occlusion(source: str) -> str:
+    """Draw hull roof last, cull near-side inner walls, and clip overlap."""
+    def group_replace(name: str, body: str) -> None:
+        nonlocal source
+        p = rf"(?m)^{re.escape(name)}: LIST \{{[^}}\n]+\}};$"
+        source, hits = re.subn(p, f"{name}: LIST {{{body}}};", source)
+        if hits != 1:
+            raise ValueError(f"Missing unique group: {name}")
+
+    # Remove the underside of the side slabs. Their X end caps were
+    # already removed by _omit_cockpit_internal_bulkheads.
+    for side in ("left", "right"):
+        for section in range(1, 6):
+            name = f"cockpit_body_{side}_{section}"
+            group = name + "_geo"
+            match = re.search(rf"(?m)^{group}: LIST \{{([^}}\n]+)\}};$", source)
+            if match is None:
+                raise ValueError(f"No cockpit group {group}")
+            old_members = [x.strip() for x in match.group(1).split(",")]
+            old_bottom = {f"{name}_p0007", f"{name}_p0008"}
+            inward = f"{name}_p0009"
+            if not old_bottom <= set(old_members) or inward not in old_members:
+                raise ValueError(f"Cockpit geometry changed: {name}")
+            face_name = f"wasp_inward_{side}_{section}"
+            members = [face_name if x == inward else x for x in old_members
+                       if x not in old_bottom]
+            group_replace(group, ", ".join(members))
+            for poly in old_bottom:
+                source, n = re.subn(
+                    rf"(?m)^{poly}: POLY <\d+> \{{[^}}\n]+\}};\n", "", source
+                )
+                if n != 1:
+                    raise ValueError(f"Cannot delete enclosed underside {poly}")
+            plane = ("wasp_in_left_a, wasp_in_left_b, wasp_in_left_c"
+                     if side == "left" else
+                     "wasp_in_right_a, wasp_in_right_b, wasp_in_right_c")
+            source += f"\n{face_name}: FACE ({plane}), {inward};\n"
+
+    # Avoid the tiny but genuine X overlap with the bonnet and the tail.
+    for side in ("left", "right"):
+        for section, x0, x1 in ((1, 8400, 8100), (5, -8880, -8520)):
+            name = f"cockpit_body_{side}_{section}"
+            pattern = rf"(?m)^({name}_v\d{{4}}: \[<){x0}(, -?\d+, -?\d+>\];)$"
+            source, count = re.subn(
+                pattern, lambda m: m.group(1) + str(x1) + m.group(2), source
+            )
+            if count != 4:
+                raise ValueError(f"Cannot clip four end vertices: {name}, got {count}")
+
+    source += """
+% Inward panels are seen from the cockpit only, never from the exterior
+% camera on their own side of the vehicle.
+wasp_in_left_a: [<0, 6240, 0>];
+wasp_in_left_b: [<6000, 6240, 0>];
+wasp_in_left_c: [<0, 6240, 6000>];
+wasp_in_right_a: [<0, -6240, 0>];
+wasp_in_right_b: [<0, -6240, 6000>];
+wasp_in_right_c: [<6000, -6240, 0>];
+"""
+
+    for shape, roof in (("long_bonnet", "wasp_bonnet_roof_geo"),
+                        ("pointed_tail", "wasp_tail_roof_geo")):
+        match = re.search(
+            rf"(?m)^{shape}_geo: LIST \{{([^}}\n]+)\}};$", source
+        )
+        if match is None:
+            raise ValueError(f"Missing body skin {shape}")
+        members = [x.strip() for x in match.group(1).split(",")]
+        upper = [f"{shape}_p{span*12+i:04}" for span in (0, 1)
+                 for i in range(5, 11)]
+        if not set(upper) <= set(members):
+            raise ValueError(f"Missing upper skin polygons for {shape}")
+        lower = [x for x in members if x not in upper]
+        group_replace(shape + "_geo", ", ".join(lower))
+        source += f"\n{roof}: LIST {{" + ", ".join(upper) + "};\n"
+
+    for side in ("pos", "neg"):
+        group = f"wasp_{side}_sides"
+        match = re.search(rf"(?m)^{group}: LIST \{{([^}}\n]+)\}};$", source)
+        if match is None:
+            raise ValueError(f"Missing {group}")
+        members = [x.strip() for x in match.group(1).split(",")]
+        old_strut = ("mirror_strut_right_geo" if side == "pos"
+                     else "mirror_strut_left_geo")
+        if members.count(old_strut) != 1:
+            raise ValueError(f"Strut not in {group}")
+        group_replace(group, ", ".join(x for x in members if x != old_strut))
+
+    group_replace("wasp_tailparts", "pointed_tail_geo")
+
+    source += """
+% Rebuilt painter tree: all cockpit walls behind the exterior top shell.
+wasp_nose_shell: LIST {long_bonnet_geo};
+wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
+wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
+wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
+wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
+"""
+    old_xsort = ("wasp_body_xsort: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), "
+                 "wasp_tailparts, wasp_midparts, wasp_noseparts;")
+    new_xsort = ("wasp_body_xsort: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), "
+                 "wasp_tailparts, wasp_nose_shell;")
+    if source.count(old_xsort) != 1:
+        raise ValueError("Original X sorting not found")
+    source = source.replace(old_xsort, new_xsort)
+    old_list = "wasp_frame_and_body: LIST {wasp_black_frame, wasp_body_ysort};"
+    new_list = ("wasp_frame_and_body: LIST {wasp_black_frame, "
+                "wasp_body_ysort, wasp_upper_skin, wasp_ornaments};")
+    if source.count(old_list) != 1:
+        raise ValueError("Original body list not found")
+    return source.replace(old_list, new_list)
+
+
 def _omit_radiator_rear_cap(source: str) -> str:
     """Keep front radiator face & edge shell, omit ONLY its rear hexagon."""
     cap = "radiator_face_p0013"
@@ -563,11 +677,13 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         body[m.end():]
     )
     wasp_text = _attach_shadow_root(
-        _attach_radiator_front_cull(
-            _omit_cockpit_internal_bulkheads(
-                _game_source(_omit_radiator_rear_cap(
-                    _paint_wasp_upper_surfaces(wasp_text)
-                ))
+        _fix_roof_occlusion(
+            _attach_radiator_front_cull(
+                _omit_cockpit_internal_bulkheads(
+                    _game_source(_omit_radiator_rear_cap(
+                        _paint_wasp_upper_surfaces(wasp_text)
+                    ))
+                )
             )
         )
     )
@@ -658,9 +774,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Vehicle BSPA missing ordered black-frame/paint group")
     body_layer = middle_candidates[0]
     layer_children = model.children.get(body_layer, [])
-    if [model.records.get(i) for i in layer_children] != [11, 8]:
-        raise ValueError("Frame/paint must render as chassis LIST then body BSPA")
-    frame_geo, painted_geo = layer_children
+    if (len(layer_children) != 4 or
+            [model.records.get(i) for i in layer_children[:2]] != [11, 8]):
+        raise ValueError("Expected chassis, sidewall, upper roof, ornaments layers")
+    frame_geo, painted_geo, roof_geo, ornaments_geo = layer_children
     if len(model.children[shadow_geo]) != 8:
         raise ValueError("Wasp shadow must have exactly 8 polygons")
     for off in model.children[shadow_geo]:
@@ -683,8 +800,30 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 11:
-        raise ValueError(f"Expected 7 radiator + 4 cockpit FACE nodes, got {len(face_nodes)}")
+    if len(face_nodes) != 21:
+        raise ValueError(f"Expected 7 radiator + 4 closure + 10 inward FACE nodes, got {len(face_nodes)}")
+    wall_faces = [
+        p for p in face_nodes if p.equation[0] == p.equation[2] == 0
+        and p.equation[1] != 0
+        and abs(abs(-p.equation[3]/p.equation[1]) - 6240) < .01
+    ]
+    if len(wall_faces) != 10:
+        raise ValueError(f"Missing inward wall culls: {len(wall_faces)}")
+    for side in (-1, 1):
+        polys, _stats, _lod = model.switched_polygons(
+            None, (0, side*90000, 18000), bsp_mode="original")
+        active = set(polys)
+        count_shown = 0
+        for face in wall_faces:
+            members = model.children.get(face.offset, [])
+            if len(members) != 1 or members[0] not in model.polygons:
+                raise ValueError("Inward wall FACE does not wrap a polygon")
+            expected = face.equation[1]*side > 0
+            if (members[0] in active) != expected:
+                raise ValueError(f"Inward cockpit wall leaked at camera side {side}")
+            count_shown += int(expected)
+        if count_shown != 5:
+            raise ValueError("Expected five far-side inner walls visible")
     def closure_cap(x: int) -> int:
         matches = [
             p.offset for p in model.polygons.values()
@@ -711,6 +850,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(outer_faces) != 2:
         raise ValueError("Cockpit closure gates require an exterior FACE gate")
     protected_offsets = inner_offsets | {p.offset for p in outer_faces}
+    protected_offsets |= {p.offset for p in wall_faces}
     radiator_face_nodes = [
         face for face in face_nodes if face.offset not in protected_offsets
     ]
@@ -853,7 +993,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             (i, model.polygons[event[1]])
             for i, event in enumerate(events) if event[0] == "polygon"
         ]
-        if len(dynamic_positions) != 4 or len(polygons) < 270:
+        if len(dynamic_positions) != 4 or len(polygons) < 240:
             raise ValueError("Compiled BSP omitted a wheel or main body surface")
         if [p.color for _i,p in polygons[:8]] != [STOCK_SHADOW_COLOR]*8:
             raise ValueError("Stock-style shadow must paint first")
