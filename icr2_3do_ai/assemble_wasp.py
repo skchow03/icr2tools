@@ -1184,17 +1184,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     helmet_dynamic = helmet_dynamics[0]
     if tuple(helmet_dynamic.xyz) != HELMET_GAME_XYZ or helmet_dynamic.angles != (0, 0, 0):
         raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
-    # Stock eight-view PMP uses 4800 raw scaling. Conservatively treat
-    # half this value as the lower head extent; the entire chin should
-    # remain above the highest dashboard roof crown (3.42 feet).
-    dashboard_roof_z = round(3.42 * 6000) + STOCK_GROUND_RAW_Z
-    helmet_chin_conservative_z = helmet_dynamic.xyz[2] - 2400
-    if helmet_chin_conservative_z <= dashboard_roof_z + 600:
-        raise ValueError("Helmet chin does not adequately clear the dashboard")
-    # Confirm this V23 reduction really occurred; a high V22 helmet must
-    # not accidentally pass just because it also clears the dashboard.
-    if helmet_chin_conservative_z - dashboard_roof_z >= 1200:
-        raise ValueError("Helmet is still too high above the dashboard")
+    # The actual eight-angle PMP silhouette has no fixed geometric chin.
+    # Enforce the user-requested sprite anchor without guessing a clearance.
+    if helmet_dynamic.xyz[2] != 12824:
+        raise ValueError("Helmet must be at exactly Z=12824")
     # Confirm the fin is no longer buried within the elevated deck.
     # Each fin endpoint should dip only slightly into the deck surface
     # to prevent a light leak, rather than have ~0.5ft of hidden base.
@@ -1212,7 +1205,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                     f"Missing compiled dorsal-fin vertex at {(x_raw, y_raw, z_raw)}"
                 )
     def rear_roof_height_ft(x_ft: float) -> float:
-        return 3.47 + (3.03 - 3.47) * (x_ft - 11.12) / (14.55 - 11.12)
+        return 3.40 + (3.08 - 3.40) * (x_ft - 11.12) / (14.55 - 11.12)
     for base_height, base_x in ((3.24, 12.25), (2.98, 14.43)):
         roof_overlap = rear_roof_height_ft(base_x) - base_height
         if not 0 < roof_overlap < 0.13:
@@ -1226,9 +1219,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # rear wheel line, and both broad front and middle sections are
     # higher than the rear bonnet's 3.42 ft crown.
     rear_deck_x = _game_coordinates((int(round(8.34*6000)), 0, 0))[0]
-    rear_deck_crown = int(round(3.54*6000)) + STOCK_GROUND_RAW_Z
+    rear_deck_crown = int(round(3.52*6000)) + STOCK_GROUND_RAW_Z
     middle_deck_x = _game_coordinates((int(round(11.12*6000)), 0, 0))[0]
-    middle_deck_crown = int(round(3.47*6000)) + STOCK_GROUND_RAW_Z
+    middle_deck_crown = int(round(3.40*6000)) + STOCK_GROUND_RAW_Z
     if not any(
         v.xyz[0] == rear_deck_x and v.xyz[2] == rear_deck_crown
         for v in model.vertices.values()
@@ -1420,9 +1413,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
         "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
-        "V23 HELMET DYNAMIC (-2100, 0, 14824): lowered 3in from V22.\n"
-        "Neck lowered to design heights 3.15..3.55ft; shoulders unchanged.\n"
-        "Rear deck starts at 8.34ft and has crowns at 3.54, 3.47, 3.03ft.\n"
+        "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
+        "Helmet paints after BOTH roof skins, mirror and struts.\n"
+        "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
+        "Flatter converging tail: crowns 3.52, 3.40, 3.08ft.\n"
         "Fin now peaks at 4.52ft, with its bottom edge just inside rear roof.\n"
         "Previous wheel positions and palette assignments unchanged.\n",
         encoding="utf-8",
@@ -1449,12 +1443,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         },
         "dimensions": {
             "rear_deck_design_start_ft": 8.34,
-            "rear_deck_front_crown_ft": 3.54,
-            "rear_deck_mid_crown_ft": 3.47,
-            "tail_tip_crown_ft": 3.03,
-            "helmet_center_height_above_ground_ft": 3.93,
-            "neck_bottom_height_ft": 3.15,
-            "neck_top_height_ft": 3.55,
+            "rear_deck_front_crown_ft": 3.52,
+            "rear_deck_mid_crown_ft": 3.40,
+            "tail_tip_crown_ft": 3.08,
+            "helmet_center_height_above_ground_ft": 3.5967,
+            "neck_bottom_height_ft": 3.09,
+            "neck_top_height_ft": 3.37,
             "dorsal_fin_peak_height_ft": 4.52,
             "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
@@ -1471,8 +1465,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "gloves_seat_palette": BLACK_PALETTE,
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
-            "chin_clearance_above_dashboard_raw": helmet_chin_conservative_z - dashboard_roof_z,
-            "dashboard_roof_z_raw": dashboard_roof_z,
+            "sprite_chin_clearance": "not asserted: PMP silhouette depends on view",
+            "helmet_paints_last_within_body": True,
             "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
             "helmet_pmp_names": [f"helm{i:04}" for i in range(1, 9)],
             "head_is_external_sprite_not_polygon_mesh": True,
