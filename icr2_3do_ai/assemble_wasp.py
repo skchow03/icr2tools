@@ -1188,6 +1188,46 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # Enforce the user-requested sprite anchor without guessing a clearance.
     if helmet_dynamic.xyz[2] != 12824:
         raise ValueError("Helmet must be at exactly Z=12824")
+    # Rendering is painter-style, not true depth-tested transparent sprites.
+    # Test all parent polygon events, including upper bonnet, upper tail,
+    # and mirror housing/struts, paint BEFORE the helmet from representative
+    # front, rear and elevated oblique cameras. Near-side wheels remain last.
+    helmet_paint_tests = {}
+    for eye_x in (-100000, 0, 100000):
+        for eye_y in (-90000, 90000):
+            for eye_z in (10000, 34000):
+                eye = (eye_x, eye_y, eye_z)
+                events = []
+                model.switched_polygons(
+                    None, eye, bsp_mode="original", events=events
+                )
+                helmet_indices = [
+                    i for i, (kind, offset, *_) in enumerate(events)
+                    if kind == "dynamic" and offset == helmet_dynamic.offset
+                ]
+                if len(helmet_indices) != 1:
+                    raise ValueError(f"Helmet absent/duplicated from {eye}")
+                helmet_i = helmet_indices[0]
+                polygon_indices = [
+                    i for i, (kind, *_rest) in enumerate(events)
+                    if kind == "polygon"
+                ]
+                if not polygon_indices or max(polygon_indices) >= helmet_i:
+                    raise ValueError(
+                        f"Bonnet, tail or mirror paints over helmet from {eye}"
+                    )
+                near_wheel_indices = [
+                    i for i, (kind, offset, *_) in enumerate(events)
+                    if kind == "dynamic" and offset in model.dynamics
+                    and model.dynamics[offset].name in ("FWHEEL", "RWHEEL")
+                    and model.dynamics[offset].xyz[1] * eye_y > 0
+                ]
+                if len(near_wheel_indices) != 2 or min(near_wheel_indices) <= helmet_i:
+                    raise ValueError(f"Helmet paints outside wheel layers from {eye}")
+                helmet_paint_tests[str(eye)] = {
+                    "all_body_polygons_before_helmet": True,
+                    "near_wheels_after_helmet": True,
+                }
     # Confirm the fin is no longer buried within the elevated deck.
     # Each fin endpoint should dip only slightly into the deck surface
     # to prevent a light leak, rather than have ~0.5ft of hidden base.
@@ -1232,6 +1272,29 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         for v in model.vertices.values()
     ):
         raise ValueError("Middle raised rear deck is missing")
+    # Check actual compiled loft cross sections and taper; unlike the
+    # bonnet's .43-foot shoulder-to-crown rise, the tail has <.11ft.
+    tail_sections = (
+        # design X, outer half-width, outer shoulder Z, plateau half-width, top Z
+        (8.34, 1.33, 3.42, 0.86, 3.52),
+        (11.12, 0.88, 3.30, 0.54, 3.40),
+        (14.55, 0.08, 3.04, 0.0344, 3.08),
+    )
+    for x_ft, outer_width, shoulder_z, inner_width, crown_z in tail_sections:
+        if not (0 < crown_z - shoulder_z <= 0.11):
+            raise ValueError("Tail roof must be flatter than bonnet crown")
+        for y_ft, z_ft in (
+            (outer_width, shoulder_z), (-outer_width, shoulder_z),
+            (inner_width, crown_z), (-inner_width, crown_z),
+        ):
+            game_xyz = _game_coordinates((
+                round(x_ft*6000), round(y_ft*6000), round(z_ft*6000)
+            ))
+            if not any(tuple(v.xyz) == game_xyz for v in model.vertices.values()):
+                raise ValueError(f"Tail loft station missing {game_xyz}")
+    if not (tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
+            and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]):
+        raise ValueError("Tail must begin tapering directly behind driver")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
@@ -1445,6 +1508,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "rear_deck_design_start_ft": 8.34,
             "rear_deck_front_crown_ft": 3.52,
             "rear_deck_mid_crown_ft": 3.40,
+            "outer_halfwidths_ft": [1.33, 0.88, 0.08],
+            "plateau_halfwidths_ft": [0.86, 0.54, 0.0344],
+            "shoulder_heights_ft": [3.42, 3.30, 3.04],
             "tail_tip_crown_ft": 3.08,
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
@@ -1496,6 +1562,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "front_face_normal_signed_equation": list(face_eq),
         },
         "cockpit_closure_visibility": cockpit_visibility_tests,
+        "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
