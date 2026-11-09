@@ -1561,10 +1561,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "V25 driver wears medium brown 148, leather gloves darker brown 149.\n"
         "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
         "Black seat, chassis and tires remain fixed palette 33.\n"
-        "Raised scuttle now covers rear quarter of bonnet, design X=4.69..6.09ft.\n"
-        "Three-station cowl loft X=4.69,5.39,6.09ft rises progressively.\n"
-        "Scuttle peaks at 4.03ft and steps smoothly down to original bonnet roof.\n"
-        "Extra cowl facing cap visible from cockpit/rear but not from front.\n"
+        "V27: no separate interior cowl mesh or buried bonnet roof.\n"
+        "One five-ring bonnet loft has 48 outward side/roof triangles.\n"
+        "Single rearward dashboard closure at X=8460; nose cap omitted.\n"
+        "Cowl rises over the final quarter X=4.69..6.09ft (25% of bonnet).\n"
+        "No intermediate X-cross-section polygons are generated.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
@@ -1610,7 +1611,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "dashboard_cowl_bulkhead_station_ft": 6.09,
             "dashboard_cowl_crown_height_ft": 4.03,
             "dashboard_cowl_shoulder_height_ft": 3.65,
-            "dashboard_cowl_extra_bulkhead_game_x": 8460,
+            "dashboard_cowl_cockpit_bulkhead_game_x": 8460,
+            "bonnet_loft_stations_ft": [0.55, 3.35, 4.69, 5.39, 6.09],
+            "bonnet_unified_exterior_triangle_count": 48,
+            "redundant_inner_cowl_shell_removed": True,
             "dorsal_fin_peak_height_ft": 4.52,
             "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
@@ -1663,23 +1667,26 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         },
         "cockpit_closure_visibility": cockpit_visibility_tests,
         "raised_dashboard_cowl": {
-            "component": "dashboard_cowl_riser",
-            "rear_cap_x_raw": 8460,
-            "rear_cap_palette": SIDE_YELLOW,
-            "bonnet_facing_front_cap_removed": True,
+            "component": "long_bonnet",
+            "integrated_into_single_continuous_shell": True,
+            "previous_duplicate_cowl_component_removed": True,
+            "single_cockpit_closure_x_raw": 8460,
+            "front_cap_physically_removed": True,
             "rear_cap_uses_rear_facing_FACE": True,
-            "rear_cap_camera_checks": 20,
-            "loft_sections": 3,
-            "cowl_length_ft": 1.40,
-            "bonnet_length_ft": 5.60,
-            "cowl_cover_fraction": .25,
+            "camera_visibility_checks": 20,
+            "loft_sections": 5,
+            "exterior_triangle_count": 48,
+            "interior_mid_bonnet_cross_sections": 0,
+            "cowl_ramp_length_ft": 1.40,
+            "original_bonnet_reference_length_ft": 5.60,
+            "cowl_coverage_fraction": .25,
         },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
-                                "upper_roof", "fin_cowl_mirror",
-                                "helmet_sprite", "near_side_wheels"],
-        "paint_source_regression_checks": len(check_colors) + 24 + 20 + 16,
+                                "integrated_bonnet_upper_roof", "tail_upper_roof",
+                                "fin_mirror", "helmet_sprite", "near_side_wheels"],
+        "paint_source_regression_checks": len(check_colors) + 36 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
             "side_and_fin_yellow": SIDE_YELLOW,
