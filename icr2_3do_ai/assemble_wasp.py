@@ -1634,7 +1634,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Place WASP.3do, FWHEEL.3do, RWHEEL.3do, HELMET.3do in one folder.\n"
         "HELMET.3do is the unchanged eight-angle stock sprite reference.\n"
         "The eight helm0001..helm0008.pmp images must be available from game resources.\n"
-        "WASP.3do holds four DYNAMIC external references, two to each wheel model.\n"
+        "WASP.3do holds 5 DYNAMIC refs: 4 wheels and original HELMET sprite.\n"
         "No wheel cubes remain in the parent; wheels originate at their own axle center.\n"
         "GAME ORIENTATION: forward is +X, origin inside cockpit, Z=-8756 at ground.\n"
         "Wasp wheel centers Z=-256; 34in radius tires touch stock ICR2 ground.\n"
@@ -1660,15 +1660,17 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
         "Black seat, chassis and tires remain fixed palette 33.\n"
         "V27: no separate interior cowl mesh or buried bonnet roof.\n"
-        "One five-ring bonnet loft has 48 outward side/roof triangles.\n"
-        "Single rearward dashboard closure at X=8460; nose cap omitted.\n"
-        "Cowl rises over the final quarter X=4.69..6.09ft (25% of bonnet).\n"
+        "V28 bonnet has four CAD-traced stations, 36 outward triangles.\n"
+        "Dashboard at game (13013,14071); first roof section (19444,12421).\n"
+        "Front bonnet crown Z11967; single cockpit cap X13013.\n"
+        "Trace overrides earlier illustrative 25%-of-bonnet ramp.\n"
         "No intermediate X-cross-section polygons are generated.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
-        "Flatter converging tail: crowns 3.52, 3.40, 3.08ft.\n"
-        "Fin now peaks at 4.52ft, with its bottom edge just inside rear roof.\n"
+        "Tail deck starts at game (-3000,13902), tip (-38248,12040).\n"
+        "Driver seat back at game X=-3000, with matched cockpit walls.\n"
+        "Fin is ONE 2D polygon at Y=0 (formerly 14 thick faces).\n"
         "Wheels, shadow and original HELMET sprite unchanged.\n",
         encoding="utf-8",
     )
@@ -1693,32 +1695,42 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "measured_from": "user-supplied stock indycar.3do, fwheel.3do, rwheel.3do",
         },
         "dimensions": {
-            "rear_deck_design_start_ft": 8.34,
-            "rear_deck_front_crown_ft": 3.52,
-            "rear_deck_mid_crown_ft": 3.40,
-            "outer_halfwidths_ft": [1.33, 0.88, 0.08],
-            "plateau_halfwidths_ft": [0.86, 0.54, 0.0344],
-            "shoulder_heights_ft": [3.42, 3.30, 3.04],
-            "tail_tip_crown_ft": 3.08,
+            "rear_deck_design_start_ft": 8.0,
+            "rear_deck_front_crown_ft": 3.7763333333333335,
+            "rear_deck_mid_crown_ft": 3.58,
+            "outer_halfwidths_ft": [1.33, 0.88, 0.025],
+            "plateau_halfwidths_ft": [0.86, 0.54, 0.009],
+            "shoulder_heights_ft": [3.6763333333333, 3.48, 3.455],
+            "tail_tip_crown_ft": 3.466,
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
             "neck_top_height_ft": 3.37,
-            "dashboard_cowl_first_station_ft": 4.69,
-            "dashboard_cowl_middle_station_ft": 5.39,
-            "dashboard_cowl_bonnet_coverage_fraction": .25,
-            "dashboard_cowl_bulkhead_station_ft": 6.09,
-            "dashboard_cowl_crown_height_ft": 4.03,
-            "dashboard_cowl_shoulder_height_ft": 3.65,
-            "dashboard_cowl_cockpit_bulkhead_game_x": 8460,
-            "bonnet_loft_stations_ft": [0.55, 3.35, 4.69, 5.39, 6.09],
-            "bonnet_unified_exterior_triangle_count": 48,
+            "dashboard_cowl_first_station_ft": 4.259333333333333,
+            "dashboard_cowl_bulkhead_station_ft": 5.331166666666666,
+            "dashboard_cowl_crown_height_ft": 3.8045,
+            "dashboard_cowl_shoulder_height_ft": 3.3745,
+            "dashboard_cowl_cockpit_bulkhead_game_x": 13013,
+            "bonnet_loft_stations_ft": [0.55, 3.35, 4.259333333333333, 5.331166666666666],
+            "bonnet_unified_exterior_triangle_count": 36,
             "redundant_inner_cowl_shell_removed": True,
             "dorsal_fin_peak_height_ft": 4.52,
-            "dorsal_fin_base_heights_ft": [3.24, 2.98],
+            "dorsal_fin_base_heights_ft": [3.53, 3.43],
+            "dorsal_fin_is_planar": True,
+            "dorsal_fin_polygon_count": 1,
+            "driver_seat_back_game_x": -3000,
+            "cad_trace_game_coordinates": {
+                "tail_tip": [-38248, 12040],
+                "rear_deck_at_seat": [-3000, 13902],
+                "driver_seat_x": -3000,
+                "dashboard_top": [13013, 14071],
+                "first_bonnet_section_after_dashboard": [19444, 12421],
+                "front_bonnet_top_z": 11967,
+            },
             "wheelbase_inches": wheelbase_in,
             "overall_length_inches": length_in,
             "radiator_front_to_front_axle_inches": radiator_to_front_axle_in,
-            "documented_source": "INDYCAR/IMS 2011 centennial specifications",
+            "mesh_length_source": "user CAD-traced measurements supersede earlier illustrative length",
+            "previous_illustrative_overall_length_inches": 187,
             "radiator_axle_alignment": "photograph-guided estimate; not a published measurement",
         },
         "source_files": ["WASP.3D", "FWHEEL.3D", "RWHEEL.3D"],
@@ -1768,25 +1780,25 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "component": "long_bonnet",
             "integrated_into_single_continuous_shell": True,
             "previous_duplicate_cowl_component_removed": True,
-            "single_cockpit_closure_x_raw": 8460,
+            "single_cockpit_closure_x_raw": 13013,
             "front_cap_physically_removed": True,
             "rear_cap_uses_rear_facing_FACE": True,
             "camera_visibility_checks": 20,
-            "loft_sections": 5,
-            "exterior_triangle_count": 48,
+            "loft_sections": 4,
+            "exterior_triangle_count": 36,
             "outward_normal_checks": outward_winding_checks,
             "all_bonnet_skin_faces_point_outward": True,
             "interior_mid_bonnet_cross_sections": 0,
-            "cowl_ramp_length_ft": 1.40,
-            "original_bonnet_reference_length_ft": 5.60,
-            "cowl_coverage_fraction": .25,
+            "traced_dashboard_to_next_station_ft": 1.0718333333333334,
+            "traced_bonnet_length_ft": 4.781166666666667,
+            "traced_ramp_length_fraction": (19444 - 13013)/(41700 - 13013),
         },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "integrated_bonnet_upper_roof", "tail_upper_roof",
                                 "fin_mirror", "helmet_sprite", "near_side_wheels"],
-        "paint_source_regression_checks": len(check_colors) + 36 + 20 + 16,
+        "paint_source_regression_checks": len(check_colors) + 30 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
             "side_and_fin_yellow": SIDE_YELLOW,
