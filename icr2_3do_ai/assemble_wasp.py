@@ -257,11 +257,67 @@ def _stock_style_shadow_source() -> str:
     return "\n".join(lines)
 
 
+# Palette in shared sunny/gamepal (verified previous work):
+# 49 = near-black (19,19,19); 159 = darker yellow (235,203,0);
+# 158 = bright yellow (255,223,35); 40 = gray (167,167,167).
+# Stock ground shadow remains palette index 27.
+BLACK_PALETTE = 49
+SIDE_YELLOW = 159
+TOP_YELLOW = 158
+MIRROR_GRAY = 40
+
+
+def _repaint_one_polygon(source: str, name: str, current: int,
+                         target: int) -> str:
+    """Repaint precisely one named N3 POLY with stale-source protection."""
+    pattern = re.compile(
+        rf"(?m)^({re.escape(name)}: POLY) <{current}>(\s+\{{)"
+    )
+    source, count = pattern.subn(
+        lambda m: f"{m.group(1)} <{target}>{m.group(2)}",source
+    )
+    if count != 1:
+        raise ValueError(f"Expected one {name} colored {current}, got {count}")
+    return source
+
+
+def _paint_wasp_upper_surfaces(source: str) -> str:
+    """Split top versus side colors on existing polygon faces, not geometry."""
+    # Six-vertex cross-section ring edges: bottom, outer vertical side,
+    # high shoulder, central top, high shoulder, outer vertical side.
+    # Each ring span has 12 side triangles. Faces 5 through 10 comprise
+    # the raised shoulders and upper crown.
+    for component in ("long_bonnet","pointed_tail"):
+        for span in (0,1):
+            for relative in range(5,11):
+                idx=span*12+relative
+                source=_repaint_one_polygon(
+                    source,f"{component}_p{idx:04}",SIDE_YELLOW,TOP_YELLOW
+                )
+    # These strips lie along the U-shaped upper cockpit opening:
+    # triangle faces 3/4 have the sloping top edge, 0/9 are broad sides.
+    for side in ("left","right"):
+        for section in range(1,6):
+            for idx in (3,4):
+                source=_repaint_one_polygon(
+                    source,f"cockpit_body_{side}_{section}_p{idx:04}",
+                    SIDE_YELLOW,TOP_YELLOW
+                )
+    # Forward-facing (+X) mirror cap becomes yellow; the aft-facing cap
+    # p0009 remains gray along with four side edges.
+    source=_repaint_one_polygon(
+        source,"mirror_housing_p0000",MIRROR_GRAY,TOP_YELLOW
+    )
+    if not re.search(r"(?m)^mirror_housing_p0009: POLY <40> \{",source):
+        raise ValueError("Mirror rear cap must remain gray")
+    return source
+
+
 def _omit_radiator_rear_cap(source: str) -> str:
     """Keep front radiator face & edge shell, omit ONLY its rear hexagon."""
     cap = "radiator_face_p0013"
     source, drop = re.subn(
-        rf"(?m)^{cap}: POLY <0> \{{[^}}\n]+\}};\n", "", source
+        rf"(?m)^{cap}: POLY <{BLACK_PALETTE}> \{{[^}}\n]+\}};\n", "", source
     )
     if drop != 1:
         raise ValueError(f"Expected precisely one {cap} declaration, got {drop}")
@@ -419,7 +475,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     )
     wasp_text = _attach_shadow_root(
         _attach_radiator_front_cull(
-            _game_source(_omit_radiator_rear_cap(wasp_text))
+            _game_source(_omit_radiator_rear_cap(
+                _paint_wasp_upper_surfaces(wasp_text)
+            ))
         )
     )
 
@@ -458,7 +516,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # N3: one front grille, six surface-oriented two-triangle rim sectors.
     radiator_front_caps = [
         p.offset for p in model.polygons.values()
-        if p.color == 0 and len(set(p.refs)) == 6
+        if p.color == BLACK_PALETTE and len(set(p.refs)) == 6
         and all(model.vertices[v].xyz[0] == RADIATOR_FRONT_X_RAW
                 for v in p.refs)
     ]
@@ -547,7 +605,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     radiator_polygon_offsets = tuple([radiator_front_offset]+rim_faces)
 
     radiator_back_x_raw = _game_coordinates((3300, 0, 0))[0]
-    if any(p.color == 0 and len(p.refs) == 6
+    if any(p.color == BLACK_PALETTE and len(p.refs) == 6
            and all(model.vertices[v].xyz[0] == radiator_back_x_raw
                    for v in p.refs)
            for p in model.polygons.values()):
@@ -606,7 +664,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         # before the chassis polygons but produce external polygons.
         frame_polys = polygons[8:8+expected_frame_polygons]
         if len(frame_polys) != expected_frame_polygons or any(
-                p.color != 0 for _i,p in frame_polys):
+                p.color != BLACK_PALETTE for _i,p in frame_polys):
             raise ValueError("The entire 114-polygon chassis must paint as one black layer")
         frame_start = frame_polys[0][0]
         frame_end = frame_polys[-1][0]
@@ -662,8 +720,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         ordered_model, _ = validate_source(
             ordered_source, model_path=output / (obj_name + ".3D")
         )
-        if re.search(r'POLY\\s*<(?:47|48|49)>', ordered_source):
-            raise ValueError(f"Non-safe dark gray colors remain in {obj_name}")
+        if re.search(r'POLY\s*<(?:0|47|48)>', ordered_source):
+            raise ValueError(f"Disallowed reserved/obsolete black in {obj_name}")
         if ordered_model.records[ordered_model.root_offset] != 8:
             raise ValueError(f"{obj_name} root is not BSPA")
         (output / (obj_name + ".3D")).write_text(
@@ -704,7 +762,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Body U-shaped cockpit walls are solid, made of five joined facets per side.\n"
         "Tire size 34x4.5 inches, steel wheel covers nominal 25 inches; polygonal.\n"
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
-        "Black is reserved common palette index 0; no MIP textures.\n"
+        "True black uses shared index 49 (not 0); ground shadow 27 unchanged.\n"
+        "Upper yellow 158, sides/fin and wheel discs 159; mirror front 158 back 40.\n"
         "Shadow: eight flat polygons, palette 27 at raw Z=-8501, stock ICR2 convention.\n"
         "Far wheels paint before black frame; frame before yellow; near wheels last.\n"
         "Both mirror supports are yellow palette index 158.\n"
@@ -766,6 +825,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
+        "paint_palette": {
+            "chassis_tire_and_hub": BLACK_PALETTE,
+            "side_and_fin_yellow": SIDE_YELLOW,
+            "upper_crown_yellow": TOP_YELLOW,
+            "mirror_front_yellow": TOP_YELLOW,
+            "mirror_back_and_edge_gray": MIRROR_GRAY,
+            "shadow_original": STOCK_SHADOW_COLOR,
+        },
         "mirror_strut_palette": 158,
         "chassis_painted_first": True,
         "bsp_camera_sides": bsp_tests,
