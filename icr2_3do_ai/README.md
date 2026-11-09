@@ -182,18 +182,45 @@ Operations:
 | `loft` | Connect multiple cross-sections with triangular shell faces | `name`, `axis`, `sections` (strictly increasing `at`) |
 | `extrude` | Extrude a convex 2D outline between two planes | `name`, `axis`, `outline`, `from`, `to` |
 | `mirror` | Reflect a previously created component, reversing its face winding | `name`, `source`, `axis`, optional plane location `at` |
+| `polygon` | Flat N3 POLY with safe triangulation of concave outlines | `name`, `axis`, `at`, `outline`, optional color/material/UV |
 
 `loft.sections` may use rectangular `width` / `height` / `center`,
 or explicit `outline: [[u,v], ...]`; each section must contain the same
 number of points with corresponding vertex ordering. `extrude` and `loft`
-support `color` (0–255) and `caps` (boolean, default true).
+support `color` (0–255) and `caps` (boolean, default true). You may also
+choose caps independently: `"caps": {"start": false, "end": true}`. For example,
+omit the start cap behind a radiator while retaining the cockpit-facing
+dashboard closure. Legacy `true`/`false` values remain fully supported.
+
+A new `polygon` operation builds an actual *zero-thickness* N3 POLY on a
+constant-axis plane. Example: `"type": "polygon", "axis": "y", "at": 0,
+"outline": [[z0,x0], ...]`. As with lofts, the `axis` selects the
+fixed coordinate, and the outline uses the other two coordinates in the
+generator's documented order (for Y, [Z,X]). Convex outlines stay a single
+N-gon. Simple concave outlines are ear-clipped into valid triangles rather
+than emitted as an unsupported concave surface. Self-intersecting, duplicate,
+degenerate, or quantization-collapsed polygons are rejected. A bare POLY is
+not FACE-gated and may paint from both sides; directional behavior belongs
+to an assembly layer.
+
+**Surface-integrity preflight:** Stage 2 checks different named components
+for exact duplicate polygons, coplanar positive-area overlap, and detected
+noncoplanar face intersections. The default `"surface_checks": "warn"`
+writes bounded findings under `manifest.json` → `surface_checks`.
+Specify `"surface_checks": "error"` to fail a recipe on a finding, or
+`"off"` to skip scanning. Warnings never remove geometry and may include
+intentional overlays; touching edges and vertices are ignored. This is
+not a complete mesh Boolean, hidden-surface remover, BSP renderer, or proof
+of watertightness. Diagnostic scan limits signal incomplete coverage.
+
+See `recipes/phase1_geometry_integrity_demo.json` for all three features.
 An optional `material` (1–8-character MIP resource name) **must** be
 paired with a planar `uv` projection using two world axes,
 `pixels_per_unit`, optional `origin`, and optional `offset`.
 For example, use V offsets above 255 to address extended MIP artwork.
 Mirrors inherit the source material and UV rules.
 
-Cross-sections must be strictly convex, and all loft shells are triangulated
+Loft/extrude cross-sections must be strictly convex, and all loft shells are triangulated
 rather than producing nonplanar quads. Vertices are quantized into signed
 32-bit Papyrus coordinates. Degenerate faces, out-of-range UVs, ambiguous or
 unknown fields, invalid names, excessive geometry and other invalid recipes
