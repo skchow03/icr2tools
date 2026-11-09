@@ -891,6 +891,54 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Hidden nose cross-section was not removed")
     if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 49:
         raise ValueError("Unified bonnet must have 48 exterior triangles and 1 rear cap")
+    # Verify ALL retained bonnet triangles point outwards. A second shell
+    # or a mis-wound inward-facing side is not an exterior surface and
+    # must not be left as a painter-order workaround.
+    bonnet_vertices = {}
+    for match in re.finditer(
+        r"(?m)^(long_bonnet_v\d{4}): \[<(-?\d+), (-?\d+), (-?\d+)>\];$",
+        wasp_text,
+    ):
+        bonnet_vertices[match.group(1)] = tuple(int(match.group(i)) for i in (2, 3, 4))
+    bonnet_polygons = {}
+    for match in re.finditer(
+        r"(?m)^(long_bonnet_p\d{4}): POLY <\d+> \{([^}\n]+)\};$",
+        wasp_text,
+    ):
+        bonnet_polygons[match.group(1)] = match.group(2).split(", ")
+
+    def bonnet_normal(name: str):
+        if name not in bonnet_polygons or len(bonnet_polygons[name]) < 3:
+            raise ValueError(f"Missing exterior triangle {name}")
+        a, b, c = [bonnet_vertices[x] for x in bonnet_polygons[name][:3]]
+        ab = (b[0]-a[0], b[1]-a[1], b[2]-a[2])
+        ac = (c[0]-a[0], c[1]-a[1], c[2]-a[2])
+        return (
+            ab[1]*ac[2]-ab[2]*ac[1],
+            ab[2]*ac[0]-ab[0]*ac[2],
+            ab[0]*ac[1]-ab[1]*ac[0],
+        )
+
+    outward_winding_checks = 0
+    for span in range(4):
+        for side_index in range(12):
+            name = f"long_bonnet_p{span*12+side_index+1:04}"
+            nx, ny, nz = bonnet_normal(name)
+            if (side_index in (0, 1) and nz >= 0) or (
+                side_index in (2, 3) and ny >= 0
+            ) or (
+                side_index in (4, 5) and not (ny < 0 and nz > 0)
+            ) or (
+                side_index in (6, 7) and nz <= 0
+            ) or (
+                side_index in (8, 9) and not (ny > 0 and nz > 0)
+            ) or (
+                side_index in (10, 11) and ny <= 0
+            ):
+                raise ValueError(f"Inward or degenerate bonnet surface {name}")
+            outward_winding_checks += 1
+    if bonnet_normal("long_bonnet_p0049")[0] >= 0:
+        raise ValueError("Dashboard closure must face rearward toward cockpit")
     for side in ("left","right"):
         for segment in range(1,6):
             for i in (3,4):
@@ -1676,6 +1724,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "camera_visibility_checks": 20,
             "loft_sections": 5,
             "exterior_triangle_count": 48,
+            "outward_normal_checks": outward_winding_checks,
+            "all_bonnet_skin_faces_point_outward": True,
             "interior_mid_bonnet_cross_sections": 0,
             "cowl_ramp_length_ft": 1.40,
             "original_bonnet_reference_length_ft": 5.60,
