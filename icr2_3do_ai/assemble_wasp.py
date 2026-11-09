@@ -1407,73 +1407,75 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                     "all_body_polygons_before_helmet": True,
                     "near_wheels_after_helmet": True,
                 }
-    # Confirm the fin is no longer buried within the elevated deck.
-    # Each fin endpoint should dip only slightly into the deck surface
-    # to prevent a light leak, rather than have ~0.5ft of hidden base.
+    # The fin is one two-sided 6-point POLY, all vertices at Y=0.
+    # It retains a small root overlap with the new user-traced tail deck,
+    # but has no 3D extruded thickness, perimeter walls, or second cap.
     fin_shape_zx = (
-        (3.24, 12.25), (4.12, 12.90), (4.49, 13.38),
-        (4.52, 13.82), (4.20, 14.20), (2.98, 14.43),
+        (3.53, 11.65), (4.20, 12.10), (4.47, 12.47),
+        (4.52, 12.90), (4.18, 13.25), (3.43, 13.76),
     )
-    for z_ft, x_ft in fin_shape_zx:
-        x_raw = COCKPIT_DESIGN_X_RAW - round(x_ft * 6000)
-        z_raw = round(z_ft * 6000) + STOCK_GROUND_RAW_Z
-        for y_raw in (-330, 330):
-            if not any(v.xyz == (x_raw, y_raw, z_raw)
-                       for v in model.vertices.values()):
-                raise ValueError(
-                    f"Missing compiled dorsal-fin vertex at {(x_raw, y_raw, z_raw)}"
-                )
+    fin_points = {
+        (COCKPIT_DESIGN_X_RAW-round(x_ft*6000), 0,
+         round(z_ft*6000)+STOCK_GROUND_RAW_Z)
+        for z_ft, x_ft in fin_shape_zx
+    }
+    fin_polys = [
+        p for p in model.polygons.values()
+        if p.color == SIDE_YELLOW and len(p.refs) >= 6
+        and {model.vertices[v].xyz for v in p.refs} == fin_points
+    ]
+    if len(fin_polys) != 1 or len(fin_points) != 6:
+        raise ValueError("Expected precisely one 6-vertex flat dorsal fin")
+    fin_offset = fin_polys[0].offset
+    for side in (-1, 1):
+        visible, _, _ = model.switched_polygons(
+            None, (-30000, side*90000, 18000), bsp_mode="original"
+        )
+        if fin_offset not in set(visible):
+            raise ValueError("Single 2D fin must be visible from both sides")
     def rear_roof_height_ft(x_ft: float) -> float:
-        return 3.40 + (3.08 - 3.40) * (x_ft - 11.12) / (14.55 - 11.12)
-    for base_height, base_x in ((3.24, 12.25), (2.98, 14.43)):
-        roof_overlap = rear_roof_height_ft(base_x) - base_height
-        if not 0 < roof_overlap < 0.13:
-            raise ValueError(
-                f"Fin base must be 0..0.13ft into rear roof at {base_x}, "
-                f"got {roof_overlap:.3f}ft"
-            )
-    if max(z_ft for z_ft, _ in fin_shape_zx) < 4.5:
-        raise ValueError("Dorsal fin peak is not high enough")
-    # Ensure rear deck now starts behind the seat but before the old
-    # rear wheel line, and both broad front and middle sections are
-    # higher than the rear bonnet's 3.42 ft crown.
-    rear_deck_x = _game_coordinates((int(round(8.34*6000)), 0, 0))[0]
-    rear_deck_crown = int(round(3.52*6000)) + STOCK_GROUND_RAW_Z
+        return (3.58 + (3.466-3.58)*(x_ft-11.12) /
+                (13.874666666666666-11.12))
+    for base_height, base_x in ((3.53, 11.65), (3.43, 13.76)):
+        overlap = rear_roof_height_ft(base_x) - base_height
+        if not 0 < overlap < .12:
+            raise ValueError(f"Flat fin should dip just below tail roof: {overlap}")
+    # CAD-traced tail: front of deck is exactly at the seat X=-3000,
+    # its crown Z=13902; tapered final section ends at (-38248,12040).
+    rear_deck_x = -3000
+    rear_deck_crown = 13902
     middle_deck_x = _game_coordinates((int(round(11.12*6000)), 0, 0))[0]
-    middle_deck_crown = int(round(3.40*6000)) + STOCK_GROUND_RAW_Z
-    if not any(
-        v.xyz[0] == rear_deck_x and v.xyz[2] == rear_deck_crown
-        for v in model.vertices.values()
-    ):
-        raise ValueError("Front of raised rear deck is missing")
-    if not any(
-        v.xyz[0] == middle_deck_x and v.xyz[2] == middle_deck_crown
-        for v in model.vertices.values()
-    ):
-        raise ValueError("Middle raised rear deck is missing")
-    # Check actual compiled loft cross sections and taper; unlike the
-    # bonnet's .43-foot shoulder-to-crown rise, the tail has <.11ft.
+    middle_deck_crown = int(round(3.58*6000)) + STOCK_GROUND_RAW_Z
+    for x, z in ((rear_deck_x, rear_deck_crown),
+                 (middle_deck_x, middle_deck_crown),
+                 (-38248,12040)):
+        if not any(v.xyz[0] == x and v.xyz[2] == z
+                   for v in model.vertices.values()):
+            raise ValueError(f"Missing tail silhouette CAD anchor {(x,z)}")
     tail_sections = (
-        # design X, outer half-width, outer shoulder Z, plateau half-width, top Z
-        (8.34, 1.33, 3.42, 0.86, 3.52),
-        (11.12, 0.88, 3.30, 0.54, 3.40),
-        (14.55, 0.08, 3.04, 0.0344, 3.08),
+        # x design ft, halfwidth, shoulder z, plateau halfwidth, crown z
+        (8.0, 1.33, 3.6763333333333, .86, 3.7763333333333335),
+        (11.12, .88, 3.48, .54, 3.58),
+        (13.874666666666666, .025, 3.455, .009, 3.466),
     )
     for x_ft, outer_width, shoulder_z, inner_width, crown_z in tail_sections:
-        if not (0 < crown_z - shoulder_z <= 0.11):
-            raise ValueError("Tail roof must be flatter than bonnet crown")
-        for y_ft, z_ft in (
-            (outer_width, shoulder_z), (-outer_width, shoulder_z),
-            (inner_width, crown_z), (-inner_width, crown_z),
+        if not (0 < crown_z-shoulder_z <= .11):
+            raise ValueError("Tail should stay nearly flat across the crown")
+        for y_ft,z_ft in (
+            (outer_width,shoulder_z),(-outer_width,shoulder_z),
+            (inner_width,crown_z),(-inner_width,crown_z)
         ):
             game_xyz = _game_coordinates((
                 round(x_ft*6000), round(y_ft*6000), round(z_ft*6000)
             ))
-            if not any(tuple(v.xyz) == game_xyz for v in model.vertices.values()):
-                raise ValueError(f"Tail loft station missing {game_xyz}")
-    if not (tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
-            and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]):
-        raise ValueError("Tail must begin tapering directly behind driver")
+            if not any(tuple(v.xyz)==game_xyz
+                       for v in model.vertices.values()):
+                raise ValueError(f"Missing CAD tail section {game_xyz}")
+    if not (
+        tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
+        and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]
+    ):
+        raise ValueError("Tail must taper continuously to the traced point")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
