@@ -32,10 +32,9 @@ WHEEL_PLACEMENTS = (
 )
 # Model-space helmet anchor. The supplied sprite's own PMP origin is (0,0,0)
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
-# V23: lower helmet by 1500 raw (3 inches) from V22. New center is
-# 3.93ft above ground; approximate PMP chin is 3.53ft, still ~1.3in
-# above the 3.42ft dashboard crown. Actual sprite silhouette is view-dependent.
-HELMET_GAME_XYZ = (-2100, 0, 14824)
+# V24: use exact requested helmet center, Z=12824 in game coordinates.
+# Sprite-image-dependent chin height must be checked in the game.
+HELMET_GAME_XYZ = (-2100, 0, 12824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 NOMINAL_OVERALL_IN = 187
@@ -533,9 +532,9 @@ def _fix_roof_occlusion(source: str) -> str:
             # Raised rear deck now begins at design X=8.34ft rather than
             # 8.92ft. Outer junction is at the same height as the tail
             # shoulder; inner cap meets its sloped upper skin.
-            (5, 2): (-5040, sy*7980, 9904),
+            (5, 2): (-5040, sy*7980, 11764),
             (5, 3): (-5040, sy*7980, 364),
-            (5, 6): (-5040, sy*6240, 10864),
+            (5, 6): (-5040, sy*6240, 12134),
             (5, 7): (-5040, sy*6240, 364),
         }
         for (section, vertex), (x, y, z) in junction_vertices.items():
@@ -593,7 +592,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
     source += """
 % Rebuilt painter tree: all cockpit walls behind the exterior top shell.
 wasp_nose_shell: LIST {long_bonnet_geo};
-wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};
+wasp_driver_center: LIST {wasp_driver_body};
 wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
 wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
 wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
@@ -610,7 +609,8 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
     source = source.replace(old_xsort, new_xsort)
     old_list = "wasp_frame_and_body: LIST {wasp_black_frame, wasp_body_ysort};"
     new_list = ("wasp_frame_and_body: LIST {wasp_black_frame, "
-                "wasp_body_ysort, wasp_upper_skin, wasp_ornaments};")
+                "wasp_body_ysort, wasp_upper_skin, wasp_ornaments, "
+                "wasp_driver_helmet};")
     if source.count(old_list) != 1:
         raise ValueError("Original body list not found")
     return source.replace(old_list, new_list)
@@ -623,13 +623,15 @@ def _attach_driver_helmet(source: str) -> str:
     Place after rotating the Stage 2 car to the game's +X-forward frame:
     stock helmet direction is zero, unlike the 1800-tenths wheel transform.
     """
-    key = "wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};"
+    key = ("wasp_frame_and_body: LIST {wasp_black_frame, "
+           "wasp_body_ysort, wasp_upper_skin, wasp_ornaments, "
+           "wasp_driver_helmet};")
     if source.count(key) != 1:
-        raise ValueError("Driver must be centered in the BSPA cockpit layer")
+        raise ValueError("Helmet is not the last layer in the body")
     if "wasp_driver_helmet: DYNAMIC" in source:
         raise ValueError("Driver already has an external helmet reference")
     x, y, z = HELMET_GAME_XYZ
-    if not (-5040 < x < 8100 and y == 0 and 13500 < z < 19000):
+    if not (-5040 < x < 8100 and y == 0 and 11000 < z < 16000):
         raise ValueError("Helmet attachment is outside the Wasp cockpit")
     return source + (
         f'\nwasp_driver_helmet: DYNAMIC {x}, {y}, {z}, '
@@ -904,10 +906,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Vehicle BSPA missing ordered black-frame/paint group")
     body_layer = middle_candidates[0]
     layer_children = model.children.get(body_layer, [])
-    if (len(layer_children) != 4 or
-            [model.records.get(i) for i in layer_children[:2]] != [11, 8]):
-        raise ValueError("Expected chassis, sidewall, upper roof, ornaments layers")
-    frame_geo, painted_geo, roof_geo, ornaments_geo = layer_children
+    if (len(layer_children) != 5 or
+            [model.records.get(i) for i in layer_children] != [11, 8, 10, 11, 15]):
+        raise ValueError("Expected frame, sides, upper roof, ornaments, late helmet")
+    frame_geo, painted_geo, roof_geo, ornaments_geo, helmet_layer = layer_children
+    if model.dynamics[helmet_layer].name != "HELMET":
+        raise ValueError("Last body painter entry must be the helmet sprite")
     if len(model.children[shadow_geo]) != 8:
         raise ValueError("Wasp shadow must have exactly 8 polygons")
     for off in model.children[shadow_geo]:
