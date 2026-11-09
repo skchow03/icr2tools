@@ -896,7 +896,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
-        "paint_source_regression_checks": len(check_colors) + 36 + 20 + 16,
+        "paint_source_regression_checks": len(check_colors) + 24 + 20 + 16,
         "paint_palette": {
             "chassis_tire_and_hub": BLACK_PALETTE,
             "side_and_fin_yellow": SIDE_YELLOW,
