@@ -892,14 +892,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # compiled BSP tree and cannot paint through each other.
     mirror_front = next(
         (p.offset for p in model.polygons.values()
-         if p.color == TOP_YELLOW and len(p.refs) == 4
+         if p.color == TOP_YELLOW and len(p.refs) == 5
          and all(model.vertices[v].xyz[0] == 6360 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
     )
     mirror_rear = next(
         (p.offset for p in model.polygons.values()
-         if p.color == MIRROR_GRAY and len(p.refs) == 4
+         if p.color == MIRROR_GRAY and len(p.refs) == 5
          and all(model.vertices[v].xyz[0] == 6000 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
