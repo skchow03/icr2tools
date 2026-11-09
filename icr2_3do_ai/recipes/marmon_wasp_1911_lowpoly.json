@@ -1,6 +1,6 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp #32 three-object parent body; checked against Indianapolis Motor Speedway's 187-inch reported overall length, 116-inch wheelbase and 34-inch tire OD. Front axle and wheel center x=0.383333ft essentially flush with radiator nose x=0.39ft; rear axle and wheels x=10.05ft, 116 inches behind front. Pointed tail unchanged at x=14.55ft. Solid U-cockpit, twin mirror struts, rear fin, body chassis/axles and semi-elliptic illustrative springs. Wheels referenced by external DYNAMIC placements added by assemble_wasp.py. In-game color safety fix: all previous indices 47-49 assigned to black surfaces now use ICR2 reserved true black palette index 0; no palette or texture files modified.",
+  "description": "1911 Marmon Wasp #32 three-object parent body; checked against Indianapolis Motor Speedway's 187-inch reported overall length, 116-inch wheelbase and 34-inch tire OD. Front axle and wheel center x=0.383333ft essentially flush with radiator nose x=0.39ft; rear axle and wheels x=10.05ft, 116 inches behind front. Pointed tail unchanged at x=14.55ft. Solid U-cockpit, twin mirror struts, rear fin, body chassis/axles and semi-elliptic illustrative springs. Wheels referenced by external DYNAMIC placements added by assemble_wasp.py. In-game color safety fix: all previous indices 47-49 assigned to black surfaces now use ICR2 reserved true black palette index 0; no palette or texture files modified. Mirror support struts use shared yellow index 158 to match the bodywork.",
   "coordinate_scale": 6000,
   "operations": [
     {
@@ -509,7 +509,7 @@
       "type": "loft",
       "name": "mirror_strut_left",
       "axis": "x",
-      "color": 0,
+      "color": 158,
       "caps": false,
       "sections": [
         {
