@@ -313,6 +313,95 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     return source
 
 
+
+def _omit_cockpit_internal_bulkheads(source: str) -> str:
+    """Remove transverse solid end caps and gate cockpit closures by X."""
+    def remove_polygons(group: str, doomed: tuple[str, ...]) -> None:
+        nonlocal source
+        group_pattern = rf"(?m)^{re.escape(group)}: LIST \{{([^}}\n]+)\}};$"
+        match = re.search(group_pattern, source)
+        if match is None:
+            raise ValueError(f"Missing bulkhead-containing group {group}")
+        members = [p.strip() for p in match.group(1).split(",")]
+        if any(members.count(poly) != 1 for poly in doomed):
+            raise ValueError(f"Bulkhead names/geometry changed in {group}")
+        remaining = [p for p in members if p not in doomed]
+        source = source[:match.start()] + (
+            f"{group}: LIST {{" + ", ".join(remaining) + "};"
+        ) + source[match.end():]
+        for poly in doomed:
+            source, count = re.subn(
+                rf"(?m)^{re.escape(poly)}: POLY <\d+> \{{[^}}\n]+\}};\n",
+                "", source,
+            )
+            if count != 1:
+                raise ValueError(f"Expected exactly one {poly}, got {count}")
+
+    # Extrusion along Y created four X-normal triangles per cockpit-wall
+    # section. All ten walls meet their neighbors or the dashboard/seat;
+    # the X-normal caps are redundant and overpaint the bonnet/body shell.
+    for side in ("left", "right"):
+        for section in range(1, 6):
+            prefix = f"cockpit_body_{side}_{section}"
+            remove_polygons(
+                f"{prefix}_geo",
+                tuple(f"{prefix}_p{idx:04}" for idx in (1, 2, 5, 6)),
+            )
+
+    # The bonnet's radiator-facing yellow cap is internal behind the black
+    # grille. Preserve the true radiator front and the bonnet/tail cockpit
+    # closures, not the hidden nose partition.
+    remove_polygons("long_bonnet_geo", ("long_bonnet_p0000",))
+
+    def replace_member(group: str, old: str, new: str) -> None:
+        nonlocal source
+        pattern = rf"(?m)^{re.escape(group)}: LIST \{{([^}}\n]+)\}};$"
+        match = re.search(pattern, source)
+        if match is None:
+            raise ValueError(f"Missing cockpit closure group {group}")
+        members = [p.strip() for p in match.group(1).split(",")]
+        if members.count(old) != 1:
+            raise ValueError(f"Expected one cockpit closure {old}")
+        members[members.index(old)] = new
+        source = source[:match.start()] + (
+            f"{group}: LIST {{" + ", ".join(members) + "};"
+        ) + source[match.end():]
+
+    replace_member(
+        "long_bonnet_geo", "long_bonnet_p0025",
+        "wasp_cockpit_dashboard_only",
+    )
+    replace_member(
+        "pointed_tail_geo", "pointed_tail_p0000",
+        "wasp_cockpit_seat_only",
+    )
+
+    # Two nested FACE half-spaces form an X-window spanning the cockpit:
+    # the dashboard and seat closures are visible from the cockpit's X
+    # range, but absent when viewed from ahead of the nose or aft of tail.
+    # Source has already been converted to GAME coordinates (+X forward).
+    source += """
+% Interior-only dashboard and seat closures; no exterior bulkheads.
+wasp_front_gate_a: [<8150, -1200, -3000>];
+wasp_front_gate_b: [<8150, 0, -1000>];
+wasp_front_gate_c: [<8150, 1200, -3000>];
+wasp_rear_gate_a: [<-8580, -1200, -3000>];
+wasp_rear_gate_b: [<-8580, 1200, -3000>];
+wasp_rear_gate_c: [<-8580, 0, -1000>];
+wasp_dashboard_inner: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), long_bonnet_p0025;
+wasp_cockpit_dashboard_only: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), wasp_dashboard_inner;
+wasp_seat_inner: FACE (wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), pointed_tail_p0000;
+wasp_cockpit_seat_only: FACE (wasp_rear_gate_a, wasp_rear_gate_b, wasp_rear_gate_c), wasp_seat_inner;
+"""
+    if any(re.search(rf"(?m)^{component}_p(?:0001|0002|0005|0006):", source)
+           for component in (
+               f"cockpit_body_{side}_{section}"
+               for side in ("left", "right") for section in range(1, 6)
+           )):
+        raise ValueError("Internal cockpit bulkhead still present")
+    return source
+
+
 def _omit_radiator_rear_cap(source: str) -> str:
     """Keep front radiator face & edge shell, omit ONLY its rear hexagon."""
     cap = "radiator_face_p0013"
@@ -475,9 +564,11 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     )
     wasp_text = _attach_shadow_root(
         _attach_radiator_front_cull(
-            _game_source(_omit_radiator_rear_cap(
-                _paint_wasp_upper_surfaces(wasp_text)
-            ))
+            _omit_cockpit_internal_bulkheads(
+                _game_source(_omit_radiator_rear_cap(
+                    _paint_wasp_upper_surfaces(wasp_text)
+                ))
+            )
         )
     )
 
@@ -580,8 +671,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(model.children[frame_geo]) != 13:
         raise ValueError("Chassis must have 13 named, first-drawn components")
 
-    # All seven one-sided FACE nodes must be present in the REAL compiled
-    # N3: one front grille, six surface-oriented two-triangle rim sectors.
+    # Seven radiator FACE nodes plus four nested cockpit-window FACE gates
+    # must survive compilation (dashboard + seat, two each).
     radiator_front_caps = [
         p.offset for p in model.polygons.values()
         if p.color == BLACK_PALETTE and len(set(p.refs)) == 6
@@ -592,11 +683,50 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 7:
-        raise ValueError(f"Expected 7 radiator FACE nodes, got {len(face_nodes)}")
+    if len(face_nodes) != 11:
+        raise ValueError(f"Expected 7 radiator + 4 cockpit FACE nodes, got {len(face_nodes)}")
+    def closure_cap(x: int) -> int:
+        matches = [
+            p.offset for p in model.polygons.values()
+            if p.color == SIDE_YELLOW and len(p.refs) == 6
+            and all(model.vertices[v].xyz[0] == x for v in p.refs)
+        ]
+        if len(matches) != 1:
+            raise ValueError(f"Expected exactly one retained cockpit cap at x={x}, got {matches}")
+        return matches[0]
+    dashboard_cap = closure_cap(8100)
+    seat_cap = closure_cap(-8520)
+    closure_offsets = {dashboard_cap, seat_cap}
+    inner_faces = [
+        face for face in face_nodes
+        if any(off in closure_offsets for off in model.children.get(face.offset, []))
+    ]
+    if len(inner_faces) != 2:
+        raise ValueError("Dashboard and seat each require an interior FACE gate")
+    inner_offsets = {p.offset for p in inner_faces}
+    outer_faces = [
+        face for face in face_nodes
+        if any(off in inner_offsets for off in model.children.get(face.offset, []))
+    ]
+    if len(outer_faces) != 2:
+        raise ValueError("Cockpit closure gates require an exterior FACE gate")
+    protected_offsets = inner_offsets | {p.offset for p in outer_faces}
+    radiator_face_nodes = [
+        face for face in face_nodes if face.offset not in protected_offsets
+    ]
+    if len(radiator_face_nodes) != 7:
+        raise ValueError("Expected exactly seven unaffected radiator FACE nodes")
+    for x, expected in ((100000, False), (0, True), (-100000, False)):
+        for side in (-1, 1):
+            visible, _stats, _lod = model.switched_polygons(
+                None, (x, side * 90000, 12000), bsp_mode="original"
+            )
+            for cap in closure_offsets:
+                if (cap in set(visible)) != expected:
+                    raise ValueError(f"Cockpit cap FACE visibility wrong for x={x}, y={side}")
 
     front_face_nodes = [
-        p for p in face_nodes
+        p for p in radiator_face_nodes
         if p.equation[0] > 0 and p.equation[1] == p.equation[2] == 0
         and abs(-p.equation[3]/p.equation[0] - RADIATOR_VIS_PLANE_X_RAW)<0.001
     ]
@@ -608,7 +738,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
 
     rim_groups = []
     rim_faces = []
-    for face in face_nodes:
+    for face in radiator_face_nodes:
         if face.offset == front_face_node.offset:
             continue
         child = model.children.get(face.offset, [])
@@ -723,7 +853,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             (i, model.polygons[event[1]])
             for i, event in enumerate(events) if event[0] == "polygon"
         ]
-        if len(dynamic_positions) != 4 or len(polygons) < 300:
+        if len(dynamic_positions) != 4 or len(polygons) < 270:
             raise ValueError("Compiled BSP omitted a wheel or main body surface")
         if [p.color for _i,p in polygons[:8]] != [STOCK_SHADOW_COLOR]*8:
             raise ValueError("Stock-style shadow must paint first")
@@ -830,7 +960,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             for name, target, loc in WHEEL_PLACEMENTS
         ) +
         "Axles and leaf springs are body geometry, not separate wheel geometry.\n"
-        "Body U-shaped cockpit walls are solid, made of five joined facets per side.\n"
+        "U cockpit walls retain visible shell and top lips; 40 hidden endcaps omitted.\n"
+        "Dashboard and seat caps are visible only from cockpit X-window; bonnet nose cap removed.\n"
         "Tire size 34x4.5 inches, steel wheel covers nominal 25 inches; polygonal.\n"
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
         "True black uses shared index 49 (not 0); ground shadow 27 unchanged.\n"
