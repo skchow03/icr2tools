@@ -1,13 +1,13 @@
 {
   "schema": "icr2.n3.recipe.v1",
-  "description": "1911 Marmon Wasp rear: wheel-local coordinate origin at axle center (x=0,y=0,z=0). 34x4.5-inch tire nominal outer diameter/width and 25-inch steel-covered wood wheel nominal diameter per Hagerty register. 12-sided wheel/tire, 8-sided dark axle hub. Reusable both sides; no MIPs. Wider black rear hub suggests mechanical drum hardware. In-game color safety fix: all previous indices 47-49 assigned to black surfaces now use ICR2 reserved true black palette index 0; no palette or texture files modified.",
+  "description": "1911 Marmon Wasp rear wheel: dark tires and hub use palette 49; both steel-covered wheel discs use darker body-side yellow index 159. Wheel-local center and 34-inch tire geometry unchanged.",
   "coordinate_scale": 6000,
   "operations": [
     {
       "type": "loft",
       "name": "black_firestone_tire",
       "axis": "y",
-      "color": 0,
+      "color": 49,
       "sections": [
         {
           "at": -0.1875,
@@ -121,7 +121,7 @@
       "type": "loft",
       "name": "yellow_outer_cover_l",
       "axis": "y",
-      "color": 158,
+      "color": 159,
       "sections": [
         {
           "at": -0.211,
@@ -235,7 +235,7 @@
       "type": "loft",
       "name": "yellow_outer_cover_r",
       "axis": "y",
-      "color": 158,
+      "color": 159,
       "sections": [
         {
           "at": 0.184,
@@ -349,7 +349,7 @@
       "type": "loft",
       "name": "black_center_l",
       "axis": "y",
-      "color": 0,
+      "color": 49,
       "sections": [
         {
           "at": -0.232,
@@ -431,7 +431,7 @@
       "type": "loft",
       "name": "black_center_r",
       "axis": "y",
-      "color": 0,
+      "color": 49,
       "sections": [
         {
           "at": 0.208,
