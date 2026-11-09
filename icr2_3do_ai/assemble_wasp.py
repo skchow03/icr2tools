@@ -1188,42 +1188,40 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(radiator_face_nodes) != 7:
         raise ValueError("Expected seven unaffected radiator FACE nodes")
 
-    # Verify three stations span the rear quarter of the bonnet without
-    # an internal front cap, and monotonically rise toward the cockpit.
-    bonnet_start_ft, bonnet_end_ft = .55, 6.15
-    cowl_stations = (
-        # x, shoulder halfwidth, shoulder z, plateau halfwidth, crown z
-        (4.69, 1.284, 2.962, 0.5521, 3.386),
-        (5.39, 1.297, 3.29, 0.603, 3.718),
-        (6.09, 1.31, 3.65, 0.66, 4.03),
+    # The user traced these silhouette X/Z coordinates in the *final*
+    # CAD game frame. Verify exact compiled vertex coordinates, not just
+    # recipe floats or approximate historical dimensions.
+    cad_bonnet_top_points = (
+        (41700, 11967),   # front of bonnet/car top
+        (19444, 12421),   # first bonnet roof station after dashboard
+        (13013, 14071),   # dashboard crown
     )
-    if abs((cowl_stations[-1][0]-cowl_stations[0][0]) /
-           (bonnet_end_ft-bonnet_start_ft) - .25) > 1e-8:
-        raise ValueError("Raised cowl does not cover 25% of bonnet")
-    for design_x, shoulder_half, shoulder_z, crown_half, crown_z in cowl_stations:
-        for y_ft, z_ft in (
-            (shoulder_half, shoulder_z), (-shoulder_half, shoulder_z),
-            (crown_half, crown_z), (-crown_half, crown_z)
-        ):
-            raw_xyz = _game_coordinates((
-                round(design_x*6000), round(y_ft*6000), round(z_ft*6000)
-            ))
-            if not any(v.xyz == raw_xyz for v in model.vertices.values()):
-                raise ValueError(f"Missing raised scuttle vertex {raw_xyz}")
-    if not all(a[4] < b[4] for a, b in zip(cowl_stations, cowl_stations[1:])):
-        raise ValueError("Cowl must climb gradually toward dashboard")
-    cowl_rear_ring = _game_coordinates(
-        (round(6.09*6000), round(0.66*6000), round(4.03*6000))
-    )
-    cowl_outer_shoulder = _game_coordinates(
-        (round(6.09*6000), round(1.31*6000), round(3.65*6000))
-    )
-    if not any(v.xyz == cowl_rear_ring for v in model.vertices.values()):
-        raise ValueError("Cowl top lip 4.03 feet above ground missing")
-    if not any(v.xyz == cowl_outer_shoulder for v in model.vertices.values()):
-        raise ValueError("Cowl raised side shoulder missing")
-    for x, expected in ((100000, False), (8500, False),
-                        (7000, True), (0, True), (-100000, True)):
+    for x, z in cad_bonnet_top_points:
+        if not any(v.xyz[0] == x and v.xyz[2] == z
+                   for v in model.vertices.values()):
+            raise ValueError(f"Missing CAD-traced bonnet silhouette {(x,z)}")
+    if not (41700 > 19444 > 13013):
+        raise ValueError("Bonnet CAD ring X order is reversed")
+    # The new CAD coordinates now take priority over the preceding
+    # image-derived nominal 25% ramp length; the traced last span is
+    # approximately 22.4% of the new 4.781-foot bonnet.
+    if not any(v.xyz[0] == -3000 and v.xyz[2] == 13902
+               for v in model.vertices.values()):
+        raise ValueError("Rear body at driver's seat must reach Z=13902")
+    if not any(v.xyz[0] == -38248 and v.xyz[2] == 12040
+               for v in model.vertices.values()):
+        raise ValueError("Tail tip must match the traced (-38248,12040)")
+    # The leading rear deck and the seat must share the same X=-3000
+    # station, with the seat still an actual editable seat component.
+    if not re.search(
+        r"(?m)^driver_seatback_v\d{4}: \[<-3000, -?\d+, -?\d+>\];$",
+        wasp_text,
+    ):
+        raise ValueError("Driver seat back is not at X=-3000")
+    for x, expected in (
+        (100000, False), (13050, False),
+        (13000, True), (8500, True), (0, True), (-100000, True)
+    ):
         for y in (-90000, 90000):
             for z in (12000, 28000):
                 visible, _, _ = model.switched_polygons(
@@ -1231,7 +1229,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 )
                 if (dashboard_cap in set(visible)) != expected:
                     raise ValueError(
-                        f"Raised cowl bulkhead visibility wrong from {(x,y,z)}"
+                        f"Traced dashboard FACE culling wrong at {(x,y,z)}"
                     )
     # Validate both caps from front, inside cockpit, and behind the tail,
     # from both sides and high/low elevations. The old failure was that
@@ -1239,8 +1237,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     cockpit_visibility_tests = {}
     for x, dashboard_expected, seat_expected in (
         (100000, False, False),
-        (8500, False, False),
-        (8200, True, True),
+        (13050, False, False),
+        (13000, True, True),
+        (8500, True, True),
         (0, True, True),
         (-8600, True, False),
         (-100000, True, False),
