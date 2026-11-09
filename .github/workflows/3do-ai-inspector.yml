@@ -61,6 +61,7 @@ jobs:
             --rear /tmp/3do-ai-recipes/marmon_wasp_rear_wheel \
             --output /tmp/3do-ai-recipes/marmon_wasp_complete
           python -m icr2_3do_ai validate /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do
+          python -m icr2_3do_ai validate /tmp/3do-ai-recipes/marmon_wasp_complete/HELMET.3do
           python -m icr2_3do_ai inspect /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
             --views -o /tmp/3do-ai-recipes/marmon_wasp_complete/scene_analysis
@@ -70,9 +71,12 @@ jobs:
           root=Path("/tmp/3do-ai-recipes/marmon_wasp_complete")
           scene=json.loads((root/"scene_analysis"/"scene_graph.json").read_text())
           instances=scene.get("instances", [])
-          if len(instances)!=5:
-              raise SystemExit(f"Expected main car + four external wheel instances, got {len(instances)}")
-          print("Verified complete Wasp scene:", len(instances), "model instances")
+          if len(instances)!=6:
+              raise SystemExit(f"Expected body, 4 wheel instances and helmet sprite, got {len(instances)}")
+          helmet=root/"HELMET.3do"
+          if not helmet.is_file() or helmet.stat().st_size!=1040:
+              raise SystemExit("Missing unchanged stock helmet.3do eight-view sprite")
+          print("Verified complete Wasp:", len(instances), "model instances incl. HELMET")
           PY
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
