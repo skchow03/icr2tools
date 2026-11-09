@@ -32,10 +32,9 @@ WHEEL_PLACEMENTS = (
 )
 # Model-space helmet anchor. The supplied sprite's own PMP origin is (0,0,0)
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
-# V23: lower helmet by 1500 raw (3 inches) from V22. New center is
-# 3.93ft above ground; approximate PMP chin is 3.53ft, still ~1.3in
-# above the 3.42ft dashboard crown. Actual sprite silhouette is view-dependent.
-HELMET_GAME_XYZ = (-2100, 0, 14824)
+# V24: use exact requested helmet center, Z=12824 in game coordinates.
+# Sprite-image-dependent chin height must be checked in the game.
+HELMET_GAME_XYZ = (-2100, 0, 12824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 NOMINAL_OVERALL_IN = 187
@@ -533,9 +532,9 @@ def _fix_roof_occlusion(source: str) -> str:
             # Raised rear deck now begins at design X=8.34ft rather than
             # 8.92ft. Outer junction is at the same height as the tail
             # shoulder; inner cap meets its sloped upper skin.
-            (5, 2): (-5040, sy*7980, 9904),
+            (5, 2): (-5040, sy*7980, 11764),
             (5, 3): (-5040, sy*7980, 364),
-            (5, 6): (-5040, sy*6240, 10864),
+            (5, 6): (-5040, sy*6240, 12134),
             (5, 7): (-5040, sy*6240, 364),
         }
         for (section, vertex), (x, y, z) in junction_vertices.items():
@@ -593,7 +592,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
     source += """
 % Rebuilt painter tree: all cockpit walls behind the exterior top shell.
 wasp_nose_shell: LIST {long_bonnet_geo};
-wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};
+wasp_driver_center: LIST {wasp_driver_body};
 wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
 wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
 wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
@@ -610,7 +609,8 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
     source = source.replace(old_xsort, new_xsort)
     old_list = "wasp_frame_and_body: LIST {wasp_black_frame, wasp_body_ysort};"
     new_list = ("wasp_frame_and_body: LIST {wasp_black_frame, "
-                "wasp_body_ysort, wasp_upper_skin, wasp_ornaments};")
+                "wasp_body_ysort, wasp_upper_skin, wasp_ornaments, "
+                "wasp_driver_helmet};")
     if source.count(old_list) != 1:
         raise ValueError("Original body list not found")
     return source.replace(old_list, new_list)
@@ -623,13 +623,15 @@ def _attach_driver_helmet(source: str) -> str:
     Place after rotating the Stage 2 car to the game's +X-forward frame:
     stock helmet direction is zero, unlike the 1800-tenths wheel transform.
     """
-    key = "wasp_driver_center: LIST {wasp_driver_body, wasp_driver_helmet};"
+    key = ("wasp_frame_and_body: LIST {wasp_black_frame, "
+           "wasp_body_ysort, wasp_upper_skin, wasp_ornaments, "
+           "wasp_driver_helmet};")
     if source.count(key) != 1:
-        raise ValueError("Driver must be centered in the BSPA cockpit layer")
+        raise ValueError("Helmet is not the last layer in the body")
     if "wasp_driver_helmet: DYNAMIC" in source:
         raise ValueError("Driver already has an external helmet reference")
     x, y, z = HELMET_GAME_XYZ
-    if not (-5040 < x < 8100 and y == 0 and 13500 < z < 19000):
+    if not (-5040 < x < 8100 and y == 0 and 11000 < z < 16000):
         raise ValueError("Helmet attachment is outside the Wasp cockpit")
     return source + (
         f'\nwasp_driver_helmet: DYNAMIC {x}, {y}, {z}, '
@@ -904,10 +906,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Vehicle BSPA missing ordered black-frame/paint group")
     body_layer = middle_candidates[0]
     layer_children = model.children.get(body_layer, [])
-    if (len(layer_children) != 4 or
-            [model.records.get(i) for i in layer_children[:2]] != [11, 8]):
-        raise ValueError("Expected chassis, sidewall, upper roof, ornaments layers")
-    frame_geo, painted_geo, roof_geo, ornaments_geo = layer_children
+    if (len(layer_children) != 5 or
+            [model.records.get(i) for i in layer_children] != [11, 8, 10, 11, 15]):
+        raise ValueError("Expected frame, sides, upper roof, ornaments, late helmet")
+    frame_geo, painted_geo, roof_geo, ornaments_geo, helmet_layer = layer_children
+    if model.dynamics[helmet_layer].name != "HELMET":
+        raise ValueError("Last body painter entry must be the helmet sprite")
     if len(model.children[shadow_geo]) != 8:
         raise ValueError("Wasp shadow must have exactly 8 polygons")
     for off in model.children[shadow_geo]:
@@ -1180,17 +1184,50 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     helmet_dynamic = helmet_dynamics[0]
     if tuple(helmet_dynamic.xyz) != HELMET_GAME_XYZ or helmet_dynamic.angles != (0, 0, 0):
         raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
-    # Stock eight-view PMP uses 4800 raw scaling. Conservatively treat
-    # half this value as the lower head extent; the entire chin should
-    # remain above the highest dashboard roof crown (3.42 feet).
-    dashboard_roof_z = round(3.42 * 6000) + STOCK_GROUND_RAW_Z
-    helmet_chin_conservative_z = helmet_dynamic.xyz[2] - 2400
-    if helmet_chin_conservative_z <= dashboard_roof_z + 600:
-        raise ValueError("Helmet chin does not adequately clear the dashboard")
-    # Confirm this V23 reduction really occurred; a high V22 helmet must
-    # not accidentally pass just because it also clears the dashboard.
-    if helmet_chin_conservative_z - dashboard_roof_z >= 1200:
-        raise ValueError("Helmet is still too high above the dashboard")
+    # The actual eight-angle PMP silhouette has no fixed geometric chin.
+    # Enforce the user-requested sprite anchor without guessing a clearance.
+    if helmet_dynamic.xyz[2] != 12824:
+        raise ValueError("Helmet must be at exactly Z=12824")
+    # Rendering is painter-style, not true depth-tested transparent sprites.
+    # Test all parent polygon events, including upper bonnet, upper tail,
+    # and mirror housing/struts, paint BEFORE the helmet from representative
+    # front, rear and elevated oblique cameras. Near-side wheels remain last.
+    helmet_paint_tests = {}
+    for eye_x in (-100000, 0, 100000):
+        for eye_y in (-90000, 90000):
+            for eye_z in (10000, 34000):
+                eye = (eye_x, eye_y, eye_z)
+                events = []
+                model.switched_polygons(
+                    None, eye, bsp_mode="original", events=events
+                )
+                helmet_indices = [
+                    i for i, (kind, offset, *_) in enumerate(events)
+                    if kind == "dynamic" and offset == helmet_dynamic.offset
+                ]
+                if len(helmet_indices) != 1:
+                    raise ValueError(f"Helmet absent/duplicated from {eye}")
+                helmet_i = helmet_indices[0]
+                polygon_indices = [
+                    i for i, (kind, *_rest) in enumerate(events)
+                    if kind == "polygon"
+                ]
+                if not polygon_indices or max(polygon_indices) >= helmet_i:
+                    raise ValueError(
+                        f"Bonnet, tail or mirror paints over helmet from {eye}"
+                    )
+                near_wheel_indices = [
+                    i for i, (kind, offset, *_) in enumerate(events)
+                    if kind == "dynamic" and offset in model.dynamics
+                    and model.dynamics[offset].name in ("FWHEEL", "RWHEEL")
+                    and model.dynamics[offset].xyz[1] * eye_y > 0
+                ]
+                if len(near_wheel_indices) != 2 or min(near_wheel_indices) <= helmet_i:
+                    raise ValueError(f"Helmet paints outside wheel layers from {eye}")
+                helmet_paint_tests[str(eye)] = {
+                    "all_body_polygons_before_helmet": True,
+                    "near_wheels_after_helmet": True,
+                }
     # Confirm the fin is no longer buried within the elevated deck.
     # Each fin endpoint should dip only slightly into the deck surface
     # to prevent a light leak, rather than have ~0.5ft of hidden base.
@@ -1208,7 +1245,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                     f"Missing compiled dorsal-fin vertex at {(x_raw, y_raw, z_raw)}"
                 )
     def rear_roof_height_ft(x_ft: float) -> float:
-        return 3.47 + (3.03 - 3.47) * (x_ft - 11.12) / (14.55 - 11.12)
+        return 3.40 + (3.08 - 3.40) * (x_ft - 11.12) / (14.55 - 11.12)
     for base_height, base_x in ((3.24, 12.25), (2.98, 14.43)):
         roof_overlap = rear_roof_height_ft(base_x) - base_height
         if not 0 < roof_overlap < 0.13:
@@ -1222,9 +1259,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # rear wheel line, and both broad front and middle sections are
     # higher than the rear bonnet's 3.42 ft crown.
     rear_deck_x = _game_coordinates((int(round(8.34*6000)), 0, 0))[0]
-    rear_deck_crown = int(round(3.54*6000)) + STOCK_GROUND_RAW_Z
+    rear_deck_crown = int(round(3.52*6000)) + STOCK_GROUND_RAW_Z
     middle_deck_x = _game_coordinates((int(round(11.12*6000)), 0, 0))[0]
-    middle_deck_crown = int(round(3.47*6000)) + STOCK_GROUND_RAW_Z
+    middle_deck_crown = int(round(3.40*6000)) + STOCK_GROUND_RAW_Z
     if not any(
         v.xyz[0] == rear_deck_x and v.xyz[2] == rear_deck_crown
         for v in model.vertices.values()
@@ -1235,6 +1272,29 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         for v in model.vertices.values()
     ):
         raise ValueError("Middle raised rear deck is missing")
+    # Check actual compiled loft cross sections and taper; unlike the
+    # bonnet's .43-foot shoulder-to-crown rise, the tail has <.11ft.
+    tail_sections = (
+        # design X, outer half-width, outer shoulder Z, plateau half-width, top Z
+        (8.34, 1.33, 3.42, 0.86, 3.52),
+        (11.12, 0.88, 3.30, 0.54, 3.40),
+        (14.55, 0.08, 3.04, 0.0344, 3.08),
+    )
+    for x_ft, outer_width, shoulder_z, inner_width, crown_z in tail_sections:
+        if not (0 < crown_z - shoulder_z <= 0.11):
+            raise ValueError("Tail roof must be flatter than bonnet crown")
+        for y_ft, z_ft in (
+            (outer_width, shoulder_z), (-outer_width, shoulder_z),
+            (inner_width, crown_z), (-inner_width, crown_z),
+        ):
+            game_xyz = _game_coordinates((
+                round(x_ft*6000), round(y_ft*6000), round(z_ft*6000)
+            ))
+            if not any(tuple(v.xyz) == game_xyz for v in model.vertices.values()):
+                raise ValueError(f"Tail loft station missing {game_xyz}")
+    if not (tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
+            and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]):
+        raise ValueError("Tail must begin tapering directly behind driver")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
@@ -1416,9 +1476,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Grille is +X-only; six radiator rim FACE planes keep near side visible.\n"
         "Seated gray driver (palette 40), black seat/gloves (palette 33).\n"
-        "V23 HELMET DYNAMIC (-2100, 0, 14824): lowered 3in from V22.\n"
-        "Neck lowered to design heights 3.15..3.55ft; shoulders unchanged.\n"
-        "Rear deck starts at 8.34ft and has crowns at 3.54, 3.47, 3.03ft.\n"
+        "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
+        "Helmet paints after BOTH roof skins, mirror and struts.\n"
+        "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
+        "Flatter converging tail: crowns 3.52, 3.40, 3.08ft.\n"
         "Fin now peaks at 4.52ft, with its bottom edge just inside rear roof.\n"
         "Previous wheel positions and palette assignments unchanged.\n",
         encoding="utf-8",
@@ -1445,12 +1506,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         },
         "dimensions": {
             "rear_deck_design_start_ft": 8.34,
-            "rear_deck_front_crown_ft": 3.54,
-            "rear_deck_mid_crown_ft": 3.47,
-            "tail_tip_crown_ft": 3.03,
-            "helmet_center_height_above_ground_ft": 3.93,
-            "neck_bottom_height_ft": 3.15,
-            "neck_top_height_ft": 3.55,
+            "rear_deck_front_crown_ft": 3.52,
+            "rear_deck_mid_crown_ft": 3.40,
+            "outer_halfwidths_ft": [1.33, 0.88, 0.08],
+            "plateau_halfwidths_ft": [0.86, 0.54, 0.0344],
+            "shoulder_heights_ft": [3.42, 3.30, 3.04],
+            "tail_tip_crown_ft": 3.08,
+            "helmet_center_height_above_ground_ft": 3.5967,
+            "neck_bottom_height_ft": 3.09,
+            "neck_top_height_ft": 3.37,
             "dorsal_fin_peak_height_ft": 4.52,
             "dorsal_fin_base_heights_ft": [3.24, 2.98],
             "wheelbase_inches": wheelbase_in,
@@ -1467,8 +1531,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "gloves_seat_palette": BLACK_PALETTE,
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
-            "chin_clearance_above_dashboard_raw": helmet_chin_conservative_z - dashboard_roof_z,
-            "dashboard_roof_z_raw": dashboard_roof_z,
+            "sprite_chin_clearance": "not asserted: PMP silhouette depends on view",
+            "helmet_paints_last_within_body": True,
             "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
             "helmet_pmp_names": [f"helm{i:04}" for i in range(1, 9)],
             "head_is_external_sprite_not_polygon_mesh": True,
@@ -1498,6 +1562,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "front_face_normal_signed_equation": list(face_eq),
         },
         "cockpit_closure_visibility": cockpit_visibility_tests,
+        "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
                                 "black_chassis", "painted_body",
                                 "near_side_wheels"],
