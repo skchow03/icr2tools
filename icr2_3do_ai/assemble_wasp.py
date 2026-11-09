@@ -865,9 +865,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "driver_right_arm": ("driver_right_arm_p0000", DRIVER_BROWN),
         "driver_left_glove": ("driver_left_glove_p0000", DRIVER_GLOVE_BROWN),
         "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
-        "cowl_side": ("dashboard_cowl_riser_p0003", SIDE_YELLOW),
-        "cowl_top": ("dashboard_cowl_riser_p0007", TOP_YELLOW),
-        "new_bulkhead": ("dashboard_cowl_riser_p0025", SIDE_YELLOW),
+        "cowl_side": ("long_bonnet_p0039", SIDE_YELLOW),
+        "cowl_top": ("long_bonnet_p0043", TOP_YELLOW),
+        "raised_dashboard_bulkhead": ("long_bonnet_p0049", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -876,13 +876,21 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 f"Unexpected {label} paint: {symbol}={actual}, "
                 f"expected {expected_color}"
             )
-    for component in ("long_bonnet","pointed_tail"):
-        for span in (0,1):
+    for component, spans in (("long_bonnet",4), ("pointed_tail",2)):
+        for span in range(spans):
             for local in range(5,11):
                 index = 12*span+local
                 symbol=f"{component}_p{index:04}"
                 if source_poly_color(symbol)!=TOP_YELLOW:
                     raise ValueError(f"Unpainted upper surface {symbol}")
+    # There is NO second bonnet shell and no hidden cross-section at
+    # 4.69 or 5.39 feet. Only the rearward-facing cockpit end cap stays.
+    if "dashboard_cowl_riser_" in wasp_text:
+        raise ValueError("Duplicate cowl shell still present in N3 source")
+    if re.search(r"(?m)^long_bonnet_p0000: POLY", wasp_text):
+        raise ValueError("Hidden nose cross-section was not removed")
+    if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 49:
+        raise ValueError("Unified bonnet must have 48 exterior triangles and 1 rear cap")
     for side in ("left","right"):
         for segment in range(1,6):
             for i in (3,4):
@@ -960,9 +968,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 23:
+    if len(face_nodes) != 22:
         raise ValueError(
-            f"Expected 7 radiator + 4 bulkhead/closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
+            f"Expected 7 radiator + 3 cockpit closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
         )
     # Confirm front and rear mirror faces were actually isolated in the
     # compiled BSP tree and cannot paint through each other.
@@ -1031,19 +1039,19 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if len(matches) != 1:
             raise ValueError(f"Expected one retained cockpit cap at x={x}, got {matches}")
         return matches[0]
-    dashboard_cap = closure_cap(8100)
+    dashboard_cap = closure_cap(8460)
     seat_cap = closure_cap(-5040)
-    raised_cowl_cap = closure_cap(8460)
-    # The newly exposed baffle is separate from the original dashboard
-    # closer and must face toward the cockpit, not forward over the hood.
-    cowl_gate_faces = [
-        face for face in face_nodes
-        if model.children.get(face.offset) == [raised_cowl_cap]
-    ]
-    if len(cowl_gate_faces) != 1 or cowl_gate_faces[0].equation[0] >= 0:
-        raise ValueError("New raised cowl bulkhead must have one -X FACE gate")
-    cowl_face = cowl_gate_faces[0]
     closure_offsets = {dashboard_cap, seat_cap}
+    # The dashboard is the ONLY remaining transverse bonnet cap.
+    # Its upper crown is the raised scuttle; there is no second
+    # bonnet or separately superimposed bulkhead.
+    if any(
+        len(set(v.xyz[0] for v in (model.vertices[i] for i in p.refs))) == 1
+        and next(iter({model.vertices[i].xyz[0] for i in p.refs})) == 8100
+        and p.color == SIDE_YELLOW and len(p.refs) >= 6
+        for p in model.polygons.values()
+    ):
+        raise ValueError("Former internal dashboard cross section at X=8100 remains")
     direct_faces = [
         f for f in face_nodes
         if (dashboard_cap in model.children.get(f.offset, []) or
@@ -1073,7 +1081,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Seat must retain two cockpit-only FACE gates")
     protected_offsets = {
         dashboard_face.offset, seat_inner_faces[0].offset,
-        seat_outer_faces[0].offset, cowl_face.offset,
+        seat_outer_faces[0].offset,
     }
     protected_offsets |= {p.offset for p in wall_faces}
     protected_offsets |= {p.offset for p in mirror_faces}
@@ -1124,7 +1132,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 visible, _, _ = model.switched_polygons(
                     None, (x, y, z), bsp_mode="original"
                 )
-                if (raised_cowl_cap in set(visible)) != expected:
+                if (dashboard_cap in set(visible)) != expected:
                     raise ValueError(
                         f"Raised cowl bulkhead visibility wrong from {(x,y,z)}"
                     )
@@ -1134,7 +1142,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     cockpit_visibility_tests = {}
     for x, dashboard_expected, seat_expected in (
         (100000, False, False),
-        (8200, False, False),
+        (8500, False, False),
+        (8200, True, True),
         (0, True, True),
         (-8600, True, False),
         (-100000, True, False),
