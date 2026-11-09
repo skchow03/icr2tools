@@ -138,6 +138,7 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
     mandatory = {
         "radiator_face_geo", "long_bonnet_geo",
         "pointed_tail_geo", "rounded_tail_fin_geo",
+        "dashboard_cowl_riser_geo",
     }
     if not mandatory <= set(parts):
         raise ValueError("Missing key bonnet/radiator/tail components")
@@ -288,6 +289,11 @@ BLACK_PALETTE = 33
 SIDE_YELLOW = 159
 TOP_YELLOW = 158
 MIRROR_GRAY = 40
+# Fixed common SUNNY/ GAMEPAL colors from icr2_3do_cad/gamepal.pcx.
+# Palette 148 RGB (163, 103, 63) = brown driving suit and arm fabric.
+# Palette 149 RGB (127, 79, 47) = darker brown leather gloves.
+DRIVER_BROWN = 148
+DRIVER_GLOVE_BROWN = 149
 
 
 def _repaint_one_polygon(source: str, name: str, current: int,
@@ -317,6 +323,14 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
                 source=_repaint_one_polygon(
                     source,f"{component}_p{idx:04}",SIDE_YELLOW,TOP_YELLOW
                 )
+    # Raised dashboard cowl has one six-sided loft span: the same top
+    # triangle range as the bonnet, but no extra span. The new rear
+    # transverse bulkhead stays the slightly darker yellow side color.
+    for relative in range(5, 11):
+        source = _repaint_one_polygon(
+            source, f"dashboard_cowl_riser_p{relative:04}",
+            SIDE_YELLOW, TOP_YELLOW
+        )
     # These strips lie along the U-shaped upper cockpit opening:
     # triangle faces 3/4 have the sloping top edge, 0/9 are broad sides.
     for side in ("left","right"):
@@ -526,9 +540,12 @@ def _fix_roof_occlusion(source: str) -> str:
         sy = 1 if side == "left" else -1
         junction_vertices = {
             (1, 0): (8100, sy*7860, 364),
-            (1, 1): (8100, sy*7860, 9184),
+            # Higher front cowl rises into a sloped scuttle/firewall.
+            # The outer point meets the new raised cowl shoulder and
+            # the inward point follows its sloping upper crown.
+            (1, 1): (8100, sy*7860, 13144),
             (1, 4): (8100, sy*6240, 364),
-            (1, 5): (8100, sy*6240, 10117),
+            (1, 5): (8100, sy*6240, 14354),
             # Raised rear deck now begins at design X=8.34ft rather than
             # 8.92ft. Outer junction is at the same height as the tail
             # shoulder; inner cap meets its sloped upper skin.
@@ -596,7 +613,7 @@ wasp_driver_center: LIST {wasp_driver_body};
 wasp_bonnet_roof_radiator: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_bonnet_roof_geo, radiator_face_geo;
 wasp_upper_skin: BSPN (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tail_roof_geo, wasp_bonnet_roof_radiator;
 wasp_mirror_strut_sort: BSPA (wasp_y_a, wasp_y_b, wasp_y_c), mirror_strut_right_geo, mirror_housing_geo, mirror_strut_left_geo;
-wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
+wasp_ornaments: LIST {rounded_tail_fin_geo, dashboard_cowl_riser_geo, wasp_mirror_strut_sort};
 """
     old_xsort = ("wasp_body_xsort: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), "
                  "wasp_tailparts, wasp_midparts, wasp_noseparts;")
@@ -615,6 +632,51 @@ wasp_ornaments: LIST {rounded_tail_fin_geo, wasp_mirror_strut_sort};
         raise ValueError("Original body list not found")
     return source.replace(old_list, new_list)
 
+
+
+
+def _add_raised_dashboard_bulkhead(source: str) -> str:
+    """Keep a single transverse, raised rear-facing cowl bulkhead.
+
+    The first loft cap is enclosed by the existing bonnet, so it must
+    not render. The rear six-sided cap is a NEW cockpit-visible bulkhead
+    immediately in FRONT of the old bonnet dashboard closure. Its roof
+    rises into a wedge matching the 1911 side-profile reference.
+    """
+    name = "dashboard_cowl_riser_geo"
+    oldcap = "dashboard_cowl_riser_p0000"
+    rearcap = "dashboard_cowl_riser_p0013"
+    gate = "wasp_raised_dashboard_bulkhead"
+    pattern = rf"(?m)^{name}: LIST \{{([^}}\n]+)\}};$"
+    match = re.search(pattern, source)
+    if match is None:
+        raise ValueError("Missing six-section raised dashboard cowl")
+    members = [item.strip() for item in match.group(1).split(",")]
+    expected = [f"dashboard_cowl_riser_p{i:04}" for i in range(14)]
+    if members != expected:
+        raise ValueError(f"Raised cowl polygon topology unexpectedly changed: {members}")
+    members = [gate if item == rearcap else item
+               for item in members if item != oldcap]
+    source = source[:match.start()] + (
+        f"{name}: LIST {{" + ", ".join(members) + "};"
+    ) + source[match.end():]
+    source, removed = re.subn(
+        rf"(?m)^{oldcap}: POLY <\d+> \{{[^}}\n]+\}};\n",
+        "", source
+    )
+    if removed != 1:
+        raise ValueError("Hidden bonnet-facing cowl cap must be removed")
+    if "wasp_front_gate_a" not in source:
+        raise ValueError("Existing rearward dashboard FACE plane unavailable")
+    # Original rear-facing dashboard gate has its plane at game X=8150.
+    # The new cowl baffle is in front at design X=6.09 (game X=8460).
+    # The same gate avoids cap bleed-through from forward viewpoints.
+    source += (
+        f"\n{gate}: FACE "
+        "(wasp_front_gate_a, wasp_front_gate_b, wasp_front_gate_c), "
+        f"{rearcap};\n"
+    )
+    return source
 
 
 def _attach_driver_helmet(source: str) -> str:
@@ -801,13 +863,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     )
     wasp_text = _attach_shadow_root(
         _attach_driver_helmet(
-            _cull_mirror_caps_by_camera(
-                _fix_roof_occlusion(
-                    _attach_radiator_front_cull(
-                        _omit_cockpit_internal_bulkheads(
-                            _game_source(_omit_radiator_rear_cap(
-                                _paint_wasp_upper_surfaces(wasp_text)
-                            ))
+            _add_raised_dashboard_bulkhead(
+                _cull_mirror_caps_by_camera(
+                    _fix_roof_occlusion(
+                        _attach_radiator_front_cull(
+                            _omit_cockpit_internal_bulkheads(
+                                _game_source(_omit_radiator_rear_cap(
+                                    _paint_wasp_upper_surfaces(wasp_text)
+                                ))
+                            )
                         )
                     )
                 )
@@ -817,7 +881,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
 
     # Palette regression: ensure the intended 1995 runtime indices are
     # actually assigned to the N3 POLY records (not just recipe metadata).
-    expected_colors = {27, 33, 40, 158, 159}
+    expected_colors = {27, 33, 40, 148, 149, 158, 159}
 
     def source_poly_color(poly_name: str) -> int:
         hits = re.findall(
@@ -845,10 +909,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "radiator": ("radiator_face_p0000", BLACK_PALETTE),
         "main_chassis": ("exposed_black_chassis_p0000", BLACK_PALETTE),
         "driver_seatback": ("driver_seatback_p0000", BLACK_PALETTE),
-        "driver_torso": ("driver_torso_p0000", MIRROR_GRAY),
-        "driver_neck": ("driver_neck_p0000", MIRROR_GRAY),
-        "driver_left_arm": ("driver_left_arm_p0000", MIRROR_GRAY),
-        "driver_left_glove": ("driver_left_glove_p0000", BLACK_PALETTE),
+        "driver_torso": ("driver_torso_p0000", DRIVER_BROWN),
+        "driver_neck": ("driver_neck_p0000", DRIVER_BROWN),
+        "driver_left_arm": ("driver_left_arm_p0000", DRIVER_BROWN),
+        "driver_right_arm": ("driver_right_arm_p0000", DRIVER_BROWN),
+        "driver_left_glove": ("driver_left_glove_p0000", DRIVER_GLOVE_BROWN),
+        "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
+        "cowl_side": ("dashboard_cowl_riser_p0003", SIDE_YELLOW),
+        "cowl_top": ("dashboard_cowl_riser_p0007", TOP_YELLOW),
+        "new_bulkhead": ("dashboard_cowl_riser_p0013", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -941,9 +1010,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Radiator front hexagon missing: {radiator_front_caps}")
     radiator_front_offset = radiator_front_caps[0]
     face_nodes = [p for p in model.planes.values() if p.kind == 5]
-    if len(face_nodes) != 22:
+    if len(face_nodes) != 23:
         raise ValueError(
-            f"Expected 7 radiator + 3 closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
+            f"Expected 7 radiator + 4 bulkhead/closure + 10 inward + 2 mirror FACE nodes, got {len(face_nodes)}"
         )
     # Confirm front and rear mirror faces were actually isolated in the
     # compiled BSP tree and cannot paint through each other.
@@ -1014,6 +1083,16 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         return matches[0]
     dashboard_cap = closure_cap(8100)
     seat_cap = closure_cap(-5040)
+    raised_cowl_cap = closure_cap(8460)
+    # The newly exposed baffle is separate from the original dashboard
+    # closer and must face toward the cockpit, not forward over the hood.
+    cowl_gate_faces = [
+        face for face in face_nodes
+        if model.children.get(face.offset) == [raised_cowl_cap]
+    ]
+    if len(cowl_gate_faces) != 1 or cowl_gate_faces[0].equation[0] >= 0:
+        raise ValueError("New raised cowl bulkhead must have one -X FACE gate")
+    cowl_face = cowl_gate_faces[0]
     closure_offsets = {dashboard_cap, seat_cap}
     direct_faces = [
         f for f in face_nodes
@@ -1044,7 +1123,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Seat must retain two cockpit-only FACE gates")
     protected_offsets = {
         dashboard_face.offset, seat_inner_faces[0].offset,
-        seat_outer_faces[0].offset,
+        seat_outer_faces[0].offset, cowl_face.offset,
     }
     protected_offsets |= {p.offset for p in wall_faces}
     protected_offsets |= {p.offset for p in mirror_faces}
@@ -1054,6 +1133,28 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if len(radiator_face_nodes) != 7:
         raise ValueError("Expected seven unaffected radiator FACE nodes")
 
+    # Confirm new bulkhead exists ahead of the original dashboard,
+    # with a raised brow reaching 4.03 feet and with its forward cap
+    # removed, so no extra hidden partition overdraws the bonnet.
+    cowl_rear_ring = _game_coordinates((round(6.09*6000), 0, round(4.03*6000)))
+    cowl_outer_shoulder = _game_coordinates(
+        (round(6.09*6000), round(1.31*6000), round(3.65*6000))
+    )
+    if not any(v.xyz == cowl_rear_ring for v in model.vertices.values()):
+        raise ValueError("Cowl top lip 4.03 feet above ground missing")
+    if not any(v.xyz == cowl_outer_shoulder for v in model.vertices.values()):
+        raise ValueError("Cowl raised side shoulder missing")
+    for x, expected in ((100000, False), (8500, False),
+                        (7000, True), (0, True), (-100000, True)):
+        for y in (-90000, 90000):
+            for z in (12000, 28000):
+                visible, _, _ = model.switched_polygons(
+                    None, (x, y, z), bsp_mode="original"
+                )
+                if (raised_cowl_cap in set(visible)) != expected:
+                    raise ValueError(
+                        f"Raised cowl bulkhead visibility wrong from {(x,y,z)}"
+                    )
     # Validate both caps from front, inside cockpit, and behind the tail,
     # from both sides and high/low elevations. The old failure was that
     # the dashboard vanished at x<-8580 and the front cavity was exposed.
