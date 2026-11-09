@@ -117,7 +117,7 @@ CHASSIS_COMPONENTS = (
 
 
 def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
-    """Draw black chassis first, then camera-sort visible body and wheels."""
+    """View-sort far wheels, then black chassis, yellow body, near wheels."""
     parts = [v.strip() for v in existing.split(",")]
     if len(parts) != len(set(parts)):
         raise ValueError("Duplicate body components in source root")
@@ -151,7 +151,7 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
         raise ValueError("Chassis component list differs from expected set")
 
     lines = [
-        "% Camera-sorted body; black chassis intentionally paints before yellow.",
+        "% The far wheels go UNDER black frame; near wheels remain foreground.",
         "wasp_y_a: [<0, 0, 0>];",
         "wasp_y_b: [<0, 0, 6000>];",
         "wasp_y_c: [<6000, 0, 0>];",
@@ -172,9 +172,10 @@ def _sort_body_source(existing: str, wheel_symbols: list[str]) -> str:
         f"{wheel_symbols[3]}, {wheel_symbols[1]};",
         f"wasp_negative_wheels: BSPN {X_PLANE}, "
         f"{wheel_symbols[2]}, {wheel_symbols[0]};",
+        "wasp_frame_and_body: LIST {wasp_black_frame, wasp_body_ysort};",
         f"wasp_vehicle_sort: BSPA {Y_PLANE}, "
-        "wasp_positive_wheels, wasp_body_ysort, wasp_negative_wheels;",
-        "root: LIST {wasp_black_frame, wasp_vehicle_sort};",
+        "wasp_positive_wheels, wasp_frame_and_body, wasp_negative_wheels;",
+        "root: LIST {wasp_vehicle_sort};",
     ]
     return "\n".join(lines)
 
@@ -339,12 +340,11 @@ def _attach_radiator_front_cull(game_source: str) -> str:
 
 
 def _attach_shadow_root(game_source: str) -> str:
-    key = "root: LIST {wasp_black_frame, wasp_vehicle_sort};"
+    key = "root: LIST {wasp_vehicle_sort};"
     if game_source.count(key) != 1:
         raise ValueError("Expected one black-frame + vehicle root LIST")
     value = (_stock_style_shadow_source() + "\n" +
-             "root: LIST {wasp_ground_shadow, wasp_black_frame, "
-             "wasp_vehicle_sort};")
+             "root: LIST {wasp_ground_shadow, wasp_vehicle_sort};")
     return game_source.replace(key, value)
 
 
@@ -401,11 +401,24 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     # Real N3 compiler and parser verify all parent source records and external names.
     model, result = validate_source(wasp_text, model_path=output / "WASP.3D")
     if model.records[model.root_offset] != 11:
-        raise ValueError("WASP root should be ordered LIST shadow/frame/BSPA")
+        raise ValueError("WASP root should be LIST shadow/BSPA")
     root_children = model.children.get(model.root_offset, [])
-    if [model.records.get(i) for i in root_children] != [11, 11, 8]:
-        raise ValueError("WASP root not shadow, chassis, BSPA in that order")
-    shadow_geo, frame_geo, car_sort = root_children
+    if [model.records.get(i) for i in root_children] != [11, 8]:
+        raise ValueError("WASP root not shadow, BSPA in that order")
+    shadow_geo, car_sort = root_children
+    vehicle_bsp = model.children.get(car_sort, [])
+    if len(vehicle_bsp) != 3:
+        raise ValueError("Vehicle sorter should have 3 camera-dependent layers")
+    # Binary BSPA child pointer order is [far, near, middle]. The middle
+    # is always an ordered LIST: black frame, then yellow body.
+    middle_candidates = [p for p in vehicle_bsp if model.records.get(p) == 11]
+    if len(middle_candidates) != 1:
+        raise ValueError("Vehicle BSPA missing ordered black-frame/paint group")
+    body_layer = middle_candidates[0]
+    layer_children = model.children.get(body_layer, [])
+    if [model.records.get(i) for i in layer_children] != [11, 8]:
+        raise ValueError("Frame/paint must render as chassis LIST then body BSPA")
+    frame_geo, painted_geo = layer_children
     if len(model.children[shadow_geo]) != 8:
         raise ValueError("Wasp shadow must have exactly 8 polygons")
     for off in model.children[shadow_geo]:
@@ -505,56 +518,78 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     if not (36600 < COCKPIT_DESIGN_X_RAW < 53880):
         raise ValueError("Game origin must lie within the cockpit opening")
 
-    # Verify real compiled traversal from each lateral camera:
-    # eight flat ground shadows -> complete black chassis ->
-    # far wheel instances -> painted body -> near wheel instances.
+    # Confirm actual compiled painter sequence from BOTH lateral cameras.
+    # Shadow -> far wheel pair -> black chassis -> yellow body ->
+    # near wheel pair. This prevents opposite-side tires painting across
+    # chassis surfaces, which was visible in the user's in-game screenshot.
     bsp_tests = {}
-    expected_frame_polygons = 114      # 5 capped boxes + 8 uncapped leaf pieces
+    expected_frame_polygons = 114
     for side in (-1, 1):
         events = []
         model.switched_polygons(
             None, (0, side * 300000, 30000),
             bsp_mode="original", events=events,
         )
-        ordered = [
+        dynamic_positions = [
             (i, model.dynamics[event[1]].xyz[1])
             for i, event in enumerate(events) if event[0] == "dynamic"
         ]
-        polygon_positions = [
+        polygons = [
             (i, model.polygons[event[1]])
             for i, event in enumerate(events) if event[0] == "polygon"
         ]
-        if len(ordered) != 4 or len(polygon_positions) < 300:
-            raise ValueError("BSP order omitted a wheel or body polygon")
-        if [p.color for _,p in polygon_positions[:8]] != [STOCK_SHADOW_COLOR]*8:
-            raise ValueError("Stock-style shadow must render first")
-        if [p.color for _,p in polygon_positions[8:8+expected_frame_polygons]] != [0]*expected_frame_polygons:
-            raise ValueError("Every black chassis polygon must draw before the body")
-        after_frame = polygon_positions[8+expected_frame_polygons:]
-        first_yellow = min(i for i,p in after_frame if p.color in (158,159))
-        last_yellow = max(i for i,p in after_frame if p.color in (158,159))
-        if polygon_positions[8+expected_frame_polygons-1][0] >= first_yellow:
-            raise ValueError("Chassis painted on top of colored bodywork")
-        far = [i for i,y in ordered if y*side < 0]
-        near = [i for i,y in ordered if y*side > 0]
-        if (len(far) != 2 or len(near) != 2
-                or max(far) >= first_yellow
-                or last_yellow >= min(near)):
+        if len(dynamic_positions) != 4 or len(polygons) < 300:
+            raise ValueError("Compiled BSP omitted a wheel or main body surface")
+        if [p.color for _i,p in polygons[:8]] != [STOCK_SHADOW_COLOR]*8:
+            raise ValueError("Stock-style shadow must paint first")
+        # The black chassis polygons immediately follow the 8 shadows
+        # in POLYGON-only order; the far wheel DYNAMICs are interleaved
+        # before the chassis polygons but produce external polygons.
+        frame_polys = polygons[8:8+expected_frame_polygons]
+        if len(frame_polys) != expected_frame_polygons or any(
+                p.color != 0 for _i,p in frame_polys):
+            raise ValueError("The entire 114-polygon chassis must paint as one black layer")
+        frame_start = frame_polys[0][0]
+        frame_end = frame_polys[-1][0]
+        painted_polys = polygons[8+expected_frame_polygons:]
+        if not painted_polys:
+            raise ValueError("Painted yellow body absent")
+        first_yellow = min(i for i,p in painted_polys if p.color in (158,159))
+        last_yellow = max(i for i,p in painted_polys if p.color in (158,159))
+        far_wheels = [i for i,y in dynamic_positions if y*side < 0]
+        near_wheels = [i for i,y in dynamic_positions if y*side > 0]
+        if (len(far_wheels) != 2 or len(near_wheels) != 2
+                or max(far_wheels) >= frame_start
+                or frame_end >= first_yellow
+                or last_yellow >= min(near_wheels)):
             raise ValueError(
-                f"Wheel/paint BSP order wrong from side {side}: "
-                f"far={far}, first/last yellow={first_yellow}/{last_yellow}, near={near}"
+                f"Wrong camera-side painter order y={side}: "
+                f"far={far_wheels}, frame={frame_start}-{frame_end}, "
+                f"yellow={first_yellow}-{last_yellow}, near={near_wheels}"
             )
+
+        # Verify source palette of the 2 mirrored windshield-mirror
+        # struts (8 polygons each) was repainted to body yellow.
+        mirrored_strut_polys = [
+            p for _i,p in painted_polys if p.color == 158
+        ]
+        if len(mirrored_strut_polys) < 16:
+            raise ValueError("Expected two yellow eight-polygon mirror struts")
         bsp_tests[str(side)] = {
             "stock_style_shadow_first": True,
             "shadow_polygon_count": 8,
             "shadow_palette_index": 27,
             "shadow_raw_z": STOCK_SHADOW_Z_RAW,
-            "black_chassis_before_body": True,
+            "far_wheels_before_black_chassis": True,
+            "black_chassis_before_yellow_body": True,
+            "near_wheels_after_body": True,
+            "far_wheel_events": far_wheels,
+            "frame_event_range": [frame_start, frame_end],
+            "near_wheel_events": near_wheels,
             "frame_polygon_count": expected_frame_polygons,
             "radiator_rear_cap_removed": True,
-            "far_wheels_before_body": True,
-            "near_wheels_after_body": True,
-            "body_polygon_events": len(polygon_positions),
+            "mirror_struts_palette": 158,
+            "body_polygon_events": len(polygons),
         }
 
     output.mkdir(parents=True, exist_ok=False)
@@ -612,7 +647,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Wheel and body BSPA sorting is authored; in-game BSP and LOD testing remain.\n"
         "Black is reserved common palette index 0; no MIP textures.\n"
         "Shadow: eight flat polygons, palette 27 at raw Z=-8501, stock ICR2 convention.\n"
-        "Rear radiator cap omitted; black frame always drawn before colored body.\n"
+        "Far wheels paint before black frame; frame before yellow; near wheels last.\n"
+        "Both mirror supports are yellow palette index 158.\n"
+        "Rear radiator cap omitted; black frame always draws before colored body.\n"
         "Complete radiator incl rim uses FACE plane x=42600: only +X/front views.\n",
         encoding="utf-8",
     )
@@ -665,6 +702,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "camera_visible_polygon_counts": visibility_checks,
             "face_normal_signed_equation": list(face_eq),
         },
+        "painter_layer_order": ["shadow", "far_side_wheels",
+                                "black_chassis", "painted_body",
+                                "near_side_wheels"],
+        "mirror_strut_palette": 158,
         "chassis_painted_first": True,
         "bsp_camera_sides": bsp_tests,
         "body_with_placements": result,
