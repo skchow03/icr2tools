@@ -918,7 +918,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "driver_right_glove": ("driver_right_glove_p0000", DRIVER_GLOVE_BROWN),
         "cowl_side": ("dashboard_cowl_riser_p0003", SIDE_YELLOW),
         "cowl_top": ("dashboard_cowl_riser_p0007", TOP_YELLOW),
-        "new_bulkhead": ("dashboard_cowl_riser_p0013", SIDE_YELLOW),
+        "new_bulkhead": ("dashboard_cowl_riser_p0025", SIDE_YELLOW),
     }
     for label, (symbol, expected_color) in check_colors.items():
         actual = source_poly_color(symbol)
@@ -1603,7 +1603,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "V25 driver wears medium brown 148, leather gloves darker brown 149.\n"
         "Brown RGB verified from stock gamepal.pcx, shared sunny.pcx indices.\n"
         "Black seat, chassis and tires remain fixed palette 33.\n"
-        "Added raised scuttle at X=5.82..6.09ft; transverse rearward bulkhead.\n"
+        "Raised scuttle now covers rear quarter of bonnet, design X=4.69..6.09ft.\n"
+        "Three-station cowl loft X=4.69,5.39,6.09ft rises progressively.\n"
         "Scuttle peaks at 4.03ft and steps smoothly down to original bonnet roof.\n"
         "Extra cowl facing cap visible from cockpit/rear but not from front.\n"
         "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
@@ -1645,7 +1646,9 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
             "neck_top_height_ft": 3.37,
-            "dashboard_cowl_first_station_ft": 5.82,
+            "dashboard_cowl_first_station_ft": 4.69,
+            "dashboard_cowl_middle_station_ft": 5.39,
+            "dashboard_cowl_bonnet_coverage_fraction": .25,
             "dashboard_cowl_bulkhead_station_ft": 6.09,
             "dashboard_cowl_crown_height_ft": 4.03,
             "dashboard_cowl_shoulder_height_ft": 3.65,
@@ -1708,6 +1711,10 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "bonnet_facing_front_cap_removed": True,
             "rear_cap_uses_rear_facing_FACE": True,
             "rear_cap_camera_checks": 20,
+            "loft_sections": 3,
+            "cowl_length_ft": 1.40,
+            "bonnet_length_ft": 5.60,
+            "cowl_cover_fraction": .25,
         },
         "helmet_painter_camera_tests": helmet_paint_tests,
         "painter_layer_order": ["shadow", "far_side_wheels",
