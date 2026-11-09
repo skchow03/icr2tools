@@ -1,7 +1,18 @@
-# 1911 Marmon Wasp — texture-first ICR2 body, revision 12
+# 1911 Marmon Wasp — texture-first ICR2 body, revision 13
 
 **Scope:** a deliberately simple, editable 1911 Marmon Wasp #32 geometry blockout for Papyrus ICR2. This is a visual approximation, not a measured historical reconstruction. The previous 120-polygon revision is retained in Git history.
 
+## Rev 13 — hide complete radiator outline from the sides
+
+**In-game observation:** The previous Rev 12 successfully hid the front radiator hexagon on the side and rear, but the 12 perimeter/rim triangles still displayed as an unwanted black upright frame in front of the yellow bonnet. The in-game screenshot clearly shows this black outline when viewing the Wasp broadside.
+
+**Root cause:** Rev 12 split radiator_face_p0000 (front hexagon) from radiator_face_geo (12 rim triangles) and applied the one-sided front FACE to only the first polygon. The rim triangles were still in an unconditional LIST, so they remained visible when the front hexagon was culled.
+
+**Fix:** Preserve the open-back geometry (p0013 remains absent). Make radiator_face_geo a 13-polygon LIST containing p0000 and all p0001..p0012 rim triangles. Place that entire list under the +X-facing FACE at game X=42600 (60 raw units/0.12 inch behind the front hexagon at X=42660). This one FACE controls both the front radiator and its edge frame. Side and rear views do not draw any radiator triangles. Bonnet and chassis geometry are unchanged. The shared middle-of-car BSPA/BSPN still handles near/far geometry order and is not a visibility plane.
+
+**Regression checks:** The generated WASP binary must have one front radiator FACE node of type 5, wrapping a list with exactly 13 polygons; first member is the six-vertex front cap. It must have normal +X at X=42600. The compiler's original BSP traversal tests 12 camera positions across both Y sides: front X=100000 and X=42610 draw exactly 13 radiator polygons, while X=42590, 41000, 0 and -100000 draw zero. These are verified by geometry-offset membership, not by assuming all black polygons belong to the radiator.
+
+**Unchanged:** Three editable .3D files with compiled .3do counterparts, four external wheel references, 8 stock-style shadow polygons, early black chassis painter ordering, cockpit origin, +X forward orientation, 116-inch wheelbase and 187-inch overall length. Structural compilation tests cannot guarantee all in-game angles or DOS renderer-specific behavior.
 ## Rev 12 — front radiator face culling at the physical radiator
 
 **Observed issue:** The Wasp's black radiator front appeared when the camera rotated toward the rear of the car, disappearing only after crossing a sorting partition. In the Rev 11 source, the shared `wasp_x_*` triangle defined a **BSPN** at **game X=0** (cockpit origin); the physical front cap is instead at **X=+42,660**. Crucially, a **BSPN is only a near/far ordering node, not a visibility gate**, so moving that shared plane alone would not reliably fix the grille.
