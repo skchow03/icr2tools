@@ -77,7 +77,7 @@ class AssemblyTests(unittest.TestCase):
         }
         source, manifest = generate_source(recipe)
         self.assertIn(
-            'helmet: DYNAMIC 39000, -1500, 1200, 2700, 0, 0, 1, EXTERN "HELMET";',
+            'helmet: DYNAMIC 39000, -1500, 1200, -900, 0, 0, 1, EXTERN "HELMET";',
             source)
         self.assertEqual(
             manifest["assembly"]["externals"][0]["at_game_raw"],
