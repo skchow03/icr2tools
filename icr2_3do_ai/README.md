@@ -341,6 +341,70 @@ future string-patching operations, but a deliberate Wasp migration still
 requires semantic selection of original polygons, material/color policies
 and actual game-camera regression tests in Phase 3.
 
+
+### Phase 3 — Filled camera previews and visual regression (headless)
+
+The \`preview\` and \`compare\` CLI commands compile/read the actual N3 scene
+using the existing CAD parser and view-dependent \`switched_polygons\`
+traversal. They draw palette-filled polygons in authored painter order,
+reusing the CAD's MIP rasterizer for textured POLY[T] faces and its validated
+PMP/PMP2 reader and sprite placement conventions. No new 3DO binary formats,
+network calls, OpenGL, Qt or external screenshot applications are required.
+
+\`\`\`sh
+# Colored orthographic previews of the complete 1911 car, including referenced
+# wheels and helmet sprite when its PMP files are available.
+python -m icr2_3do_ai preview car/WASP.3do \
+  --objects-folder car --texture-folder car \
+  --cameras front rear left right top front-left rear-right \
+  --width 700 --height 500 -o /tmp/wasp-v29-previews
+
+# Baseline vs candidate, shared framing/lighting/palette/camera.
+python -m icr2_3do_ai compare baseline/WASP.3do candidate/WASP.3do \
+  --objects-folder candidate \
+  --cameras front rear left right front-left rear-right \
+  --tolerance 0 --max-diff-ratio 0.03 \
+  -o /tmp/wasp-visual-diff
+\`\`\`
+
+Valid camera names are \`front\`, \`rear\`, \`left\`, \`right\`, \`top\`,
+\`front-left\`, \`front-right\`, \`rear-left\`, and \`rear-right\`.
+The car convention is +X forward, ±Y sides, +Z up. All views are
+**orthographic** with mild elevation on side/front/rear and elevated
+three-quarter angles. Rendering is fixed-size (default 700×500; range
+64–1600 per dimension), deterministic from local assets, and independent
+of camera zoom. The renderer uses the compiled FACE/BSP/LIST ordering and
+DYNAMIC placement; it does **not** insert a depth buffer or automatically
+reorder polygon layers. Missing EXTERN, PMP and MIP resources are explicitly
+reported, and \`--strict-assets\` fails instead of producing silently
+incomplete previews. By default colors come from a local \`SUNNY.PCX\` or
+the checked-in \`gamepal.pcx\`; \`--palette\` overrides this choice.
+\`--appearance\` accepts the CAD's driver RECOLOR/MIP wrapper. MIP sampling
+can be disabled with \`--no-textures\`.
+
+\`preview\` writes \`front.png\`, etc., and \`preview.json\` with per-camera
+polygons, FACE/BSP culling counts, sprite draws, MIP sampling and warnings.
+\`compare\` writes \`*-before.png\`, \`*-after.png\`, \`*-diff.png\`,
+\`*-comparison.png\` (three panels), and \`comparison.json\` with changed
+pixel counts, fractions, and average RGB-channel deltas.
+It uses the **union** of both scenes' bounds for every corresponding camera,
+so a moved part never causes a misleading difference in framing.
+\`--tolerance\` (0–255) controls channel differences ignored;
+\`--max-diff-ratio\` (0–1) exits code 3 when *any* view exceeds the threshold,
+**after** preserving the images for inspection. A visually identical model
+has zero pixel differences. Both tools refuse to overwrite any existing
+output directory, and neither modifies source assets.
+
+These are **diagnostic** renderings, not ICR2-engine screenshots:
+they approximate orthographic sprite billboards and CPU MIP sampling, and
+cannot guarantee game-exact scanline, clipping, depth, transparency,
+distance LOD, pixel aliasing or all camera-space painter behavior.
+The image differences identify *that* a visual regression exists, not
+whether a surface conflict is geometric or a sorting error. Inspect
+Phase 1 geometry reports and Phase 2 FACE/BSP structures together.
+Phase 4 should align the installed modeling skill and release workflow
+after this interface is proven.
+
 ### Running through GitHub
 
 The repository's **3DO AI semantic inspector** GitHub Actions workflow
