@@ -225,6 +225,55 @@ jobs:
           assert comparison["views"]["front"]["changed_pixels"]>0
           print("V30c compiled: 56 one-sided top gates, 112 directional checks, 32 camera painter checks, 13 visual comparisons")
           PY
+      - name: Build V30d pointed tail shadow and raised pilot collar
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.wasp_v30d_tuning \
+            --baseline /tmp/3do-ai-recipes/marmon_wasp_v30 \
+            --output /tmp/3do-ai-recipes/marmon_wasp_v30d
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30d/WASP.3do
+          for asset in FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/3do-ai-recipes/marmon_wasp_v30/$asset.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_v30d/$asset.3do"
+          done
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_v30d/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30d \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras top rear rear-left rear-right rear-low-left rear-low-right \
+              left right front-low-left front-low-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30d
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/marmon_wasp_v30/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_v30d/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30d \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras top rear rear-left rear-right rear-low-left rear-low-right \
+              left right front-low-left front-low-right \
+            --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30c_to_v30d
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path("/tmp/3do-ai-recipes")
+          manifest=json.loads((root/"marmon_wasp_v30d/v30d_manifest.json").read_text())
+          assert manifest["version"]=="V30d"
+          assert manifest["modifications"]["new_torso_top_z"]==11404
+          assert manifest["modifications"]["new_neck_bottom_z"]==10024
+          assert manifest["modifications"]["new_neck_top_z"]==12304
+          assert manifest["modifications"]["helmet_anchor"]==[-600,0,12824]
+          assert manifest["structural_checks"]["shadow_patches"]==8
+          assert manifest["structural_checks"]["outward_roof_and_cockpit_face_gates"]==56
+          assert len(manifest["painter_camera_tests"])==32
+          preview=json.loads((root/"phase3_wasp_v30d/preview.json").read_text())
+          compare=json.loads((root/"phase3_wasp_v30c_to_v30d/comparison.json").read_text())
+          assert not preview["warnings"] and len(preview["cameras"])==10
+          assert not compare["warnings"] and len(compare["cameras"])==10
+          assert any(v["changed_pixels"]>0 for v in compare["views"].values())
+          print("V30d: eight shadow patches, tapered tail, raised collar, ten sprite-aware camera comparisons")
+          PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
         run: |
