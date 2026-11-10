@@ -104,7 +104,7 @@ def _split(value: str) -> list[str]:
 # whose first child is another BSPA node, not five sibling list objects.
 _N3_PLANE_CHILDREN={"FACE":1,"FACE2":2,"BSPF":3,"BSPA":3,"BSP2":4,"BSPN":2}
 _N3_PLANE_HEAD=re.compile(r"^(FACE2?|BSPF|BSPA|BSP2|BSPN)\s+(.+)$",re.I|re.S)
-_N3_MATERIAL_ATTR=re.compile(r"^(?:GROUP|MIP)\s*=",re.I)
+_N3_MATERIAL_ATTR=re.compile(r"^(?:GROUP|MIP|COLOR)\s*=",re.I)
 
 
 def _consume_prefix_node(fields,at):
@@ -423,12 +423,14 @@ class Compiler:
         material=re.match(r"^MATERIAL\s+(.+)$",code,re.I|re.S)
         if material:
             fields=_split(material.group(1))
-            mip=None;group=3;child=None
+            mip=None;group=3;color=None;child=None
             for f in fields:
                 name=re.fullmatch(r'MIP\s*=\s*"([^"]+)"',f,re.I)
                 g=re.fullmatch(r'GROUP\s*=\s*([-+]?\d+)',f,re.I)
+                c=re.fullmatch(r'COLOR\s*=\s*([-+]?\d+)',f,re.I)
                 if name:mip=name.group(1)
                 elif g:group=_i32(g.group(1),"MATERIAL GROUP")
+                elif c:color=_i32(c.group(1),"MATERIAL COLOR")
                 else:
                     if child is not None:raise FormatError("MATERIAL has more than one child")
                     child=f
@@ -437,7 +439,10 @@ class Compiler:
             # Track N3 legitimately uses MATERIAL GROUP=30, LIST {...}
             # without a MIP. In the 3DO flavor, -1 denotes no texture.
             mid=self._file(mip,self.mips) if mip is not None else -1
-            return self._record(4,mid,group if mip is None else 0,self._node(child))
+            # Native stock wheel wrappers preserve a nonzero opaque MATERIAL
+            # color word (e.g. 0x01080808). Default remains unchanged.
+            return self._record(4,mid,(color if color is not None else
+                                       group if mip is None else 0),self._node(child))
         sprite=re.match(r"^(SRB|PMP2)\s+(.+)$",code,re.I|re.S)
         if sprite:
             fields=_split(sprite.group(2))
