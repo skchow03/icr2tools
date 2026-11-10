@@ -59,8 +59,8 @@ class CarshapeGroupTests(unittest.TestCase):
     def test_stock_material_color_outside_int32_rejected(self):
         with self.assertRaisesRegex(FormatError, "outside signed 32-bit range"):
             validate_source(
-                '3D VERSION 3.0;\\n'
-                'root: MATERIAL MIP="wheel1", COLOR=4294967296, EXTERN "FWHEEL";\\n'
+                '3D VERSION 3.0;\n'
+                'root: MATERIAL MIP="wheel1", COLOR=4294967296, EXTERN "FWHEEL";\n'
             )
 
     def test_duplicate_group_hint_rejected(self):
