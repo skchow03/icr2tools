@@ -1,0 +1,117 @@
+{
+  "schema": "icr2.n3.recipe.v1",
+  "description": "Phase 1: independent loft caps, planar fin, and concave sheet, with strict overlap checks.",
+  "coordinate_scale": 6000,
+  "surface_checks": "error",
+  "operations": [
+    {
+      "type": "loft",
+      "name": "open_nose",
+      "axis": "x",
+      "color": 159,
+      "caps": {
+        "start": false,
+        "end": true
+      },
+      "sections": [
+        {
+          "at": 0,
+          "width": 2,
+          "height": 1,
+          "center": [
+            0,
+            0.5
+          ]
+        },
+        {
+          "at": 1.8,
+          "width": 1.8,
+          "height": 0.8,
+          "center": [
+            0,
+            0.6
+          ]
+        },
+        {
+          "at": 3.2,
+          "width": 1.4,
+          "height": 0.65,
+          "center": [
+            0,
+            0.65
+          ]
+        }
+      ]
+    },
+    {
+      "type": "polygon",
+      "name": "flat_fin",
+      "axis": "y",
+      "at": 0,
+      "color": 158,
+      "outline": [
+        [
+          1,
+          7
+        ],
+        [
+          1,
+          8
+        ],
+        [
+          1.4,
+          8.8
+        ],
+        [
+          2,
+          9
+        ],
+        [
+          2.6,
+          8.8
+        ],
+        [
+          3,
+          8
+        ],
+        [
+          3,
+          7
+        ]
+      ]
+    },
+    {
+      "type": "polygon",
+      "name": "concave_sign",
+      "axis": "z",
+      "at": 3,
+      "color": 148,
+      "outline": [
+        [
+          12,
+          -2
+        ],
+        [
+          15,
+          -2
+        ],
+        [
+          15,
+          -1
+        ],
+        [
+          13,
+          -1
+        ],
+        [
+          13,
+          1
+        ],
+        [
+          12,
+          1
+        ]
+      ]
+    }
+  ]
+}

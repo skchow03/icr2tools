@@ -10,9 +10,12 @@ tiny faces degenerate; these are rejected instead of silently omitted.
 """
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 import re
+
+from .surface_checks import find_surface_conflicts
 
 SCHEMA = "icr2.n3.recipe.v1"
 INT32_MIN, INT32_MAX = -(1 << 31), (1 << 31) - 1
@@ -150,6 +153,97 @@ def _convex_ring(ring, where):
     return points if direction > 0 else list(reversed(points))
 
 
+
+def _simple_polygon_outline(outline, scale, where):
+    """Accept convex or concave simple polygon outlines, in quantized 2D units."""
+    if not isinstance(outline, list) or not 3 <= len(outline) <= 64:
+        _fail(where, "polygon outline must contain 3-64 points")
+    points = [_pair(pt, f"{where}[{i}]") for i, pt in enumerate(outline)]
+    raw = [(_raw(p[0], scale, where), _raw(p[1], scale, where))
+           for p in points]
+    if len(set(raw)) != len(raw):
+        _fail(where, "polygon outline has duplicate or quantized-collapsed vertices")
+
+    def cross(a, b, c):
+        return ((b[0]-a[0])*(c[1]-a[1])-
+                (b[1]-a[1])*(c[0]-a[0]))
+
+    def on_segment(a, b, c):
+        return (cross(a, b, c) == 0 and
+                min(a[0], b[0]) <= c[0] <= max(a[0], b[0]) and
+                min(a[1], b[1]) <= c[1] <= max(a[1], b[1]))
+
+    def intersects(a, b, c, d):
+        ab1, ab2 = cross(a, b, c), cross(a, b, d)
+        cd1, cd2 = cross(c, d, a), cross(c, d, b)
+        if ((ab1 > 0 > ab2 or ab2 > 0 > ab1)
+                and (cd1 > 0 > cd2 or cd2 > 0 > cd1)):
+            return True
+        return (on_segment(a, b, c) or on_segment(a, b, d)
+                or on_segment(c, d, a) or on_segment(c, d, b))
+
+    n = len(raw)
+    for i in range(n):
+        a, b = raw[i], raw[(i+1)%n]
+        for j in range(i+1, n):
+            if j == i+1 or (i == 0 and j == n-1):
+                continue
+            if intersects(a, b, raw[j], raw[(j+1)%n]):
+                _fail(where, f"polygon outline self-intersects at edges {i}, {j}")
+    signed = sum(a[0]*b[1]-b[0]*a[1]
+                 for a,b in zip(raw, raw[1:]+raw[:1]))
+    if signed == 0:
+        _fail(where, "polygon has zero area after coordinate quantization")
+    return raw if signed > 0 else list(reversed(raw))
+
+
+def _polygon_faces(points, where):
+    """One N-gon for convex outlines; ear-clipped triangles for concave ones."""
+    def cross(a, b, c):
+        return ((b[0]-a[0])*(c[1]-a[1])-
+                (b[1]-a[1])*(c[0]-a[0]))
+
+    n = len(points)
+    if all(cross(points[i-1], points[i], points[(i+1)%n]) >= 0
+           for i in range(n)):
+        return [tuple(range(n))]
+
+    def point_in_triangle(p, a, b, c):
+        return (cross(a,b,p) >= 0 and cross(b,c,p) >= 0
+                and cross(c,a,p) >= 0)
+
+    remaining = list(range(n))
+    faces = []
+    while len(remaining) > 3:
+        for k in range(len(remaining)):
+            a,b,c = (remaining[(k-1)%len(remaining)],
+                     remaining[k], remaining[(k+1)%len(remaining)])
+            if cross(points[a], points[b], points[c]) <= 0:
+                continue
+            if any(point_in_triangle(points[x], points[a],
+                                     points[b], points[c])
+                   for x in remaining if x not in (a,b,c)):
+                continue
+            faces.append((a,b,c))
+            del remaining[k]
+            break
+        else:
+            _fail(where, "cannot triangulate concave polygon after quantization")
+    faces.append(tuple(remaining))
+    return faces
+
+
+def _cap_options(value, where):
+    """Backward-compatible bool, or independent start/end cap flags."""
+    if isinstance(value, bool):
+        return (value, value)
+    if isinstance(value, dict):
+        _keys(value, {"start", "end"}, {"start", "end"}, where)
+        return (_optional_bool(value["start"], where+".start"),
+                _optional_bool(value["end"], where+".end"))
+    _fail(where, "caps must be a boolean or {'start': bool, 'end': bool}")
+
+
 def _rectangle(section, where):
     _keys(section, {"at", "center", "width", "height"}, {"at", "width", "height"}, where)
     center = _pair(section.get("center", [0, 0]), f"{where}.center")
@@ -216,7 +310,7 @@ def _options(op, where):
     uv = _uv_options(op.get("uv"), where + ".uv")
     if (mip is None) != (uv is None):
         _fail(where, "textured geometry requires both material and uv; omit both for solid POLY")
-    caps = _optional_bool(op.get("caps", True), where + ".caps")
+    caps = _cap_options(op.get("caps", True), where + ".caps")
     return color, mip, uv, caps
 
 
@@ -248,10 +342,11 @@ def _rings(name, axis, segments, scale, color, mip, uv, caps, where):
             # Two triangles are always planar, including tapered or twisted
             # non-coplanar quads. Shared indices preserve edge topology.
             faces.extend(((a, b, c), (a, c, d)))
-    if caps:
-        # CCW ring normal points along positive loft axis; cap normals must
-        # point out of the volume, so reverse the first ring only.
+    # Independent caps avoid manufacturing a hidden bulkhead just to
+    # remove it later. Both caps remain the default for existing recipes.
+    if caps[0]:
         faces.insert(0, tuple(reversed(range(width))))
+    if caps[1]:
         faces.append(tuple((len(rings) - 1) * width + j
                            for j in range(width)))
     component = Component(name, vertices, faces, color, mip, uv)
@@ -273,7 +368,8 @@ def _project_uv(vertex, options, scale, where):
 
 
 def _make_parts(recipe):
-    _keys(recipe, {"schema", "coordinate_scale", "operations", "description"},
+    _keys(recipe, {"schema", "coordinate_scale", "operations", "description",
+                   "surface_checks"},
           {"schema", "operations"}, "recipe")
     if recipe["schema"] != SCHEMA:
         _fail("recipe.schema", f"expected {SCHEMA!r}")
@@ -322,6 +418,26 @@ def _make_parts(recipe):
                 name, axis, [(op["from"], op["outline"]),
                              (op["to"], op["outline"])],
                 scale, color, mip, uv, caps, where)
+        elif kind == "polygon":
+            _keys(op, {"type", "name", "axis", "at", "outline",
+                       "color", "material", "uv"},
+                  {"type", "name", "axis", "at", "outline"}, where)
+            axis = _axis(op["axis"], where + ".axis")
+            raw_outline = _simple_polygon_outline(
+                op["outline"], scale, where + ".outline"
+            )
+            at_raw = _raw(op["at"], scale, where + ".at")
+            other = PLANES[axis]
+            vertices = []
+            for u, v in raw_outline:
+                xyz = [0, 0, 0]
+                xyz[AXIS[axis]] = at_raw
+                xyz[other[0]], xyz[other[1]] = u, v
+                vertices.append(tuple(xyz))
+            faces = _polygon_faces(raw_outline, where)
+            color, mip, uv, _caps = _options(op, where)
+            part = Component(name, vertices, faces, color, mip, uv)
+            _checked_faces(part, where)
         elif kind == "mirror":
             _keys(op, {"type", "name", "source", "axis", "at"},
                   {"type", "name", "source", "axis"}, where)
@@ -345,7 +461,7 @@ def _make_parts(recipe):
                              original.color, original.mip, original.uv, source=source)
             _checked_faces(part, where)
         else:
-            _fail(where, "type must be 'loft', 'extrude', or 'mirror'")
+            _fail(where, "type must be 'loft', 'extrude', 'polygon', or 'mirror'")
         seen[name] = part
         result.append(part)
     total_v = sum(len(p.vertices) for p in result)
@@ -364,6 +480,18 @@ def generate_source(recipe):
     """
     recipe = _object(recipe, "recipe")
     components, scale = _make_parts(recipe)
+    surface_policy = recipe.get("surface_checks", "warn")
+    if not isinstance(surface_policy, str) or surface_policy not in {
+            "warn", "error", "off"}:
+        _fail("recipe.surface_checks", "expected 'warn', 'error', or 'off'")
+    surface_diagnostics = (
+        find_surface_conflicts(components) if surface_policy != "off" else []
+    )
+    if surface_policy == "error" and surface_diagnostics:
+        first = surface_diagnostics[0]
+        _fail("recipe.surface_checks",
+              f"{first['code']}: {first.get('components', [])}; "
+              "overlapping surfaces require explicit review")
     statements = [
         "3D VERSION 3.0;",
         "% ICR2_COORD_SCALE: 1",
@@ -418,6 +546,12 @@ def generate_source(recipe):
     manifest = {
         "schema": SCHEMA, "coordinate_scale": int(scale),
         "component_count": len(components),
+        "surface_checks": {
+            "policy": surface_policy,
+            "diagnostics": surface_diagnostics,
+            "counts": dict(sorted(Counter(
+                item["code"] for item in surface_diagnostics).items())),
+        },
         "vertex_count": sum(p["vertex_count"] for p in parts),
         "polygon_count": sum(p["polygon_count"] for p in parts),
         "components": parts,
@@ -429,6 +563,8 @@ def generate_source(recipe):
             "Planar UV projection does not automatically unwrap complex surfaces or account for MIP content.",
             "Mirroring reverses face winding; UV projection is recomputed in world coordinates.",
             "Recipe units are converted to raw Papyrus units using the explicit coordinate_scale.",
+            "Surface checks report duplicates, coplanar overlap and some intersecting meshes, not all 3D occlusion defects.",
+            "A plain ungated POLY is painted from both sides; directional FACE culling requires later assembly.",
         ],
     }
     return source, manifest
