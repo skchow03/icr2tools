@@ -5,12 +5,16 @@ on:
     paths:
       - 'icr2_3do_ai/**'
       - 'icr2_3do_cad/**'
+      - '.agents/skills/icr2-3do-modeler/**'
       - '.github/workflows/3do-ai-inspector.yml'
   push:
     paths:
       - 'icr2_3do_ai/**'
       - 'icr2_3do_cad/**'
+      - '.agents/skills/icr2-3do-modeler/**'
       - '.github/workflows/3do-ai-inspector.yml'
+  workflow_dispatch:
+    # Manual rebuild of review artifacts; never publishes a GitHub Release.
 
 jobs:
   unittest:
@@ -18,6 +22,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # compare compiled Wasp against exact Phase 1 baseline
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -78,6 +84,171 @@ jobs:
               raise SystemExit("Missing unchanged stock helmet.3do eight-view sprite")
           print("Verified complete Wasp:", len(instances), "model instances incl. HELMET")
           PY
+      - name: Validate structured Phase 2 assembly and actual external assets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("/tmp/3do-ai-recipes/phase2_assembly_demo/manifest.json").read_text())
+          assembly=manifest["assembly"]
+          assert len(assembly["gates"])==1
+          assert [x["kind"] for x in assembly["nodes"]]==["bspn","list","bspa"]
+          assert len(assembly["externals"])==3
+          assert manifest["surface_checks"]["counts"]=={}
+          print("Phase 2 compiled with 3 native painter nodes, a FACE gate and 3 external placements")
+          PY
+          python -m icr2_3do_ai generate \
+            icr2_3do_ai/recipes/phase2_assembly_demo.json \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --no-analysis -o /tmp/3do-ai-recipes/phase2_verified_assets
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          deps=json.loads(Path("/tmp/3do-ai-recipes/phase2_verified_assets/manifest.json").read_text())["assembly"]["dependencies"]
+          assert {d["model"] for d in deps}=={"HELMET","FWHEEL"}
+          assert all(d["status"]=="validated" and d["binary_sha256"] for d in deps)
+          print("Verified existing HELMET.3do and FWHEEL.3do without copying or modifying them")
+          PY
+      - name: Rebuild Phase 1 Wasp baseline and compare complete binaries byte for byte
+        shell: bash
+        run: |
+          git worktree add --detach /tmp/wasp-phase1-baseline 9d9d0e0952907a22485b272c32ece1861b9137ef
+          mkdir -p /tmp/wasp-phase1-build
+          for name in marmon_wasp_1911_lowpoly marmon_wasp_front_wheel marmon_wasp_rear_wheel; do
+            ( cd /tmp/wasp-phase1-baseline && \
+              python -m icr2_3do_ai generate "icr2_3do_ai/recipes/$name.json" \
+              --no-analysis -o "/tmp/wasp-phase1-build/$name" )
+          done
+          ( cd /tmp/wasp-phase1-baseline && \
+            python -m icr2_3do_ai.assemble_wasp \
+            --body /tmp/wasp-phase1-build/marmon_wasp_1911_lowpoly \
+            --front /tmp/wasp-phase1-build/marmon_wasp_front_wheel \
+            --rear /tmp/wasp-phase1-build/marmon_wasp_rear_wheel \
+            --output /tmp/wasp-phase1-build/complete )
+          for name in WASP FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/wasp-phase1-build/complete/$name.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_complete/$name.3do"
+            sha256sum "/tmp/3do-ai-recipes/marmon_wasp_complete/$name.3do"
+          done
+          echo "Exact Phase 1 V29 baseline binaries preserved"
+      - name: Render Phase 3 camera views and compare unchanged assembled Wasp
+        shell: bash
+        run: |
+          python -m icr2_3do_ai preview \
+            icr2_3do_cad/fixtures/helmet.3do \
+            --objects-folder icr2_3do_cad/fixtures \
+            --cameras front rear left right \
+            --strict-assets --width 320 --height 320 \
+            -o /tmp/3do-ai-recipes/phase3_stock_helmet
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left rear-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v29
+          python -m icr2_3do_ai compare \
+            /tmp/wasp-phase1-build/complete/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left rear-right \
+            --width 480 --height 360 --max-diff-ratio 0 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_identical_diff
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("/tmp/3do-ai-recipes")
+          helmet=json.loads((root/"phase3_stock_helmet"/"preview.json").read_text())
+          assert not helmet["warnings"]
+          assert sum(v["rendered_sprites"] for v in helmet["statistics"].values())>=4
+          wasp=json.loads((root/"phase3_wasp_v29"/"preview.json").read_text())
+          assert not wasp["warnings"]
+          assert sum(v["rendered_sprites"] for v in wasp["statistics"].values())>=7
+          diff=json.loads((root/"phase3_wasp_identical_diff"/"comparison.json").read_text())
+          assert not diff["warnings"]
+          assert diff["threshold_passed"] and diff["maximum_changed_fraction"]==0
+          assert len(diff["views"])==7
+          for camera in diff["cameras"]:
+              assert (root/"phase3_wasp_identical_diff"/f"{camera}-comparison.png").is_file()
+          print("Phase 3 stock PMP angles rendered, seven Wasp views generated, pixel identity proven")
+          PY
+      - name: Demonstrate a deliberate palette change in exported before/after images
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from icr2_3do_ai.parametric import generate_source
+          from icr2_3do_ai.stage2 import validate_source
+          source=Path("icr2_3do_ai/recipes/phase2_assembly_demo.json")
+          recipe=json.loads(source.read_text())
+          assert recipe["operations"][1]["name"]=="bonnet"
+          recipe["operations"][1]["color"]=49
+          n3,manifest=generate_source(recipe)
+          model,validation=validate_source(n3)
+          assert validation["compiled"] and not validation["parser_warnings"]
+          out=Path("/tmp/3do-ai-recipes/phase3_color_variant.3do")
+          out.write_bytes(model.raw)
+          PY
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/phase2_assembly_demo/model.3do \
+            /tmp/3do-ai-recipes/phase3_color_variant.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras top front-left --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_deliberate_color_diff
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          output=Path("/tmp/3do-ai-recipes/phase3_deliberate_color_diff")
+          result=json.loads((output/"comparison.json").read_text())
+          assert not result["warnings"]
+          assert result["views"]["top"]["changed_pixels"]>0
+          assert (output/"top-comparison.png").is_file()
+          print("Verified changed bonnet color produces visible nonzero top-view diff")
+          PY
+      - name: Create reproducible, review-only release candidate
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.release_package \
+            --models /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --previews /tmp/3do-ai-recipes/phase3_wasp_v29 \
+            --comparison /tmp/3do-ai-recipes/phase3_wasp_identical_diff \
+            --recipes icr2_3do_ai/recipes \
+            --source-commit "$(git rev-parse HEAD)" \
+            -o /tmp/3do-ai-release-candidate
+          python - <<'PY'
+          import json
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+          root=Path("/tmp/3do-ai-release-candidate")
+          manifest=json.loads((root/"release_manifest.json").read_text())
+          assert manifest["status"]=="review-only-unpublished"
+          assert manifest["comparison_maximum_changed_fraction"]==0
+          assert len(manifest["cameras"])==7
+          with ZipFile(root/"release-candidate.zip") as archive:
+              assert archive.testzip() is None
+              assert "models/WASP.3do" in archive.namelist()
+              assert "visuals/preview/front.png" in archive.namelist()
+              assert "visuals/comparison/front-comparison.png" in archive.namelist()
+              digests=archive.read("SHA256SUMS").decode().splitlines()
+              for line in digests:
+                  h,rel=line.split("  ",1)
+                  assert sha256(archive.read(rel)).hexdigest()==h
+          print("Deterministic review candidate verified:",manifest["source_commit"],
+                "files:",len(manifest["files"]))
+          PY
+          sha256sum /tmp/3do-ai-release-candidate/release-candidate.zip
+      - name: Publish review-only release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3do-ai-release-candidate
+          path: /tmp/3do-ai-release-candidate/
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:

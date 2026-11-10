@@ -182,23 +182,262 @@ Operations:
 | `loft` | Connect multiple cross-sections with triangular shell faces | `name`, `axis`, `sections` (strictly increasing `at`) |
 | `extrude` | Extrude a convex 2D outline between two planes | `name`, `axis`, `outline`, `from`, `to` |
 | `mirror` | Reflect a previously created component, reversing its face winding | `name`, `source`, `axis`, optional plane location `at` |
+| `polygon` | Flat N3 POLY with safe triangulation of concave outlines | `name`, `axis`, `at`, `outline`, optional color/material/UV |
 
 `loft.sections` may use rectangular `width` / `height` / `center`,
 or explicit `outline: [[u,v], ...]`; each section must contain the same
 number of points with corresponding vertex ordering. `extrude` and `loft`
-support `color` (0–255) and `caps` (boolean, default true).
+support `color` (0–255) and `caps` (boolean, default true). You may also
+choose caps independently: `"caps": {"start": false, "end": true}`. For example,
+omit the start cap behind a radiator while retaining the cockpit-facing
+dashboard closure. Legacy `true`/`false` values remain fully supported.
+
+A new `polygon` operation builds an actual *zero-thickness* N3 POLY on a
+constant-axis plane. Example: `"type": "polygon", "axis": "y", "at": 0,
+"outline": [[z0,x0], ...]`. As with lofts, the `axis` selects the
+fixed coordinate, and the outline uses the other two coordinates in the
+generator's documented order (for Y, [Z,X]). Convex outlines stay a single
+N-gon. Simple concave outlines are ear-clipped into valid triangles rather
+than emitted as an unsupported concave surface. Self-intersecting, duplicate,
+degenerate, or quantization-collapsed polygons are rejected. A bare POLY is
+not FACE-gated and may paint from both sides; directional behavior belongs
+to an assembly layer.
+
+**Surface-integrity preflight:** Stage 2 checks different named components
+for exact duplicate polygons, coplanar positive-area overlap, and detected
+noncoplanar face intersections. The default `"surface_checks": "warn"`
+writes bounded findings under `manifest.json` → `surface_checks`.
+Specify `"surface_checks": "error"` to fail a recipe on a finding, or
+`"off"` to skip scanning. Warnings never remove geometry and may include
+intentional overlays; touching edges and vertices are ignored. This is
+not a complete mesh Boolean, hidden-surface remover, BSP renderer, or proof
+of watertightness. Diagnostic scan limits signal incomplete coverage.
+
+See `recipes/phase1_geometry_integrity_demo.json` for all three features.
 An optional `material` (1–8-character MIP resource name) **must** be
 paired with a planar `uv` projection using two world axes,
 `pixels_per_unit`, optional `origin`, and optional `offset`.
 For example, use V offsets above 255 to address extended MIP artwork.
 Mirrors inherit the source material and UV rules.
 
-Cross-sections must be strictly convex, and all loft shells are triangulated
+Loft/extrude cross-sections must be strictly convex, and all loft shells are triangulated
 rather than producing nonplanar quads. Vertices are quantized into signed
 32-bit Papyrus coordinates. Degenerate faces, out-of-range UVs, ambiguous or
 unknown fields, invalid names, excessive geometry and other invalid recipes
 raise a detailed error. Maximums are 128 operations, 30,000 vertices and
 60,000 faces, plus 128 rings/64 points per cross-section.
+
+
+### Phase 2 — Structured, opt-in N3 assembly
+
+Add an optional \`assembly\` block to a normal \`icr2.n3.recipe.v1\`
+recipe. If omitted, Stage 2 retains the exact original LIST-based emission
+path; existing recipes and assembled Wasp binaries are **not** migrated.
+The implementation in \`assembly.py\` works on named component geometry and
+a validated node graph, not regular-expression rewrites of generated N3 text.
+
+The checked-in
+[\`recipes/phase2_assembly_demo.json\`](recipes/phase2_assembly_demo.json)
+compiles the actual N3 constructs with the repository's existing compiler:
+a movable torso and HELMET reference (but stationary seatback), independently
+anchored external wheels, a one-sided radiator FACE, and BSPN/BSPA ordering.
+
+\`\`\`json
+{
+  "assembly": {
+    "coordinate_system": "source",
+    "game_transform": {
+      "rotate_z_quarters": 2,
+      "translate": [7.5, 0, -1.4]
+    },
+    "anchors": [
+      {"name": "seat", "at": [1, 0, 0]},
+      {"name": "head", "at": [1.25, 0, 1.6]}
+    ],
+    "externals": [
+      {"name": "helmet", "model": "HELMET",
+       "at": {"anchor": "head"}}
+    ],
+    "groups": [
+      {"name": "pilot", "anchor": "seat",
+       "members": ["torso", "helmet"],
+       "transform": {"translate": [0.2, 0, 0]}}
+    ],
+    "gates": [
+      {"name": "radiator_front", "component": "radiator",
+       "faces": [0],
+       "plane": [[0,-1,-1], [0,1,-1], [0,0,1]],
+       "visible_from": [2,0,0], "hidden_from": [-2,0,0]}
+    ],
+    "nodes": [
+      {"name": "body", "kind": "list",
+       "children": ["radiator", "seatback", "pilot"]}
+    ],
+    "root": "body"
+  }
+}
+\`\`\`
+
+The snippet shows the assembly block only; every named mesh must also
+exist in \`operations\`. All numbers in \`anchors\`, \`translate\`,
+\`plane\`, and external placements use **recipe coordinate units** and
+are converted to signed raw Papyrus integer units using
+\`coordinate_scale\` before output. Input coordinate system is mandatory:
+\`source\` means the authoring frame and optionally permits one global
+\`game_transform\`; \`game\` means coordinates already match the runtime
+frame and rejects a second global transform. There is no guessed axis flip.
+The sample global transform reflects the Wasp's 180-degree Z alignment
+and its offset, but does not change or recompile the Wasp assembly.
+
+- **Groups/anchors:** Every group names existing components and/or externals;
+  its pivot is a named anchor. A group transform applies equally to all
+  members, including any DYNAMIC placements. Leave fixed parts (such as
+  the seatback) outside the moving group. Membership cannot overlap groups.
+- **Transforms:** \`translate\`, \`rotate_z_quarters\` (integer 0–3),
+  and a positive *uniform* \`scale\` are supported. No arbitrary-angle,
+  anisotropic, shear, or animated mesh transforms. Fractional raw-coordinate
+  results from scaling are rejected instead of silently rounded; the
+  quarter-turns are exact. Uniform scaling is refused for groups containing
+  EXTERN models: moving an attachment does not scale its linked mesh or sprite.
+  DYNAMIC heading uses tenths of a degree.
+- **External references:** \`externals\` accepts a name, 1–8-character
+  EXTERN model basename (e.g. \`FWHEEL\`, \`RWHEEL\`, \`HELMET\`),
+  and an \`at\` position or \`{"anchor":"head","offset":[x,y,z]}\`.
+  Optional \`rotation_tenths\` is an ordered three-element N3 rotation
+  vector. No binary assets or PMP sprite sheets are copied or edited.
+  \`manifest.assembly.dependencies\` records declared assets.
+  Use \`generate ... --objects-folder /path/to/external/3dos\` to require
+  exactly one valid, parseable matching .3do file for each EXTERN. Otherwise
+  each dependency is marked *unverified*, not assumed present. PMP texture
+  dependencies inside external models remain outside this check.
+- **FACE gates:** \`gates\` selects polygon indices in a named component
+  and wraps only those polygons, replacing their original draw pointers.
+  \`plane\` is three ordered points. \`visible_from\` must lie strictly
+  on its positive halfspace; \`hidden_from\` on its negative halfspace.
+  Both camera checks and the plane follow the component group and global
+  transforms. This checks orientation algebraically, **not** actual in-game
+  visibility or correct Papyrus FACE behavior.
+- **Painter graph:** \`nodes\` may declare \`list\` (one or more ordered
+  children), \`bspn\` (two children and a three-point plane), and \`bspa\`
+  (three children and a plane). \`root\` selects a node/group/component;
+  a graph with explicit nodes must name its root. Every component and
+  external must appear *exactly once* in the resulting render tree.
+  Groups become named N3 LISTs. Painter order cannot cure overlapping
+  geometry; Phase 1 \`surface_checks\` runs on the **transformed** meshes.
+
+To compile and validate the full example:
+
+\`\`\`sh
+python -m icr2_3do_ai generate \
+  icr2_3do_ai/recipes/phase2_assembly_demo.json \
+  --no-analysis -o /tmp/phase2-assembly
+python -m icr2_3do_ai validate /tmp/phase2-assembly/model.3do
+\`\`\`
+
+The library's original V29 \`assemble_wasp.py\` remains an explicitly
+unmigrated compatibility baseline, including its model-specific painter
+ordering and palette adjustments. The new assembly layer can replace many
+future string-patching operations, but a deliberate Wasp migration still
+requires semantic selection of original polygons, material/color policies
+and actual game-camera regression tests in Phase 3.
+
+
+### Phase 3 — Filled camera previews and visual regression (headless)
+
+The \`preview\` and \`compare\` CLI commands compile/read the actual N3 scene
+using the existing CAD parser and view-dependent \`switched_polygons\`
+traversal. They draw palette-filled polygons in authored painter order,
+reusing the CAD's MIP rasterizer for textured POLY[T] faces and its validated
+PMP/PMP2 reader and sprite placement conventions. No new 3DO binary formats,
+network calls, OpenGL, Qt or external screenshot applications are required.
+
+\`\`\`sh
+# Colored orthographic previews of the complete 1911 car, including referenced
+# wheels and helmet sprite when its PMP files are available.
+python -m icr2_3do_ai preview car/WASP.3do \
+  --objects-folder car --texture-folder car \
+  --cameras front rear left right top front-left rear-right \
+  --width 700 --height 500 -o /tmp/wasp-v29-previews
+
+# Baseline vs candidate, shared framing/lighting/palette/camera.
+python -m icr2_3do_ai compare baseline/WASP.3do candidate/WASP.3do \
+  --objects-folder candidate \
+  --cameras front rear left right front-left rear-right \
+  --tolerance 0 --max-diff-ratio 0.03 \
+  -o /tmp/wasp-visual-diff
+\`\`\`
+
+Valid camera names are \`front\`, \`rear\`, \`left\`, \`right\`, \`top\`,
+\`front-left\`, \`front-right\`, \`rear-left\`, and \`rear-right\`.
+The car convention is +X forward, ±Y sides, +Z up. All views are
+**orthographic** with mild elevation on side/front/rear and elevated
+three-quarter angles. Rendering is fixed-size (default 700×500; range
+64–1600 per dimension), deterministic from local assets, and independent
+of camera zoom. The renderer uses the compiled FACE/BSP/LIST ordering and
+DYNAMIC placement; it does **not** insert a depth buffer or automatically
+reorder polygon layers. Missing EXTERN, PMP and MIP resources are explicitly
+reported, and \`--strict-assets\` fails instead of producing silently
+incomplete previews. By default colors come from a local \`SUNNY.PCX\` or
+the checked-in \`gamepal.pcx\`; \`--palette\` overrides this choice.
+\`--appearance\` accepts the CAD's driver RECOLOR/MIP wrapper. MIP sampling
+can be disabled with \`--no-textures\`.
+
+\`preview\` writes \`front.png\`, etc., and \`preview.json\` with per-camera
+polygons, FACE/BSP culling counts, sprite draws, MIP sampling and warnings.
+\`compare\` writes \`*-before.png\`, \`*-after.png\`, \`*-diff.png\`,
+\`*-comparison.png\` (three panels), and \`comparison.json\` with changed
+pixel counts, fractions, and average RGB-channel deltas.
+It uses the **union** of both scenes' bounds for every corresponding camera,
+so a moved part never causes a misleading difference in framing.
+\`--tolerance\` (0–255) controls channel differences ignored;
+\`--max-diff-ratio\` (0–1) exits code 3 when *any* view exceeds the threshold,
+**after** preserving the images for inspection. A visually identical model
+has zero pixel differences. Both tools refuse to overwrite any existing
+output directory, and neither modifies source assets.
+
+These are **diagnostic** renderings, not ICR2-engine screenshots:
+they approximate orthographic sprite billboards and CPU MIP sampling, and
+cannot guarantee game-exact scanline, clipping, depth, transparency,
+distance LOD, pixel aliasing or all camera-space painter behavior.
+The image differences identify *that* a visual regression exists, not
+whether a surface conflict is geometric or a sorting error. Inspect
+Phase 1 geometry reports and Phase 2 FACE/BSP structures together.
+Phase 4 should align the installed modeling skill and release workflow
+after this interface is proven.
+
+### Phase 4 — Skill, validation and review-only release candidate
+
+The repository agent skill is at
+[.agents/skills/icr2-3do-modeler/SKILL.md](../.agents/skills/icr2-3do-modeler/SKILL.md).
+It describes the actual commands and restrictions of Phases 1–3, source/game
+coordinates, palette evidence and the PR/Actions workflow. An installed
+ChatGPT skill has its own release identity: a change to this GitHub path does
+not by itself deploy that private plugin.
+
+The new `python -m icr2_3do_ai.release_package` command creates a
+**review-only**, deterministic ZIP from the already compiled Wasp V29 source
+and binary folder, three recipes, and complete Phase 3 camera/diff reports.
+It does **not** recompile changed model geometry, auto-publish to GitHub
+Releases, alter original files or include stock PMP sprite art.
+
+It rejects missing files, malformed source/binaries, N3/3DO SHA differences,
+assembly-manifest hash inconsistencies, missing PMP sprite evidence,
+incomplete asset warnings and nonzero baseline comparisons. The ZIP contains
+`SHA256SUMS` and a per-file `release_manifest.json` with the exact
+checked-out build SHA. Separate GitHub Actions artifacts are now published:
+`3do-ai-generated-models` and `3do-ai-release-candidate`. Both have
+14-day retention unless the live workflow is changed. A manual
+`workflow_dispatch` rebuild is supported; there is **no automatic
+public release**.
+
+See [PHASE4_RELEASE.md](PHASE4_RELEASE.md) for exact commands, packaging
+contents, release review checklist and distribution/asset limitations.
+
+**Branch caution:** Phases 1–3 and this review candidate are based on
+`feature/marmon-wasp-v29-cad-contours-20261109`, not necessarily
+`main`. The unrelated `build-job` / `icr2.n3.job.v1` feature
+is not in this branch; verify its CLI and source on the requested
+ref before invoking it.
 
 ### Running through GitHub
 
@@ -216,10 +455,10 @@ present in its checkout, not your unpublished local carset directory.
 
 ### Limitations and next steps
 
-- The generator does **not** create camera-dependent BSP/FACE hierarchies,
-  RES/LOD branches, external attachments, or a photogrammetrically accurate
-  vehicle automatically. Generated faces are grouped under LIST nodes and
-  need CAD/in-game draw-order evaluation.
+- Opt-in assembly recipes now express named FACE/BSPA/BSPN/LIST structures and
+  external DYNAMIC placements. They are not camera-accurate visibility
+  simulators and do not automatically solve BSP ordering for arbitrary meshes.
+  RES/LOD authoring and sprite rendering remain outside Stage 2.
 - Convex section lofts and extrusions are a safe starting point; adding
   complex concave meshes, UV-unwrapping and multi-material face groups is
   future work.

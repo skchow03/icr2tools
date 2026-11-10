@@ -33,3 +33,103 @@ Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
   material/UV rendering. Manual or automated BSP validation is future work.
 - Keep `icr2_3do_ai/recipes/` examples checked into the repository. GitHub
   Actions compiles them and publishes build artifacts for agent workflows.
+
+## Phase 1 geometry integrity (generic Stage 2)
+
+- Prefer one continuous external shell to overlapping lofts. Don't rely on
+  painter-order overrides to conceal buried bonnet/cowl geometry.
+- Use independent `caps: {"start": false, "end": true}` when only the visible
+  cockpit-facing closure is needed. Do not manufacture end caps merely to
+  delete them later in a model-specific assembler.
+- Use `type: "polygon"` for zero-thickness fins/signs rather than an
+  extrusion followed by removal of thickness faces. Concave flat sheets
+  are triangulated; convex sheets remain single N3 POLYs.
+- Review `manifest.surface_checks` findings before delivery. Use
+  `surface_checks: "error"` for clean new non-overlapping parts where
+  accidental intersections must fail CI. Warnings are conservative,
+  can describe intentional overlays, and do NOT prove a general solid
+  intersection or BSP visibility defect.
+- Never automatically delete inward-facing faces: exposed cockpit lining,
+  seat closures and radiator interiors may be intentionally visible.
+  Remove faces only after examining topology and viewing requirements.
+- Preserve previous source and binary behavior for existing recipes. New
+  schema fields are optional and legacy bool caps retain both-end semantics.
+
+
+
+## Phase 2 structured assembly (generic Stage 2)
+
+- The \`assembly\` block is optional. Do not change the emitted source for
+  recipes lacking it, nor silently migrate \`assemble_wasp.py\`.
+- Use \`assembly.py\` to assemble named geometry, transformation groups,
+  anchors, external DYNAMIC objects, named FACE gates and a typed painter
+  graph. Never implement new regex substitutions of \`*_p0037\` labels in a
+  model-specific assembler as a substitute for structured geometry selection.
+- Every transform is in explicitly declared source/game coordinate space.
+  Convert decimal recipe units to integers once; Z quarter-turn rotations
+  are exact, uniform scale must preserve integer coordinates. Reject unknown
+  angle conventions, nonuniform scale and ambiguous coordinate frames.
+- Keep a single render-path instance of every component and external:
+  unique membership, no graph cycles, no missing or duplicate painter leaves.
+  Use named anchors for attachments; moving a driver group also moves its
+  helmet DYNAMIC, but not unrelated fixed cockpit surfaces.
+- N3 \`DYNAMIC ... EXTERN\` names are model basenames, at most eight ASCII
+  characters; declare and record .3do dependencies, and validate actual
+  external files when \`--objects-folder\` is supplied. Do not embed or
+  overwrite stock wheels, helmets, or PMP assets.
+- FACE plane winding must pass explicit positive/negative sample camera
+  halfspace tests. Compilation validates syntax/structure, **not** all
+  Papyrus runtime visibility semantics; BSPA/BSPN are view-dependent
+  painter operations, not geometric mesh repair.
+- Phase 1 surface-integrity diagnostics run **after** component transforms.
+  Do not hide doubled skins or broken topology by changing painter order.
+- Keep \`phase2_assembly_demo.json\` compiling in CI and retain Wasp V29
+  build/palette/geometry checks without a migration. Run \`test_assembly.py\`.
+
+
+## Phase 3 camera-specific filled previews and image differences
+
+- Use \`python -m icr2_3do_ai preview\` to inspect compiled FACE/BSP ordering
+  and PMP sprite placements from fixed orthographic cameras. Reuse the CAD
+  parser, scene transforms, MIP and PMP decoders; never add another 3DO parser
+  or reimplement the rasterizer's binary interpretation.
+- Use \`compare\` with matching camera names, a common frame, identical palette,
+  fixed dimensions and asset locations. Review all before/after/diff/three-panel
+  PNGs plus \`comparison.json\` before claiming that a painter issue was fixed.
+  For reproducibility, preserve baseline binaries and declare resource files.
+- Missing MIP, PMP and EXTERN resources must be surfaced as diagnostics.
+  Use \`--strict-assets\` when claiming complete sprite/camera coverage.
+  Do not infer absent geometry from a missing dependency.
+- Output is diagnostic and orthographic, not a true Papyrus software renderer.
+  Passing image comparison alone does not prove in-game correctness or repair
+  overlapping surfaces. Do not silently modify previous binaries to 'match'
+  a baseline; leave V29 preserved unless a migration is requested.
+- CI should render actual stock helmet PMP fixtures, compile examples, compare
+  unchanged models at exact zero mismatch and publish inspectable PNG reports.
+
+## Phase 4 skill / release alignment
+
+- Repository source of truth for this modeler workflow:
+  `.agents/skills/icr2-3do-modeler/SKILL.md`, plus the actual checked-out
+  `README.md`, this file, CLI, parser and workflow. The separately installed
+  private ChatGPT plugin requires its own guarded update; do not claim that
+  checking in a skill file automatically deployed it.
+- Do not offer `build-job` without verifying its presence in the requested
+  target branch. The older experimental `feature/3do-ai-stage3-modeling-jobs-20261108`
+  implementation does **not** exist on the V29 Wasp branch.
+- After Phase 1 geometry checks, Phase 2 structured FACE/BSP assembly and
+  Phase 3 fixed-camera sprite-aware comparisons, use
+  `python -m icr2_3do_ai.release_package` for **review-only** candidate
+  packaging. It requires source/binary equality, assembly digest validation,
+  no missing visual assets, a rendered helmet per camera, and zero-difference
+  V29 baseline comparison. Do not loosen these preflight checks to make CI green.
+- Upload `3do-ai-release-candidate` independently of
+  `3do-ai-generated-models`; keep 14-day retention explicit. Keep manual
+  workflow dispatch nonpublishing; never create an automatic GitHub Release
+  or merge without user approval.
+- Candidate manifests record the checkout's full SHA and per-file SHA-256.
+  Release ZIPs use stable timestamps and sorted members. No stock PMP sprites
+  are redistributed by the packager; private artifacts are not automatically
+  licensed public downloads or installable carsets.
+- Review CI's actual logs and both artifact inventories before declaring
+  Phase 4 passed. Reference `PHASE4_RELEASE.md` for commands and limitations.

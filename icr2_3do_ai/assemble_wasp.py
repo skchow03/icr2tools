@@ -34,7 +34,7 @@ WHEEL_PLACEMENTS = (
 # and its eight camera-angle PMP variants each use nominal size 4800 raw.
 # V24: use exact requested helmet center, Z=12824 in game coordinates.
 # Sprite-image-dependent chin height must be checked in the game.
-HELMET_GAME_XYZ = (-2100, 0, 12824)
+HELMET_GAME_XYZ = (-600, 0, 12824)
 SUPPLIED_HELMET_SHA256 = "e130b9725f9924b3e9619efbb8dabcd614e3f6c47146cf7d135cf6028fd88ee1"
 NOMINAL_WHEELBASE_IN = 116
 # User's current CAD trace supersedes the earlier 187-inch illustrative
@@ -320,7 +320,7 @@ def _paint_wasp_upper_surfaces(source: str) -> str:
     # One exterior bonnet/cowl loft, not two superimposed shells.
     # Four rings/3 spans on bonnet, three rings/2 on tail.
     # Only the exterior roof triangles receive palette 158.
-    for component, spans in (("long_bonnet", 3), ("pointed_tail", 2)):
+    for component, spans in (("long_bonnet", 3), ("pointed_tail", 3)):
         for span in range(spans):
             for relative in range(5, 11):
                 idx = span*12 + relative
@@ -378,12 +378,12 @@ def _cull_mirror_caps_by_camera(source: str) -> str:
         "mirror_housing_geo: LIST {" + ", ".join(revised) + "};"
     ) + source[match.end():]
     # +X is the car's direction of travel in the finished assembled model.
-    # Front cap at x=6360, rear cap at x=6000, split at x=6180.
+    # Repositioned: front cap X=13770, rear cap X=13410, center X=13590.
     source += """
 % Facing-correct mirror: bonnet-facing yellow housing; driver-facing glass gray.
-wasp_mirror_plane_a: [<6180, -1200, 15000>];
-wasp_mirror_plane_b: [<6180, 1200, 15000>];
-wasp_mirror_plane_c: [<6180, 0, 18000>];
+wasp_mirror_plane_a: [<13590, -1200, 15000>];
+wasp_mirror_plane_b: [<13590, 1200, 15000>];
+wasp_mirror_plane_c: [<13590, 0, 18000>];
 wasp_mirror_front_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_b, wasp_mirror_plane_c), mirror_housing_p0000;
 wasp_mirror_rear_cull: FACE (wasp_mirror_plane_a, wasp_mirror_plane_c, wasp_mirror_plane_b), mirror_housing_p0009;
 """
@@ -571,7 +571,7 @@ wasp_in_right_c: [<6000, -6240, 0>];
         if match is None:
             raise ValueError(f"Missing body skin {shape}")
         members = [x.strip() for x in match.group(1).split(",")]
-        spans = 3 if shape == "long_bonnet" else 2
+        spans = 3
         upper = [f"{shape}_p{span*12+i:04}" for span in range(spans)
                  for i in range(5, 11)]
         if not set(upper) <= set(members):
@@ -647,45 +647,41 @@ def _attach_driver_helmet(source: str) -> str:
 
 
 def _flatten_tail_fin_to_one_polygon(source: str) -> str:
-    """Collapse the 14-faced thick fin to a single double-sided 2D polygon.
-
-    Retain the 6-point source silhouette in the Stage 2 CAD recipe; remove
-    the second cap, the 12 thickness sides and all unused far vertices.
-    In Papyrus N3 a POLY without FACE gating can paint from either side.
-    """
+    """Discard all thickness geometry and retain the 9-point arched silhouette."""
+    n_vertices = 9
+    total_faces = n_vertices * 2 + 2
     group = "rounded_tail_fin_geo"
-    old_members = [f"rounded_tail_fin_p{i:04}" for i in range(14)]
+    old_members = [f"rounded_tail_fin_p{i:04}" for i in range(total_faces)]
     original = f"{group}: LIST {{" + ", ".join(old_members) + "};"
     if source.count(original) != 1:
-        raise ValueError("Expected original thick fin 14-face source")
+        raise ValueError("Expected the 9-point extruded fin source")
     source = source.replace(
         original, f"{group}: LIST {{rounded_tail_fin_p0000}};"
     )
-    for index in range(1, 14):
+    for index in range(1, total_faces):
         label = f"rounded_tail_fin_p{index:04}"
         source, n = re.subn(
             rf"(?m)^{label}: POLY <\d+> \{{[^}}\n]+\}};\n", "", source
         )
         if n != 1:
-            raise ValueError(f"Unexpected fin side polygon {label}")
-    for index in range(6):
+            raise ValueError(f"Fin thickness polygon {label} not removed")
+    for index in range(n_vertices):
         label = f"rounded_tail_fin_v{index:04}"
         pattern = rf"(?m)^({label}: \[<-?\d+, )-?330(, -?\d+>\];)$"
         source, n = re.subn(
             pattern, lambda m: m.group(1)+"0"+m.group(2), source
         )
         if n != 1:
-            raise ValueError(f"Cannot flatten {label} to Y=0")
-    for index in range(6, 12):
+            raise ValueError(f"Cannot flatten {label} onto Y=0")
+    for index in range(n_vertices, 2*n_vertices):
         label = f"rounded_tail_fin_v{index:04}"
         source, n = re.subn(
-            rf"(?m)^{label}: \[<-?\d+, -?\d+, -?\d+>\];\n",
-            "", source
+            rf"(?m)^{label}: \[<-?\d+, -?\d+, -?\d+>\];\n", "", source
         )
         if n != 1:
-            raise ValueError(f"Cannot remove far-side fin vertex {label}")
+            raise ValueError(f"Failed to remove thickness vertex {label}")
     if len(re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", source)) != 1:
-        raise ValueError("Fin must have exactly one planar POLY")
+        raise ValueError("Expected one two-sided flat fin polygon")
     return source
 
 
@@ -914,7 +910,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                 f"Unexpected {label} paint: {symbol}={actual}, "
                 f"expected {expected_color}"
             )
-    for component, spans in (("long_bonnet",3), ("pointed_tail",2)):
+    for component, spans in (("long_bonnet",3), ("pointed_tail",3)):
         for span in range(spans):
             for local in range(5,11):
                 index = 12*span+local
@@ -929,8 +925,8 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError("Hidden nose cross-section was not removed")
     if len(re.findall(r"(?m)^long_bonnet_p\d{4}: POLY", wasp_text)) != 37:
         raise ValueError("Traced bonnet must have 36 outward skin tris and one dashboard cap")
-    # V28 fin is a single planar 6-corner POLY, with no second cap,
-    # no thickness surfaces and no live off-plane vertices.
+    # V29 fin remains one flat polygon; its 9 outline vertices form
+    # near-vertical uprights capped by a broad semi-elliptical arch.
     fin_decls = re.findall(r"(?m)^rounded_tail_fin_p\d{4}: POLY", wasp_text)
     if fin_decls != ["rounded_tail_fin_p0000: POLY"]:
         raise ValueError("The two-dimensional fin must contain exactly one POLY")
@@ -938,7 +934,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         r"(?m)^rounded_tail_fin_v\d{4}: \[<-?\d+, (-?\d+), -?\d+>\];$",
         wasp_text,
     )
-    if len(fin_vertices) != 6 or any(y != "0" for y in fin_vertices):
+    if len(fin_vertices) != 9 or any(y != "0" for y in fin_vertices):
         raise ValueError("Fin vertices must all lie on central Y=0 plane")
     # Verify ALL retained bonnet triangles point outwards. A second shell
     # or a mis-wound inward-facing side is not an exterior surface and
@@ -1074,14 +1070,14 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     mirror_front = next(
         (p.offset for p in model.polygons.values()
          if p.color == TOP_YELLOW and len(p.refs) == 5
-         and all(model.vertices[v].xyz[0] == 6360 for v in p.refs)
+         and all(model.vertices[v].xyz[0] == 13770 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
     )
     mirror_rear = next(
         (p.offset for p in model.polygons.values()
          if p.color == MIRROR_GRAY and len(p.refs) == 5
-         and all(model.vertices[v].xyz[0] == 6000 for v in p.refs)
+         and all(model.vertices[v].xyz[0] == 13410 for v in p.refs)
          and max(model.vertices[v].xyz[2] for v in p.refs) == 18104),
         None,
     )
@@ -1093,8 +1089,24 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
     ]
     if len(mirror_faces) != 2:
         raise ValueError("Each mirror cap requires one independent FACE gate")
-    for x, front_expected in ((100000, True), (6400, True),
-                              (5960, False), (-100000, False)):
+    # Both the mirror and its angled supports must shift coherently.
+    if (model.vertices[model.polygons[mirror_front].refs[0]].xyz[0]
+            + model.vertices[model.polygons[mirror_rear].refs[0]].xyz[0])//2 != 13590:
+        raise ValueError("Mirror housing center must be at X=13590")
+    for part, endpoints in (
+        ("mirror_strut_left",(15780,13650)),
+        ("mirror_strut_right",(15780,13650)),
+    ):
+        x_coords = {
+            int(m.group(1))
+            for m in re.finditer(
+                rf"(?m)^{part}_v\d{{4}}: \[<(-?\d+),", wasp_text
+            )
+        }
+        if not set(endpoints) <= x_coords:
+            raise ValueError(f"Mirror support {part} did not follow the housing")
+    for x, front_expected in ((100000, True), (13800, True),
+                              (13380, False), (-100000, False)):
         for y in (-90000, 90000):
             visible, _, _ = model.switched_polygons(
                 None, (x, y, 16000), bsp_mode="original"
@@ -1365,8 +1377,15 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         raise ValueError(f"Wrong stock helmet placement/rotation: {helmet_dynamic}")
     # The actual eight-angle PMP silhouette has no fixed geometric chin.
     # Enforce the user-requested sprite anchor without guessing a clearance.
-    if helmet_dynamic.xyz[2] != 12824:
-        raise ValueError("Helmet must be at exactly Z=12824")
+    if helmet_dynamic.xyz != (-600,0,12824):
+        raise ValueError("Driver helmet did not move 1500 raw forward")
+    # The lower torso source begins at design X=7.26 rather than V28's
+    # X=7.51, proving a +1500 game X shift with no Z movement.
+    torso_forward = _game_coordinates(
+        (round(7.26*6000),round(-.44*6000),round(1.65*6000))
+    )
+    if not any(v.xyz == torso_forward for v in model.vertices.values()):
+        raise ValueError("Driver torso not shifted forward exactly 1500 units")
     # Rendering is painter-style, not true depth-tested transparent sprites.
     # Test all parent polygon events, including upper bonnet, upper tail,
     # and mirror housing/struts, paint BEFORE the helmet from representative
@@ -1407,39 +1426,39 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
                     "all_body_polygons_before_helmet": True,
                     "near_wheels_after_helmet": True,
                 }
-    # The fin is one two-sided 6-point POLY, all vertices at Y=0.
-    # It retains a small root overlap with the new user-traced tail deck,
-    # but has no 3D extruded thickness, perimeter walls, or second cap.
-    fin_shape_zx = (
-        (3.53, 11.65), (4.20, 12.10), (4.47, 12.47),
-        (4.52, 12.90), (4.18, 13.25), (3.43, 13.76),
+    # The 2D dorsal fin forms a tall inverted-U silhouette: straight
+    # vertical edges at X=-35576 and -27895 up to Z=16444, then a
+    # semicircular/elliptical arch peaking at Z=19703. Exactly one POLY.
+    fin_shape_xz = (
+        (-35576,12078), (-35576,16444), (-35061,18074),
+        (-33656,19266), (-31736,19703), (-29815,19266),
+        (-28410,18074), (-27895,16444), (-27895,12390),
     )
-    fin_points = {
-        (COCKPIT_DESIGN_X_RAW-round(x_ft*6000), 0,
-         round(z_ft*6000)+STOCK_GROUND_RAW_Z)
-        for z_ft, x_ft in fin_shape_zx
-    }
+    fin_points = {(x,0,z) for x,z in fin_shape_xz}
     fin_polys = [
         p for p in model.polygons.values()
-        if p.color == SIDE_YELLOW and len(p.refs) >= 6
+        if p.color == SIDE_YELLOW and len(p.refs) >= 9
         and {model.vertices[v].xyz for v in p.refs} == fin_points
     ]
-    if len(fin_polys) != 1 or len(fin_points) != 6:
-        raise ValueError("Expected precisely one 6-vertex flat dorsal fin")
+    if len(fin_polys) != 1:
+        raise ValueError("Expected one exact 9-vertex arched fin polygon")
     fin_offset = fin_polys[0].offset
-    for side in (-1, 1):
-        visible, _, _ = model.switched_polygons(
-            None, (-30000, side*90000, 18000), bsp_mode="original"
+    for side in (-1,1):
+        visible,_,_ = model.switched_polygons(
+            None, (-32000,side*90000,25000), bsp_mode="original"
         )
         if fin_offset not in set(visible):
-            raise ValueError("Single 2D fin must be visible from both sides")
-    def rear_roof_height_ft(x_ft: float) -> float:
-        return (3.58 + (3.466-3.58)*(x_ft-11.12) /
-                (13.874666666666666-11.12))
-    for base_height, base_x in ((3.53, 11.65), (3.43, 13.76)):
-        overlap = rear_roof_height_ft(base_x) - base_height
-        if not 0 < overlap < .12:
-            raise ValueError(f"Flat fin should dip just below tail roof: {overlap}")
+            raise ValueError("2D fin must remain visible from both car sides")
+    for x,z in ((-35576,16444),(-27895,16444),(-31736,19703)):
+        if (x,0,z) not in fin_points:
+            raise ValueError("Fin upright or arch height has regressed")
+    # Interpolate the roof under each fin root; endpoints are slightly
+    # embedded to prevent gaps without burying the U's vertical shafts.
+    def roof_height(x):
+        return 12724+(12040-12724)*(x+21720)/(-38248+21720)
+    if not all(0 < roof_height(x)-z < 120 for x,z in
+               ((-35576,12078),(-27895,12390))):
+        raise ValueError("Fin base roots must just enter the tail upper skin")
     # CAD-traced tail: front of deck is exactly at the seat X=-3000,
     # its crown Z=13902; tapered final section ends at (-38248,12040).
     rear_deck_x = -3000
@@ -1452,30 +1471,44 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         if not any(v.xyz[0] == x and v.xyz[2] == z
                    for v in model.vertices.values()):
             raise ValueError(f"Missing tail silhouette CAD anchor {(x,z)}")
+    # The tail's lower line is level from the driver's seat to X=-10615,
+    # then slopes continuously upward toward the point at X=-38248.
     tail_sections = (
-        # x design ft, halfwidth, shoulder z, plateau halfwidth, crown z
-        (8.0, 1.33, 3.6763333333333, .86, 3.7763333333333335),
-        (11.12, .88, 3.48, .54, 3.58),
-        (13.874666666666666, .025, 3.455, .009, 3.466),
+        # game X, outer halfwidth ft, bottom game Z, shoulder design Z,
+        # inner halfwidth ft, crown game Z
+        (-3000,1.33,184,3.6763333333333,.86,13902),
+        (-10615,1.1469471153846154,184,3.596468037749268,.7298290598290598,13423),
+        (-21720,.88,4886,3.48,.54,12724),
+        (-38248,.025,11884,3.455,.009,12040),
     )
-    for x_ft, outer_width, shoulder_z, inner_width, crown_z in tail_sections:
-        if not (0 < crown_z-shoulder_z <= .11):
-            raise ValueError("Tail should stay nearly flat across the crown")
-        for y_ft,z_ft in (
-            (outer_width,shoulder_z),(-outer_width,shoulder_z),
-            (inner_width,crown_z),(-inner_width,crown_z)
+    for x,outer,bottom,shoulder,inner,crown in tail_sections:
+        design_x=(COCKPIT_DESIGN_X_RAW-x)/6000
+        for y_ft,z_raw in (
+            (outer,bottom),(-outer,bottom),
+            (outer,round(shoulder*6000)+STOCK_GROUND_RAW_Z),
+            (inner,crown),(-inner,crown),
         ):
-            game_xyz = _game_coordinates((
-                round(x_ft*6000), round(y_ft*6000), round(z_ft*6000)
-            ))
-            if not any(tuple(v.xyz)==game_xyz
-                       for v in model.vertices.values()):
-                raise ValueError(f"Missing CAD tail section {game_xyz}")
-    if not (
-        tail_sections[0][1] > tail_sections[1][1] > tail_sections[2][1]
-        and tail_sections[0][3] > tail_sections[1][3] > tail_sections[2][3]
-    ):
-        raise ValueError("Tail must taper continuously to the traced point")
+            pt=(x,-round(y_ft*6000),z_raw)
+            if not any(v.xyz == pt for v in model.vertices.values()):
+                raise ValueError(f"Missing compiled tail ring position {pt}")
+    if [r[0] for r in tail_sections] != [-3000,-10615,-21720,-38248]:
+        raise ValueError("Tail X stations changed")
+    if tail_sections[0][2] != tail_sections[1][2]:
+        raise ValueError("Tail underside must be level until X=-10615")
+    if not tail_sections[1][2] < tail_sections[2][2] < tail_sections[3][2]:
+        raise ValueError("Tail underside must slope up after X=-10615")
+    if not all(a[1]>b[1] for a,b in zip(tail_sections,tail_sections[1:])):
+        raise ValueError("Tail width must decrease toward the point")
+
+    # The U-shaped cockpit opening has a flat low rim from X=8644
+    # to X=1489, both exactly at Z=5644, between rising shoulders.
+    for x in (8644,1489):
+        for y in (-8220,8220):
+            if not any(v.xyz==(x,y,5644) for v in model.vertices.values()):
+                raise ValueError(f"Cockpit low rim point absent {(x,y,5644)}")
+    if not any(v.xyz[0]==13013 and v.xyz[2]>5644
+               for v in model.vertices.values()):
+        raise ValueError("Dashboard side must rise above the cockpit rim")
     game_front = _game_coordinates(WHEEL_PLACEMENTS[0][2])
     game_rear = _game_coordinates(WHEEL_PLACEMENTS[2][2])
     if not game_front[0] > 0 > game_rear[0]:
@@ -1665,12 +1698,16 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
         "Front bonnet crown Z11967; single cockpit cap X13013.\n"
         "Trace overrides earlier illustrative 25%-of-bonnet ramp.\n"
         "No intermediate X-cross-section polygons are generated.\n"
-        "V24 HELMET DYNAMIC (-2100, 0, 12824): exact requested Z.\n"
+        "V29 helmet DYNAMIC (-600,0,12824): pilot moved 1500 raw forward.\n"
         "Helmet paints after BOTH roof skins, mirror and struts.\n"
         "Neck 3.09..3.37ft; torso and shoulder height unchanged.\n"
-        "Tail deck starts at game (-3000,13902), tip (-38248,12040).\n"
-        "Driver seat back at game X=-3000, with matched cockpit walls.\n"
-        "Fin is ONE 2D polygon at Y=0 (formerly 14 thick faces).\n"
+        "Tail underside flat X=-3000 through -10615, slopes to pointed tip.\n"
+        "Tail top starts at (-3000,13902) and ends (-38248,12040).\n"
+        "Flat cockpit lower rim X=8644 to X=1489, both Z=5644.\n"
+        "Fin one 9-point 2D polygon: uprights -35576/-27895 to Z16444.\n"
+        "Fin crown reaches Z19703 with a broad semicircular arc.\n"
+        "Mirror and both yellow struts translated to mirror center X13590.\n"
+        "Pilot shifted +1500 game X; seat remains at X=-3000.\n"
         "Wheels, shadow and original HELMET sprite unchanged.\n",
         encoding="utf-8",
     )
@@ -1698,9 +1735,17 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "rear_deck_design_start_ft": 8.0,
             "rear_deck_front_crown_ft": 3.7763333333333335,
             "rear_deck_mid_crown_ft": 3.58,
-            "outer_halfwidths_ft": [1.33, 0.88, 0.025],
-            "plateau_halfwidths_ft": [0.86, 0.54, 0.009],
-            "shoulder_heights_ft": [3.6763333333333, 3.48, 3.455],
+            "tail_underside_flat_to_game_x": -10615,
+            "tail_underside_flat_z": 184,
+            "tail_underside_sloped_stations": [[-21720,4886],[-38248,11884]],
+            "cockpit_low_rim_start_game_xz": [8644,5644],
+            "cockpit_low_rim_end_game_xz": [1489,5644],
+            "cockpit_lower_rim_is_flat": True,
+            "mirror_center_game_x": 13590,
+            "driver_forward_shift_raw": 1500,
+            "outer_halfwidths_ft": [1.33,1.1469471153846154,0.88,0.025],
+            "plateau_halfwidths_ft": [0.86,0.7298290598290598,0.54,0.009],
+            "shoulder_heights_ft": [3.6763333333333,3.596468037749268,3.48,3.455],
             "tail_tip_crown_ft": 3.466,
             "helmet_center_height_above_ground_ft": 3.5967,
             "neck_bottom_height_ft": 3.09,
@@ -1713,8 +1758,12 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "bonnet_loft_stations_ft": [0.55, 3.35, 4.259333333333333, 5.331166666666666],
             "bonnet_unified_exterior_triangle_count": 36,
             "redundant_inner_cowl_shell_removed": True,
-            "dorsal_fin_peak_height_ft": 4.52,
-            "dorsal_fin_base_heights_ft": [3.53, 3.43],
+            "dorsal_fin_peak_height_ft": (19703+8756)/6000,
+            "dorsal_fin_top_raw_z": 19703,
+            "dorsal_fin_upright_x_raw": [-35576,-27895],
+            "dorsal_fin_upright_top_z_raw": 16444,
+            "dorsal_fin_base_game_xz": [[-35576,12078],[-27895,12390]],
+            "dorsal_fin_outline_vertex_count": 9,
             "dorsal_fin_is_planar": True,
             "dorsal_fin_polygon_count": 1,
             "driver_seat_back_game_x": -3000,
@@ -1745,6 +1794,7 @@ def assemble(body_dir: Path, front_dir: Path, rear_dir: Path, output: Path):
             "palette_source": "icr2_3do_cad/gamepal.pcx sha 8784dc6278cb7c057cd717c7b786301a8aa8890a",
             "head_external": "HELMET",
             "helmet_anchor_raw": list(HELMET_GAME_XYZ),
+            "driver_shift_forward_raw": 1500,
             "sprite_chin_clearance": "not asserted: PMP silhouette depends on view",
             "helmet_paints_last_within_body": True,
             "helmet_file_sha256": SUPPLIED_HELMET_SHA256,
