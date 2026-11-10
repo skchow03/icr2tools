@@ -211,12 +211,19 @@ jobs:
           assert manifest["radiator_front_game_x"]==43671
           assert manifest["radiator_rear_seam_game_x"]==41700
           assert len(manifest["painter_camera_tests"])==32
+          assert manifest["version"]=="V30c"
+          culling=manifest["one_sided_upper_surfaces"]
+          assert culling["top_gates"]==56
+          assert culling["front_sample_tests"]==culling["back_sample_tests"]==56
+          assert culling["groups"]["wasp_tail_roof_geo"]==18
+          assert culling["groups"]["wasp_bonnet_roof_geo"]==18
+          assert sum(v for k,v in culling["groups"].items() if k.startswith("cockpit_body_"))==20
           preview=json.loads((root/"phase3_wasp_v30/preview.json").read_text())
           assert not preview["warnings"] and len(preview["cameras"])==13
           comparison=json.loads((root/"phase3_wasp_v29_to_v30/comparison.json").read_text())
           assert not comparison["warnings"] and len(comparison["cameras"])==13
           assert comparison["views"]["front"]["changed_pixels"]>0
-          print("V30 compiled with sealed radiator, 32 front/rear/low side-oblique painter checks and 13 visual comparisons")
+          print("V30c compiled: 56 one-sided top gates, 112 directional checks, 32 camera painter checks, 13 visual comparisons")
           PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
