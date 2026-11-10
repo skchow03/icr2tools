@@ -9,6 +9,7 @@ import sys
 from .inspector import write_package
 from .parametric import RecipeError
 from .stage2 import generate_package, validate_path
+from .visual_regression import DEFAULT_CAMERAS, CAMERAS, render_previews, compare_previews
 
 
 def main(argv=None):
@@ -51,6 +52,42 @@ def main(argv=None):
         "validate", help="Compile-check .3D or parse-check .3do without writing")
     validate.add_argument("input", type=Path, help="Existing N3 .3D or .3do file")
 
+
+    preview = commands.add_parser(
+        "preview", help="Camera-specific filled BSP/PMP previews; not game screenshots")
+    preview.add_argument("input", type=Path, help="Compiled .3do or editable .3D")
+    preview.add_argument("-o", "--output", type=Path, required=True,
+                         help="New output directory, never overwritten")
+
+    compare = commands.add_parser(
+        "compare", help="Render before/after with common framing and pixel-diff reports")
+    compare.add_argument("before", type=Path, help="Baseline .3do or .3D")
+    compare.add_argument("after", type=Path, help="Candidate .3do or .3D")
+    compare.add_argument("-o", "--output", type=Path, required=True,
+                         help="New comparison output directory")
+    compare.add_argument("--tolerance", type=int, default=0,
+                         help="Ignore RGB-channel deltas at or below 0-255")
+    compare.add_argument("--max-diff-ratio", type=float,
+                         help="Fail after producing images if any view exceeds this changed-pixel fraction")
+
+    for command in (preview, compare):
+        command.add_argument("--cameras", nargs="+", default=DEFAULT_CAMERAS,
+                             choices=sorted(CAMERAS))
+        command.add_argument("--width", type=int, default=700)
+        command.add_argument("--height", type=int, default=500)
+        command.add_argument("--objects-folder", type=Path)
+        command.add_argument("--texture-folder", type=Path)
+        command.add_argument("--palette", type=Path,
+                             help="Optional 8-bit PCX palette override; default local SUNNY.PCX or CAD gamepal.pcx")
+        command.add_argument("--appearance", type=Path,
+                             help="Driver RECOLOR/MIP wrapper for current model")
+        command.add_argument("--bsp-mode", choices=["original","off"],
+                             default="original")
+        command.add_argument("--no-textures", action="store_true",
+                             help="Use palette-colored fills instead of MIP sampling")
+        command.add_argument("--strict-assets", action="store_true",
+                             help="Require all referenced resources to resolve without warnings")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "inspect":
@@ -67,6 +104,39 @@ def main(argv=None):
                 "counts": summary["counts"],
                 "appearance_wrapper": summary["appearance_wrapper"],
             }
+        elif args.command == "preview":
+            summary = render_previews(
+                args.input, args.output, cameras=args.cameras,
+                width=args.width, height=args.height,
+                objects_folder=args.objects_folder,
+                texture_folder=args.texture_folder, palette_file=args.palette,
+                appearance=args.appearance, bsp_mode=args.bsp_mode,
+                textures=not args.no_textures, strict_assets=args.strict_assets)
+            result = {
+                "output_directory": str(args.output),
+                "cameras": summary["cameras"], "warnings": summary["warnings"],
+                "rendered_sprites": sum(
+                    v["rendered_sprites"] for v in summary["statistics"].values()),
+            }
+        elif args.command == "compare":
+            summary = compare_previews(
+                args.before, args.after, args.output, cameras=args.cameras,
+                width=args.width, height=args.height,
+                objects_folder=args.objects_folder,
+                texture_folder=args.texture_folder, palette_file=args.palette,
+                appearance=args.appearance, bsp_mode=args.bsp_mode,
+                textures=not args.no_textures, tolerance=args.tolerance,
+                max_diff_ratio=args.max_diff_ratio,
+                strict_assets=args.strict_assets)
+            result = {
+                "output_directory": str(args.output),
+                "maximum_changed_fraction": summary["maximum_changed_fraction"],
+                "threshold_passed": summary["threshold_passed"],
+                "warnings": summary["warnings"],
+            }
+            if not summary["threshold_passed"]:
+                print(json.dumps(result, indent=2, sort_keys=True))
+                parser.exit(3, "Visual regression threshold exceeded; images saved.\n")
         elif args.command == "generate":
             if args.views and args.no_analysis:
                 parser.error("--views cannot be combined with --no-analysis")
