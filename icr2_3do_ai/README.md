@@ -227,6 +227,118 @@ unknown fields, invalid names, excessive geometry and other invalid recipes
 raise a detailed error. Maximums are 128 operations, 30,000 vertices and
 60,000 faces, plus 128 rings/64 points per cross-section.
 
+
+### Phase 2 — Structured, opt-in N3 assembly
+
+Add an optional \`assembly\` block to a normal \`icr2.n3.recipe.v1\`
+recipe. If omitted, Stage 2 retains the exact original LIST-based emission
+path; existing recipes and assembled Wasp binaries are **not** migrated.
+The implementation in \`assembly.py\` works on named component geometry and
+a validated node graph, not regular-expression rewrites of generated N3 text.
+
+The checked-in
+[\`recipes/phase2_assembly_demo.json\`](recipes/phase2_assembly_demo.json)
+compiles the actual N3 constructs with the repository's existing compiler:
+a movable torso and HELMET reference (but stationary seatback), independently
+anchored external wheels, a one-sided radiator FACE, and BSPN/BSPA ordering.
+
+\`\`\`json
+{
+  "assembly": {
+    "coordinate_system": "source",
+    "game_transform": {
+      "rotate_z_quarters": 2,
+      "translate": [7.5, 0, -1.4]
+    },
+    "anchors": [
+      {"name": "seat", "at": [1, 0, 0]},
+      {"name": "head", "at": [1.25, 0, 1.6]}
+    ],
+    "externals": [
+      {"name": "helmet", "model": "HELMET",
+       "at": {"anchor": "head"}}
+    ],
+    "groups": [
+      {"name": "pilot", "anchor": "seat",
+       "members": ["torso", "helmet"],
+       "transform": {"translate": [0.2, 0, 0]}}
+    ],
+    "gates": [
+      {"name": "radiator_front", "component": "radiator",
+       "faces": [0],
+       "plane": [[0,-1,-1], [0,1,-1], [0,0,1]],
+       "visible_from": [2,0,0], "hidden_from": [-2,0,0]}
+    ],
+    "nodes": [
+      {"name": "body", "kind": "list",
+       "children": ["radiator", "seatback", "pilot"]}
+    ],
+    "root": "body"
+  }
+}
+\`\`\`
+
+The snippet shows the assembly block only; every named mesh must also
+exist in \`operations\`. All numbers in \`anchors\`, \`translate\`,
+\`plane\`, and external placements use **recipe coordinate units** and
+are converted to signed raw Papyrus integer units using
+\`coordinate_scale\` before output. Input coordinate system is mandatory:
+\`source\` means the authoring frame and optionally permits one global
+\`game_transform\`; \`game\` means coordinates already match the runtime
+frame and rejects a second global transform. There is no guessed axis flip.
+The sample global transform reflects the Wasp's 180-degree Z alignment
+and its offset, but does not change or recompile the Wasp assembly.
+
+- **Groups/anchors:** Every group names existing components and/or externals;
+  its pivot is a named anchor. A group transform applies equally to all
+  members, including any DYNAMIC placements. Leave fixed parts (such as
+  the seatback) outside the moving group. Membership cannot overlap groups.
+- **Transforms:** \`translate\`, \`rotate_z_quarters\` (integer 0–3),
+  and a positive *uniform* \`scale\` are supported. No arbitrary-angle,
+  anisotropic, shear, or animated mesh transforms. Fractional raw-coordinate
+  results from scaling are rejected instead of silently rounded; the
+  quarter-turns are exact. DYNAMIC heading uses tenths of a degree.
+- **External references:** \`externals\` accepts a name, 1–8-character
+  EXTERN model basename (e.g. \`FWHEEL\`, \`RWHEEL\`, \`HELMET\`),
+  and an \`at\` position or \`{"anchor":"head","offset":[x,y,z]}\`.
+  Optional \`rotation_tenths\` is an ordered three-element N3 rotation
+  vector. No binary assets or PMP sprite sheets are copied or edited.
+  \`manifest.assembly.dependencies\` records declared assets.
+  Use \`generate ... --objects-folder /path/to/external/3dos\` to require
+  exactly one valid, parseable matching .3do file for each EXTERN. Otherwise
+  each dependency is marked *unverified*, not assumed present. PMP texture
+  dependencies inside external models remain outside this check.
+- **FACE gates:** \`gates\` selects polygon indices in a named component
+  and wraps only those polygons, replacing their original draw pointers.
+  \`plane\` is three ordered points. \`visible_from\` must lie strictly
+  on its positive halfspace; \`hidden_from\` on its negative halfspace.
+  Both camera checks and the plane follow the component group and global
+  transforms. This checks orientation algebraically, **not** actual in-game
+  visibility or correct Papyrus FACE behavior.
+- **Painter graph:** \`nodes\` may declare \`list\` (one or more ordered
+  children), \`bspn\` (two children and a three-point plane), and \`bspa\`
+  (three children and a plane). \`root\` selects a node/group/component;
+  a graph with explicit nodes must name its root. Every component and
+  external must appear *exactly once* in the resulting render tree.
+  Groups become named N3 LISTs. Painter order cannot cure overlapping
+  geometry; Phase 1 \`surface_checks\` runs on the **transformed** meshes.
+
+To compile and validate the full example:
+
+\`\`\`sh
+python -m icr2_3do_ai generate \
+  icr2_3do_ai/recipes/phase2_assembly_demo.json \
+  --no-analysis -o /tmp/phase2-assembly
+python -m icr2_3do_ai validate /tmp/phase2-assembly/model.3do
+\`\`\`
+
+The library's original V29 \`assemble_wasp.py\` remains an explicitly
+unmigrated compatibility baseline, including its model-specific painter
+ordering and palette adjustments. The new assembly layer can replace many
+future string-patching operations, but a deliberate Wasp migration still
+requires semantic selection of original polygons, material/color policies
+and actual game-camera regression tests in Phase 3.
+
 ### Running through GitHub
 
 The repository's **3DO AI semantic inspector** GitHub Actions workflow
@@ -243,10 +355,10 @@ present in its checkout, not your unpublished local carset directory.
 
 ### Limitations and next steps
 
-- The generator does **not** create camera-dependent BSP/FACE hierarchies,
-  RES/LOD branches, external attachments, or a photogrammetrically accurate
-  vehicle automatically. Generated faces are grouped under LIST nodes and
-  need CAD/in-game draw-order evaluation.
+- Opt-in assembly recipes now express named FACE/BSPA/BSPN/LIST structures and
+  external DYNAMIC placements. They are not camera-accurate visibility
+  simulators and do not automatically solve BSP ordering for arbitrary meshes.
+  RES/LOD authoring and sprite rendering remain outside Stage 2.
 - Convex section lofts and extrusions are a safe starting point; adding
   complex concave meshes, UV-unwrapping and multi-material face groups is
   future work.
