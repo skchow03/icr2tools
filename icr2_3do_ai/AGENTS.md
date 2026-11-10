@@ -55,3 +55,33 @@ Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
 - Preserve previous source and binary behavior for existing recipes. New
   schema fields are optional and legacy bool caps retain both-end semantics.
 
+
+
+## Phase 2 structured assembly (generic Stage 2)
+
+- The \`assembly\` block is optional. Do not change the emitted source for
+  recipes lacking it, nor silently migrate \`assemble_wasp.py\`.
+- Use \`assembly.py\` to assemble named geometry, transformation groups,
+  anchors, external DYNAMIC objects, named FACE gates and a typed painter
+  graph. Never implement new regex substitutions of \`*_p0037\` labels in a
+  model-specific assembler as a substitute for structured geometry selection.
+- Every transform is in explicitly declared source/game coordinate space.
+  Convert decimal recipe units to integers once; Z quarter-turn rotations
+  are exact, uniform scale must preserve integer coordinates. Reject unknown
+  angle conventions, nonuniform scale and ambiguous coordinate frames.
+- Keep a single render-path instance of every component and external:
+  unique membership, no graph cycles, no missing or duplicate painter leaves.
+  Use named anchors for attachments; moving a driver group also moves its
+  helmet DYNAMIC, but not unrelated fixed cockpit surfaces.
+- N3 \`DYNAMIC ... EXTERN\` names are model basenames, at most eight ASCII
+  characters; declare and record .3do dependencies, and validate actual
+  external files when \`--objects-folder\` is supplied. Do not embed or
+  overwrite stock wheels, helmets, or PMP assets.
+- FACE plane winding must pass explicit positive/negative sample camera
+  halfspace tests. Compilation validates syntax/structure, **not** all
+  Papyrus runtime visibility semantics; BSPA/BSPN are view-dependent
+  painter operations, not geometric mesh repair.
+- Phase 1 surface-integrity diagnostics run **after** component transforms.
+  Do not hide doubled skins or broken topology by changing painter order.
+- Keep \`phase2_assembly_demo.json\` compiling in CI and retain Wasp V29
+  build/palette/geometry checks without a migration. Run \`test_assembly.py\`.
