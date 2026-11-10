@@ -19,6 +19,13 @@ ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "icr2_3do_cad" / "fixtures"
 DEMO = ROOT / "icr2_3do_ai" / "recipes" / "phase2_assembly_demo.json"
 
+def color_sheet(color):
+    return {"schema": "icr2.n3.recipe.v1", "operations": [
+        {"type": "polygon", "name": "sample", "axis": "z", "at": 0,
+         "outline": [[-2,-1], [2,-1], [2,1], [-2,1]],
+         "color": color}]}
+
+
 
 class PreviewRegressionTests(unittest.TestCase):
     def setUp(self):
@@ -73,24 +80,24 @@ class PreviewRegressionTests(unittest.TestCase):
                 (960,220))
 
     def test_changed_palette_color_triggers_measurable_visual_diff(self):
-        raw = json.loads(DEMO.read_text())
+        raw = color_sheet(33)
         before_source,_ = generate_source(raw)
         model,_ = validate_source(before_source)
         old = self.folder/"before.3do"
         old.write_bytes(model.raw)
-        raw["operations"][0]["color"] = 159
+        raw["operations"][0]["color"] = 158
         after_source,_ = generate_source(raw)
         model,_ = validate_source(after_source)
         changed = self.folder/"after.3do"
         changed.write_bytes(model.raw)
         report = compare_previews(
             old,changed,self.folder/"different",
-            cameras=["front"],width=350,height=260,textures=False)
+            cameras=["top"],width=350,height=260,textures=False)
         self.assertGreater(report["maximum_changed_fraction"],0)
-        self.assertGreater(report["views"]["front"]["changed_pixels"],0)
+        self.assertGreater(report["views"]["top"]["changed_pixels"],0)
 
     def test_diff_threshold_failure_still_publishes_report(self):
-        raw=json.loads(DEMO.read_text())
+        raw=color_sheet(33)
         src,_=generate_source(raw)
         model,_=validate_source(src)
         a=self.folder/"a.3do";a.write_bytes(model.raw)
@@ -99,7 +106,7 @@ class PreviewRegressionTests(unittest.TestCase):
         model,_=validate_source(src)
         b=self.folder/"b.3do";b.write_bytes(model.raw)
         report=compare_previews(
-            a,b,self.folder/"threshold",cameras=["front"],width=200,
+            a,b,self.folder/"threshold",cameras=["top"],width=200,
             height=160,max_diff_ratio=0,textures=False)
         self.assertFalse(report["threshold_passed"])
         self.assertTrue((self.folder/"threshold"/"comparison.json").exists())
