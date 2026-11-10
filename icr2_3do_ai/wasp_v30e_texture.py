@@ -43,13 +43,20 @@ def _linear(value, begin, end, uv_begin, uv_end):
     return max(min(uv_begin,uv_end),min(max(uv_begin,uv_end),result))
 
 
-def _body_uv(component, original_vertex, xyz):
+def _body_uv(component, original_vertex, xyz, face_index=None):
     index=int(original_vertex.rsplit("_v",1)[1])
     ring=index%6
     u=BODY_U[ring]
     x=xyz[0]
     if component=="long_bonnet":
         # Atlas has the car FRONT UP (v=0), rear/dashboard down (v=72).
+        # The right-hand printed number in the supplied atlas has the
+        # opposite orientation when transposed onto the +Y vertical side.
+        # Reuse the left-number strip (still within the requested bonnet
+        # rectangle) with inverted U across that side only. Distinct
+        # per-face vertices permit this without a roof/shoulder UV seam.
+        if face_index in (11,0) and ring in (5,0):
+            u={5:63,0:47}[ring]
         v=_linear(x,41700,13013,0,72)
     elif component=="pointed_tail":
         v=_linear(x,-3000,-38248,74,127)
@@ -99,7 +106,8 @@ def apply_texture(source):
             if len(refs)!=3 or color not in (158,159):
                 raise ValueError(f"Unexpected source exterior triangle {poly}")
             coords=[source_coords[r] for r in refs]
-            uv=[_body_uv(name,r,xyz) for r,xyz in zip(refs,coords)]
+            uv=[_body_uv(name,r,xyz,face_index=int(poly.rsplit("_p",1)[1])%12)
+                for r,xyz in zip(refs,coords)]
             declarations.extend(_textured_vertices(poly,coords,uv,refs,written))
             mapping[poly]={"source_refs":refs,"xyz":coords,"uv":uv,
                            "atlas":"bonnet" if name=="long_bonnet" else "tail"}
