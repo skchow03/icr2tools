@@ -472,6 +472,57 @@ jobs:
             assert not stats["missing_textures"]
           print("Native wheels: geometry and wheel1 material proxy resolved from thirteen filled cameras")
           PY
+      - name: Test stock three-LOD RES root on custom Marmon wheels
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.wasp_v30h_wheel_lod \
+            --baseline /tmp/3do-ai-recipes/marmon_wasp_v30g \
+            --output /tmp/3do-ai-recipes/marmon_wasp_v30h
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30h/FWHEEL.3do
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30h/RWHEEL.3do
+          for obj in WASP SFRONT SREAR MARMON HELMET; do
+            cmp "/tmp/3do-ai-recipes/marmon_wasp_v30g/$obj.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_v30h/$obj.3do"
+          done
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_v30h/WASP.3do \
+            --appearance /tmp/3do-ai-recipes/marmon_wasp_v30h/MARMON.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30h \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30h
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/marmon_wasp_v30g/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_v30h/WASP.3do \
+            --appearance /tmp/3do-ai-recipes/marmon_wasp_v30h/MARMON.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30h \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30g_to_v30h
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          root=Path("/tmp/3do-ai-recipes")
+          manifest=json.loads((root/"marmon_wasp_v30h/v30h_manifest.json").read_text())
+          assert manifest["version"]=="V30h"
+          for name in ("FWHEEL","RWHEEL"):
+            wheel=manifest["wheel_checks"][name]
+            assert wheel["root"]=="RES"
+            assert wheel["thresholds"]==[280000,113750,0]
+            assert wheel["polygons"]==114 and wheel["geometry_byte_semantics_equal"]
+            assert len(wheel["three_lod_distance_tests"])==3
+          preview=json.loads((root/"phase3_wasp_v30h/preview.json").read_text())
+          compare=json.loads((root/"phase3_wasp_v30g_to_v30h/comparison.json").read_text())
+          assert not preview["warnings"] and len(preview["cameras"])==13
+          assert not compare["warnings"] and len(compare["cameras"])==13
+          print("V30h: stock RES wheel roots with unchanged custom shape and full 13-camera asset resolution")
+          PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
         run: |
