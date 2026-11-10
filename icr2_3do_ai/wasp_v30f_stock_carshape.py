@@ -120,8 +120,10 @@ def build(baseline:Path,output:Path):
     shape=check_shape(model,old)
     paint=appearance_source()
     wrapper,wi=validate_source(paint,model_path=output/"MARMON.3D")
-    if wi["parser_warnings"]:
-        raise ValueError(wi["parser_warnings"])
+    # An appearance wrapper intentionally has no local editable POLY records.
+    # The stock parser reports this informational warning on MATERIAL+RECOLOR.
+    if wi["parser_warnings"] != ["No editable geometry: file may be an object placement / material wrapper"]:
+        raise ValueError(f"Unexpected appearance wrapper warnings: {wi['parser_warnings']}")
     output.mkdir(parents=True)
     for name,contents in (("WASP.3D",source),("MARMON.3D",paint)):
         (output/name).write_text(contents,encoding="utf-8")
