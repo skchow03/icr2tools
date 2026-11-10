@@ -422,8 +422,17 @@ jobs:
               assert fixture.mip_names==[mip]
               assert fixture.external_names==[geometry.lower()]
               assert fixture.records[fixture.root_offset]==4
-              assert int.from_bytes(fixture.body[fixture.root_offset+8:fixture.root_offset+12],
-                                    "little",signed=True)==color
+              # The checked-in synthetic fixture uses MATERIAL color=45.
+              # The user's separately uploaded actual carset wrappers
+              # have the nonzero packed stock color word 0x01080808.
+              fixture_color=int.from_bytes(
+                  fixture.body[fixture.root_offset+8:fixture.root_offset+12],
+                  "little",signed=True)
+              assert fixture_color==45
+              assert actual.children[actual.root_offset]==[-1]
+              assert int.from_bytes(
+                  actual.body[actual.root_offset+8:actual.root_offset+12],
+                  "little",signed=True)==color
             assert actual.records[actual.root_offset]==4
             assert actual.mip_names==[mip]
             assert actual.external_names==[geometry]
