@@ -53,16 +53,25 @@ def edit(src):
         if p[0] != 42600:
             raise ValueError("Unexpected original grille FACE gate")
         src = change(src, symbol, fmt(p), fmt((FRONT_X-60, p[1], p[2])))
+    # All outer body and roof layers belong inside the SAME X-dependent painter
+    # branch. V30's final LIST overlay painted the helmet and front bonnet roof
+    # over the tail's visible sidewall from rear/low cameras.
     src = change(src, "wasp_frame_and_body",
         "LIST {wasp_black_frame, wasp_body_ysort, wasp_upper_skin, wasp_ornaments, wasp_driver_helmet}",
-        "LIST {wasp_black_frame, wasp_body_ysort, wasp_view_sorted_upper}")
-    if "wasp_view_sorted_upper:" in src:
-        raise ValueError("V30 graph already declared")
+        "LIST {wasp_black_frame, wasp_body_ysort}")
+    src = change(src, "wasp_body_xsort",
+        "BSPA (wasp_x_a, wasp_x_b, wasp_x_c), wasp_tailparts, wasp_driver_center, wasp_nose_shell",
+        "BSPA (wasp_x_a, wasp_x_b, wasp_x_c), wasp_rear_depth, wasp_pilot_depth, wasp_front_depth")
+    if "wasp_rear_depth:" in src:
+        raise ValueError("V30 occlusion tree already declared")
     src += """
-% V30: view-dependent rear deck / helmet / front nose painter layers.
-wasp_rear_upper: LIST {wasp_tail_roof_geo, rounded_tail_fin_geo};
-wasp_front_upper: LIST {wasp_bonnet_roof_geo, wasp_mirror_strut_sort, radiator_face_geo};
-wasp_view_sorted_upper: BSPA (wasp_x_a, wasp_x_b, wasp_x_c), wasp_rear_upper, wasp_driver_helmet, wasp_front_upper;
+% V30 fixed: X sort ALL tail outer polygons including sidewalls, not just roof.
+% The middle camera-dependent layer contains the helmet; the complete tail
+% paints after it from behind, and the complete nose paints after it in front.
+% Existing Y BSPA then paints near-side cockpit sidewalls last.
+wasp_rear_depth: LIST {wasp_tailparts, wasp_tail_roof_geo, rounded_tail_fin_geo};
+wasp_pilot_depth: LIST {wasp_driver_center, wasp_driver_helmet};
+wasp_front_depth: LIST {wasp_nose_shell, wasp_bonnet_roof_geo, wasp_mirror_strut_sort, radiator_face_geo};
 """
     result = vertices(src)
     assert [result[f"radiator_face_v{i:04}"] for i in range(6,12)] == bonnet
@@ -73,7 +82,7 @@ def event_check(model, eye):
     events=[]
     model.switched_polygons(None,eye,bsp_mode="original",events=events)
     helmet=[i for i,e in enumerate(events) if e[0]=="dynamic" and model.dynamics[e[1]].name=="HELMET"]
-    grille=[]; tail=[]; mirror=[]
+    grille=[]; tail=[]; mirror=[]; tail_sides=[]; bonnet_roof=[]; near_cockpit=[]
     for i,e in enumerate(events):
         if e[0]!="polygon": continue
         poly=model.polygons[e[1]]
@@ -81,18 +90,29 @@ def event_check(model, eye):
         if poly.color==33 and len(set(poly.refs))==6 and all(p[0]==FRONT_X for p in pts): grille.append(i)
         if poly.color==158 and pts and all(p[0]<=-3000 for p in pts) and min(p[2] for p in pts)>=12000: tail.append(i)
         if poly.color in (158,40) and pts and all(13300<=p[0]<=16000 for p in pts) and min(p[2] for p in pts)>14500: mirror.append(i)
-    if len(helmet)!=1 or not tail:
+        if (poly.color in (158,159) and pts
+                and all(p[0]<=-3000 for p in pts)
+                and any(abs(p[1])>3500 for p in pts)
+                and min(p[2] for p in pts)<13000):
+            tail_sides.append(i)
+        if (poly.color==158 and pts
+                and all(p[0]>=13013 for p in pts)
+                and any(p[2]>=11900 for p in pts)):
+            bonnet_roof.append(i)
+    if len(helmet)!=1 or not tail or not tail_sides or not bonnet_roof:
         raise ValueError(f"Missing helmet/tail in {eye}: {helmet}, {len(tail)}")
     h=helmet[0]
     if eye[0]>0:
-        if len(grille)!=1 or not max(tail)<h<grille[0]:
+        if len(grille)!=1 or not max(tail)<h<grille[0] or max(tail_sides)>=h:
             raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}")
         if mirror and max(mirror)>=grille[0]:
             raise ValueError(f"Mirrors paint through forward grille at {eye}")
     else:
-        if grille or min(tail)<=h or (mirror and max(mirror)>=h):
+        if (grille or min(tail)<=h or min(tail_sides)<=h
+                or max(bonnet_roof)>=min(tail_sides)
+                or (mirror and max(mirror)>=h)):
             raise ValueError(f"Incorrect rear painter sequence {eye}: head {h}, tail {tail}, grille {grille}")
-    return {"camera":list(eye),"helmet_event":h,"grille_events":grille,"tail_roof_events":len(tail),"mirror_events":len(mirror)}
+    return {"camera":list(eye),"helmet_event":h,"grille_events":grille,"tail_roof_events":len(tail),"tail_side_events":len(tail_sides),"bonnet_roof_events":len(bonnet_roof),"mirror_events":len(mirror)}
 
 
 def build(baseline:Path,output:Path):
@@ -101,8 +121,8 @@ def build(baseline:Path,output:Path):
     src=edit(old)
     model,validation=validate_source(src,model_path=output/"WASP.3D")
     if validation["parser_warnings"]: raise ValueError(validation["parser_warnings"])
-    checks=[event_check(model,(x,y,z)) for x in (-150000,150000)
-            for y in (-25000,25000) for z in (-6500,28000)]
+    checks=[event_check(model,(x,y,z)) for x in (-150000,-40000,40000,150000)
+            for y in (-100000,-25000,25000,100000) for z in (-6500,28000)]
     output.mkdir(parents=True)
     (output/"WASP.3D").write_text(src,encoding="utf-8")
     (output/"WASP.3do").write_bytes(model.raw)
@@ -115,7 +135,7 @@ def build(baseline:Path,output:Path):
     manifest={"version":"V30","source":"V29 edited N3 assembly",
         "radiator_front_game_x":FRONT_X,"radiator_rear_seam_game_x":REAR_X,
         "seam":"6 exact matching radiator/bonnet vertices",
-        "view_sort":"BSPA rear-deck, sprite-helmet, front-roof/mirrors/radiator",
+        "view_sort":"single BSPA rear-tail-side-and-roof, sprite-helmet, front-bonnet-and-radiator within Y-sorted body",
         "validated_compilation":validation,"painter_camera_tests":checks,
         "input_v29_source_sha256":sha256(old.encode()).hexdigest(),
         "binary_sha256":{p.name:sha256(p.read_bytes()).hexdigest() for p in output.glob("*.3do")},
