@@ -11,6 +11,8 @@ on:
       - 'icr2_3do_ai/**'
       - 'icr2_3do_cad/**'
       - '.github/workflows/3do-ai-inspector.yml'
+  workflow_dispatch:
+    # Manual rebuild of review artifacts; never publishes a GitHub Release.
 
 jobs:
   unittest:
@@ -205,6 +207,46 @@ jobs:
           assert (output/"top-comparison.png").is_file()
           print("Verified changed bonnet color produces visible nonzero top-view diff")
           PY
+      - name: Create reproducible, review-only release candidate
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.release_package \
+            --models /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --previews /tmp/3do-ai-recipes/phase3_wasp_v29 \
+            --comparison /tmp/3do-ai-recipes/phase3_wasp_identical_diff \
+            --recipes icr2_3do_ai/recipes \
+            --source-commit "$(git rev-parse HEAD)" \
+            -o /tmp/3do-ai-release-candidate
+          python - <<'PY'
+          import json
+          from hashlib import sha256
+          from pathlib import Path
+          from zipfile import ZipFile
+          root=Path("/tmp/3do-ai-release-candidate")
+          manifest=json.loads((root/"release_manifest.json").read_text())
+          assert manifest["status"]=="review-only-unpublished"
+          assert manifest["comparison_maximum_changed_fraction"]==0
+          assert len(manifest["cameras"])==7
+          with ZipFile(root/"release-candidate.zip") as archive:
+              assert archive.testzip() is None
+              assert "models/WASP.3do" in archive.namelist()
+              assert "visuals/preview/front.png" in archive.namelist()
+              assert "visuals/comparison/front-comparison.png" in archive.namelist()
+              digests=archive.read("SHA256SUMS").decode().splitlines()
+              for line in digests:
+                  h,rel=line.split("  ",1)
+                  assert sha256(archive.read(rel)).hexdigest()==h
+          print("Deterministic review candidate verified:",manifest["source_commit"],
+                "files:",len(manifest["files"]))
+          PY
+          sha256sum /tmp/3do-ai-release-candidate/release-candidate.zip
+      - name: Publish review-only release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3do-ai-release-candidate
+          path: /tmp/3do-ai-release-candidate/
+          if-no-files-found: error
+          retention-days: 14
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:
