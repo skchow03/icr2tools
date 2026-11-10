@@ -191,6 +191,7 @@ jobs:
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30 \
             --texture-folder icr2_3do_cad/fixtures --strict-assets \
             --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
             --width 640 --height 480 \
             -o /tmp/3do-ai-recipes/phase3_wasp_v30
           python -m icr2_3do_ai compare \
@@ -199,6 +200,7 @@ jobs:
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30 \
             --texture-folder icr2_3do_cad/fixtures --strict-assets \
             --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
             --width 480 --height 360 \
             -o /tmp/3do-ai-recipes/phase3_wasp_v29_to_v30
           python - <<'PY'
@@ -210,11 +212,11 @@ jobs:
           assert manifest["radiator_rear_seam_game_x"]==41700
           assert len(manifest["painter_camera_tests"])==32
           preview=json.loads((root/"phase3_wasp_v30/preview.json").read_text())
-          assert not preview["warnings"] and len(preview["cameras"])==9
+          assert not preview["warnings"] and len(preview["cameras"])==13
           comparison=json.loads((root/"phase3_wasp_v29_to_v30/comparison.json").read_text())
-          assert not comparison["warnings"] and len(comparison["cameras"])==9
+          assert not comparison["warnings"] and len(comparison["cameras"])==13
           assert comparison["views"]["front"]["changed_pixels"]>0
-          print("V30 compiled with sealed radiator, 32 front/rear/low side-oblique painter checks and nine visual comparisons")
+          print("V30 compiled with sealed radiator, 32 front/rear/low side-oblique painter checks and 13 visual comparisons")
           PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
