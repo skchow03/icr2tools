@@ -85,7 +85,7 @@ def validate_path(path):
 
 
 def generate_package(recipe_file, output, *, with_views=False,
-                     with_analysis=True):
+                     with_analysis=True, objects_folder=None):
     """Generate source, compile, reparse, and publish only if every step works.
 
     If a validation or report step fails, the temporary output folder is
@@ -101,6 +101,34 @@ def generate_package(recipe_file, output, *, with_views=False,
         raise RecipeError("Output location must differ from recipe input")
     recipe = _read_recipe(recipe_file)
     source, manifest = generate_source(recipe)
+    # External assets are never copied, modified or silently assumed to exist.
+    # Supply objects_folder for strict on-disk dependency validation.
+    if "assembly" in manifest:
+        refs = sorted({item["model"] for item in
+                       manifest["assembly"]["externals"]})
+        dependencies = []
+        folder = Path(objects_folder) if objects_folder is not None else None
+        if folder is not None and not folder.is_dir():
+            raise RecipeError(f"External objects directory does not exist: {folder}")
+        for name in refs:
+            record = {"model": name, "filename": name + ".3do",
+                      "status": "unverified"}
+            if folder is not None:
+                matches = [p for p in folder.iterdir()
+                           if p.is_file() and p.name.casefold() ==
+                           (name + ".3do").casefold()]
+                if len(matches) != 1:
+                    raise RecipeError(
+                        f"Expected exactly one external {name}.3do in {folder}")
+                parsed = validate_path(matches[0])
+                if parsed["parser_warnings"]:
+                    raise FormatError(
+                        f"External {name}.3do has parser warnings: " +
+                        "; ".join(parsed["parser_warnings"]))
+                record.update(status="validated", bytes=parsed["bytes"],
+                              binary_sha256=parsed["binary_sha256"])
+            dependencies.append(record)
+        manifest["assembly"]["dependencies"] = dependencies
     model, validation = validate_source(source)
     if len(model.polygons) != manifest["polygon_count"]:
         raise FormatError("Generated polygon count differs from recipe manifest")

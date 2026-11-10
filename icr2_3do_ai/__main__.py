@@ -40,6 +40,8 @@ def main(argv=None):
     generate.add_argument("recipe", type=Path, help="Validated recipe JSON")
     generate.add_argument("-o", "--output", type=Path, required=True,
                           help="NEW output folder; existing directories are never overwritten")
+    generate.add_argument("--objects-folder", type=Path,
+                          help="Validate all EXTERN .3do files in this directory (never copy them)")
     generate.add_argument("--views", action="store_true",
                           help="Add Stage 1 orthographic projections to analysis")
     generate.add_argument("--no-analysis", action="store_true",
@@ -70,7 +72,8 @@ def main(argv=None):
                 parser.error("--views cannot be combined with --no-analysis")
             package = generate_package(
                 args.recipe, args.output, with_views=args.views,
-                with_analysis=not args.no_analysis)
+                with_analysis=not args.no_analysis,
+                objects_folder=args.objects_folder)
             result = {
                 "output_directory": package["output_directory"],
                 "components": package["manifest"]["component_count"],

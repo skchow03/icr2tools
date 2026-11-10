@@ -18,6 +18,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # compare compiled Wasp against exact Phase 1 baseline
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -78,6 +80,54 @@ jobs:
               raise SystemExit("Missing unchanged stock helmet.3do eight-view sprite")
           print("Verified complete Wasp:", len(instances), "model instances incl. HELMET")
           PY
+      - name: Validate structured Phase 2 assembly and actual external assets
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          manifest=json.loads(Path("/tmp/3do-ai-recipes/phase2_assembly_demo/manifest.json").read_text())
+          assembly=manifest["assembly"]
+          assert len(assembly["gates"])==1
+          assert [x["kind"] for x in assembly["nodes"]]==["bspn","list","bspa"]
+          assert len(assembly["externals"])==3
+          assert manifest["surface_checks"]["counts"]=={}
+          print("Phase 2 compiled with 3 native painter nodes, a FACE gate and 3 external placements")
+          PY
+          python -m icr2_3do_ai generate \
+            icr2_3do_ai/recipes/phase2_assembly_demo.json \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --no-analysis -o /tmp/3do-ai-recipes/phase2_verified_assets
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          deps=json.loads(Path("/tmp/3do-ai-recipes/phase2_verified_assets/manifest.json").read_text())["assembly"]["dependencies"]
+          assert {d["model"] for d in deps}=={"HELMET","FWHEEL"}
+          assert all(d["status"]=="validated" and d["binary_sha256"] for d in deps)
+          print("Verified existing HELMET.3do and FWHEEL.3do without copying or modifying them")
+          PY
+      - name: Rebuild Phase 1 Wasp baseline and compare complete binaries byte for byte
+        shell: bash
+        run: |
+          git worktree add --detach /tmp/wasp-phase1-baseline 9d9d0e0952907a22485b272c32ece1861b9137ef
+          mkdir -p /tmp/wasp-phase1-build
+          for name in marmon_wasp_1911_lowpoly marmon_wasp_front_wheel marmon_wasp_rear_wheel; do
+            ( cd /tmp/wasp-phase1-baseline && \
+              python -m icr2_3do_ai generate "icr2_3do_ai/recipes/$name.json" \
+              --no-analysis -o "/tmp/wasp-phase1-build/$name" )
+          done
+          ( cd /tmp/wasp-phase1-baseline && \
+            python -m icr2_3do_ai.assemble_wasp \
+            --body /tmp/wasp-phase1-build/marmon_wasp_1911_lowpoly \
+            --front /tmp/wasp-phase1-build/marmon_wasp_front_wheel \
+            --rear /tmp/wasp-phase1-build/marmon_wasp_rear_wheel \
+            --output /tmp/wasp-phase1-build/complete )
+          for name in WASP FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/wasp-phase1-build/complete/$name.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_complete/$name.3do"
+            sha256sum "/tmp/3do-ai-recipes/marmon_wasp_complete/$name.3do"
+          done
+          echo "Exact Phase 1 V29 baseline binaries preserved"
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:

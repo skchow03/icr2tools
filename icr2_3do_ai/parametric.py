@@ -369,7 +369,7 @@ def _project_uv(vertex, options, scale, where):
 
 def _make_parts(recipe):
     _keys(recipe, {"schema", "coordinate_scale", "operations", "description",
-                   "surface_checks"},
+                   "surface_checks", "assembly"},
           {"schema", "operations"}, "recipe")
     if recipe["schema"] != SCHEMA:
         _fail("recipe.schema", f"expected {SCHEMA!r}")
@@ -481,6 +481,9 @@ def generate_source(recipe):
     recipe = _object(recipe, "recipe")
     components, scale = _make_parts(recipe)
     surface_policy = recipe.get("surface_checks", "warn")
+    if "assembly" in recipe:
+        from .assembly import assemble_source
+        return assemble_source(components, scale, recipe["assembly"], surface_policy)
     if not isinstance(surface_policy, str) or surface_policy not in {
             "warn", "error", "off"}:
         _fail("recipe.surface_checks", "expected 'warn', 'error', or 'off'")
