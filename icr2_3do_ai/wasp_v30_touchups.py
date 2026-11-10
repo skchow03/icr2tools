@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import shutil
 from .stage2 import validate_path, validate_source
+from .wasp_top_culling import apply_top_face_culling, check_compiled_top_culling
 
 FRONT_X, REAR_X, OLD_FRONT_X = 43671, 41700, 42660
 VERTEX = re.compile(r"(?m)^([A-Za-z][A-Za-z0-9_]*): \[<(-?\d+), (-?\d+), (-?\d+)>\];$")
@@ -75,7 +76,10 @@ wasp_front_depth: LIST {wasp_nose_shell, wasp_bonnet_roof_geo, wasp_mirror_strut
 """
     result = vertices(src)
     assert [result[f"radiator_face_v{i:04}"] for i in range(6,12)] == bonnet
-    return src
+    # Native FACE nodes are applied after N3 grouping so the drawing-order
+    # graph keeps its V30b depth semantics while upper surfaces are one-sided.
+    src, top_records = apply_top_face_culling(src)
+    return src, top_records
 
 
 def event_check(model, eye):
@@ -99,8 +103,8 @@ def event_check(model, eye):
                 and all(p[0]>=13013 for p in pts)
                 and any(p[2]>=11900 for p in pts)):
             bonnet_roof.append(i)
-    if len(helmet)!=1 or not tail or not tail_sides or not bonnet_roof:
-        raise ValueError(f"Missing helmet/tail in {eye}: {helmet}, {len(tail)}")
+    if len(helmet)!=1 or not tail_sides:
+        raise ValueError(f"Missing helmet/tail sidewall in {eye}: {helmet}, {len(tail_sides)}")
     h=helmet[0]
     if eye[0]>0:
         # The X BSPA changes at cockpit X=0. The grille itself has an
@@ -108,15 +112,15 @@ def event_check(model, eye):
         # between those planes must not be expected to see the front cap.
         grille_visible = eye[0] > FRONT_X - 60
         if ((len(grille)==1) != grille_visible
-                or not max(tail)<h or max(tail_sides)>=h
+                or (tail and max(tail)>=h) or max(tail_sides)>=h
                 or (grille_visible and h>=grille[0])
-                or min(bonnet_roof)<=h):
+                or (bonnet_roof and min(bonnet_roof)<=h)):
             raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}, bonnet {bonnet_roof}")
         if mirror and grille and max(mirror)>=grille[0]:
             raise ValueError(f"Mirrors paint through forward grille at {eye}")
     else:
-        if (grille or min(tail)<=h or min(tail_sides)<=h
-                or max(bonnet_roof)>=min(tail_sides)
+        if (grille or (tail and min(tail)<=h) or min(tail_sides)<=h
+                or (bonnet_roof and max(bonnet_roof)>=min(tail_sides))
                 or (mirror and max(mirror)>=h)):
             raise ValueError(f"Incorrect rear painter sequence {eye}: head {h}, tail {tail}, grille {grille}")
     return {"camera":list(eye),"helmet_event":h,"grille_events":grille,"tail_roof_events":len(tail),"tail_side_events":len(tail_sides),"bonnet_roof_events":len(bonnet_roof),"mirror_events":len(mirror)}
@@ -125,9 +129,10 @@ def event_check(model, eye):
 def build(baseline:Path,output:Path):
     if output.exists(): raise FileExistsError(output)
     old=(baseline/"WASP.3D").read_text(encoding="utf-8")
-    src=edit(old)
+    src, top_records=edit(old)
     model,validation=validate_source(src,model_path=output/"WASP.3D")
     if validation["parser_warnings"]: raise ValueError(validation["parser_warnings"])
+    top_culling_check=check_compiled_top_culling(model,top_records)
     checks=[event_check(model,(x,y,z)) for x in (-150000,-40000,40000,150000)
             for y in (-100000,-25000,25000,100000) for z in (-6500,28000)]
     output.mkdir(parents=True)
@@ -139,11 +144,12 @@ def build(baseline:Path,output:Path):
         shutil.copyfile(path,output/path.name)
         n3=baseline/(name+".3D")
         if n3.is_file(): shutil.copyfile(n3,output/n3.name)
-    manifest={"version":"V30","source":"V29 edited N3 assembly",
+    manifest={"version":"V30c","source":"V29 edited N3 assembly with V30b depth sorting and 56 native FACE culls",
         "radiator_front_game_x":FRONT_X,"radiator_rear_seam_game_x":REAR_X,
         "seam":"6 exact matching radiator/bonnet vertices",
         "view_sort":"single BSPA rear-tail-side-and-roof, sprite-helmet, front-bonnet-and-radiator within Y-sorted body",
         "validated_compilation":validation,"painter_camera_tests":checks,
+        "one_sided_upper_surfaces":top_culling_check,
         "input_v29_source_sha256":sha256(old.encode()).hexdigest(),
         "binary_sha256":{p.name:sha256(p.read_bytes()).hexdigest() for p in output.glob("*.3do")},
         "requires_in_game_check":True}
@@ -157,6 +163,7 @@ def main(argv=None):
     ap.add_argument("--output",required=True,type=Path)
     args=ap.parse_args(argv)
     result=build(args.baseline,args.output)
-    print(json.dumps({"hashes":result["binary_sha256"],"checked_cameras":len(result["painter_camera_tests"])},indent=2))
+    print(json.dumps({"hashes":result["binary_sha256"],"checked_cameras":len(result["painter_camera_tests"]),
+                      "upper_surface_culling": result["one_sided_upper_surfaces"]},indent=2))
 
 if __name__=="__main__": main()
