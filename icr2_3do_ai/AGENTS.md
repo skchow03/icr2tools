@@ -85,3 +85,24 @@ Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
   Do not hide doubled skins or broken topology by changing painter order.
 - Keep \`phase2_assembly_demo.json\` compiling in CI and retain Wasp V29
   build/palette/geometry checks without a migration. Run \`test_assembly.py\`.
+
+
+## Phase 3 camera-specific filled previews and image differences
+
+- Use \`python -m icr2_3do_ai preview\` to inspect compiled FACE/BSP ordering
+  and PMP sprite placements from fixed orthographic cameras. Reuse the CAD
+  parser, scene transforms, MIP and PMP decoders; never add another 3DO parser
+  or reimplement the rasterizer's binary interpretation.
+- Use \`compare\` with matching camera names, a common frame, identical palette,
+  fixed dimensions and asset locations. Review all before/after/diff/three-panel
+  PNGs plus \`comparison.json\` before claiming that a painter issue was fixed.
+  For reproducibility, preserve baseline binaries and declare resource files.
+- Missing MIP, PMP and EXTERN resources must be surfaced as diagnostics.
+  Use \`--strict-assets\` when claiming complete sprite/camera coverage.
+  Do not infer absent geometry from a missing dependency.
+- Output is diagnostic and orthographic, not a true Papyrus software renderer.
+  Passing image comparison alone does not prove in-game correctness or repair
+  overlapping surfaces. Do not silently modify previous binaries to 'match'
+  a baseline; leave V29 preserved unless a migration is requested.
+- CI should render actual stock helmet PMP fixtures, compile examples, compare
+  unchanged models at exact zero mismatch and publish inspectable PNG reports.
