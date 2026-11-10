@@ -75,7 +75,7 @@ def check_wheel(model,original):
             distance,(100000,40000,30000),bsp_mode="original")
         if len(polygons)<100:
             raise ValueError(f"At distance {distance}, too few polygons: {len(polygons)}")
-        if len(selected)!=1 or selected[0][1]!=ptr:
+        if len(selected)!=1 or selected[0][2]!=ptr:
             raise ValueError(f"Invalid RES choice at distance {distance}: {selected}")
         tests.append({"distance":distance,"visible_polygons":len(polygons),
                       "chosen_branch":selected[0][0]})
