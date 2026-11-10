@@ -140,6 +140,7 @@ jobs:
           python -m icr2_3do_ai preview \
             /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
             --cameras front rear left right top front-left rear-right \
             --width 640 --height 480 \
             -o /tmp/3do-ai-recipes/phase3_wasp_v29
@@ -147,6 +148,7 @@ jobs:
             /tmp/wasp-phase1-build/complete/WASP.3do \
             /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
             --cameras front rear left right top front-left rear-right \
             --width 480 --height 360 --max-diff-ratio 0 \
             -o /tmp/3do-ai-recipes/phase3_wasp_identical_diff
@@ -157,7 +159,11 @@ jobs:
           helmet=json.loads((root/"phase3_stock_helmet"/"preview.json").read_text())
           assert not helmet["warnings"]
           assert sum(v["rendered_sprites"] for v in helmet["statistics"].values())>=4
+          wasp=json.loads((root/"phase3_wasp_v29"/"preview.json").read_text())
+          assert not wasp["warnings"]
+          assert sum(v["rendered_sprites"] for v in wasp["statistics"].values())>=7
           diff=json.loads((root/"phase3_wasp_identical_diff"/"comparison.json").read_text())
+          assert not diff["warnings"]
           assert diff["threshold_passed"] and diff["maximum_changed_fraction"]==0
           assert len(diff["views"])==7
           for camera in diff["cameras"]:
