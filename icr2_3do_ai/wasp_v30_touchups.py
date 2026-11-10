@@ -78,7 +78,7 @@ def event_check(model, eye):
         if e[0]!="polygon": continue
         poly=model.polygons[e[1]]
         pts=[model.vertices[v].xyz for v in poly.refs]
-        if poly.color==33 and len(pts)==6 and all(p[0]==FRONT_X for p in pts): grille.append(i)
+        if poly.color==33 and len(set(poly.refs))==6 and all(p[0]==FRONT_X for p in pts): grille.append(i)
         if poly.color==158 and pts and all(p[0]<=-3000 for p in pts) and min(p[2] for p in pts)>=12000: tail.append(i)
         if poly.color in (158,40) and pts and all(13300<=p[0]<=16000 for p in pts) and min(p[2] for p in pts)>14500: mirror.append(i)
     if len(helmet)!=1 or not tail:
@@ -86,10 +86,7 @@ def event_check(model, eye):
     h=helmet[0]
     if eye[0]>0:
         if len(grille)!=1 or not max(tail)<h<grille[0]:
-            debug=[(p.color,len(p.refs),[model.vertices[v].xyz for v in p.refs]) for p in model.polygons.values() if any(model.vertices[v].xyz[0]==FRONT_X for v in p.refs)]
-            xcounts={x:sum(int(v.xyz[0]==x) for v in model.vertices.values()) for x in (42660,43671,41700)}
-            polyrange=(len(model.polygons),max(v.xyz[0] for v in model.vertices.values()))
-            raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}, front candidates {debug[:7]}, vertex count {xcounts}, model extent {polyrange}, event tail {events[-8:]}")
+            raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}")
         if mirror and max(mirror)>=grille[0]:
             raise ValueError(f"Mirrors paint through forward grille at {eye}")
     else:
