@@ -170,6 +170,41 @@ jobs:
               assert (root/"phase3_wasp_identical_diff"/f"{camera}-comparison.png").is_file()
           print("Phase 3 stock PMP angles rendered, seven Wasp views generated, pixel identity proven")
           PY
+      - name: Demonstrate a deliberate palette change in exported before/after images
+        shell: bash
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from icr2_3do_ai.parametric import generate_source
+          from icr2_3do_ai.stage2 import validate_source
+          source=Path("icr2_3do_ai/recipes/phase2_assembly_demo.json")
+          recipe=json.loads(source.read_text())
+          assert recipe["operations"][1]["name"]=="bonnet"
+          recipe["operations"][1]["color"]=49
+          n3,manifest=generate_source(recipe)
+          model,validation=validate_source(n3)
+          assert validation["compiled"] and not validation["parser_warnings"]
+          out=Path("/tmp/3do-ai-recipes/phase3_color_variant.3do")
+          out.write_bytes(model.raw)
+          PY
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/phase2_assembly_demo/model.3do \
+            /tmp/3do-ai-recipes/phase3_color_variant.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras top front-left --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_deliberate_color_diff
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          output=Path("/tmp/3do-ai-recipes/phase3_deliberate_color_diff")
+          result=json.loads((output/"comparison.json").read_text())
+          assert not result["warnings"]
+          assert result["views"]["top"]["changed_pixels"]>0
+          assert (output/"top-comparison.png").is_file()
+          print("Verified changed bonnet color produces visible nonzero top-view diff")
+          PY
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:
