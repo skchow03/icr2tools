@@ -103,9 +103,16 @@ def event_check(model, eye):
         raise ValueError(f"Missing helmet/tail in {eye}: {helmet}, {len(tail)}")
     h=helmet[0]
     if eye[0]>0:
-        if len(grille)!=1 or not max(tail)<h<grille[0] or max(tail_sides)>=h:
-            raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}")
-        if mirror and max(mirror)>=grille[0]:
+        # The X BSPA changes at cockpit X=0. The grille itself has an
+        # independent +X-only FACE plane at FRONT_X-60: oblique cameras
+        # between those planes must not be expected to see the front cap.
+        grille_visible = eye[0] > FRONT_X - 60
+        if ((len(grille)==1) != grille_visible
+                or not max(tail)<h or max(tail_sides)>=h
+                or (grille_visible and h>=grille[0])
+                or min(bonnet_roof)<=h):
+            raise ValueError(f"Incorrect forward painter sequence {eye}: tail {tail}, head {h}, grille {grille}, bonnet {bonnet_roof}")
+        if mirror and grille and max(mirror)>=grille[0]:
             raise ValueError(f"Mirrors paint through forward grille at {eye}")
     else:
         if (grille or min(tail)<=h or min(tail_sides)<=h
