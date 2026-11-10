@@ -230,9 +230,17 @@ def assemble_source(components, scale, config, surface_policy):
         local_rotation = groups[group_name]["transform"]["rotation"] if group_name else 0
         # The first N3 rotation field is heading, in 0.1 degree increments.
         # Only Z yaw is supported for groups containing DYNAMIC objects.
+        # N3 compiler converts tenths of degrees into signed i32 angle
+        # units. Equivalent headings above +180 degrees overflow that
+        # conversion; normalize to the signed shortest representation.
+        def signed_tenths(value):
+            cycle = value % 3600
+            return cycle - 3600 if cycle > 1800 else cycle
         ext["rotation"] = (
-            ext["rotation"][0] + 900*(local_rotation + global_tf["rotation"]),
-            ext["rotation"][1], ext["rotation"][2],
+            signed_tenths(ext["rotation"][0] +
+                          900*(local_rotation + global_tf["rotation"])),
+            signed_tenths(ext["rotation"][1]),
+            signed_tenths(ext["rotation"][2]),
         )
 
     gates = {}
