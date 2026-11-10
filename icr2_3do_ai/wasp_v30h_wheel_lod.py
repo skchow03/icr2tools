@@ -7,7 +7,7 @@ Wasp wheels have a raw BSPA root. This build preserves *all* wheel polygons,
 colors, radius, UVs, anchors and geometry, changing only the root hierarchy
 to stock RES with three branches pointing to the same detailed wheel graph.
 
-Using identical detail at all three distances isolates root compatibility.
+Using three separate LIST branches with the same detail isolates the native RES/LIST hierarchy while keeping geometry unchanged.
 Optimize LODs only after the game confirms whether this makes wheels visible.
 """
 from __future__ import annotations
@@ -29,10 +29,13 @@ ROOT_AFTER=(
     "% V30h: same detailed wheel graph at all three stock RES distances.\n"
     "wasp_wheel_detail: BSPA (wheel_y_a, wheel_y_b, wheel_y_c), "
     "wheel_pos_cover, black_firestone_tire_geo, wheel_neg_cover;\n"
+    "wheel_lod_far: LIST {wasp_wheel_detail};\n"
+    "wheel_lod_mid: LIST {wasp_wheel_detail};\n"
+    "wheel_lod_near: LIST {wasp_wheel_detail};\n"
     "wheel_lod_anchor: [<0, 0, 0>];\n"
     "root: SWITCH DISTANCE (wheel_lod_anchor) > "
-    "{(280000 ? wasp_wheel_detail), (113750 ? wasp_wheel_detail), "
-    "(0 ? wasp_wheel_detail)};"
+    "{(280000 ? wheel_lod_far), (113750 ? wheel_lod_mid), "
+    "(0 ? wheel_lod_near)};"
 )
 STOCK_DISTANCE_THRESHOLDS=(280000,113750,0)
 
@@ -57,14 +60,18 @@ def check_wheel(model,original):
     sw=model.switches.get(model.root_offset)
     if sw is None or tuple(th for th,_ in sw.branches)!=STOCK_DISTANCE_THRESHOLDS:
         raise ValueError("Root RES thresholds differ from stock")
-    if len({ptr for th,ptr in sw.branches})!=1:
-        raise ValueError("Diagnostic must reuse the same detailed wheel at each LOD")
+    if len({ptr for th,ptr in sw.branches})!=3:
+        raise ValueError("Native wheel RES must reference three distinct LOD LIST nodes")
     anchor=model.vertices.get(sw.anchor)
     if anchor is None or anchor.xyz!=(0,0,0):
         raise ValueError("Wheel LOD anchor must remain wheel-local origin")
-    ptr=sw.branches[0][1]
-    if model.records.get(ptr)!=8:
-        raise ValueError("RES points to something other than the original BSPA")
+    child_lists=[ptr for _,ptr in sw.branches]
+    if any(model.records.get(ptr)!=11 for ptr in child_lists):
+        raise ValueError("Native wheel RES children must all be LIST records")
+    detailed={model.children[ptr][0] for ptr in child_lists
+              if len(model.children[ptr])==1}
+    if len(detailed)!=1 or model.records.get(next(iter(detailed)))!=8:
+        raise ValueError("The three stock LOD lists must share original BSPA detail")
     if polygon_signature(model)!=polygon_signature(original):
         raise ValueError("Wheel XYZ, UV, geometry, palette or winding has changed")
     if len(model.polygons)!=114:
@@ -75,12 +82,16 @@ def check_wheel(model,original):
             distance,(100000,40000,30000),bsp_mode="original")
         if len(polygons)<100:
             raise ValueError(f"At distance {distance}, too few polygons: {len(polygons)}")
-        if len(selected)!=1 or selected[0][2]!=ptr:
+        selected_threshold=next(th for th in STOCK_DISTANCE_THRESHOLDS
+                                if distance>=th)
+        expected_child=dict(sw.branches)[selected_threshold]
+        if (len(selected)!=1 or selected[0][2]!=expected_child
+                or selected[0][1]!=selected_threshold):
             raise ValueError(f"Invalid RES choice at distance {distance}: {selected}")
         tests.append({"distance":distance,"visible_polygons":len(polygons),
-                      "chosen_branch":selected[0][0]})
+                      "chosen_threshold":selected[0][1]})
     return {"root":"RES","thresholds":list(STOCK_DISTANCE_THRESHOLDS),
-            "detail_graph":"original BSPA","polygons":len(model.polygons),
+            "detail_graph":"three distinct LISTs sharing original BSPA","polygons":len(model.polygons),
             "geometry_byte_semantics_equal":True,"three_lod_distance_tests":tests}
 
 
