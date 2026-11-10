@@ -45,7 +45,7 @@ class AssemblyTests(unittest.TestCase):
             'helmet: DYNAMIC 36300, 0, 1200, 1800, 0, 0, 1, EXTERN "HELMET";',
             source)
         self.assertIn("torso_v0000: [<", source)
-        self.assertIn("seatback_v0000: [<35400,", source)
+        self.assertIn("seatback_v0000: [<31200,", source)
         self.assertEqual(
             manifest["assembly"]["externals"][0]["at_game_raw"],
             [36300, 0, 1200])
