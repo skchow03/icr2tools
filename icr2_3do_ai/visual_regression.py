@@ -35,6 +35,11 @@ CAMERAS = {
     "front-right": (1, 1, 0.45),
     "rear-left": (-1, -1, 0.45),
     "rear-right": (-1, 1, 0.45),
+    # Low-oblique diagnostics for ICR2 painter overdraw beneath the deck edge.
+    "front-low-left": (1, -1, -0.18),
+    "front-low-right": (1, 1, -0.18),
+    "rear-low-left": (-1, -1, -0.18),
+    "rear-low-right": (-1, 1, -0.18),
 }
 DEFAULT_CAMERAS = ("front", "rear", "left", "right", "top",
                    "front-left", "rear-right")
