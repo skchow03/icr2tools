@@ -70,6 +70,48 @@ class AssemblyTests(unittest.TestCase):
             self.assertFalse((out / "HELMET.3do").exists())
             self.assertFalse((out / "FWHEEL.3do").exists())
 
+    def test_quarter_turn_rotates_geometry_and_attached_helmet(self):
+        recipe = demo()
+        recipe["assembly"]["groups"][0]["transform"] = {
+            "rotate_z_quarters": 1
+        }
+        source, manifest = generate_source(recipe)
+        self.assertIn(
+            'helmet: DYNAMIC 39000, -1500, 1200, 2700, 0, 0, 1, EXTERN "HELMET";',
+            source)
+        self.assertEqual(
+            manifest["assembly"]["externals"][0]["at_game_raw"],
+            [39000, -1500, 1200])
+        validate_source(source)
+
+    def test_safe_integer_uniform_scaling_of_mesh_only(self):
+        recipe = demo()
+        recipe["assembly"]["groups"][0]["members"] = ["torso"]
+        recipe["assembly"]["groups"][0]["transform"] = {"scale": "2"}
+        recipe["assembly"]["nodes"][1]["children"].append("helmet")
+        source, manifest = generate_source(recipe)
+        self.assertIn("pilot: LIST {torso_geo};", source)
+        self.assertIn("helmet: DYNAMIC 37500, 0, 1200", source)
+        self.assertEqual(manifest["polygon_count"], 4)
+        validate_source(source)
+
+    def test_reject_scaling_external_geometry_by_moving_its_anchor(self):
+        recipe = demo()
+        recipe["assembly"]["groups"][0]["transform"] = {"scale": "2"}
+        with self.assertRaisesRegex(RecipeError, "EXTERN"):
+            generate_source(recipe)
+
+    def test_strict_external_folder_requires_declared_assets(self):
+        with tempfile.TemporaryDirectory() as temp:
+            folder = Path(temp)
+            recipe = folder / "recipe.json"
+            recipe.write_text(json.dumps(demo()))
+            with self.assertRaisesRegex(RecipeError, "Expected exactly one external"):
+                generate_package(
+                    recipe, folder / "compiled", with_analysis=False,
+                    objects_folder=folder)
+            self.assertFalse((folder / "compiled").exists())
+
     def test_face_gate_rejects_backwards_and_coplanar_camera(self):
         for camera in ([0, 0, 0], [-2, 0, 0]):
             recipe = demo()
