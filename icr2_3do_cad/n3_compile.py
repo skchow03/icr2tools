@@ -28,6 +28,7 @@ PLANE5 = re.compile(r"^\(\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*([-+]?\d+)\s*,\s*(
 DOUBLE_QUOTE = re.compile(r'^"([^"]+)"$')
 XYZ_TOKEN = re.compile(r"\[\s*<\s*("+NUM+r")\s*,\s*("+NUM+r")\s*,\s*("+NUM+r")\s*>", re.S)
 SCALE_HINT = re.compile(r"(?m)^\s*%\s*ICR2_COORD_SCALE\s*:\s*([^\r\n]+?)\s*$")
+TEXTURE_GROUP_HINT = re.compile(r"(?mi)^\s*%\s*ICR2_CAR_TEXTURE_GROUP\s*:\s*([^\r\n]+?)\s*$")
 DEFAULT_FRACTIONAL_SCALE = Decimal(6000)  # legacy 3d23do /s=6000: feet -> Papyrus units
 
 
@@ -199,6 +200,21 @@ class Compiler:
         # Arbitrary labels need no offset annotation in a standalone .3D file.
         self.document=parse_document(text,require_offsets=False)
         self.coordinate_scale=_source_coordinate_scale(text,self.document.statements)
+        # Stock ICR2 carshapes store POLY[T] group=16 while track and
+        # existing source recipes default to group=0. Keep the ordinary N3
+        # polygon syntax; opt in per car source with one explicit comment.
+        texture_groups=TEXTURE_GROUP_HINT.findall(text)
+        if len(texture_groups)>1:
+            raise FormatError("Only one % ICR2_CAR_TEXTURE_GROUP: N hint is permitted")
+        if texture_groups:
+            try:
+                self.texture_group=int(texture_groups[0].strip())
+            except ValueError as exc:
+                raise FormatError("ICR2_CAR_TEXTURE_GROUP must be an integer") from exc
+            if not 0<=self.texture_group<=255:
+                raise FormatError("ICR2_CAR_TEXTURE_GROUP outside 0..255")
+        else:
+            self.texture_group=0
         self.decls={entry.label:entry for entry in self.document.statements}
         self.body=bytearray(b"\x00\x00\x00\x00")  # legal null/NIL child pointer
         self.offsets={}
@@ -380,7 +396,7 @@ class Compiler:
                 for ref in refs:
                     if not self.vertex_uv[ref]:
                         raise FormatError("Textured polygon references a vertex without T=<U,V>")
-                return self._record(2,0,color,len(refs)-1,*refs)
+                return self._record(2,self.texture_group,color,len(refs)-1,*refs)
             return self._record(1,color,len(refs)-1,*refs)
         list_match=re.match(r"^LIST\s*(\{.*\})$",code,re.I|re.S)
         if list_match:
