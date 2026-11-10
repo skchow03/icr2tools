@@ -274,6 +274,56 @@ jobs:
           assert any(v["changed_pixels"]>0 for v in compare["views"].values())
           print("V30d: eight shadow patches, tapered tail, raised collar, ten sprite-aware camera comparisons")
           PY
+      - name: Build V30e textured Wasp with user MARMON atlas
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.wasp_v30e_texture \
+            --baseline /tmp/3do-ai-recipes/marmon_wasp_v30d \
+            --output /tmp/3do-ai-recipes/marmon_wasp_v30e
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30e/WASP.3do
+          for asset in FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/3do-ai-recipes/marmon_wasp_v30d/$asset.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_v30e/$asset.3do"
+          done
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_v30e/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30e \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30e
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/marmon_wasp_v30d/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_v30e/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30e \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30d_to_v30e
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from hashlib import sha256
+          root=Path("/tmp/3do-ai-recipes")
+          folder=root/"marmon_wasp_v30e"
+          manifest=json.loads((folder/"v30e_manifest.json").read_text())
+          assert manifest["version"]=="V30e"
+          assert manifest["texture_validation"]["textured_polygon_count"]==63
+          assert manifest["texture_validation"]["native_FACE_count"]==80
+          assert manifest["texture_validation"]["mip_names"]==["MARMON"]
+          assert manifest["camera_painter_checks"]==32
+          assert sha256((folder/"MARMON.mip").read_bytes()).hexdigest()==manifest["texture_file_sha256"]
+          previews=json.loads((root/"phase3_wasp_v30e/preview.json").read_text())
+          comparison=json.loads((root/"phase3_wasp_v30d_to_v30e/comparison.json").read_text())
+          assert len(previews["cameras"])==13 and not previews["warnings"]
+          assert len(comparison["cameras"])==13 and not comparison["warnings"]
+          assert comparison["views"]["front"]["changed_pixels"]>0
+          assert comparison["views"]["rear-left"]["changed_pixels"]>0
+          print("V30e: 63 atlas-textured polygons, 80 FACE gates, 13 filled cameras and two readable fin-side numbers")
+          PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
         run: |
