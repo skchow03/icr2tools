@@ -324,6 +324,65 @@ jobs:
           assert comparison["views"]["rear-left"]["changed_pixels"]>0
           print("V30e: 63 atlas-textured polygons, 80 FACE gates, 13 filled cameras and two readable fin-side numbers")
           PY
+      - name: Build stock-compatible V30f carshape and independent appearance
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.wasp_v30f_stock_carshape \
+            --baseline /tmp/3do-ai-recipes/marmon_wasp_v30e \
+            --output /tmp/3do-ai-recipes/marmon_wasp_v30f
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30f/WASP.3do
+          for asset in FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/3do-ai-recipes/marmon_wasp_v30e/$asset.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_v30f/$asset.3do"
+          done
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_v30f/WASP.3do \
+            --appearance /tmp/3do-ai-recipes/marmon_wasp_v30f/MARMON.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --texture-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30f
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/marmon_wasp_v30e/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_v30f/WASP.3do \
+            --appearance /tmp/3do-ai-recipes/marmon_wasp_v30f/MARMON.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --texture-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+              front-low-left front-low-right rear-low-left rear-low-right \
+            --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30e_to_v30f
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          from hashlib import sha256
+          root=Path("/tmp/3do-ai-recipes")
+          out=root/"marmon_wasp_v30f"
+          manifest=json.loads((out/"v30f_manifest.json").read_text())
+          assert manifest["version"]=="V30f"
+          assert manifest["carshape"]["root"]=="SUPEROBJ"
+          assert manifest["carshape"]["poly_t_group"]==16
+          assert manifest["carshape"]["textured_polygons"]==63
+          assert manifest["carshape"]["mip_count"]==0
+          assert manifest["carshape"]["material_count"]==0
+          assert manifest["carshape"]["external_parts"]=={"FWHEEL":2,"RWHEEL":2,"HELMET":1}
+          assert manifest["appearance"]["external_geometry"]=="WASP"
+          assert manifest["appearance"]["mip"]=="MARMON"
+          assert (out/"MARMON.mip").is_file()
+          assert sha256((out/"MARMON.mip").read_bytes()).hexdigest()==manifest["user_mip_sha256"]
+          previews=json.loads((root/"phase3_wasp_v30f/preview.json").read_text())
+          comparisons=json.loads((root/"phase3_wasp_v30e_to_v30f/comparison.json").read_text())
+          assert len(previews["cameras"])==13 and not previews["warnings"]
+          assert len(comparisons["cameras"])==13 and not comparisons["warnings"]
+          assert previews["statistics"]["front"]["textured_polygons"]>20
+          assert not previews["statistics"]["front"]["missing_textures"]
+          print("Native stock carshape: SUPEROBJ, 5 externals, 63 group-16 POLY[T], MARMON wrapper MIP resolves.")
+          PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
         run: |
