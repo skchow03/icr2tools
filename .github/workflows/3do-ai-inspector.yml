@@ -340,7 +340,7 @@ jobs:
             /tmp/3do-ai-recipes/marmon_wasp_v30f/WASP.3do \
             --appearance /tmp/3do-ai-recipes/marmon_wasp_v30f/MARMON.3do \
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
-            --texture-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --texture-folder icr2_3do_cad/fixtures \
             --strict-assets \
             --cameras front rear left right top front-left front-right rear-left rear-right \
               front-low-left front-low-right rear-low-left rear-low-right \
@@ -351,7 +351,7 @@ jobs:
             /tmp/3do-ai-recipes/marmon_wasp_v30f/WASP.3do \
             --appearance /tmp/3do-ai-recipes/marmon_wasp_v30f/MARMON.3do \
             --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
-            --texture-folder /tmp/3do-ai-recipes/marmon_wasp_v30f \
+            --texture-folder icr2_3do_cad/fixtures \
             --strict-assets \
             --cameras front rear left right top front-left front-right rear-left rear-right \
               front-low-left front-low-right rear-low-left rear-low-right \
