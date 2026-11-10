@@ -198,6 +198,14 @@ def assemble_source(components, scale, config, surface_policy):
                                     where + ".transform"),
         }
 
+    # External 3DO geometry is linked, not rescaled by the parent. Moving an
+    # attachment center is not equivalent to scaling the child mesh/sprite.
+    for group in groups.values():
+        if group["transform"]["scale"] != 1 and any(
+                member in externals for member in group["members"]):
+            _fail("assembly.groups", "cannot scale an assembly containing "
+                 "EXTERN references; scale its native mesh separately")
+
     # A single transform applies to meshes and DYNAMIC anchors together.
     # Seatbacks can intentionally remain outside a driver assembly.
     def local_tf(member):
