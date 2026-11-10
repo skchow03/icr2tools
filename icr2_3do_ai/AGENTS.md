@@ -106,3 +106,30 @@ Do not depend on an LLM, network access, Qt, or OpenGL for core inspection.
   a baseline; leave V29 preserved unless a migration is requested.
 - CI should render actual stock helmet PMP fixtures, compile examples, compare
   unchanged models at exact zero mismatch and publish inspectable PNG reports.
+
+## Phase 4 skill / release alignment
+
+- Repository source of truth for this modeler workflow:
+  `.agents/skills/icr2-3do-modeler/SKILL.md`, plus the actual checked-out
+  `README.md`, this file, CLI, parser and workflow. The separately installed
+  private ChatGPT plugin requires its own guarded update; do not claim that
+  checking in a skill file automatically deployed it.
+- Do not offer `build-job` without verifying its presence in the requested
+  target branch. The older experimental `feature/3do-ai-stage3-modeling-jobs-20261108`
+  implementation does **not** exist on the V29 Wasp branch.
+- After Phase 1 geometry checks, Phase 2 structured FACE/BSP assembly and
+  Phase 3 fixed-camera sprite-aware comparisons, use
+  `python -m icr2_3do_ai.release_package` for **review-only** candidate
+  packaging. It requires source/binary equality, assembly digest validation,
+  no missing visual assets, a rendered helmet per camera, and zero-difference
+  V29 baseline comparison. Do not loosen these preflight checks to make CI green.
+- Upload `3do-ai-release-candidate` independently of
+  `3do-ai-generated-models`; keep 14-day retention explicit. Keep manual
+  workflow dispatch nonpublishing; never create an automatic GitHub Release
+  or merge without user approval.
+- Candidate manifests record the checkout's full SHA and per-file SHA-256.
+  Release ZIPs use stable timestamps and sorted members. No stock PMP sprites
+  are redistributed by the packager; private artifacts are not automatically
+  licensed public downloads or installable carsets.
+- Review CI's actual logs and both artifact inventories before declaring
+  Phase 4 passed. Reference `PHASE4_RELEASE.md` for commands and limitations.
