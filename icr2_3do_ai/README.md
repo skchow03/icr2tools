@@ -405,6 +405,40 @@ Phase 1 geometry reports and Phase 2 FACE/BSP structures together.
 Phase 4 should align the installed modeling skill and release workflow
 after this interface is proven.
 
+### Phase 4 — Skill, validation and review-only release candidate
+
+The repository agent skill is at
+[.agents/skills/icr2-3do-modeler/SKILL.md](../.agents/skills/icr2-3do-modeler/SKILL.md).
+It describes the actual commands and restrictions of Phases 1–3, source/game
+coordinates, palette evidence and the PR/Actions workflow. An installed
+ChatGPT skill has its own release identity: a change to this GitHub path does
+not by itself deploy that private plugin.
+
+The new `python -m icr2_3do_ai.release_package` command creates a
+**review-only**, deterministic ZIP from the already compiled Wasp V29 source
+and binary folder, three recipes, and complete Phase 3 camera/diff reports.
+It does **not** recompile changed model geometry, auto-publish to GitHub
+Releases, alter original files or include stock PMP sprite art.
+
+It rejects missing files, malformed source/binaries, N3/3DO SHA differences,
+assembly-manifest hash inconsistencies, missing PMP sprite evidence,
+incomplete asset warnings and nonzero baseline comparisons. The ZIP contains
+`SHA256SUMS` and a per-file `release_manifest.json` with the exact
+checked-out build SHA. Separate GitHub Actions artifacts are now published:
+`3do-ai-generated-models` and `3do-ai-release-candidate`. Both have
+14-day retention unless the live workflow is changed. A manual
+`workflow_dispatch` rebuild is supported; there is **no automatic
+public release**.
+
+See [PHASE4_RELEASE.md](PHASE4_RELEASE.md) for exact commands, packaging
+contents, release review checklist and distribution/asset limitations.
+
+**Branch caution:** Phases 1–3 and this review candidate are based on
+`feature/marmon-wasp-v29-cad-contours-20261109`, not necessarily
+`main`. The unrelated `build-job` / `icr2.n3.job.v1` feature
+is not in this branch; verify its CLI and source on the requested
+ref before invoking it.
+
 ### Running through GitHub
 
 The repository's **3DO AI semantic inspector** GitHub Actions workflow
