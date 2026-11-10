@@ -27,6 +27,6 @@ The CI inspector additionally makes nine filled orthographic previews and nine V
 
 ## Validation limits
 
-The V30 builder compiles/reparses the N3 and tests front/rear painter event order for eight elevated and low camera positions. CI verifies byte-identical wheel/helmet dependencies, parser warnings, eight painter tests, and nonzero front camera difference. The filled CPU preview is not identical to ICR2's in-game scanline/sprite renderer: **actual in-game verification is still required**, particularly near-side radiator rim coverage and sprite occlusion at intermediate side/rear-low views.
+The V30 builder compiles/reparses the N3 and tests front/rear painter event order for 32 elevated, low, and side-oblique camera positions. CI verifies byte-identical wheel/helmet dependencies, parser warnings, 32 painter tests, and nonzero front camera difference. The filled CPU preview is not identical to ICR2's in-game scanline/sprite renderer: **actual in-game verification is still required**, particularly near-side radiator rim coverage and sprite occlusion at intermediate side/rear-low views.
 
 The exact front X value is user-specified. Rear-ring perimeter matching is a geometrical junction correction; it is **not** a claim about precise historical radiator dimensions.
