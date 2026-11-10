@@ -128,6 +128,42 @@ jobs:
             sha256sum "/tmp/3do-ai-recipes/marmon_wasp_complete/$name.3do"
           done
           echo "Exact Phase 1 V29 baseline binaries preserved"
+      - name: Render Phase 3 camera views and compare unchanged assembled Wasp
+        shell: bash
+        run: |
+          python -m icr2_3do_ai preview \
+            icr2_3do_cad/fixtures/helmet.3do \
+            --objects-folder icr2_3do_cad/fixtures \
+            --cameras front rear left right \
+            --strict-assets --width 320 --height 320 \
+            -o /tmp/3do-ai-recipes/phase3_stock_helmet
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --cameras front rear left right top front-left rear-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v29
+          python -m icr2_3do_ai compare \
+            /tmp/wasp-phase1-build/complete/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --cameras front rear left right top front-left rear-right \
+            --width 480 --height 360 --max-diff-ratio 0 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_identical_diff
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("/tmp/3do-ai-recipes")
+          helmet=json.loads((root/"phase3_stock_helmet"/"preview.json").read_text())
+          assert not helmet["warnings"]
+          assert sum(v["rendered_sprites"] for v in helmet["statistics"].values())>=4
+          diff=json.loads((root/"phase3_wasp_identical_diff"/"comparison.json").read_text())
+          assert diff["threshold_passed"] and diff["maximum_changed_fraction"]==0
+          assert len(diff["views"])==7
+          for camera in diff["cameras"]:
+              assert (root/"phase3_wasp_identical_diff"/f"{camera}-comparison.png").is_file()
+          print("Phase 3 stock PMP angles rendered, seven Wasp views generated, pixel identity proven")
+          PY
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:
