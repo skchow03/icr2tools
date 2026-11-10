@@ -385,9 +385,14 @@ def compare_previews(before, after, output, *, cameras=DEFAULT_CAMERAS,
     first = _load_scene(
         before, objects_folder=objects_folder, texture_folder=texture_folder,
         palette_file=palette_file, appearance=appearance)
+    # Compare geometry/material output with one exact palette. A candidate
+    # folder may carry a different local SUNNY.PCX; never let that silently
+    # masquerade as a geometry/painter regression. An explicit --palette
+    # overrides the shared baseline palette for both sides.
     second = _load_scene(
         after, objects_folder=objects_folder, texture_folder=texture_folder,
-        palette_file=palette_file, appearance=appearance)
+        palette_file=palette_file or first["palette_path"],
+        appearance=appearance)
     output,temp = _prepare_output(Path(output), [Path(before),Path(after)])
     try:
         reports, warnings, greatest = {}, set(), 0.0
@@ -435,6 +440,7 @@ def compare_previews(before, after, output, *, cameras=DEFAULT_CAMERAS,
             "after_sha256":sha256(Path(after).read_bytes()).hexdigest(),
             "cameras":list(cameras),"size":[width,height],
             "orthographic":True,"bsp_mode":bsp_mode,
+            "source_palette":first["palette_path"],
             "tolerance":tolerance, "maximum_changed_fraction":greatest,
             "threshold":max_diff_ratio,
             "threshold_passed":max_diff_ratio is None or greatest <= max_diff_ratio,
