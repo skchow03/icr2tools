@@ -174,6 +174,48 @@ jobs:
               assert (root/"phase3_wasp_identical_diff"/f"{camera}-comparison.png").is_file()
           print("Phase 3 stock PMP angles rendered, seven Wasp views generated, pixel identity proven")
           PY
+      - name: Build independent V30 radiator and visibility revision
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.wasp_v30_touchups \
+            --baseline /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --output /tmp/3do-ai-recipes/marmon_wasp_v30
+          python -m icr2_3do_ai validate \
+            /tmp/3do-ai-recipes/marmon_wasp_v30/WASP.3do
+          for asset in FWHEEL RWHEEL HELMET; do
+            cmp "/tmp/3do-ai-recipes/marmon_wasp_complete/$asset.3do" \
+                "/tmp/3do-ai-recipes/marmon_wasp_v30/$asset.3do"
+          done
+          python -m icr2_3do_ai preview \
+            /tmp/3do-ai-recipes/marmon_wasp_v30/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30 \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+            --width 640 --height 480 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v30
+          python -m icr2_3do_ai compare \
+            /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            /tmp/3do-ai-recipes/marmon_wasp_v30/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_v30 \
+            --texture-folder icr2_3do_cad/fixtures --strict-assets \
+            --cameras front rear left right top front-left front-right rear-left rear-right \
+            --width 480 --height 360 \
+            -o /tmp/3do-ai-recipes/phase3_wasp_v29_to_v30
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("/tmp/3do-ai-recipes")
+          manifest=json.loads((root/"marmon_wasp_v30/v30_manifest.json").read_text())
+          assert manifest["radiator_front_game_x"]==43671
+          assert manifest["radiator_rear_seam_game_x"]==41700
+          assert len(manifest["painter_camera_tests"])==8
+          preview=json.loads((root/"phase3_wasp_v30/preview.json").read_text())
+          assert not preview["warnings"] and len(preview["cameras"])==9
+          comparison=json.loads((root/"phase3_wasp_v29_to_v30/comparison.json").read_text())
+          assert not comparison["warnings"] and len(comparison["cameras"])==9
+          assert comparison["views"]["front"]["changed_pixels"]>0
+          print("V30 compiled with sealed radiator, eight camera-side painter checks and nine visual comparisons")
+          PY
       - name: Demonstrate a deliberate palette change in exported before/after images
         shell: bash
         run: |
