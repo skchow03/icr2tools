@@ -297,7 +297,9 @@ and its offset, but does not change or recompile the Wasp assembly.
   and a positive *uniform* \`scale\` are supported. No arbitrary-angle,
   anisotropic, shear, or animated mesh transforms. Fractional raw-coordinate
   results from scaling are rejected instead of silently rounded; the
-  quarter-turns are exact. DYNAMIC heading uses tenths of a degree.
+  quarter-turns are exact. Uniform scaling is refused for groups containing
+  EXTERN models: moving an attachment does not scale its linked mesh or sprite.
+  DYNAMIC heading uses tenths of a degree.
 - **External references:** \`externals\` accepts a name, 1–8-character
   EXTERN model basename (e.g. \`FWHEEL\`, \`RWHEEL\`, \`HELMET\`),
   and an \`at\` position or \`{"anchor":"head","offset":[x,y,z]}\`.
