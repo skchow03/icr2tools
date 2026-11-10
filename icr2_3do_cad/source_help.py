@@ -79,9 +79,11 @@ COMMAND_HELP = {
         "MATERIAL MIP=\"name\", GROUP=3, yourPoly (or an ancestor MATERIAL). "
         "Adding [T] alone does not supply UVs or a texture."),
     "POLY_T": N3CommandHelp(
-        "POLY [T]", "name: POLY [T] <color> {v1, v2, v3, ...};",
+        "POLY [T]", "name: POLY [T] <color> {v1, v2, v3, ...} GROUP=16;",
         "Textured polygon; remove [T] after POLY to make it solid.",
-        "Each referenced vertex needs T=<U,V>; a MATERIAL MIP=\"name\" wrapper "
+        "Each referenced vertex needs T=<U,V>; an optional GROUP=N suffix sets "
+        "the polygon's stored texture-group DWORD (default 0). This is distinct "
+        "from MATERIAL GROUP. A MATERIAL MIP=\"name\" wrapper "
         "(or a parent material) assigns the bitmap. Vertex winding still matters. "
         "To convert to solid: change POLY [T] <42> {a,b,c} to POLY <42> {a,b,c}; "
         "the <42> palette color is then used. Existing T=<U,V> on vertices can remain; "
@@ -157,7 +159,8 @@ COMMAND_HELP = {
         "MATERIAL", 'name: MATERIAL MIP="texture", GROUP=4, child;',
         "Wraps a child scene node with material/texture attributes.",
         "MIP is an optional quoted 8-character DOS resource name; GROUP is a numeric "
-        "material parameter. A MATERIAL can also omit MIP and use GROUP alone. "
+        "material parameter, preserved even when MIP is set. It is separate "
+        "from the POLY [T] GROUP suffix. A MATERIAL can also omit MIP. "
         "The final operand must be one child object."),
     "SWITCH": N3CommandHelp(
         "SWITCH DISTANCE",
@@ -188,9 +191,12 @@ COMMAND_HELP = {
         "Places a PMP2 sprite record at an anchor vertex.",
         "As with SRB, supply vertex, size and the quoted PMP resource name."),
     "RECOLOR": N3CommandHelp(
-        "RECOLOR", "name: RECOLOR (old:new, old:new, ...);",
+        "RECOLOR", 'name: RECOLOR (old:new, ...), EXTERN "indycar";',
         "Defines a set of numeric palette-index replacement pairs.",
-        "Each pair maps one integer palette index to another. Separate pairs with commas."),
+        "Each pair maps one integer palette index to another. Separate pairs with commas. "
+        "For a stock indNN.3do driver appearance wrapper, append the optional "
+        "EXTERN chassis name after the closing parenthesis; the compiler stores "
+        "its pointer directly after the RECOLOR pairs."),
     "DYNO": N3CommandHelp(
         "DYNO", "name: DYNO {n1, n2, n3, n4};",
         "Stores four integer dynamic parameters in a DYNO node.",

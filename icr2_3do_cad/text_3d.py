@@ -34,7 +34,8 @@ VERTEX_RE = re.compile(r"^\[\s*<\s*(" + NUM + r")\s*,\s*(" + NUM +
                        r")\s*>\s*(?:,\s*T\s*=\s*<\s*(" + NUM +
                        r")\s*,\s*(" + NUM + r")\s*>)?\s*\]$", re.I | re.S)
 POLY_RE = re.compile(r"^POLY(\s+\[T\])?\s*<\s*(" + NUM +
-                     r")\s*>\s*\{\s*([^{}]*?)\s*\}$", re.I | re.S)
+                     r")\s*>\s*\{\s*([^{}]*?)\s*\}(?:\s+GROUP\s*=\s*(" +
+                     NUM + r"))?$", re.I | re.S)
 RAW_PLANE = re.compile(r"^\s*\(\s*(" + NUM + r")\s*,\s*(" + NUM +
                        r")\s*,\s*(" + NUM + r")\s*,\s*(" + NUM +
                        r")\s*,\s*(" + NUM + r")\s*\)\s*,\s*(.*)$", re.S)
@@ -138,8 +139,9 @@ def _command(model: Model, off: int) -> str:
         return "NIL"
     if kind in (1, 2):
         p = model.polygons[off]
-        surface="LINE" if len(p.unique_refs)<=2 else ("POLY [T]" if kind==2 else "POLY")
-        return f"{surface} <{p.color}> " + "{"+_join_vertex_refs(p.refs, model)+"}"
+        surface="LINE" if kind==1 and len(p.unique_refs)<=2 else ("POLY [T]" if kind==2 else "POLY")
+        group=f" GROUP={p.group}" if kind==2 and p.group!=0 else ""
+        return f"{surface} <{p.color}> " + "{"+_join_vertex_refs(p.refs, model)+"}"+group
     if 5 <= kind <= 10:
         return {5: "FACE", 6: "FACE2", 7: "BSPF", 8: "BSPA",
                 9: "BSP2", 10: "BSPN"}[kind] + " " + _plane(model, off, kind)
@@ -166,11 +168,9 @@ def _command(model: Model, off: int) -> str:
             return f"MATERIAL GROUP={i32(b,off+8)}, {_ref(i32(b,off+12),model)}"
         if not 0<=number<len(model.mip_names):
             raise FormatError(f"MATERIAL @{off}: missing MIP name")
-        group = 3
-        descendants = [p for p in model.children.get(off,[]) if p in model.polygons and model.polygons[p].kind==2]
-        if descendants:
-            group=model.polygons[descendants[0]].group
-        return f'MATERIAL MIP="{model.mip_names[number]}", GROUP={group}, {_ref(i32(b,off+12),model)}'
+        # MATERIAL's own group DWORD is independent of POLY [T]'s texture group.
+        # Never guess one from the other: both values must round-trip intact.
+        return f'MATERIAL MIP="{model.mip_names[number]}", GROUP={i32(b,off+8)}, {_ref(i32(b,off+12),model)}'
     if kind in (3,18):
         number = i32(b,off+12)
         if not 0<=number<len(model.pmp_names):
@@ -182,7 +182,18 @@ def _command(model: Model, off: int) -> str:
     if kind == 14:
         count=i32(b,off+4)
         pairs=[f"{i32(b,off+8+8*j)}: {i32(b,off+12+8*j)}" for j in range(count)]
-        return "RECOLOR ("+", ".join(pairs)+")"
+        tail=""
+        # Stock indNN.3do wrappers append an EXTERN chassis pointer after the
+        # RECOLOR table. It is not a child node, so the generic Model tree
+        # does not discover it; decode it explicitly for the root MATERIAL.
+        if (model.records.get(model.root_offset)==4 and
+                i32(b,model.root_offset+12)==off):
+            end=off+8+count*8
+            if end+4<=len(b):
+                ref=i32(b,end)
+                if -len(model.external_names)<=ref<0:
+                    tail=", "+_ref(ref,model)
+        return "RECOLOR ("+", ".join(pairs)+")"+tail
     if kind == 17:
         # Original standalone N3 track DATA may contain a long hash table.
         # Retain its full body when the compiler supplied its size metadata.
@@ -412,6 +423,15 @@ def _apply_edits(model, doc):
             color=int(m.group(1 if line_form else 2))
             if not INT32_LO<=color<=INT32_HI:
                 raise FormatError(f"Polygon {s.label}: color outside 32-bit range")
+            if not line_form and m.group(4) is not None:
+                if kind!=2:
+                    raise FormatError(f"Polygon {s.label}: GROUP= requires POLY [T]")
+                group=int(m.group(4))
+                if not INT32_LO<=group<=INT32_HI:
+                    raise FormatError(f"Polygon {s.label}: texture group outside 32-bit range")
+                struct.pack_into("<i",raw,model.body_start+off+4,group)
+            # Omitted GROUP= on older annotated sources means preserve the
+            # original binary group, not silently rewrite it to zero.
             struct.pack_into("<i",raw,model.body_start+off+(8 if kind==2 else 4),color)
             continue
         if kind in (5,6,7,8,9,10):

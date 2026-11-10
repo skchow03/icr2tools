@@ -141,3 +141,28 @@ but should not be presented as a menu command.
 Named pointers and `% comments` are not stored inside a binary 3DO. Retain
 annotated source files and validate complex output in the original game.
 See [STANDALONE_N3.md](STANDALONE_N3.md) for compiler details and limitations.
+
+## Stock car texture groups and driver wrappers
+
+Textured polygons have their own 32-bit texture group, independent of the
+MATERIAL record's GROUP parameter. The CAD editor accepts and exports it as
+`POLY [T] <color> {v1, v2, v3} GROUP=16;`. The suffix is optional and
+omission on newly compiled polygons means group zero. When editing an older
+annotated binary source, omission preserves its existing group instead.
+The N3 exporter writes nonzero groups explicitly and can recompile them.
+
+`MATERIAL MIP="ind95", GROUP=113, child;` preserves the **MATERIAL** group
+even with an assigned MIP; it does not inherit the polygon's group.
+
+Stock individual driver wrappers are supported without a separate rebuild
+script. Use a named RECOLOR node with the optional chassis reference:
+
+```n3
+paint: RECOLOR (16:49, 17:51), EXTERN "indycar";
+root: MATERIAL MIP="ind95", GROUP=113, paint;
+```
+
+The compiled RECOLOR tail DWORD points to `indycar`, matching stock
+`indNN.3do` appearance wrappers. The CAD editor preserves this pointer
+when exporting N3 source. Inspect and test game results when substituting
+new carset resources; code-level roundtrips do not prove game rendering.

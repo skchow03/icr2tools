@@ -360,9 +360,15 @@ class Compiler:
         if code.upper()=="NIL":return 0
         if code.startswith("["):
             return self._vertex(code)
-        poly=re.match(r"^(POLY(?:\s+\[T\])?|LINE)\s+(.+?)\s*(\{.*\})$",code,re.I|re.S)
+        poly=re.match(
+            r"^(POLY(?:\s+\[T\])?|LINE)\s+(.+?)\s*(\{.*\})"
+            r"(?:\s+GROUP\s*=\s*([-+]?\d+))?$", code, re.I | re.S)
         if poly:
             textured="[T]" in poly.group(1).upper()
+            if poly.group(4) is not None and not textured:
+                raise FormatError("GROUP= is only supported on POLY [T]")
+            group=(_i32(poly.group(4), "POLY [T] texture group")
+                   if poly.group(4) is not None else 0)
             color=self._color(poly.group(2))
             refs=[self._node(x) for x in _brace(poly.group(3))]
             if len(refs)<2:
@@ -380,7 +386,7 @@ class Compiler:
                 for ref in refs:
                     if not self.vertex_uv[ref]:
                         raise FormatError("Textured polygon references a vertex without T=<U,V>")
-                return self._record(2,0,color,len(refs)-1,*refs)
+                return self._record(2,group,color,len(refs)-1,*refs)
             return self._record(1,color,len(refs)-1,*refs)
         list_match=re.match(r"^LIST\s*(\{.*\})$",code,re.I|re.S)
         if list_match:
@@ -421,7 +427,7 @@ class Compiler:
             # Track N3 legitimately uses MATERIAL GROUP=30, LIST {...}
             # without a MIP. In the 3DO flavor, -1 denotes no texture.
             mid=self._file(mip,self.mips) if mip is not None else -1
-            return self._record(4,mid,group if mip is None else 0,self._node(child))
+            return self._record(4,mid,group,self._node(child))
         sprite=re.match(r"^(SRB|PMP2)\s+(.+)$",code,re.I|re.S)
         if sprite:
             fields=_split(sprite.group(2))
@@ -486,7 +492,9 @@ class Compiler:
             off=self._record(17,*[_i32(x,"DATA parameter") for x in numbers])
             self.data_lengths[off]=len(numbers)
             return off
-        recolor=re.match(r"^RECOLOR\s*\((.*)\)$",code,re.I|re.S)
+        recolor=re.fullmatch(
+            r'RECOLOR\s*\((.*?)\)(?:\s*,\s*EXTERN\s+"([^"]+)")?',
+            code, re.I | re.S)
         if recolor:
             fields=_split(recolor.group(1))
             values=[]
@@ -494,7 +502,10 @@ class Compiler:
                 m=re.fullmatch(r"([-+]?\d+)\s*:\s*([-+]?\d+)",x)
                 if not m:raise FormatError("Malformed RECOLOR mapping")
                 values.extend((_i32(m.group(1),"RECOLOR index"),_i32(m.group(2),"RECOLOR color")))
-            return self._record(14,len(fields),*values)
+            # A stock driver wrapper stores its chassis EXTERN pointer in the
+            # DWORD immediately following the RECOLOR pairs (not in a DYNAMIC).
+            tail=(-(self._file(recolor.group(2),self.externals)+1),) if recolor.group(2) else ()
+            return self._record(14,len(fields),*values,*tail)
         raise FormatError("Unsupported N3 construct: "+code[:125])
 
     def compile(self, *, associate_planes=True):
