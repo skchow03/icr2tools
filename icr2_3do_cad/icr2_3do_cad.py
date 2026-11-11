@@ -1187,7 +1187,6 @@ class GLViewport(QOpenGLWidget):
         glBindBuffer(GL_ARRAY_BUFFER, 0)
 
     def _refresh_wire_visibility(self):
-        self._wire_visibility_mode = "wire"
         """Select original polygon edges by RES and track detail, not BSP.
 
         The fully expanded branch view remains available via Show all detail
@@ -1195,6 +1194,7 @@ class GLViewport(QOpenGLWidget):
         applies exactly as in the filled renderer, while all BSP-facing
         branches remain see-through.
         """
+        self._wire_visibility_mode = "wire"
         all_branches = self.lod_distance is None and not self._track_lod_active()
         if all_branches:
             # Preserve the legacy full-geometry diagnostic in explicit
