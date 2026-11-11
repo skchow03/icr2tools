@@ -54,6 +54,31 @@ Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
 geometry, selection or texture rendering; toggling them does not recompile
 any model.
 
+## Overlay polygon edges and vertices while aligning MIP textures
+
+The **Edit** row immediately above the viewport provides two independent
+visibility switches. **Edges** overlays exact Papyrus polygon boundaries
+over the rendered/textured surfaces; it does not add the diagonals from
+triangulated quads. Check **Front edges only** to display lines that
+survive a geometry-only GPU depth test. Uncheck it to show the active
+polygon outlines through the bodywork. The standalone **Wireframe**
+rendering mode is still available for outline-only diagnostics.
+
+Enable **Vertices** to show root-model vertex markers. Its drop-down
+offers **All** (including hidden vertices), **Visible only** (frontmost
+surface points), and **Selected poly** (the source-selected polygon).
+Uncheck **Names** when you need small blue points but not N3 pointer
+labels obscuring the texture. A separately selected vertex retains its
+yellow selection marker. The same switches are in **View → Display
+Options**; **Ctrl+Shift+W** toggles Edges. These are viewport-only
+controls: texture coordinates, materials, binary models, and source
+files are not rewritten.
+
+For precise UV work, view the body in orthographic Side/Front/Top,
+enable Textures + Edges + Front edges only, then turn on Vertices with
+Visible only and optionally turn Names off. This will show the currently
+visible seams and points without rear-side geometry clutter.
+
 ## Direct vertex moving in the viewport
 
 1. Open a model and ensure **.3D Source** is ready and valid. Set the
