@@ -268,6 +268,12 @@ def install_menus(window):
     _bind_checkbox(options, "PMP sprites", window.show_sprites)
     _bind_checkbox(options, "Repeat UV (tile MIPs)", window.repeat_uv)
     options.addSeparator()
+    edges = _bind_checkbox(options, "&Polygon edges", window.wireframe_toggle)
+    edges.setShortcut(QKeySequence("Ctrl+Shift+W"))
+    _bind_checkbox(options, "&Front edges only", window.wireframe_visible_toggle)
+    _bind_checkbox(options, "&Vertices", window.vertex_labels_toggle)
+    _bind_checkbox(options, "Vertex &names", window.vertex_names_toggle)
+    options.addSeparator()
     _bind_checkbox(options, "Extended XYZ &axis guides",
                    window.axis_guides_toggle)
     _bind_checkbox(options, "Corner XYZ &orientation gizmo",

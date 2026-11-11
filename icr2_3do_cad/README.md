@@ -53,6 +53,24 @@ Toggle either overlay independently under **View → Display Options** or
 These are transparent, nonselectable UI guides only; they do not alter
 the model, tracing-image calibration, BSP, rendered geometry or exports.
 
+## Texture-alignment overlays: edges and vertices
+
+The **Edit** row above the viewport has independent **Edges** and
+**Vertices** checkboxes. Edges superimposes the original Papyrus polygon
+boundaries on the filled or textured model, without triangulation diagonals.
+Enable **Front edges only** to hide lines behind foreground bodywork using a
+GPU depth-only pass; disable it for an X-ray view of the active polygons.
+This is separate from the advanced **Wireframe** rendering mode, which
+replaces surfaces with all see-through outlines.
+
+**Vertices** shows root-model vertex dots, with **All**, **Visible only**,
+and **Selected poly** choices. Visible-only uses a depth-tested surface
+pass to exclude points behind the model. Uncheck **Names** for dots without
+N3 pointer-label text, useful when aligning texture seams. The toggles
+also appear under **View → Display Options**, and **Ctrl+Shift+W** toggles
+the edge overlay. Settings only affect the preview: no source, geometry,
+UV coordinates, MIP or exported 3DO is changed.
+
 ## Move vertices directly in the 3D viewport
 
 Choose **Pick → Vertices**, select a root-model vertex, then enable

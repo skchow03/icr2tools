@@ -23,14 +23,14 @@ if str(CAD_ROOT) not in sys.path:
 try:
     from OpenGL.GL import (
         GL_ARRAY_BUFFER, GL_COLOR_BUFFER_BIT, GL_COMPILE_STATUS, GL_DEPTH_BUFFER_BIT,
-        GL_DEPTH_TEST, GL_DEPTH_COMPONENT, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
+        GL_DEPTH_TEST, GL_DEPTH_COMPONENT, GL_LESS, GL_LEQUAL, GL_POLYGON_OFFSET_FILL, GL_DYNAMIC_DRAW, GL_ELEMENT_ARRAY_BUFFER, GL_FALSE, GL_FLOAT, GL_FRAGMENT_SHADER, GL_LINK_STATUS,
         GL_STATIC_DRAW, GL_TRIANGLES, GL_LINES, GL_UNSIGNED_INT, GL_UNSIGNED_BYTE,
         GL_VERTEX_SHADER, GL_TEXTURE0, GL_TEXTURE1, GL_TEXTURE_2D,
         GL_TEXTURE_MIN_FILTER, GL_TEXTURE_MAG_FILTER, GL_TEXTURE_WRAP_S,
         GL_TEXTURE_WRAP_T, GL_NEAREST, GL_CLAMP_TO_EDGE, GL_R8UI,
         GL_RGB8, GL_RED_INTEGER, GL_RGB, GL_UNPACK_ALIGNMENT,
         glAttachShader, glBindBuffer, glBindVertexArray, glBufferData,
-        glClear, glClearColor, glColorMask, glDepthMask, glReadPixels, glCompileShader, glCreateProgram, glCreateShader,
+        glClear, glClearColor, glColorMask, glDepthMask, glDepthFunc, glReadPixels, glCompileShader, glCreateProgram, glCreateShader,
         glDeleteBuffers, glDeleteProgram, glDeleteShader, glDeleteVertexArrays,
         glDisable, glDrawArrays, glDrawElements, glEnable, glEnableVertexAttribArray, glFinish, glGenBuffers,
         glGenVertexArrays, glGetProgramInfoLog, glGetProgramiv,
@@ -622,6 +622,9 @@ class GLViewport(QOpenGLWidget):
         self._wire_ebo = None
         self._wire_mesh = None
         self._wire_index_count = 0
+        self._wire_visibility_mode = None  # wire-only and filled overlay have different BSP selections
+        self.wireframe_overlay_enabled = False
+        self.wireframe_visible_only = True
         self._wire_uniform = None
         self._wire_color_uniform = None
         self._selected_wire_color_uniform = None
@@ -632,6 +635,7 @@ class GLViewport(QOpenGLWidget):
         self._label_vertex_picker = None
         self.vertex_pointer_names = {}
         self.vertex_label_mode = "all"
+        self.vertex_names_enabled = True
         self._depth_visible_vertex_labels = []
         self._vertex_depth_error = None
         self._polygon_picker = None
@@ -774,6 +778,21 @@ class GLViewport(QOpenGLWidget):
                 self.visibility_banner.raise_()
         else:
             self._depth_visible_vertex_labels = []
+        self.update()
+
+    def set_vertex_names_enabled(self, enabled):
+        """Vertex dots remain selectable even when pointer names are hidden."""
+        self.vertex_names_enabled = bool(enabled)
+        self.update()
+
+    def set_wireframe_overlay_enabled(self, enabled):
+        """Show real POLY boundaries above the current filled/texture render."""
+        self.wireframe_overlay_enabled = bool(enabled)
+        self.update()
+
+    def set_wireframe_visible_only(self, enabled):
+        """Occlude edge overlays with a geometry-only depth prepass."""
+        self.wireframe_visible_only = bool(enabled)
         self.update()
 
     def set_vertex_label_mode(self, mode):
@@ -949,6 +968,7 @@ class GLViewport(QOpenGLWidget):
         self._surface_index_count = 0
         self._wire_mesh = None
         self._wire_index_count = 0
+        self._wire_visibility_mode = None
         self.inspection_kind = None
         self.inspection_offset = None
         self.inspection_points = None
@@ -1141,6 +1161,7 @@ class GLViewport(QOpenGLWidget):
             glDeleteBuffers(1, [self._wire_ebo])
             self._wire_ebo = None
         self._wire_index_count = 0
+        self._wire_visibility_mode = None
 
     def _ensure_wireframe_buffers(self):
         """Build boundary edges only when first requested for this model."""
@@ -1173,6 +1194,7 @@ class GLViewport(QOpenGLWidget):
         applies exactly as in the filled renderer, while all BSP-facing
         branches remain see-through.
         """
+        self._wire_visibility_mode = "wire"
         all_branches = self.lod_distance is None and not self._track_lod_active()
         if all_branches:
             # Preserve the legacy full-geometry diagnostic in explicit
@@ -1223,6 +1245,110 @@ class GLViewport(QOpenGLWidget):
             f"across {info['mesh_polygons']:,} {selected} "
             "(RES respected; BSP ignored)")
 
+    def _refresh_overlay_wire_visibility(self):
+        """Cache edges for the SAME BSP/RES/track branches as the filled view.
+
+        Unlike the standalone see-through wire mode, overlays must not
+        replace the filled renderer's visibility set or status readout.
+        """
+        self._wire_visibility_mode = "overlay"
+        if self.render_mode == 'all' and not self._track_lod_active():
+            self._wire_index_count = 0
+            return
+        eye = self._camera_eye_model()
+        direction = None
+        if not self.perspective:
+            direction = (
+                math.cos(self.elevation) * math.sin(self.azimuth),
+                -math.cos(self.elevation) * math.cos(self.azimuth),
+                math.sin(self.elevation))
+        detail = self.track_detail if self._track_lod_active() else None
+        window = None
+        if detail == 'window':
+            nav = self.track_navigation
+            if nav is not None and self._scene.track_section_dlongs:
+                window = (nav.dlong, nav.length, self.track_window_counts)
+                detail = None
+            else:
+                detail = 'hi'
+        indices, _, _ = ordered_scene_indices(
+            self._scene, self._wire_mesh, eye,
+            None if self.render_mode == 'all' else self.lod_distance,
+            view_direction=direction,
+            bsp_mode='off' if self.render_mode == 'all' else 'original',
+            track_detail=detail, track_window=window)
+        glBindVertexArray(self._wire_vao)
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, self._wire_ebo)
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.nbytes,
+                     indices if indices.size else None, GL_DYNAMIC_DRAW)
+        glBindVertexArray(0)
+        self._wire_index_count = int(indices.size)
+
+    def _paint_wireframe_overlay(self, projection, view):
+        """Overlay polygon boundaries on textured faces without triangle diagonals.
+
+        Visible-only uses a color-masked depth pass of the selected filled
+        triangles, even in Painter mode (which normally disables depth).
+        Polygon offset places those triangles slightly behind their edges.
+        """
+        self._ensure_wireframe_buffers()
+        if self._wire_vao is None:
+            return
+        if self._wire_visibility_mode != "overlay":
+            self._refresh_overlay_wire_visibility()
+        show_all = self.render_mode == 'all' and not self._track_lod_active()
+        if not (self._wire_mesh.vertices.size if show_all
+                else self._wire_index_count):
+            return
+
+        if self.wireframe_visible_only:
+            # The existing painter/depth buffer may contain a skybox, sprites,
+            # selected-polygon highlights, or no depth at all. Build a clean
+            # model-only occlusion mask without changing the color framebuffer.
+            glColorMask(False, False, False, False)
+            try:
+                glEnable(GL_DEPTH_TEST)
+                glDepthMask(True)
+                glClear(GL_DEPTH_BUFFER_BIT)
+                glEnable(GL_POLYGON_OFFSET_FILL)
+                glPolygonOffset(1.0, 1.0)
+                glUniform1i(self._wire_uniform, 0)
+                glUniform1i(self._inspection_uniform, 0)
+                glUniform1i(self._texture_uniform, 0)
+                glBindVertexArray(self._vao)
+                if show_all:
+                    glDrawArrays(GL_TRIANGLES, 0, len(self._mesh.vertices))
+                elif self._index_count:
+                    glDrawElements(
+                        GL_TRIANGLES, self._index_count, GL_UNSIGNED_INT, None)
+            finally:
+                glBindVertexArray(0)
+                glDisable(GL_POLYGON_OFFSET_FILL)
+                glColorMask(True, True, True, True)
+                glUniform1i(self._texture_uniform, int(self.textures_enabled))
+            glDepthFunc(GL_LEQUAL)
+        else:
+            glDisable(GL_DEPTH_TEST)
+
+        glDepthMask(False)
+        try:
+            glUniform1i(self._wire_uniform, 1)
+            glBindVertexArray(self._wire_vao)
+            if show_all:
+                glDrawArrays(GL_LINES, 0, len(self._wire_mesh.vertices))
+            else:
+                glDrawElements(
+                    GL_LINES, self._wire_index_count, GL_UNSIGNED_INT, None)
+        finally:
+            glBindVertexArray(0)
+            glUniform1i(self._wire_uniform, 0)
+            glDepthMask(True)
+            glDepthFunc(GL_LESS)
+            if self.render_mode == 'painter':
+                glDisable(GL_DEPTH_TEST)
+            else:
+                glEnable(GL_DEPTH_TEST)
+
     def _paint_wireframe(self, projection, view):
         """Only GL_LINES: no filled faces, sprites, skybox, or diagonal edges."""
         self._ensure_wireframe_buffers()
@@ -1264,6 +1390,7 @@ class GLViewport(QOpenGLWidget):
         started = perf_counter()
         self._release_wire_buffers()
         self._wire_mesh = None
+        self._wire_visibility_mode = None
         # Rebuild only on open. Camera movement never uploads geometry.
         if self._vao is not None:
             glDeleteVertexArrays(1, [self._vao])
@@ -1486,6 +1613,7 @@ class GLViewport(QOpenGLWidget):
     def invalidate_visibility(self):
         """Reevaluate only the BSP indices at the next draw, not the mesh."""
         self._visibility_dirty = True
+        self._wire_visibility_mode = None
         self.update()
 
     def _track_lod_active(self):
@@ -1496,6 +1624,7 @@ class GLViewport(QOpenGLWidget):
         if mode not in ('painter', 'depth', 'all', 'wire'):
             raise ValueError(f"Unknown render mode: {mode}")
         self.render_mode = mode
+        self._wire_visibility_mode = None
         if mode == 'all' and not self._track_lod_active():
             self.visibilityChanged.emit(
                 f"All polygons: {self._mesh.polygon_count:,} geometry faces "
@@ -1930,6 +2059,8 @@ class GLViewport(QOpenGLWidget):
                 glUniform1i(self._inspection_uniform, 0)
 
         glBindVertexArray(0)
+        if self.wireframe_overlay_enabled:
+            self._paint_wireframe_overlay(projection, view)
         glUseProgram(0)
         self._capture_depth_visible_labels(projection, view, w, h)
         self._set_visibility_warning(notice)
@@ -2502,12 +2633,31 @@ class Window(QMainWindow):
                 self.move_snap_combo.currentData()))
         display_layout.addWidget(QLabel("Vertex move snap step"))
         display_layout.addWidget(self.move_snap_combo)
-        self.vertex_labels_toggle = QCheckBox("Vertex labels")
+        self.wireframe_toggle = QCheckBox("Edges")
+        self.wireframe_toggle.setObjectName("showWireframeOverlay")
+        self.wireframe_toggle.setToolTip(
+            "Overlay original polygon edges over textures and shaded faces "
+            "without triangulation diagonals. Independent of vertices. "
+            "The standalone Wireframe rendering mode remains available.")
+        self.wireframe_toggle.toggled.connect(
+            self.viewer.set_wireframe_overlay_enabled)
+        edit_row.addWidget(self.wireframe_toggle)
+        self.wireframe_visible_toggle = QCheckBox("Front edges only")
+        self.wireframe_visible_toggle.setObjectName("visibleWireframeOnly")
+        self.wireframe_visible_toggle.setChecked(True)
+        self.wireframe_visible_toggle.setToolTip(
+            "On: hide edges behind the model using a filled depth-only pass. "
+            "Off: show through the model (X-ray). Applies to the Edges "
+            "overlay in filled rendering modes.")
+        self.wireframe_visible_toggle.toggled.connect(
+            self.viewer.set_wireframe_visible_only)
+        edit_row.addWidget(self.wireframe_visible_toggle)
+        self.vertex_labels_toggle = QCheckBox("Vertices")
         self.vertex_labels_toggle.setObjectName("showAllVertexLabels")
         self.vertex_labels_toggle.setToolTip(
-            "Show a small blue dot and N3 pointer name at every on-screen "
-            "root-model vertex. Selected vertices keep their larger yellow "
-            "marker. Off by default for large track models.")
+            "Show editable-model vertex dots (and optionally pointer names). "
+            "Selected vertices keep their larger yellow marker. "
+            "Off by default for large track models.")
         self.vertex_labels_toggle.toggled.connect(
             self.viewer.set_all_vertex_labels)
         edit_row.addWidget(self.vertex_labels_toggle)
@@ -2527,6 +2677,15 @@ class Window(QMainWindow):
             lambda _: self.viewer.set_vertex_label_mode(
                 self.vertex_label_mode_combo.currentData()))
         edit_row.addWidget(self.vertex_label_mode_combo)
+        self.vertex_names_toggle = QCheckBox("Names")
+        self.vertex_names_toggle.setObjectName("showVertexNames")
+        self.vertex_names_toggle.setChecked(True)
+        self.vertex_names_toggle.setToolTip(
+            "Show N3 source pointer names beside vertex dots; turn off to "
+            "leave only the vertex markers for precise texture alignment.")
+        self.vertex_names_toggle.toggled.connect(
+            self.viewer.set_vertex_names_enabled)
+        edit_row.addWidget(self.vertex_names_toggle)
         self.split_button = QPushButton("Split polygon…")
         self.split_button.setCheckable(True)
         self.split_button.setObjectName("openPolygonSplitPanel")

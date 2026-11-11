@@ -75,16 +75,17 @@ class VertexLabelOverlay(QWidget):
             if not others.isEmpty():
                 painter.drawPoints(others)
 
-            font = QFont("Consolas")
-            font.setPointSize(9)
-            painter.setFont(font)
-            for offset, x, y, name in points:
-                text_color = selected if offset == selected_offset else label
-                baseline = QPointF(x + 7, y - 5)
-                painter.setPen(shadow)
-                painter.drawText(QPointF(baseline.x() + 1,
-                                         baseline.y() + 1), name)
-                painter.setPen(text_color)
-                painter.drawText(baseline, name)
+            if viewport.vertex_names_enabled:
+                font = QFont("Consolas")
+                font.setPointSize(9)
+                painter.setFont(font)
+                for offset, x, y, name in points:
+                    text_color = selected if offset == selected_offset else label
+                    baseline = QPointF(x + 7, y - 5)
+                    painter.setPen(shadow)
+                    painter.drawText(QPointF(baseline.x() + 1,
+                                             baseline.y() + 1), name)
+                    painter.setPen(text_color)
+                    painter.drawText(baseline, name)
         finally:
             painter.end()
