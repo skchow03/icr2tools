@@ -745,8 +745,8 @@ class SourcePane(QWidget):
         for match in TOKEN.finditer(source_line):
             if match.lastgroup != "identifier" or match.group() != name:
                 continue
-            start = qt_utf16_offset(source_line[:match.start()])
-            end = qt_utf16_offset(source_line[:match.end()])
+            start = qt_utf16_offset(source_line, match.start())
+            end = qt_utf16_offset(source_line, match.end())
             if not start <= clicked.positionInBlock() <= end:
                 continue
             first = QTextCursor(block)
@@ -774,9 +774,9 @@ class SourcePane(QWidget):
                 block.position() + end, QTextCursor.MoveMode.KeepAnchor)
             target = QTextCursor(destination)
             label_start = qt_utf16_offset(
-                destination.text()[:header.start("name")])
+                destination.text(), header.start("name"))
             label_end = qt_utf16_offset(
-                destination.text()[:header.end("name")])
+                destination.text(), header.end("name"))
             target.setPosition(destination.position() + label_start)
             target.setPosition(destination.position() + label_end,
                                QTextCursor.MoveMode.KeepAnchor)
