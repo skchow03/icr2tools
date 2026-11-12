@@ -60,6 +60,9 @@ on a named POLY. The contextual **Selected POLY vertices** table appears
 **below the 3D viewport**, in polygon boundary order. Its six columns are
 **Vertex, X, Y, Z, U, V**. Double-click an editable numeric cell, type a
 replacement and press Enter.
+Columns automatically size to their displayed contents, including long
+vertex pointer names. Drag any column header divider to resize it manually;
+scroll horizontally if the columns extend beyond the viewport width.
 
 XYZ displays **authored .3D source units**, rather than scaled raw binary
 coordinates; U/V displays authored texture coordinates. Each change modifies
