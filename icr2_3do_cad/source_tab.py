@@ -271,6 +271,7 @@ class SourcePane(QWidget):
         self._last_cursor_target = None
         self._pointer_declarations = None
         self._pointer_back_stack = []
+        self._pointer_click_consumed = False
         self._polygon_visible = None
         self._rename_snapshot = ""
         self._rename_pending = None  # (zero-based declaration line, original label)
@@ -802,19 +803,31 @@ class SourcePane(QWidget):
         return True
 
     def _clear_pointer_history(self):
+        self._pointer_click_consumed = False
         self._pointer_back_stack.clear()
         self._pointer_declarations = None
         self.pointer_back_button.setEnabled(False)
 
     def eventFilter(self, watched, event):
-        if (watched is self.editor.viewport() and
-                event.type() == QEvent.Type.MouseButtonPress and
-                event.button() == Qt.MouseButton.LeftButton and
-                event.modifiers() & (Qt.KeyboardModifier.ControlModifier |
-                                     Qt.KeyboardModifier.ShiftModifier) and
-                self._follow_clicked_pointer(event.pos())):
-            event.accept()
-            return True
+        if watched is self.editor.viewport():
+            if (event.type() == QEvent.Type.MouseButtonRelease and
+                    event.button() == Qt.MouseButton.LeftButton and
+                    self._pointer_click_consumed):
+                # Don't let the orphaned release select the old text location
+                # after MouseButtonPress has jumped to the declaration.
+                self._pointer_click_consumed = False
+                event.accept()
+                return True
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self._pointer_click_consumed = False
+                if (event.button() == Qt.MouseButton.LeftButton and
+                        event.modifiers() &
+                        (Qt.KeyboardModifier.ControlModifier |
+                         Qt.KeyboardModifier.ShiftModifier) and
+                        self._follow_clicked_pointer(event.pos())):
+                    self._pointer_click_consumed = True
+                    event.accept()
+                    return True
         if (event.type() == QEvent.Type.KeyPress and
                 event.key() == Qt.Key.Key_F2 and
                 watched in (self.editor, self.editor.viewport(),
