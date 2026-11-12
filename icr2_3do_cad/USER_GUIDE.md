@@ -54,6 +54,26 @@ Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
 geometry, selection or texture rendering; toggling them does not recompile
 any model.
 
+## Navigate named pointers directly in .3D Source
+
+In the full .3D Source text pane, **Ctrl-click** or **Shift-click** any
+reference to a named declaration. The editor selects and centers the
+destination pointer's definition, whether it describes a vertex, POLY,
+LIST, MATERIAL, BSP/FACE, SWITCH, or another named N3 record. Multiline
+statements work the same way. Examples: follow a root LIST to a body LIST,
+then follow its POLY name to the polygon or a vertex name to its XYZ/UV.
+
+The **← Back** button in the source toolbar (or **Alt+Left**) returns
+to the exact reference and source row you clicked before jumping. Each
+successive link adds to the Back stack; Back can be used repeatedly.
+The history is cleared on opening or resetting a different source model.
+
+A plain click still places the caret, and Shift-drag still selects text.
+Modifier-clicks on keywords, comments, quoted MIP/PMP filenames, undefined
+names or duplicate declarations do not navigate. No source content is
+modified; links resolve against the current edited document, including
+pending unsaved changes. The Back stack is source navigation, not Undo.
+
 ## Overlay polygon edges and vertices while aligning MIP textures
 
 The **Edit** row immediately above the viewport provides two independent
