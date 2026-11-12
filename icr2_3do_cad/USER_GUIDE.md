@@ -61,6 +61,9 @@ Selecting a root-model POLY in the viewport (**Pick → Polys**) or in
 **under the 3D viewport**. Columns are **Vertex | X | Y | Z | U | V**.
 The polygon's authored vertex order is retained, excluding only the
 compiler's repeated closing pointer.
+Columns automatically size to their displayed contents, including long
+vertex pointer names. Drag any column header divider to resize it manually;
+scroll horizontally if the columns extend beyond the viewport width.
 
 Double-click an editable X/Y/Z/U/V cell, enter a number, and press
 **Enter**. XYZ is shown in the **original .3D authoring units**, accounting

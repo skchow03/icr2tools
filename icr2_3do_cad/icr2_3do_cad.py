@@ -2992,8 +2992,14 @@ class Window(QMainWindow):
         self.poly_vertex_table.setHorizontalHeaderLabels(
             ["Vertex", "X", "Y", "Z", "U", "V"])
         self.poly_vertex_table.verticalHeader().hide()
-        self.poly_vertex_table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.ResizeMode.Stretch)
+        # Stretch silently truncates long pointer names and prevents users
+        # from resizing any column. Interactive headers preserve drag-to-size;
+        # after each new POLY is populated we size from its actual contents.
+        header = self.poly_vertex_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(False)
+        self.poly_vertex_table.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.poly_vertex_table.setAlternatingRowColors(True)
         self.poly_vertex_table.setSelectionBehavior(
             QTableWidget.SelectionBehavior.SelectItems)
@@ -3780,6 +3786,12 @@ class Window(QMainWindow):
             "XYZ = authored .3D coordinates; U/V = MIP texels. "
             "Double-click a value to edit. Shared vertices update all faces.")
         self.poly_vertex_panel.show()
+        # Size every column to its actual label/value lengths, even if the
+        # total width exceeds the viewport. The scrollbar then provides access
+        # to the rightmost coordinates; drag header dividers to adjust sizes.
+        # This runs only when a different POLY/revision populates the table,
+        # so the user's manual sizes are preserved during ordinary selection.
+        table.resizeColumnsToContents()
 
     def _polygon_vertex_cell_changed(self, item):
         """Route a single committed coordinate cell through N3 Source."""

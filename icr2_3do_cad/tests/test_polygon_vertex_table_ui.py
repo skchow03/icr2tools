@@ -115,6 +115,42 @@ class PolygonVertexTableUITests(unittest.TestCase):
         self.assertEqual(pane.editor.toPlainText(), SOURCE)
         self.assertFalse(pane.pending)
 
+    def test_columns_fit_long_pointer_names_and_remain_resizable(self):
+        from PySide6.QtWidgets import QHeaderView
+        from n3_compile import compile_n3_text
+
+        long_name = "front_left_top_outer_texture_mapping_vertex_123456"
+        source = SOURCE.replace("a:", f"{long_name}:").replace(
+            "{a,b,c}", f"{{{long_name},b,c}}")
+        model, _ = compile_n3_text(
+            source, "poly_long_names.3d", associate_planes=False)
+        window = self.window
+        window.viewer._model = model
+        window.source_pane.set_source(source, Path("poly_long_names.3d"))
+        window.source_pane._debounce.stop()
+        block = window.source_pane.editor.document().findBlockByNumber(4)
+        window.source_pane.editor.setTextCursor(self.QTextCursor(block))
+        window._source_target_changed(("polygon", "paint"))
+
+        table = window.poly_vertex_table
+        header = table.horizontalHeader()
+        self.assertEqual(table.item(0, 0).text(), long_name)
+        for column in range(table.columnCount()):
+            self.assertEqual(
+                header.sectionResizeMode(column),
+                QHeaderView.ResizeMode.Interactive)
+            self.assertGreaterEqual(
+                table.columnWidth(column), table.sizeHintForColumn(column))
+        self.assertEqual(
+            table.horizontalScrollBarPolicy(),
+            self.Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        header.resizeSection(0, 160)
+        self.assertEqual(header.sectionSize(0), 160)
+        # Repeated selection of the same POLY does not undo a manual width.
+        window._refresh_polygon_vertex_table(("polygon", "paint"))
+        self.assertEqual(header.sectionSize(0), 160)
+
     def test_non_polygon_selection_hides_table(self):
         self.window._source_target_changed(("vertex", "a"))
         self.assertTrue(self.window.poly_vertex_panel.isHidden())
