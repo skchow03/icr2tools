@@ -38,9 +38,10 @@ from active_source import (
     active_source_labels, plane_vertex_dependencies, entry_is_active,
 )
 from source_rename import (
-    DECLARATION, edited_declaration_label, declaration_label, reference_spans,
-    plan_pointer_rename, qt_utf16_offset,
+    DECLARATION, TOKEN, edited_declaration_label, declaration_label,
+    reference_spans, plan_pointer_rename, qt_utf16_offset,
 )
+from source_navigation import declaration_lines, referenced_pointer_at
 
 # Same N3 token categories and error location heuristics as the CPU editor.
 LEX_RE = re.compile(
@@ -268,6 +269,9 @@ class SourcePane(QWidget):
         self._ready = False
         self._source_index = index_source_targets("")
         self._last_cursor_target = None
+        self._pointer_declarations = None
+        self._pointer_back_stack = []
+        self._pointer_click_consumed = False
         self._polygon_visible = None
         self._rename_snapshot = ""
         self._rename_pending = None  # (zero-based declaration line, original label)
@@ -294,6 +298,14 @@ class SourcePane(QWidget):
 
         layout = QVBoxLayout(self)
         controls = QHBoxLayout()
+        self.pointer_back_button = QPushButton('← Back')
+        self.pointer_back_button.setObjectName("sourcePointerBack")
+        self.pointer_back_button.setEnabled(False)
+        self.pointer_back_button.setToolTip(
+            "Return to the previous source reference after Ctrl-click or "
+            "Shift-click navigation (Alt+Left).")
+        self.pointer_back_button.clicked.connect(self.go_back_pointer)
+        controls.addWidget(self.pointer_back_button)
         apply_button = QPushButton('Apply now')
         apply_button.clicked.connect(self.apply_now)
         controls.addWidget(apply_button)
@@ -444,8 +456,11 @@ class SourcePane(QWidget):
         self.editor.setUndoRedoEnabled(True)
         self.editor.setToolTip(
             "Hover over N3 commands for syntax and purpose. "
-            "Ctrl+Shift+Space: show details; F2: rename pointer.")
+            "Ctrl/Shift+click a named pointer reference to visit its "
+            "declaration; Alt+Left goes Back. Ctrl+Shift+Space: syntax help; "
+            "F2: rename pointer.")
         self.highlighter = N3Highlighter(self.editor.document())
+        self.editor.textChanged.connect(self._invalidate_pointer_declarations)
         self.editor.textChanged.connect(self._edited)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
         self.filtered_model = FilteredStatementsModel(self)
@@ -553,6 +568,10 @@ class SourcePane(QWidget):
         self.syntax_help_shortcut.setContext(
             Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self.syntax_help_shortcut.activated.connect(self.show_syntax_help)
+        self.pointer_back_shortcut = QShortcut(QKeySequence("Alt+Left"), self)
+        self.pointer_back_shortcut.setContext(
+            Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.pointer_back_shortcut.activated.connect(self.go_back_pointer)
         # QAbstractItemView normally interprets F2 as "edit the entire row".
         # Intercept its keypress before the default view handler so this
         # shortcut always edits just the pointer label in either view.
@@ -696,7 +715,119 @@ class SourcePane(QWidget):
             self._show_source_tooltip(
                 tip, self.editor, self.editor.textCursor().blockNumber())
 
+    def _invalidate_pointer_declarations(self):
+        self._pointer_declarations = None
+
+    def _pointer_lookup(self):
+        if self._pointer_declarations is None:
+            self._pointer_declarations = declaration_lines(
+                self.editor.toPlainText())
+        return self._pointer_declarations
+
+    def _follow_clicked_pointer(self, point):
+        """Follow only the actual text glyph of a reference, never whitespace.
+
+        Calling this from MouseButtonPress consumes just modifier-clicks on
+        named identifiers; ordinary click, Shift-selection and Ctrl-click in
+        comments or blank areas retain Qt's normal text-editing behavior.
+        """
+        if not self._ready:
+            return False
+        clicked = self.editor.cursorForPosition(point)
+        block = clicked.block()
+        source_line = block.text()
+        declarations = self._pointer_lookup()
+        name = referenced_pointer_at(
+            source_line, clicked.positionInBlock(), declarations)
+        if name is None:
+            return False
+        # QTextCursor snaps clicks in whitespace to the closest character.
+        # Verify the real horizontal pixel bounds before accepting a link.
+        for match in TOKEN.finditer(source_line):
+            if match.lastgroup != "identifier" or match.group() != name:
+                continue
+            start = qt_utf16_offset(source_line, match.start())
+            end = qt_utf16_offset(source_line, match.end())
+            if not start <= clicked.positionInBlock() <= end:
+                continue
+            first = QTextCursor(block)
+            first.setPosition(block.position() + start)
+            last = QTextCursor(block)
+            last.setPosition(block.position() + end)
+            left = self.editor.cursorRect(first)
+            right = self.editor.cursorRect(last)
+            if not (left.x() <= point.x() < right.x() and
+                    left.top() <= point.y() < left.bottom()):
+                continue
+            destination_line = declarations[name]
+            if destination_line == block.blockNumber():
+                return False
+            destination = self.editor.document().findBlockByNumber(
+                destination_line)
+            if not destination.isValid():
+                return False
+            header = DECLARATION.match(destination.text())
+            if header is None or header.group("name") != name:
+                return False
+            origin = QTextCursor(block)
+            origin.setPosition(block.position() + start)
+            origin.setPosition(
+                block.position() + end, QTextCursor.MoveMode.KeepAnchor)
+            target = QTextCursor(destination)
+            label_start = qt_utf16_offset(
+                destination.text(), header.start("name"))
+            label_end = qt_utf16_offset(
+                destination.text(), header.end("name"))
+            target.setPosition(destination.position() + label_start)
+            target.setPosition(destination.position() + label_end,
+                               QTextCursor.MoveMode.KeepAnchor)
+            self._pointer_back_stack.append(origin)
+            self.pointer_back_button.setEnabled(True)
+            self.editor.setTextCursor(target)
+            self.editor.centerCursor()
+            self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+            return True
+        return False
+
+    def go_back_pointer(self):
+        """Return to the exact previous reference, preserving current edits."""
+        if not self._pointer_back_stack:
+            return False
+        if self.source_stack.currentWidget() is self.filtered_page:
+            self._show_all_filters()
+        previous = self._pointer_back_stack.pop()
+        self.pointer_back_button.setEnabled(bool(self._pointer_back_stack))
+        self.editor.setTextCursor(previous)
+        self.editor.centerCursor()
+        self.editor.setFocus(Qt.FocusReason.OtherFocusReason)
+        return True
+
+    def _clear_pointer_history(self):
+        self._pointer_click_consumed = False
+        self._pointer_back_stack.clear()
+        self._pointer_declarations = None
+        self.pointer_back_button.setEnabled(False)
+
     def eventFilter(self, watched, event):
+        if watched is self.editor.viewport():
+            if (event.type() == QEvent.Type.MouseButtonRelease and
+                    event.button() == Qt.MouseButton.LeftButton and
+                    self._pointer_click_consumed):
+                # Don't let the orphaned release select the old text location
+                # after MouseButtonPress has jumped to the declaration.
+                self._pointer_click_consumed = False
+                event.accept()
+                return True
+            if event.type() == QEvent.Type.MouseButtonPress:
+                self._pointer_click_consumed = False
+                if (event.button() == Qt.MouseButton.LeftButton and
+                        event.modifiers() &
+                        (Qt.KeyboardModifier.ControlModifier |
+                         Qt.KeyboardModifier.ShiftModifier) and
+                        self._follow_clicked_pointer(event.pos())):
+                    self._pointer_click_consumed = True
+                    event.accept()
+                    return True
         if (event.type() == QEvent.Type.KeyPress and
                 event.key() == Qt.Key.Key_F2 and
                 watched in (self.editor, self.editor.viewport(),
@@ -860,6 +991,7 @@ class SourcePane(QWidget):
             ("\n" + "\n".join(entries[1:]) if len(entries) > 1 else ""))
 
     def set_source(self, text, path, *, status=None):
+        self._clear_pointer_history()
         # A newly loaded file must not inherit an open filtered-row editor
         # or selection from the previous model.
         self.filtered_list.reset()
@@ -905,6 +1037,7 @@ class SourcePane(QWidget):
             self.editor.document().setModified(False)
 
     def reset(self, status='Open the Source tab to generate editable N3.'):
+        self._clear_pointer_history()
         self.filtered_list.reset()
         self.change_log.clear()
         self._debounce.stop()
