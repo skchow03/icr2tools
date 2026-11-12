@@ -65,14 +65,19 @@ def run():
         far_offset = model.n3_label_offsets["far"]
         near_offset = model.n3_label_offsets["near"]
         view = window.viewer
-        # Establish the baseline framebuffer with the near-only branch drawn.
+        # Select far first so the contextual vertex table below the viewport
+        # has its final layout before either framebuffer snapshot. Otherwise
+        # the Qt viewport resize changes the image even with no POLY drawn.
+        cursor = QTextCursor(
+            window.source_pane.editor.document().findBlockByNumber(5))
+        window.source_pane.editor.setTextCursor(cursor)
+        app.processEvents()
+        view.set_source_inspection()  # baseline without the source highlight
         base = view.grabFramebuffer()
         assert not base.isNull(), "No OpenGL framebuffer"
         assert near_offset in view._visible_set, "Near LOD was not selected"
         assert far_offset not in view._visible_set, "Far LOD selected too soon"
-        cursor = QTextCursor(
-            window.source_pane.editor.document().findBlockByNumber(5))
-        window.source_pane.editor.setTextCursor(cursor)
+        window._source_target_changed(("polygon", "far"))
         assert view.inspection_kind == "polygon"
         assert view.inspection_offset == far_offset
         hidden = view.grabFramebuffer()
