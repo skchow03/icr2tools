@@ -54,6 +54,32 @@ Both are mouse-transparent Qt overlays and never appear in saved .3D/.3DO
 geometry, selection or texture rendering; toggling them does not recompile
 any model.
 
+## Selected polygon vertex/UV table
+
+Selecting a root-model POLY in the viewport (**Pick → Polys**) or in
+**.3D Source** displays its boundary vertices in a compact table directly
+**under the 3D viewport**. Columns are **Vertex | X | Y | Z | U | V**.
+The polygon's authored vertex order is retained, excluding only the
+compiler's repeated closing pointer.
+
+Double-click an editable X/Y/Z/U/V cell, enter a number, and press
+**Enter**. XYZ is shown in the **original .3D authoring units**, accounting
+for explicit or implicit ICR2_COORD_SCALE; U/V values are texture texel
+coordinates as written in each vertex's T=<U,V> declaration. Editing
+writes only that numeric source token, in one undoable text edit, then
+uses normal source validation and GPU recompilation. No separate geometry
+or MIP mutation occurs. If the vertex is shared, **every referring POLY**
+uses the new coordinate or UV after compilation.
+
+The table is disabled during compilation and resumes with validated
+values. Use **Ctrl+Z** in .3D Source to undo; **Save** / **Export** are
+explicit. An anonymous inline vertex, a missing T=<U,V> attribute,
+or untextured polygon UV is displayed read-only rather than rewriting an
+unrelated definition. The editor validates numeric ranges and refuses
+a fractional edit that would change the implicit coordinate scale of
+all source vertices. Source comments, names, texture coordinates not
+edited, and unrelated declarations remain unchanged.
+
 ## Navigate named pointers directly in .3D Source
 
 In the full .3D Source text pane, **Ctrl-click** or **Shift-click** any
