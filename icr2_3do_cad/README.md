@@ -53,6 +53,27 @@ Toggle either overlay independently under **View → Display Options** or
 These are transparent, nonselectable UI guides only; they do not alter
 the model, tracing-image calibration, BSP, rendered geometry or exports.
 
+## Edit a selected POLY's vertex coordinates and texture UVs
+
+Select a root-model polygon in **Pick → Polys** or place the .3D Source cursor
+on a named POLY. The contextual **Selected POLY vertices** table appears
+**below the 3D viewport**, in polygon boundary order. Its six columns are
+**Vertex, X, Y, Z, U, V**. Double-click an editable numeric cell, type a
+replacement and press Enter.
+
+XYZ displays **authored .3D source units**, rather than scaled raw binary
+coordinates; U/V displays authored texture coordinates. Each change modifies
+only the corresponding numeric token in canonical .3D Source, preserving
+comments, other attributes and MIP assignment. The normal source compiler
+validates and refreshes the viewport, and **Ctrl+Z in the Source editor**
+undoes the change. Changes to shared named vertices affect every polygon
+using the same vertex. Editing temporarily pauses while validation runs.
+
+Anonymous inline vertices and fields without a named source declaration
+(e.g. UV on an untextured polygon) remain visible but read-only. The editor
+rejects invalid numeric ranges and edits that would silently change the
+source's implicit coordinate scale. Save/Export remains explicit.
+
 ## Navigate N3 pointers in the .3D Source editor
 
 **Ctrl-click** or **Shift-click** a named pointer reference in any source
