@@ -142,6 +142,9 @@ root: LIST {face};</pre>
         <h3>Find, filter, and get syntax help</h3>
         <p><b>Edit → Find in .3D Source…</b> (<kbd>Ctrl+F</kbd>) searches the full document. The <b>Filter statements</b> chooser can show only vertices, POLYs, BSPs, MATERIALs, or other declaration categories; filtering does not delete hidden source lines. Double-click a filtered statement to edit it, <kbd>Ctrl+Enter</kbd> to commit, or <kbd>Esc</kbd> to cancel. Choose <b>Show full source at selected line</b> to return to unrestricted editing.</p>
         <p>Cursor-sensitive <b>N3 help</b> appears below the editor. Press <kbd>Ctrl+Shift+Space</kbd> or use the source pane's <b>?</b> button for the longer syntax description. This is command help, separate from the manual you are reading.</p>
+        <h3>Follow named pointers and return</h3>
+        <p><b>Ctrl-click</b> or <b>Shift-click</b> a pointer reference anywhere in the full .3D Source editor to jump to its definition. This works for vertex, POLY, LIST, MATERIAL, FACE/BSP, SWITCH and other named N3 declarations, including references in multiline statements. Select <b>← Back</b> above the source text (or press <kbd>Alt+Left</kbd>) to return to the exact previous reference; repeated jumps support repeated Back operations. The history clears when another model opens.</p>
+        <p>Only declared identifiers can be followed. Comments, quoted resource filenames, N3 commands and undefined or ambiguous pointer names are not navigable. Normal plain-click caret placement and text selection are unchanged. Navigation follows unsaved edits but does not edit source, recompile geometry, or add Undo steps.</p>
         <h3>Keeping source understandable</h3>
         <p>Choose <b>Edit → Rename Selected Pointer…</b> or press <kbd>F2</kbd> on a declaration to rename its label. The default automatic reference update also adjusts references to that label. Comments and original declaration names belong in your editable <code>.3D</code> file; they do not survive inside a compiled <code>.3DO</code>.</p>
       </section>
@@ -276,6 +279,8 @@ root: LIST {face};</pre>
           <tr><td><kbd>Ctrl+Q</kbd></td><td>Exit (unsaved changes are confirmed)</td></tr>
           <tr><td><kbd>Ctrl+Z</kbd> / <kbd>Ctrl+Y</kbd></td><td>Undo / redo source editing</td></tr>
           <tr><td><kbd>Ctrl+F</kbd> / <kbd>F3</kbd></td><td>Find in source / Find next</td></tr>
+          <tr><td><kbd>Ctrl-click</kbd> / <kbd>Shift-click</kbd></td><td>Follow a named reference in .3D Source</td></tr>
+          <tr><td><kbd>Alt+Left</kbd></td><td>Back to the previous source reference</td></tr>
           <tr><td><kbd>F2</kbd></td><td>Rename selected source pointer</td></tr>
           <tr><td><kbd>Ctrl+Shift+Space</kbd></td><td>Context help for N3 source command</td></tr>
           <tr><td><kbd>F</kbd> / <kbd>R</kbd></td><td>Frame All / Reload MIPs (viewport focused)</td></tr>
