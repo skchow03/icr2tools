@@ -53,6 +53,19 @@ Toggle either overlay independently under **View → Display Options** or
 These are transparent, nonselectable UI guides only; they do not alter
 the model, tracing-image calibration, BSP, rendered geometry or exports.
 
+## Navigate N3 pointers in the .3D Source editor
+
+**Ctrl-click** or **Shift-click** a named pointer reference in any source
+statement (including multiline LIST, POLY, FACE/BSP, SWITCH or MATERIAL)
+to jump to its declaration. **← Back** above the source editor, or
+**Alt+Left**, restores the previously clicked reference and original row.
+Successive jumps build a Back history, cleared when another model is loaded.
+
+Only actual declared pointer names follow. Keywords, comments, quoted MIP
+filenames, ambiguous duplicates and empty space keep normal text-editing
+behavior. The lookup follows the live text, even before recompilation.
+Navigation never changes source contents, geometry, UVs or Undo history.
+
 ## Texture-alignment overlays: edges and vertices
 
 The **Edit** row above the viewport has independent **Edges** and
