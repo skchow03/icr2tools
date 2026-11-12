@@ -12,11 +12,11 @@ SOURCE = """3D VERSION 3.0;
 p: [<0,0,0>];
 q: [<100,0,0>];
 r: [<0,100,0>];
-face: POLY <49> {p,q,r};
-branch: LIST {face};
+body_poly: POLY <49> {p,q,r};
+branch: LIST {body_poly};
 root: LIST {branch};
-% face and branch in comments must never navigate
-mip: MATERIAL ("face.mip", branch);
+% body_poly and branch in comments must never navigate
+mip: MATERIAL ("body_poly.mip", branch);
 """
 
 
@@ -83,12 +83,12 @@ class SourcePointerNavigationUITests(unittest.TestCase):
         self.assertEqual(pane.editor.textCursor().selectedText(), "branch")
         self.assertEqual(pane.editor.textCursor().blockNumber(), 5)
         self.assertTrue(pane.pointer_back_button.isEnabled())
-        self.click(5, "face", self.Qt.KeyboardModifier.ShiftModifier)
-        self.assertEqual(pane.editor.textCursor().selectedText(), "face")
+        self.click(5, "body_poly", self.Qt.KeyboardModifier.ShiftModifier)
+        self.assertEqual(pane.editor.textCursor().selectedText(), "body_poly")
         self.assertEqual(pane.editor.textCursor().blockNumber(), 4)
         self.assertTrue(pane.go_back_pointer())
         self.assertEqual(pane.editor.textCursor().blockNumber(), 5)
-        self.assertEqual(pane.editor.textCursor().selectedText(), "face")
+        self.assertEqual(pane.editor.textCursor().selectedText(), "body_poly")
         pane.pointer_back_button.click()
         self.assertEqual(pane.editor.textCursor().blockNumber(), 6)
         self.assertEqual(pane.editor.textCursor().selectedText(), "branch")
@@ -98,7 +98,7 @@ class SourcePointerNavigationUITests(unittest.TestCase):
 
     def test_clicks_on_comments_strings_declarations_do_not_navigate(self):
         pane = self.pane
-        for line, text in ((4, "face"), (7, "face"), (8, "face.mip")):
+        for line, text in ((4, "body_poly"), (7, "body_poly"), (8, "body_poly.mip")):
             with self.subTest(line=line):
                 self.click(line, text, self.Qt.KeyboardModifier.ControlModifier)
                 self.assertFalse(pane.pointer_back_button.isEnabled())
