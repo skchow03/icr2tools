@@ -50,7 +50,8 @@ try:
         QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
         QDockWidget,
         QDoubleSpinBox, QFileDialog, QGroupBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow,
-        QMessageBox, QPlainTextEdit, QPushButton, QSpinBox,
+        QMessageBox, QPlainTextEdit, QPushButton, QSpinBox, QTableWidget,
+        QTableWidgetItem, QHeaderView,
         QProgressBar, QScrollArea, QSlider, QSplitter, QTabWidget, QToolButton, QVBoxLayout, QWidget,
     )
     from PySide6.QtOpenGLWidgets import QOpenGLWidget
@@ -98,6 +99,7 @@ from workspaces import (
 from menus import install_menus, remember_recent_model, update_model_actions
 from load_diagnostics import LoadIssue, collect_load_issues, format_load_log
 from polygon_split import split_n3_polygon, polygon_boundary_refs
+from polygon_vertex_table import polygon_vertex_rows
 from vertex_label_data import (
     filter_vertex_labels, polygon_vertex_refs, project_vertex_labels,
     vertex_pointer_names, include_source_vertex_declarations,
@@ -2447,6 +2449,9 @@ class Window(QMainWindow):
         self._split_polygon_offset = None
         self._split_target_model = None
         self._pending_split_label = None
+        self._poly_vertex_rows = ()
+        self._poly_vertex_key = None
+        self._poly_vertex_updating = False
         _migrate_legacy_preferences()
         self.appearance_colors = load_colors(QSettings("ICR2Tools", "3DOCAD"))
         self.viewer = GLViewport()
@@ -2970,6 +2975,39 @@ class Window(QMainWindow):
         self.load_progress.hide()
         self.viewport_layout.addWidget(self.load_progress)
         self.viewport_layout.addWidget(self.viewer, stretch=1)
+        # Contextual, compact table directly under the model preview. It is
+        # read-only during source recompilation and follows source POLY
+        # selection; it does not create a separate geometry editor.
+        self.poly_vertex_panel = QGroupBox("Selected POLY vertices")
+        self.poly_vertex_panel.setObjectName("selectedPolyVerticesPanel")
+        poly_table_layout = QVBoxLayout(self.poly_vertex_panel)
+        poly_table_layout.setContentsMargins(6, 4, 6, 4)
+        poly_table_layout.setSpacing(2)
+        self.poly_vertex_hint = QLabel(
+            "Select a polygon to edit its source-backed vertex coordinates.")
+        self.poly_vertex_hint.setWordWrap(True)
+        poly_table_layout.addWidget(self.poly_vertex_hint)
+        self.poly_vertex_table = QTableWidget(0, 6)
+        self.poly_vertex_table.setObjectName("selectedPolyVerticesTable")
+        self.poly_vertex_table.setHorizontalHeaderLabels(
+            ["Vertex", "X", "Y", "Z", "U", "V"])
+        self.poly_vertex_table.verticalHeader().hide()
+        self.poly_vertex_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.Stretch)
+        self.poly_vertex_table.setAlternatingRowColors(True)
+        self.poly_vertex_table.setSelectionBehavior(
+            QTableWidget.SelectionBehavior.SelectItems)
+        self.poly_vertex_table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked |
+            QTableWidget.EditTrigger.EditKeyPressed |
+            QTableWidget.EditTrigger.SelectedClicked)
+        self.poly_vertex_table.setMinimumHeight(75)
+        poly_table_layout.addWidget(self.poly_vertex_table)
+        self.poly_vertex_panel.setMaximumHeight(234)
+        self.viewport_layout.addWidget(self.poly_vertex_panel)
+        self.poly_vertex_panel.hide()
+        self.poly_vertex_table.itemChanged.connect(
+            self._polygon_vertex_cell_changed)
         # Contextual split controls sit BELOW the GPU viewport rather than
         # consuming the N3 source editor's horizontal space.
         self.split_panel = QGroupBox("Polygon split")
@@ -3666,7 +3704,131 @@ class Window(QMainWindow):
             self.statusBar().showMessage(
                 f"POLY @{offset} has no matching declaration in .3D Source")
 
+    def _refresh_polygon_vertex_table(self, target=None):
+        """Display the current root POLY's ordered boundary source values."""
+        source = self.source_pane
+        if target is None:
+            target = source.current_target()
+        if (source.pending or self._source_invalid):
+            if self.poly_vertex_panel.isVisible():
+                self.poly_vertex_table.setEnabled(False)
+                self.poly_vertex_hint.setText(
+                    "Applying .3D Source changes; table editing resumes "
+                    "after successful validation.")
+            return
+        model = self.viewer._model
+        if (not self.source_toggle.isChecked() or
+                not source.ready or model is None or
+                target is None or target[0] != "polygon"):
+            self._poly_vertex_key = None
+            self._poly_vertex_rows = ()
+            self.poly_vertex_panel.hide()
+            return
+        offset = target_offset(model, "polygon", target[1])
+        if offset is None or offset not in model.polygons:
+            self._poly_vertex_key = None
+            self._poly_vertex_rows = ()
+            self.poly_vertex_panel.hide()
+            return
+        key = (id(model), offset, source.revision)
+        if key == self._poly_vertex_key:
+            self.poly_vertex_table.setEnabled(True)
+            return
+        try:
+            rows = polygon_vertex_rows(
+                model, offset, source.editor.toPlainText())
+        except (ValueError, KeyError) as exc:
+            self.poly_vertex_hint.setText(
+                f"Cannot inspect polygon vertex declarations: {exc}")
+            self.poly_vertex_table.setEnabled(False)
+            return
+        self._poly_vertex_key = key
+        self._poly_vertex_rows = rows
+        self._poly_vertex_updating = True
+        table = self.poly_vertex_table
+        table.blockSignals(True)
+        try:
+            table.setRowCount(len(rows))
+            for r, row in enumerate(rows):
+                for c, value in enumerate((row.label, *row.values)):
+                    item = QTableWidgetItem(str(value))
+                    item.setFlags(
+                        Qt.ItemFlag.ItemIsSelectable |
+                        Qt.ItemFlag.ItemIsEnabled |
+                        (Qt.ItemFlag.ItemIsEditable
+                         if c > 0 and row.editable[c - 1]
+                         else Qt.ItemFlag.NoItemFlags))
+                    if c > 0 and row.editable[c - 1]:
+                        item.setToolTip(
+                            "Edit the authored .3D Source value. Press Enter "
+                            "to validate, recompile and update all polygons "
+                            "sharing this vertex. Ctrl+Z in Source undoes it.")
+                    elif c > 3 and not row.editable[c - 1]:
+                        item.setToolTip(
+                            "No editable T=<U,V> declaration for this polygon vertex.")
+                    else:
+                        item.setToolTip(
+                            "No separate editable named vertex declaration.")
+                    table.setItem(r, c, item)
+        finally:
+            table.blockSignals(False)
+            self._poly_vertex_updating = False
+        table.setEnabled(True)
+        table.setVisible(True)
+        self.poly_vertex_hint.setText(
+            f"{target[1]} · {len(rows)} boundary vertices · "
+            "XYZ = authored .3D coordinates; U/V = MIP texels. "
+            "Double-click a value to edit. Shared vertices update all faces.")
+        self.poly_vertex_panel.show()
+
+    def _polygon_vertex_cell_changed(self, item):
+        """Route a single committed coordinate cell through N3 Source."""
+        if self._poly_vertex_updating or item.column() == 0:
+            return
+        table = self.poly_vertex_table
+        row_index = item.row()
+        if not (0 <= row_index < len(self._poly_vertex_rows)):
+            return
+        vertex = self._poly_vertex_rows[row_index]
+        field_index = item.column() - 1
+        if not vertex.editable[field_index]:
+            return
+        original_value = vertex.values[field_index]
+        value = item.text().strip()
+        if value == original_value:
+            return
+        model = self.viewer._model
+        selected = self.source_pane.current_target()
+        offset = (target_offset(model, "polygon", selected[1])
+                  if model is not None and selected is not None and
+                  selected[0] == "polygon" else None)
+        try:
+            if (self._poly_vertex_key is None or
+                    model is None or offset != self._poly_vertex_key[1] or
+                    not table.isEnabled()):
+                raise ValueError("Polygon selection changed; reselect the POLY.")
+            plan = self.source_pane.edit_polygon_vertex_cell(
+                model, offset, vertex.offset,
+                ("x", "y", "z", "u", "v")[field_index], value)
+        except (ValueError, ArithmeticError, OverflowError) as exc:
+            table.blockSignals(True)
+            try:
+                item.setText(original_value)
+            finally:
+                table.blockSignals(False)
+            QMessageBox.warning(self, "Cannot edit polygon vertex", str(exc))
+            return
+        if plan.changed:
+            table.setEnabled(False)
+            self.poly_vertex_hint.setText(
+                f"Updating {vertex.label} {plan.field} in .3D Source "
+                "and recompiling…")
+            self.statusBar().showMessage(
+                f"Updated {vertex.label} {plan.field}: "
+                f"{plan.before} → {plan.after} (unsaved).")
+
     def _source_target_changed(self, target):
+        self._refresh_polygon_vertex_table(target)
         if (not self.source_toggle.isChecked() or
                 self.source_pane.pending or self._source_invalid or
                 target is None):
@@ -3814,6 +3976,7 @@ class Window(QMainWindow):
             self._last_valid_source_text = source
             self._source_invalid = False
             self.source_pane.mark_valid(rev, model)
+            self._refresh_polygon_vertex_table(self.source_pane.current_target())
             self.viewer.set_vertex_label_source(self.source_pane._source_index)
             if self._pending_split_label is not None:
                 target = model.n3_label_offsets.get(self._pending_split_label)
@@ -3830,6 +3993,7 @@ class Window(QMainWindow):
         if rev == self.source_pane.revision:
             self._source_invalid = True
             self.source_pane.mark_error(rev, error)
+            self._refresh_polygon_vertex_table()
             self._pending_split_label = None
             self._split_controls_changed()
         if self._source_queued is not None:
@@ -4847,6 +5011,9 @@ class Window(QMainWindow):
             self._pending_polygon_pick = None
             self._pending_split_label = None
             self._set_split_target(None)
+            self.poly_vertex_panel.hide()
+            self._poly_vertex_key = None
+            self._poly_vertex_rows = ()
             self.split_button.setChecked(False)
             self.source_pane.reset()
         if not reuse_model and self.model_path is not None and (
