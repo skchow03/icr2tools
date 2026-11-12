@@ -65,8 +65,8 @@ def referenced_pointer_at(line: str, utf16_column: int,
         # Field/parameter keys such as T= or c= are not pointer uses.
         if line[match.end():].lstrip(" \t").startswith("="):
             continue
-        begin = qt_utf16_offset(line[:match.start()])
-        end = qt_utf16_offset(line[:match.end()])
+        begin = qt_utf16_offset(line, match.start())
+        end = qt_utf16_offset(line, match.end())
         if begin <= utf16_column <= end:
             return name
     return None
