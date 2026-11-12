@@ -37,7 +37,7 @@ class SourcePointerNavigationUITests(unittest.TestCase):
         cls.QPoint = QPoint
         cls.QTextCursor = QTextCursor
         cls.QTest = QTest
-        cls.utf16 = qt_utf16_offset
+        cls.utf16 = staticmethod(qt_utf16_offset)
         cls.app = QApplication.instance() or QApplication([])
         cls.pane = SourcePane()
         cls.pane.resize(1100, 700)
