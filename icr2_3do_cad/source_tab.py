@@ -31,6 +31,7 @@ from source_symmetry import (
     named_vertices, plan_mirrored_vertices, coordinate_replacements,
 )
 from source_vertex_move import plan_vertex_move
+from polygon_vertex_table import plan_polygon_vertex_edit
 from source_inspection import (index_source_targets, target_offset,
                                           bsp_plane_points)
 from source_filters import CATEGORIES, index_source_entries
@@ -1274,6 +1275,55 @@ class SourcePane(QWidget):
             self.editor.setTextCursor(cursor)
             self.editor.centerCursor()
             self.editor.setFocus()
+
+    def edit_polygon_vertex_cell(self, model, polygon_offset, vertex_offset,
+                                 field, text):
+        """Apply one table-cell coordinate/UV edit to canonical N3 source.
+
+        Edits preserve the source cursor, other POLYs, authored numeric
+        formatting and the ordinary Undo/validation/compile pipeline.
+        Shared named vertices naturally update every referring polygon.
+        """
+        if not self._ready or self.pending or self._last_error_line is not None:
+            raise ValueError("Finish or correct pending .3D Source edits first.")
+        if self.filtered_list.state() == QAbstractItemView.State.EditingState:
+            raise ValueError("Finish the filtered statement edit first.")
+        current = self.current_target()
+        if (current is None or current[0] != "polygon" or
+                target_offset(model, "polygon", current[1]) != polygon_offset):
+            raise ValueError("Select the matching polygon in .3D Source first.")
+        original = self.editor.toPlainText()
+        plan = plan_polygon_vertex_edit(
+            original, model, polygon_offset, vertex_offset, field, text)
+        if not plan.changed:
+            return plan
+
+        self._rename_timer.stop()
+        self._rename_pending = None
+        self._applying_rename = True
+        cursor = QTextCursor(self.editor.document())
+        try:
+            cursor.beginEditBlock()
+            try:
+                cursor.setPosition(qt_utf16_offset(original, plan.start))
+                cursor.setPosition(qt_utf16_offset(original, plan.end),
+                                   QTextCursor.MoveMode.KeepAnchor)
+                cursor.insertText(plan.after)
+            finally:
+                cursor.endEditBlock()
+        finally:
+            self._applying_rename = False
+        self._rename_snapshot = self.editor.toPlainText()
+        self._edited()
+        self.change_log.appendPlainText(
+            f"[{QTime.currentTime().toString('HH:mm:ss')}] "
+            f"POLY vertex {plan.label}: {plan.field} "
+            f"{plan.before} → {plan.after}; saved to editable N3, "
+            "not exported.")
+        # Retain the ordinary optional XYZ mirroring behavior. UV edits do
+        # not create mirrored XYZ differences.
+        self.apply_now()
+        return plan
 
     def move_compiled_vertex(self, model, offset, new_raw_xyz):
         """Write viewport-dragged XYZ into canonical N3 as one Undo step.
