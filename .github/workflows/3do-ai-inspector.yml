@@ -52,6 +52,28 @@ jobs:
           done
           echo "Built $count checked-in recipes"
           test "$count" -gt 0
+      - name: Assemble and inspect Marmon Wasp three-object car
+        shell: bash
+        run: |
+          python -m icr2_3do_ai.assemble_wasp \
+            --body /tmp/3do-ai-recipes/marmon_wasp_1911_lowpoly \
+            --front /tmp/3do-ai-recipes/marmon_wasp_front_wheel \
+            --rear /tmp/3do-ai-recipes/marmon_wasp_rear_wheel \
+            --output /tmp/3do-ai-recipes/marmon_wasp_complete
+          python -m icr2_3do_ai validate /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do
+          python -m icr2_3do_ai inspect /tmp/3do-ai-recipes/marmon_wasp_complete/WASP.3do \
+            --objects-folder /tmp/3do-ai-recipes/marmon_wasp_complete \
+            --views -o /tmp/3do-ai-recipes/marmon_wasp_complete/scene_analysis
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root=Path("/tmp/3do-ai-recipes/marmon_wasp_complete")
+          scene=json.loads((root/"scene_analysis"/"scene_graph.json").read_text())
+          instances=scene.get("instances", [])
+          if len(instances)!=5:
+              raise SystemExit(f"Expected main car + four external wheel instances, got {len(instances)}")
+          print("Verified complete Wasp scene:", len(instances), "model instances")
+          PY
       - name: Publish generated source, binary and diagnostics
         uses: actions/upload-artifact@v4
         with:
