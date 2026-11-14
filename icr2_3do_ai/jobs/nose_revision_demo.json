@@ -1,0 +1,79 @@
+{
+  "schema": "icr2.n3.job.v1",
+  "mode": "revise",
+  "goal": "Demonstrate safe component-level revision: extend and narrow the nose cone without changing either sidepod.",
+  "base_recipe": "icr2_3do_ai/recipes/example_indycar_nose.json",
+  "edits": [
+    {
+      "action": "replace",
+      "target": "nose",
+      "operation": {
+        "type": "loft",
+        "name": "nose",
+        "axis": "x",
+        "color": 78,
+        "material": "body",
+        "uv": {
+          "axes": [
+            "x",
+            "z"
+          ],
+          "pixels_per_unit": [
+            26,
+            60
+          ],
+          "offset": [
+            0,
+            0
+          ]
+        },
+        "sections": [
+          {
+            "at": 0,
+            "width": 3.2,
+            "height": 1.4,
+            "center": [
+              0,
+              0.9
+            ]
+          },
+          {
+            "at": 1.7,
+            "width": 2.55,
+            "height": 1.05,
+            "center": [
+              0,
+              0.8
+            ]
+          },
+          {
+            "at": 4.1,
+            "width": 1.2,
+            "height": 0.67,
+            "center": [
+              0,
+              0.7
+            ]
+          },
+          {
+            "at": 6.9,
+            "width": 0.26,
+            "height": 0.26,
+            "center": [
+              0,
+              0.65
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "quality": {
+    "max_polygons": 1500,
+    "max_abs_polygon_delta": 0,
+    "must_preserve": [
+      "left_pod",
+      "right_pod"
+    ]
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "schema": "icr2.n3.job.v1",
+  "mode": "blockout",
+  "goal": "Create a generic 1911-era single-seat open-wheel racer as a starting point for a Marmon Wasp study. Dimensions and mechanical details are illustrative and must be verified against photographs or drawings before calling it a replica.",
+  "template": "vintage_open_wheel",
+  "parameters": {
+    "overall_length_ft": 15,
+    "wheelbase_ft": 9,
+    "track_width_ft": 6.2,
+    "wheel_diameter_ft": 3,
+    "tire_width_ft": 0.48,
+    "body_max_width_ft": 2.65,
+    "body_max_height_ft": 1.8,
+    "spokes_per_wheel": 8,
+    "body_palette_index": 79,
+    "tire_palette_index": 24,
+    "spoke_palette_index": 162,
+    "cockpit_palette_index": 26,
+    "metal_palette_index": 177
+  },
+  "quality": {
+    "max_polygons": 2500
+  }
+}
